@@ -1,12 +1,20 @@
 // Publishes the built developer docs into the ask.caitlyn.ai developer-docs knowledge base, so Ask Caitlyn
-// answers from them: one document per page, keyed by its URL as externalId, with the page's metadata
-// (scripts/docs-metadata.mjs) and its URL as sourceUrl for citations.
+// answers from them: one document per page, keyed by its URL as externalId, with its URL as sourceUrl for
+// citations.
+//
+// The metadata travels in each page's front matter, which the docs build writes (scripts/docs-metadata.mjs).
+// Markdown ingestion reads front-matter keys that equal the knowledge base's custom fields (pageType,
+// sinceVersion, resources, integrations, operations), validates and stores them, and the model does not infer
+// those fields. So the publisher sends no metadata of its own and needs no metadata update after uploading.
+// Valid values are applied again on every ingest; a field an operator has locked keeps its value. Ingestion
+// skips an invalid value and records a partial failure, so this script checks every page's front matter
+// against the fields' option keys first and sends nothing if any page fails.
 //
 // A STUB. The real publisher (lane D4) uses @caitlyn-ai/sdk: documents.upload with metadata, sourceUrl and
 // externalId, new versions on change, deletes and moves, and waitUntilIndexed. None of that exists until
 // the server lanes ship v3 documents (S3) and the TypeScript SDK covers them (K1). Until
-// then this script reads build/docs/pages.json, checks every page's metadata and, with --dry-run, prints
-// what it would send. Without --dry-run it stops, saying so.
+// then this script reads build/docs/pages.json, checks every page's front matter and, with --dry-run,
+// prints what it would send. Without --dry-run it stops, saying so.
 //
 // Sign-in: OAuth client credentials for the docs publisher's machine client, which may write only to this
 // knowledge base. The values are CI variables (masked, protected), never in the repository:
@@ -17,7 +25,7 @@
 // Usage: node scripts/docs-kb-publish.mjs [--dry-run]
 import fs from 'node:fs';
 import path from 'node:path';
-import { metadataProblems } from './docs-metadata.mjs';
+import { metadataProblems, parseFrontMatter } from './docs-metadata.mjs';
 
 export const WORKSPACE = 'ask.caitlyn.ai';
 export const KNOWLEDGE_BASE_ID = '01M73EYJMHXXS4GMWBG827B7RB';
@@ -33,8 +41,14 @@ const { pages } = JSON.parse(fs.readFileSync(manifest, 'utf8'));
 
 let bad = 0;
 for (const page of pages) {
-  const problems = metadataProblems(page.metadata);
-  if (!fs.existsSync(path.join(root, 'build/docs/site', page.path))) problems.push(`no file ${page.path}`);
+  const file = path.join(root, 'build/docs/site', page.path);
+  const problems = [];
+  if (!fs.existsSync(file)) problems.push('no such file');
+  else {
+    page.frontMatter = parseFrontMatter(fs.readFileSync(file, 'utf8'));
+    if (!page.frontMatter) problems.push('no front matter');
+    else problems.push(...metadataProblems(page.frontMatter));
+  }
   for (const p of problems) console.error(`${page.path}: ${p}`);
   bad += problems.length ? 1 : 0;
 }
@@ -45,7 +59,7 @@ if (bad) {
 
 if (dryRun) {
   console.log(`docs-kb-publish (dry run): would publish ${pages.length} pages to knowledge base ${KNOWLEDGE_BASE_ID} on ${WORKSPACE}:`);
-  for (const p of pages) console.log(`  ${p.url}  ${JSON.stringify(p.metadata)}`);
+  for (const p of pages) console.log(`  ${p.url}  front matter ${JSON.stringify(p.frontMatter)}`);
   console.log(`Sign-in: ASK_CAITLYN_CLIENT_ID is ${process.env.ASK_CAITLYN_CLIENT_ID ? 'set' : 'not set'}, ` +
     `ASK_CAITLYN_CLIENT_SECRET is ${process.env.ASK_CAITLYN_CLIENT_SECRET ? 'set' : 'not set'}.`);
   process.exit(0);

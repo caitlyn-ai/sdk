@@ -9,7 +9,7 @@ publishing jobs have real input.
 | Output | What it is |
 | --- | --- |
 | `build/docs/site/` | The static site. CI uploads it with `scripts/docs-upload.sh`. |
-| `build/docs/pages.json` | One entry per page: its path, public URL, title and knowledge-base metadata. |
+| `build/docs/pages.json` | One entry per page: its path, public URL, title and metadata (the same values as its front matter). |
 
 ## Publishing
 
@@ -33,18 +33,43 @@ real site: until then `build.caitlyn.ai` stays a 404, as D1 intends.
 
 Ask Caitlyn answers from the developer docs. `scripts/docs-kb-publish.mjs` will publish each page as a
 document in the `ask.caitlyn.ai` workspace's developer-docs knowledge base (`01M73EYJMHXXS4GMWBG827B7RB`),
-keyed by its URL, with the page URL as `sourceUrl` and these custom fields (`scripts/docs-metadata.mjs`):
+keyed by its URL, with the page URL as `sourceUrl`.
 
-| Field | Type | Meaning |
+The page's metadata is its **front matter**, written by the docs build (`scripts/docs-metadata.mjs`).
+Markdown ingestion (caitlyn-data-ingestion !313) reads every front-matter key that equals one of the
+knowledge base's custom fields, validates the value against the field's type and options, and stores it; the
+model does not infer those fields. So the publisher sends no metadata of its own, and nothing is updated after
+upload. Valid values are applied again on every ingest; a field an operator has locked keeps its value.
+
+| Key (exact, case matters) | Type | Values |
 | --- | --- | --- |
-| `pageType` | text | `reference`, `guide`, `example`, `concept` or `error` |
-| `resources` | list of text | SDK namespaces the page covers, for example `documents` |
-| `integrations` | list of text | Integrations the page covers |
+| `pageType` | one option | `guide`, `concept`, `reference`, `error`, `sdk`, `cli`, `migration`, `changelog` |
+| `resources` | list of options | `agent`, `version`, `conversation`, `knowledge-base`, `document`, `upload`, `operation`, `organisation`, `policy-review`, `unattended-run`, `workspace` |
+| `integrations` | list of options | `microsoft-entra-id`, `google-workspace`, `auth0`, `mcp-server`, `mcp-connectors`, `amazon-connect`, `live-avatar`, `embed-widget`, `agentcore`, `workload-identity` |
 | `operations` | list of text | Model operation names, for example `ListDocuments` |
 | `sinceVersion` | whole number | The release the content needs, as major×10^12 + minor×10^6 + patch (5.115.0 is 5000115000000), so "available in my version" is a numeric filter |
 
-It is a stub: it checks the metadata and, with `--dry-run`, prints what it would send. The real publisher
-(lane D4) needs v3 documents with metadata (lane S3) and the TypeScript SDK's `documents.upload` (lane K1).
+Options take the option key, not its label. A number may be written as text, and a list field takes a YAML
+list or a single value. For example:
+
+```yaml
+---
+pageType: reference
+sinceVersion: 5000115000000
+resources:
+  - document
+integrations: []
+operations:
+  - ListDocuments
+---
+```
+
+Ingestion skips an invalid value and records it as a partial failure, so both the docs build and the
+publisher check every page against these options first, and fail rather than publish a page ingestion would
+only partly read.
+
+The publisher is a stub: it checks the front matter and, with `--dry-run`, prints what it would send. The
+real publisher (lane D4) needs v3 documents (lane S3) and the TypeScript SDK's `documents.upload` (lane K1).
 It signs in with the docs publisher's machine client; its client ID and secret are the masked, protected CI
 variables `ASK_CAITLYN_CLIENT_ID` and `ASK_CAITLYN_CLIENT_SECRET`, set from the Caitlyn vault in 1Password.
 Lane D4 plans to replace them with `workloadIdentity` once workload sign-in (lane A3) exists.

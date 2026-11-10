@@ -1,12 +1,14 @@
 // The developer docs build: a skeleton until lane D2 (Astro Starlight) replaces it. It writes
 //   build/docs/site/              the static site the publish jobs upload (D1's buckets)
-//   build/docs/pages.json         one entry per page, with the metadata the knowledge-base publisher sends
+//   build/docs/pages.json         one entry per page: path, public URL, title and its metadata
+// Every Markdown page carries its knowledge-base metadata as front matter (scripts/docs-metadata.mjs), which
+// Markdown ingestion reads; the build fails on a value ingestion would skip.
 // Today the site is a holding page plus one Markdown reference page per operation, generated from the
 // model, so the publish and knowledge-base jobs have real input to work on.
 // Usage: node scripts/docs-build.mjs   (reads build/model/model.json; run prepare-model first)
 import fs from 'node:fs';
 import path from 'node:path';
-import { sinceVersion } from './docs-metadata.mjs';
+import { OPTIONS, frontMatter, metadataProblems, sinceVersion } from './docs-metadata.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const out = path.join(root, 'build/docs');
@@ -33,6 +35,14 @@ visit('ai.caitlyn.v3#Caitlyn', null);
 const plural = (n) => (n.endsWith('y') ? `${n.slice(0, -1)}ies` : n.endsWith('s') ? `${n}es` : `${n}s`);
 const lower = (n) => n[0].toLowerCase() + n.slice(1);
 const kebab = (n) => n.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+const singular = (n) => (n.endsWith('ies') ? `${n.slice(0, -3)}y` : n.endsWith('ses') ? n.slice(0, -2) : n.replace(/s$/, ''));
+
+/** The knowledge base's resource options a page covers: the operation's resource, and its SDK namespace's. */
+function resourcesOf(resource, namespace) {
+  const keys = [kebab(resource.split('#')[1].replace(/Resource$/, '')), kebab(singular(namespace))];
+  return [...new Set(keys)].filter((k) => OPTIONS.resources.includes(k));
+}
+let invalid = 0;
 
 const pages = [];
 for (const { id, resource, lifecycle } of ops.sort((a, b) => a.id.localeCompare(b.id))) {
@@ -44,7 +54,18 @@ for (const { id, resource, lifecycle } of ops.sort((a, b) => a.id.localeCompare(
   const http = t[T('http')];
   const slug = `reference/${kebab(name)}`;
   const doc = (t[T('documentation')] ?? '').trim();
-  const md = [
+  const metadata = {
+    pageType: 'reference',
+    sinceVersion: sinceVersion(t[C('since')]),
+    resources: resourcesOf(resource, method.namespace),
+    integrations: [],
+    operations: [name],
+  };
+  for (const p of metadataProblems(metadata)) {
+    console.error(`${slug}.md: ${p}`);
+    invalid++;
+  }
+  const md = frontMatter(metadata) + [
     `# ${method.namespace}.${method.name}`,
     '',
     `\`${http.method} ${http.uri}\` · ${t[C('stability')] ?? 'ga'} · since Caitlyn ${t[C('since')]}`,
@@ -59,14 +80,12 @@ for (const { id, resource, lifecycle } of ops.sort((a, b) => a.id.localeCompare(
     path: `${slug}.md`,
     url: `https://build.caitlyn.ai/${slug}/`,
     title: `${method.namespace}.${method.name}`,
-    metadata: {
-      pageType: 'reference',
-      resources: [method.namespace],
-      integrations: [],
-      operations: [name],
-      sinceVersion: sinceVersion(t[C('since')]),
-    },
+    metadata,
   });
+}
+if (invalid) {
+  console.error(`docs-build: ${invalid} front-matter values ingestion would skip; fix them before publishing.`);
+  process.exit(1);
 }
 fs.writeFileSync(
   path.join(site, 'index.html'),
