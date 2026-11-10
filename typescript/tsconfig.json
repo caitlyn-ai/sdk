@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "importHelpers": true,
+    "types": [
+      "node"
+    ],
+    "paths": {
+      "@caitlyn-ai/sdk": [
+        "./packages/sdk/src/sdk/index.ts"
+      ],
+      "@caitlyn-ai/sdk/commands": [
+        "./packages/sdk/src/commands/index.ts"
+      ],
+      "*": [
+        "./node_modules/*",
+        "./node_modules/@types/*"
+      ]
+    }
+  },
+  "include": [
+    "packages/sdk/src",
+    "packages/sdk-core/src",
+    "../conformance/typescript"
+  ]
+}

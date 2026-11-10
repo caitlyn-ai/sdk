@@ -1,0 +1,18 @@
+{
+  "name": "@caitlyn-ai/sdk-core",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Hand-written runtime core for Caitlyn's generated TypeScript SDK: the restJson protocol and SDK identity.",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@smithy/core": "3.39.0",
+    "@smithy/types": "4.20.0",
+    "@opentelemetry/api": "1.9.0"
+  }
+}

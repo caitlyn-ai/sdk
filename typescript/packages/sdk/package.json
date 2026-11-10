@@ -1,0 +1,38 @@
+{
+    "name": "@caitlyn-ai/sdk",
+    "description": "@caitlyn-ai/sdk client",
+    "version": "0.0.1",
+    "main": "./dist-cjs/index.js",
+    "types": "./dist-types/index.d.ts",
+    "module": "./dist-es/index.js",
+    "sideEffects": false,
+    "dependencies": {
+        "tslib": "^2.6.2",
+        "@caitlyn-ai/sdk-core": "0.0.1",
+        "@smithy/core": "^3.37.0",
+        "@smithy/fetch-http-handler": "^5.8.0",
+        "@smithy/node-http-handler": "^4.13.0",
+        "@smithy/types": "^4.19.0"
+    },
+    "engines": {
+        "node": ">=20.0.0"
+    },
+    "typesVersions": {
+        "<4.5": {
+            "dist-types/*": [
+                "dist-types/ts3.4/*"
+            ]
+        }
+    },
+    "files": [
+        "dist-*/**"
+    ],
+    "license": "UNLICENSED",
+    "private": true,
+    "browser": {
+        "./dist-es/runtimeConfig": "./dist-es/runtimeConfig.browser"
+    },
+    "react-native": {
+        "./dist-es/runtimeConfig": "./dist-es/runtimeConfig.native"
+    }
+}
