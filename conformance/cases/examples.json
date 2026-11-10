@@ -160,6 +160,53 @@
       }
     },
     {
+      "id": "CreateDocument: not found (404, synthesised)",
+      "operation": "CreateDocument",
+      "synthesised": true,
+      "input": {
+        "knowledgeBaseId": "KB4T7YQ2WL",
+        "idempotencyKey": "3f0c9a1e-5d2b-4f7a-9c1e-2b8d4a6f0e13",
+        "uploadId": "0193a6f2-1111-7a2b-8c3d-4e5f60718293",
+        "folder": "hr/",
+        "name": "Leave policy"
+      },
+      "request": {
+        "method": "POST",
+        "path": "/v3/knowledge-bases/KB4T7YQ2WL/documents",
+        "query": {},
+        "headers": {
+          "idempotency-key": "3f0c9a1e-5d2b-4f7a-9c1e-2b8d4a6f0e13"
+        },
+        "body": {
+          "uploadId": "0193a6f2-1111-7a2b-8c3d-4e5f60718293",
+          "folder": "hr/",
+          "name": "Leave policy"
+        }
+      },
+      "response": {
+        "status": 404,
+        "shape": "NotFoundError",
+        "code": "NOT_FOUND",
+        "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B71",
+        "body": {
+          "type": "https://build.caitlyn.ai/errors/NOT_FOUND",
+          "title": "Not found",
+          "status": 404,
+          "code": "NOT_FOUND",
+          "detail": "No knowledge-bases record \"KB4T7YQ2WL\" that the caller may see.",
+          "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B71"
+        }
+      },
+      "expected": {
+        "error": {
+          "status": 404,
+          "code": "NOT_FOUND",
+          "shape": "NotFoundError",
+          "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B71"
+        }
+      }
+    },
+    {
       "id": "CreateUpload: Reserve an upload for a PDF",
       "operation": "CreateUpload",
       "input": {
@@ -954,6 +1001,55 @@
           "code": "PERMISSION_DENIED",
           "shape": "PermissionDeniedError",
           "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B70"
+        }
+      }
+    },
+    {
+      "id": "UpdateDraftVersion: not found (404, synthesised)",
+      "operation": "UpdateDraftVersion",
+      "synthesised": true,
+      "input": {
+        "agentId": "GHT7YRWXPL",
+        "ifMatch": "\"draft-41\"",
+        "instructions": "Answer leave and pay questions. Quote the policy clause you relied on.",
+        "clear": [
+          "identity"
+        ]
+      },
+      "request": {
+        "method": "PATCH",
+        "path": "/v3/agents/GHT7YRWXPL/versions/draft",
+        "query": {},
+        "headers": {
+          "if-match": "\"draft-41\""
+        },
+        "body": {
+          "instructions": "Answer leave and pay questions. Quote the policy clause you relied on.",
+          "clear": [
+            "identity"
+          ]
+        }
+      },
+      "response": {
+        "status": 404,
+        "shape": "NotFoundError",
+        "code": "NOT_FOUND",
+        "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B71",
+        "body": {
+          "type": "https://build.caitlyn.ai/errors/NOT_FOUND",
+          "title": "Not found",
+          "status": 404,
+          "code": "NOT_FOUND",
+          "detail": "No agents record \"GHT7YRWXPL\" that the caller may see.",
+          "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B71"
+        }
+      },
+      "expected": {
+        "error": {
+          "status": 404,
+          "code": "NOT_FOUND",
+          "shape": "NotFoundError",
+          "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B71"
         }
       }
     }

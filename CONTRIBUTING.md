@@ -64,9 +64,11 @@ There are two kinds of case:
 - **Protocol cases** (`conformance/cases/protocol.json`): retries, pagination, streams, tolerance of unknown
   data, typed errors, cancellation, updates, wire headers, the hostile AWS environment, `@since`, telemetry and
   the endpoint. Each harness has one test per case, named after its id.
-- **Example cases** (`conformance/cases/examples.json`, generated): one per `@examples` entry in the model,
-  plus a synthesised 403 `PERMISSION_DENIED` case per operation, because no example carries the service-level
-  403. The case holds the input, the exact request an SDK must send for it (worked out from the HTTP bindings)
+- **Example cases** (`conformance/cases/examples.json`, generated): one per `@examples` entry in the model.
+  The design guide (section 12) also asks for a 403 and a 404 case for every operation, so the generator
+  synthesises the missing ones from the model: a 403 `PERMISSION_DENIED` for every operation (it is a service
+  error, so no example carries it), and a 404 `NOT_FOUND` for every operation whose `@permission` names an
+  entity and whose examples have no 404. The case holds the input, the exact request an SDK must send for it (worked out from the HTTP bindings)
   and the response. The harness calls the operation with the input; the mock server checks the request; the
   harness checks the output or the typed error. A new operation gets cases the moment the model has examples
   for it: TypeScript and Python find the method from the model, the Go harness needs one line in its

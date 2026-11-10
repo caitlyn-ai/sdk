@@ -30,7 +30,7 @@ python/                uv workspace: caitlyn (generated), caitlyn-core (hand-wri
 go/                    one Go module: the generated package at the root, core/ hand-written
 conformance/
   cases/protocol.json  the protocol cases every SDK must pass (PROTOCOL.md section 11)
-  cases/examples.json  one case per @examples entry in the model, plus a 403 case per operation (generated)
+  cases/examples.json  one case per @examples entry, plus synthesised 403 and 404 cases (generated)
   mock-server/         the mock Caitlyn server, with fault injection and example matching
   typescript/ python/ go/   one thin harness per language
 docs/                  the developer docs (a skeleton until lane D2)
