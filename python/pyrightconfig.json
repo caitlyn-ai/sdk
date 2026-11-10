@@ -1,0 +1,14 @@
+{
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.12",
+  "venvPath": ".",
+  "venv": ".venv",
+  "include": [
+    "caitlyn-core/src",
+    "caitlyn/caitlyn",
+    "../conformance/python"
+  ],
+  "extraPaths": [
+    "../conformance/python"
+  ]
+}

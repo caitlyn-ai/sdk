@@ -1,0 +1,25 @@
+# The Python SDK's development workspace: the runtime core (caitlyn-core), the generated SDK (caitlyn) and
+# the conformance and type-checking tools. Not shipped.
+[project]
+name = "caitlyn-sdk-python-dev"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = ["caitlyn", "caitlyn-core"]
+
+[dependency-groups]
+dev = ["pytest==8.4.2", "pytest-asyncio==1.2.0", "pyright==1.1.407", "opentelemetry-sdk==1.38.0", "opentelemetry-api==1.38.0"]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["caitlyn-core", "caitlyn"]
+
+[tool.uv.sources]
+caitlyn = { workspace = true }
+caitlyn-core = { workspace = true }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"

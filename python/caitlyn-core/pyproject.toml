@@ -1,0 +1,21 @@
+[project]
+name = "caitlyn-core"
+version = "0.0.1"
+description = "Runtime core for Caitlyn's generated Python SDKs: transport, retries, errors, SSE, telemetry."
+requires-python = ">=3.12"
+dependencies = [
+  "httpx>=0.28,<0.29",
+  "pydantic>=2.11,<3",
+  "opentelemetry-api>=1.38,<2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+# Build from the files on disk, whatever an enclosing repository ignores.
+ignore-vcs = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/caitlyn_core"]
