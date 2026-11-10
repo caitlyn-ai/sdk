@@ -1,0 +1,79 @@
+package {{PACKAGE}}
+
+// This file is fixed text in the generator (not derived from the model): it re-exports the runtime's
+// option and error types so callers import only this package.
+
+import (
+	"time"
+
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+
+	"{{CORE}}"
+)
+
+type (
+	// Option configures a Client.
+	Option = core.Option
+	// CallOption configures one call: WithIfMatch, WithIdempotencyKey.
+	CallOption = core.CallOption
+	// WaiterOption configures one WaitUntil… call: WithMaxWait, WithWaitDelays.
+	WaiterOption = core.WaiterOption
+	// Auth adds credentials to each request.
+	Auth = core.Auth
+	// Token is a static bearer token: caitlyn.Token("pat_…").
+	Token = core.Token
+	// TokenFunc returns a bearer token for each request, for tokens refreshed elsewhere.
+	TokenFunc = core.TokenFunc
+	// Error is an RFC 9457 problem from Caitlyn, or an error the SDK raises itself (Status 0). Every typed
+	// error (NotFoundError…) embeds it.
+	Error = core.APIError
+	// NotSupportedByServerError is returned, before anything is sent, when an operation or a member you set is
+	// newer than the server.
+	NotSupportedByServerError = core.NotSupportedByServerError
+	// InputError is returned, before anything is sent, when a required input is missing.
+	InputError = core.InputError
+	// WaiterError is returned by a WaitUntil… method that reached a failure state or its time limit.
+	WaiterError = core.WaiterError
+	// UploadFile is a file for Uploads.Create and Documents.Upload.
+	UploadFile = core.UploadFile
+)
+
+// WithEndpoint sends requests to endpoint instead of https://<workspace>.
+func WithEndpoint(endpoint string) Option { return core.WithEndpoint(endpoint) }
+
+// WithHTTPClient replaces the default *http.Client.
+func WithHTTPClient(c core.HTTPDoer) Option { return core.WithHTTPClient(c) }
+
+// WithMaxAttempts sets the attempts for a retry-safe operation, the first included (default 3).
+func WithMaxAttempts(n int) Option { return core.WithMaxAttempts(n) }
+
+// WithMaxRetryDelay sets the longest Retry-After the client waits for (default 60 s); a longer one fails at once.
+func WithMaxRetryDelay(d time.Duration) Option { return core.WithMaxRetryDelay(d) }
+
+// WithTracerProvider sets the OpenTelemetry tracer provider (default: the global one).
+func WithTracerProvider(tp trace.TracerProvider) Option { return core.WithTracerProvider(tp) }
+
+// WithPropagator sets the OpenTelemetry propagator for traceparent, tracestate and baggage (default: the global one).
+func WithPropagator(p propagation.TextMapPropagator) Option { return core.WithPropagator(p) }
+
+// WithAppID adds app/<id> to the user agent.
+func WithAppID(id string) Option { return core.WithAppID(id) }
+
+// WithIfMatch sends If-Match: etag.
+func WithIfMatch(etag string) CallOption { return core.WithIfMatch(etag) }
+
+// WithIdempotencyKey sends this Idempotency-Key instead of a generated one (kept across retries either way).
+func WithIdempotencyKey(key string) CallOption { return core.WithIdempotencyKey(key) }
+
+// WithMaxWait bounds a WaitUntil… call (default 5 minutes).
+func WithMaxWait(d time.Duration) WaiterOption { return core.WithMaxWait(d) }
+
+// WithWaitDelays overrides the model's polling delays for a WaitUntil… call.
+func WithWaitDelays(minDelay, maxDelay time.Duration) WaiterOption { return core.WithWaitDelays(minDelay, maxDelay) }
+
+// FileFromPath reads a file for upload, taking its content type from the extension.
+func FileFromPath(path string) (*UploadFile, error) { return core.FileFromPath(path) }
+
+// Ptr returns a pointer to v, for optional input fields: Limit: caitlyn.Ptr[int32](50).
+func Ptr[T any](v T) *T { return &v }

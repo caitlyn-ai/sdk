@@ -1,0 +1,53 @@
+{
+  "version": "1.0",
+  "sources": ["../build/model/model.json"],
+  "maven": {
+    "repositories": [
+      {"url": "file:///work/codegen/build/repo"},
+      {"url": "https://repo.maven.apache.org/maven2"}
+    ],
+    "dependencies": [
+      "software.amazon.smithy:smithy-aws-traits:1.74.1",
+      "software.amazon.smithy:smithy-waiters:1.74.1",
+      "software.amazon.smithy.typescript:smithy-typescript-codegen:0.55.0",
+      "ai.caitlyn:typescript:0.0.1",
+      "ai.caitlyn:python:0.0.1",
+      "ai.caitlyn:go:0.0.1"
+    ]
+  },
+  "projections": {
+    "typescript": {
+      "plugins": {
+        "typescript-client-codegen": {
+          "service": "ai.caitlyn.v3#Caitlyn",
+          "package": "@caitlyn-ai/sdk",
+          "packageVersion": "0.0.1",
+          "packageJson": {"license": "UNLICENSED", "private": true},
+          "protocol": "ai.caitlyn.protocols#restJson",
+          "requiredMemberMode": "strict"
+        }
+      }
+    },
+    "python": {
+      "plugins": {
+        "caitlyn-python-client-codegen": {
+          "service": "ai.caitlyn.v3#Caitlyn",
+          "package": "caitlyn",
+          "distribution": "caitlyn",
+          "version": "0.0.1"
+        }
+      }
+    },
+    "go": {
+      "plugins": {
+        "caitlyn-go-client-codegen": {
+          "service": "ai.caitlyn.v3#Caitlyn",
+          "module": "github.com/caitlyn-ai/caitlyn-go",
+          "package": "caitlyn",
+          "version": "0.0.1",
+          "coreModule": "github.com/caitlyn-ai/caitlyn-go/core"
+        }
+      }
+    }
+  }
+}
