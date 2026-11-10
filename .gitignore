@@ -1,0 +1,11 @@
+# Build output: the prepared model, generator builds, conformance reports, bundles.
+/build/
+/codegen/build/
+/codegen/*/build/
+/codegen/.gradle/
+node_modules/
+/typescript/dist/
+/python/.venv/
+__pycache__/
+*.pyc
+.DS_Store
