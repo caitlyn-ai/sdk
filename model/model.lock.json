@@ -1,0 +1,8 @@
+{
+  "package": "caitlyn-v3-model",
+  "registryProject": "custom-d/caitlyn/platform/caitlyn",
+  "version": null,
+  "source": "local build of branch v3/gate-1-model at commit 50995f8007 (not published)",
+  "sha256": "72ac1b41518bdb036e3c8e91a84c3ce28c007109994577972eaf739f3c2167e5",
+  "stampNext": "5.115.0"
+}

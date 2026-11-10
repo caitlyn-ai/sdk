@@ -1,0 +1,3140 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "Caitlyn API",
+        "version": "3.0.0",
+        "description": "The Caitlyn v3 API.\n\nEvery request is made to a workspace's own hostname, which names the workspace, and carries a\nshort-lived Caitlyn bearer token, however the caller signed in. The `session` sign-in mode (the\nbrowser cookie) is handled by the SDKs' runtime and is not modelled per operation."
+    },
+    "paths": {
+        "/v3/agents/{agentId}/versions/draft": {
+            "patch": {
+                "description": "Edits the draft with a partial update of its configuration; `If-Match` is required.\n\nMembers that are absent stay unchanged, nested objects are merged and lists are replaced whole.\nTo return a member to its default, name it in `clear`; naming a member that is not clearable, or\none the same request also sets, is refused with 400 `VALIDATION_FAILED`. Returns the whole draft\nand its new ETag.",
+                "operationId": "UpdateDraftVersion",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateDraftVersionRequestContent"
+                            },
+                            "examples": {
+                                "UpdateDraftVersion_example1": {
+                                    "summary": "Change the instructions and clear the identity",
+                                    "description": "",
+                                    "value": {
+                                        "instructions": "Answer leave and pay questions. Quote the policy clause you relied on.",
+                                        "clear": [
+                                            "identity"
+                                        ]
+                                    }
+                                },
+                                "UpdateDraftVersion_example2": {
+                                    "summary": "The draft changed since it was read",
+                                    "description": "",
+                                    "value": {
+                                        "instructions": "Answer leave questions."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "agentId",
+                        "in": "path",
+                        "description": "The agent whose draft is edited.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "description": "The agent whose draft is edited."
+                        },
+                        "required": true,
+                        "examples": {
+                            "UpdateDraftVersion_example1": {
+                                "summary": "Change the instructions and clear the identity",
+                                "description": "",
+                                "value": "GHT7YRWXPL"
+                            },
+                            "UpdateDraftVersion_example2": {
+                                "summary": "The draft changed since it was read",
+                                "description": "",
+                                "value": "GHT7YRWXPL"
+                            }
+                        }
+                    },
+                    {
+                        "name": "If-Match",
+                        "in": "header",
+                        "description": "The draft's current ETag, from a Get or an earlier update. A stale value is refused with\n412; a missing one with 428.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 256,
+                            "minLength": 2,
+                            "description": "The draft's current ETag, from a Get or an earlier update. A stale value is refused with\n412; a missing one with 428."
+                        },
+                        "required": true,
+                        "examples": {
+                            "UpdateDraftVersion_example1": {
+                                "summary": "Change the instructions and clear the identity",
+                                "description": "",
+                                "value": "\"draft-41\""
+                            },
+                            "UpdateDraftVersion_example2": {
+                                "summary": "The draft changed since it was read",
+                                "description": "",
+                                "value": "\"draft-40\""
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "UpdateDraftVersion 200 response",
+                        "headers": {
+                            "Caitlyn-Api-Version": {
+                                "description": "The server's model version, for example `5.120.0`. The SDKs keep the latest value they have\nseen and refuse to call operations or send members newer than it.",
+                                "schema": {
+                                    "type": "string",
+                                    "maxLength": 32,
+                                    "minLength": 5,
+                                    "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+                                    "description": "The server's model version, for example `5.120.0`. The SDKs keep the latest value they have\nseen and refuse to call operations or send members newer than it."
+                                }
+                            },
+                            "Caitlyn-Request-Id": {
+                                "description": "The request's identifier. The same value is in every error body; quote it to support.",
+                                "schema": {
+                                    "type": "string",
+                                    "maxLength": 128,
+                                    "minLength": 1,
+                                    "description": "The request's identifier. The same value is in every error body; quote it to support."
+                                }
+                            },
+                            "ETag": {
+                                "description": "The version's current ETag; send it as `If-Match` to change it.",
+                                "schema": {
+                                    "type": "string",
+                                    "maxLength": 256,
+                                    "minLength": 2,
+                                    "description": "The version's current ETag; send it as `If-Match` to change it."
+                                },
+                                "required": true,
+                                "examples": {
+                                    "UpdateDraftVersion_example1": {
+                                        "summary": "Change the instructions and clear the identity",
+                                        "description": "",
+                                        "value": "\"draft-42\""
+                                    }
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UpdateDraftVersionResponseContent"
+                                },
+                                "examples": {
+                                    "UpdateDraftVersion_example1": {
+                                        "summary": "Change the instructions and clear the identity",
+                                        "description": "",
+                                        "value": {
+                                            "agentId": "GHT7YRWXPL",
+                                            "name": "draft",
+                                            "matchesProduction": false,
+                                            "createdAt": "2026-11-02T03:04:05.000Z",
+                                            "configuration": {
+                                                "instructions": "Answer leave and pay questions. Quote the policy clause you relied on.",
+                                                "model": "claude-sonnet-5-5"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "PermissionDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PermissionDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "NotFoundError 404 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NotFoundErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "412": {
+                        "description": "PreconditionFailedError 412 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PreconditionFailedErrorResponseContent"
+                                },
+                                "examples": {
+                                    "UpdateDraftVersion_example2": {
+                                        "summary": "The draft changed since it was read",
+                                        "description": "",
+                                        "value": {
+                                            "type": "https://build.caitlyn.ai/errors/PRECONDITION_FAILED",
+                                            "title": "The resource has changed",
+                                            "status": 412,
+                                            "code": "PRECONDITION_FAILED",
+                                            "detail": "The draft of agent GHT7YRWXPL changed since you read it. Read it again and reapply your change.",
+                                            "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B5Y"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "PreconditionRequiredError 428 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PreconditionRequiredErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "TooManyRequestsError 429 response",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds to wait before trying again, from the `Retry-After` header.",
+                                "schema": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "Seconds to wait before trying again, from the `Retry-After` header."
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TooManyRequestsErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "ServiceUnavailableError 503 response",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds to wait before trying again, from the `Retry-After` header.",
+                                "schema": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "Seconds to wait before trying again, from the `Retry-After` header."
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServiceUnavailableErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v3/agents/{agentId}/versions/{version}": {
+            "get": {
+                "description": "Gets one version of an agent, with its full configuration and its ETag.\n\n`version` is `draft`, `production` or the name of a pinned or published version. Production is\nreadable by everyone with access to the agent; the draft and pinned versions only by the people\nand groups on the agent's version access grant, and anyone else gets 404.",
+                "operationId": "GetAgentVersion",
+                "parameters": [
+                    {
+                        "name": "agentId",
+                        "in": "path",
+                        "description": "The agent's identifier.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "description": "The agent's identifier."
+                        },
+                        "required": true,
+                        "examples": {
+                            "GetAgentVersion_example1": {
+                                "summary": "Read the draft before editing it",
+                                "description": "",
+                                "value": "GHT7YRWXPL"
+                            },
+                            "GetAgentVersion_example2": {
+                                "summary": "A version name that does not exist, or that the caller may not see",
+                                "description": "",
+                                "value": "GHT7YRWXPL"
+                            }
+                        }
+                    },
+                    {
+                        "name": "version",
+                        "in": "path",
+                        "description": "`draft`, `production` or a version name.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 63,
+                            "minLength": 1,
+                            "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$",
+                            "description": "`draft`, `production` or a version name."
+                        },
+                        "required": true,
+                        "examples": {
+                            "GetAgentVersion_example1": {
+                                "summary": "Read the draft before editing it",
+                                "description": "",
+                                "value": "draft"
+                            },
+                            "GetAgentVersion_example2": {
+                                "summary": "A version name that does not exist, or that the caller may not see",
+                                "description": "",
+                                "value": "v99"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "GetAgentVersion 200 response",
+                        "headers": {
+                            "Caitlyn-Api-Version": {
+                                "description": "The server's model version, for example `5.120.0`. The SDKs keep the latest value they have\nseen and refuse to call operations or send members newer than it.",
+                                "schema": {
+                                    "type": "string",
+                                    "maxLength": 32,
+                                    "minLength": 5,
+                                    "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+                                    "description": "The server's model version, for example `5.120.0`. The SDKs keep the latest value they have\nseen and refuse to call operations or send members newer than it."
+                                }
+                            },
+                            "Caitlyn-Request-Id": {
+                                "description": "The request's identifier. The same value is in every error body; quote it to support.",
+                                "schema": {
+                                    "type": "string",
+                                    "maxLength": 128,
+                                    "minLength": 1,
+                                    "description": "The request's identifier. The same value is in every error body; quote it to support."
+                                }
+                            },
+                            "ETag": {
+                                "description": "The version's current ETag; send it as `If-Match` to change it.",
+                                "schema": {
+                                    "type": "string",
+                                    "maxLength": 256,
+                                    "minLength": 2,
+                                    "description": "The version's current ETag; send it as `If-Match` to change it."
+                                },
+                                "required": true,
+                                "examples": {
+                                    "GetAgentVersion_example1": {
+                                        "summary": "Read the draft before editing it",
+                                        "description": "",
+                                        "value": "\"draft-41\""
+                                    }
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GetAgentVersionResponseContent"
+                                },
+                                "examples": {
+                                    "GetAgentVersion_example1": {
+                                        "summary": "Read the draft before editing it",
+                                        "description": "",
+                                        "value": {
+                                            "agentId": "GHT7YRWXPL",
+                                            "name": "draft",
+                                            "matchesProduction": false,
+                                            "createdAt": "2026-11-02T03:04:05.000Z",
+                                            "configuration": {
+                                                "identity": "You are the HR assistant for Harbour Freight staff.",
+                                                "instructions": "Answer leave and pay questions from the HR policy knowledge base.",
+                                                "model": "claude-sonnet-5-5",
+                                                "knowledgeBases": [
+                                                    {
+                                                        "knowledgeBaseId": "KB4T7YQ2WL",
+                                                        "numberOfResults": 8,
+                                                        "minimumScore": 0.3
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "PermissionDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PermissionDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "NotFoundError 404 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NotFoundErrorResponseContent"
+                                },
+                                "examples": {
+                                    "GetAgentVersion_example2": {
+                                        "summary": "A version name that does not exist, or that the caller may not see",
+                                        "description": "",
+                                        "value": {
+                                            "type": "https://build.caitlyn.ai/errors/NOT_FOUND",
+                                            "title": "Not found",
+                                            "status": 404,
+                                            "code": "NOT_FOUND",
+                                            "detail": "Agent GHT7YRWXPL has no version v99.",
+                                            "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B5X"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "TooManyRequestsError 429 response",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds to wait before trying again, from the `Retry-After` header.",
+                                "schema": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "Seconds to wait before trying again, from the `Retry-After` header."
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TooManyRequestsErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "ServiceUnavailableError 503 response",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds to wait before trying again, from the `Retry-After` header.",
+                                "schema": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "Seconds to wait before trying again, from the `Retry-After` header."
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServiceUnavailableErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v3/conversations/{conversationId}/send": {
+            "post": {
+                "description": "Sends a message and streams the answer as server-sent events.\n\nThe stream ends with exactly one `message.completed` or `message.failed`. If the connection\ndrops, the SDK re-attaches with `ResumeConversationStream` and `Last-Event-ID`, so no event is\nlost or repeated. Not retried automatically: a send that fails before the stream starts is\nreported to the caller.",
+                "operationId": "SendMessage",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SendMessageRequestContent"
+                            },
+                            "examples": {
+                                "SendMessage_example1": {
+                                    "summary": "Ask a question",
+                                    "description": "The answer arrives as a stream of events; the example shows only the request.",
+                                    "value": {
+                                        "message": "How much annual leave do part-time staff get?"
+                                    }
+                                },
+                                "SendMessage_example2": {
+                                    "summary": "A conversation that does not exist, or that the caller may not see",
+                                    "description": "",
+                                    "value": {
+                                        "message": "Hello"
+                                    }
+                                },
+                                "SendMessage_example3": {
+                                    "summary": "An answer is already being written",
+                                    "description": "",
+                                    "value": {
+                                        "message": "And for casual staff?"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "parameters": [
+                    {
+                        "name": "conversationId",
+                        "in": "path",
+                        "description": "The conversation to send to.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "description": "The conversation to send to."
+                        },
+                        "required": true,
+                        "examples": {
+                            "SendMessage_example1": {
+                                "summary": "Ask a question",
+                                "description": "The answer arrives as a stream of events; the example shows only the request.",
+                                "value": "0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47"
+                            },
+                            "SendMessage_example2": {
+                                "summary": "A conversation that does not exist, or that the caller may not see",
+                                "description": "",
+                                "value": "0193a6f2-0000-7000-8000-000000000000"
+                            },
+                            "SendMessage_example3": {
+                                "summary": "An answer is already being written",
+                                "description": "",
+                                "value": "0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SendMessage 200 response",
+                        "headers": {
+                            "Caitlyn-Api-Version": {
+                                "description": "The server's model version, for example `5.120.0`. The SDKs keep the latest value they have\nseen and refuse to call operations or send members newer than it.",
+                                "schema": {
+                                    "type": "string",
+                                    "maxLength": 32,
+                                    "minLength": 5,
+                                    "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+                                    "description": "The server's model version, for example `5.120.0`. The SDKs keep the latest value they have\nseen and refuse to call operations or send members newer than it."
+                                }
+                            },
+                            "Caitlyn-Request-Id": {
+                                "description": "The request's identifier. The same value is in every error body; quote it to support.",
+                                "schema": {
+                                    "type": "string",
+                                    "maxLength": 128,
+                                    "minLength": 1,
+                                    "description": "The request's identifier. The same value is in every error body; quote it to support."
+                                }
+                            }
+                        },
+                        "content": {
+                            "text/event-stream": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SendMessageOutputPayload"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "PermissionDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PermissionDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "NotFoundError 404 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NotFoundErrorResponseContent"
+                                },
+                                "examples": {
+                                    "SendMessage_example2": {
+                                        "summary": "A conversation that does not exist, or that the caller may not see",
+                                        "description": "",
+                                        "value": {
+                                            "type": "https://build.caitlyn.ai/errors/NOT_FOUND",
+                                            "title": "Not found",
+                                            "status": 404,
+                                            "code": "NOT_FOUND",
+                                            "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B60"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "ConflictError 409 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConflictErrorResponseContent"
+                                },
+                                "examples": {
+                                    "SendMessage_example3": {
+                                        "summary": "An answer is already being written",
+                                        "description": "",
+                                        "value": {
+                                            "type": "https://build.caitlyn.ai/errors/CONFLICT",
+                                            "title": "Conflict",
+                                            "status": 409,
+                                            "code": "CONFLICT",
+                                            "detail": "The conversation is still answering the previous message. Wait for it to finish, or resume its stream.",
+                                            "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B61"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "PayloadTooLargeError 413 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PayloadTooLargeErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "TooManyRequestsError 429 response",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds to wait before trying again, from the `Retry-After` header.",
+                                "schema": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "Seconds to wait before trying again, from the `Retry-After` header."
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TooManyRequestsErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "ServiceUnavailableError 503 response",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds to wait before trying again, from the `Retry-After` header.",
+                                "schema": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "Seconds to wait before trying again, from the `Retry-After` header."
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServiceUnavailableErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v3/conversations/{conversationId}/stream": {
+            "get": {
+                "description": "Re-attaches to the answer that is being written, from the event after `Last-Event-ID`.\n\nUsed by the SDKs after a dropped connection; callers rarely need it directly. When no answer is\nbeing written, the stream ends at once.",
+                "operationId": "ResumeConversationStream",
+                "parameters": [
+                    {
+                        "name": "conversationId",
+                        "in": "path",
+                        "description": "The conversation whose answer to re-attach to.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "description": "The conversation whose answer to re-attach to."
+                        },
+                        "required": true,
+                        "examples": {
+                            "ResumeConversationStream_example1": {
+                                "summary": "Resume after a dropped connection",
+                                "description": "The answer arrives as a stream of events; the example shows only the request.",
+                                "value": "0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47"
+                            },
+                            "ResumeConversationStream_example2": {
+                                "summary": "A conversation that does not exist, or that the caller may not see",
+                                "description": "",
+                                "value": "0193a6f2-0000-7000-8000-000000000000"
+                            }
+                        }
+                    },
+                    {
+                        "name": "Last-Event-ID",
+                        "in": "header",
+                        "description": "The `id` of the last event received. Absent means from the start of the answer.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "description": "The `id` of the last event received. Absent means from the start of the answer."
+                        },
+                        "examples": {
+                            "ResumeConversationStream_example1": {
+                                "summary": "Resume after a dropped connection",
+                                "description": "The answer arrives as a stream of events; the example shows only the request.",
+                                "value": "0193a6f2-9b10-7c3d-8e44-1f2a3b4c5d6e"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ResumeConversationStream 200 response",
+                        "headers": {
+                            "Caitlyn-Api-Version": {
+                                "description": "The server's model version, for example `5.120.0`. The SDKs keep the latest value they have\nseen and refuse to call operations or send members newer than it.",
+                                "schema": {
+                                    "type": "string",
+                                    "maxLength": 32,
+                                    "minLength": 5,
+                                    "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+                                    "description": "The server's model version, for example `5.120.0`. The SDKs keep the latest value they have\nseen and refuse to call operations or send members newer than it."
+                                }
+                            },
+                            "Caitlyn-Request-Id": {
+                                "description": "The request's identifier. The same value is in every error body; quote it to support.",
+                                "schema": {
+                                    "type": "string",
+                                    "maxLength": 128,
+                                    "minLength": 1,
+                                    "description": "The request's identifier. The same value is in every error body; quote it to support."
+                                }
+                            }
+                        },
+                        "content": {
+                            "text/event-stream": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ResumeConversationStreamOutputPayload"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "PermissionDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PermissionDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "NotFoundError 404 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NotFoundErrorResponseContent"
+                                },
+                                "examples": {
+                                    "ResumeConversationStream_example2": {
+                                        "summary": "A conversation that does not exist, or that the caller may not see",
+                                        "description": "",
+                                        "value": {
+                                            "type": "https://build.caitlyn.ai/errors/NOT_FOUND",
+                                            "title": "Not found",
+                                            "status": 404,
+                                            "code": "NOT_FOUND",
+                                            "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B62"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "TooManyRequestsError 429 response",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds to wait before trying again, from the `Retry-After` header.",
+                                "schema": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "Seconds to wait before trying again, from the `Retry-After` header."
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TooManyRequestsErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "ServiceUnavailableError 503 response",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds to wait before trying again, from the `Retry-After` header.",
+                                "schema": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "Seconds to wait before trying again, from the `Retry-After` header."
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServiceUnavailableErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v3/knowledge-bases/{knowledgeBaseId}/documents": {
+            "get": {
+                "description": "Lists the documents in a knowledge base, one page at a time.\n\nDocuments are returned in a stable order that does not change between pages. Filters combine\nwith AND. Unlike v2, an unknown filter is refused with 400 `UNKNOWN_FILTER` instead of being\nignored, and the list can be sorted by `name`, `updatedAt` (when the document last changed) and\n`byteSize` on the server; v2 sorts on the client only.",
+                "operationId": "ListDocuments",
+                "parameters": [
+                    {
+                        "name": "knowledgeBaseId",
+                        "in": "path",
+                        "description": "The knowledge base to list.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "description": "The knowledge base to list."
+                        },
+                        "required": true,
+                        "examples": {
+                            "ListDocuments_example1": {
+                                "summary": "List the HR folder's documents that finished indexing",
+                                "description": "",
+                                "value": "KB4T7YQ2WL"
+                            },
+                            "ListDocuments_example2": {
+                                "summary": "A knowledge base that does not exist, or that the caller may not see",
+                                "description": "",
+                                "value": "KBNOPE0000"
+                            }
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "description": "The most documents to return, from 1 to 100. Defaults to 20.",
+                        "schema": {
+                            "type": "number",
+                            "default": 20,
+                            "maximum": 100,
+                            "minimum": 1,
+                            "description": "The most documents to return, from 1 to 100. Defaults to 20."
+                        },
+                        "examples": {
+                            "ListDocuments_example1": {
+                                "summary": "List the HR folder's documents that finished indexing",
+                                "description": "",
+                                "value": 2
+                            }
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "description": "The `nextCursor` from the previous page. Absent for the first page.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 2048,
+                            "minLength": 1,
+                            "description": "The `nextCursor` from the previous page. Absent for the first page."
+                        }
+                    },
+                    {
+                        "name": "sort",
+                        "in": "query",
+                        "description": "The order: `name`, `updatedAt` or `byteSize`, comma-separated, with a leading `-` for\ndescending (for example `-updatedAt`). Any other field is refused with 400 `UNKNOWN_SORT`.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "description": "The order: `name`, `updatedAt` or `byteSize`, comma-separated, with a leading `-` for\ndescending (for example `-updatedAt`). Any other field is refused with 400 `UNKNOWN_SORT`."
+                        }
+                    },
+                    {
+                        "name": "filter[folder][eq]",
+                        "in": "query",
+                        "description": "Only documents directly in this folder.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 1024,
+                            "minLength": 1,
+                            "pattern": "^(/|([^/]+/)+)$",
+                            "description": "Only documents directly in this folder."
+                        },
+                        "examples": {
+                            "ListDocuments_example1": {
+                                "summary": "List the HR folder's documents that finished indexing",
+                                "description": "",
+                                "value": "hr/"
+                            }
+                        }
+                    },
+                    {
+                        "name": "filter[status][eq]",
+                        "in": "query",
+                        "description": "Only documents with this status.",
+                        "schema": {
+                            "$ref": "#/components/schemas/DocumentStatus"
+                        },
+                        "examples": {
+                            "ListDocuments_example1": {
+                                "summary": "List the HR folder's documents that finished indexing",
+                                "description": "",
+                                "value": "indexed"
+                            }
+                        }
+                    },
+                    {
+                        "name": "filter[name][startsWith]",
+                        "in": "query",
+                        "description": "Only documents whose name starts with this text.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 1024,
+                            "minLength": 1,
+                            "description": "Only documents whose name starts with this text."
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ListDocuments 200 response",
+                        "headers": {
+                            "Caitlyn-Api-Version": {
+                                "description": "The server's model version, for example `5.120.0`. The SDKs keep the latest value they have\nseen and refuse to call operations or send members newer than it.",
+                                "schema": {
+                                    "type": "string",
+                                    "maxLength": 32,
+                                    "minLength": 5,
+                                    "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+                                    "description": "The server's model version, for example `5.120.0`. The SDKs keep the latest value they have\nseen and refuse to call operations or send members newer than it."
+                                }
+                            },
+                            "Caitlyn-Request-Id": {
+                                "description": "The request's identifier. The same value is in every error body; quote it to support.",
+                                "schema": {
+                                    "type": "string",
+                                    "maxLength": 128,
+                                    "minLength": 1,
+                                    "description": "The request's identifier. The same value is in every error body; quote it to support."
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ListDocumentsResponseContent"
+                                },
+                                "examples": {
+                                    "ListDocuments_example1": {
+                                        "summary": "List the HR folder's documents that finished indexing",
+                                        "description": "",
+                                        "value": {
+                                            "items": [
+                                                {
+                                                    "id": "doc-3b7f9e21",
+                                                    "knowledgeBaseId": "KB4T7YQ2WL",
+                                                    "name": "Leave policy",
+                                                    "folder": "hr/",
+                                                    "status": "indexed",
+                                                    "contentType": "application/pdf",
+                                                    "byteSize": 482113,
+                                                    "createdAt": "2026-10-01T22:10:00.000Z",
+                                                    "updatedAt": "2026-10-01T22:14:31.000Z"
+                                                }
+                                            ],
+                                            "nextCursor": "c1.MEUCIQDl8z"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "PermissionDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PermissionDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "NotFoundError 404 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NotFoundErrorResponseContent"
+                                },
+                                "examples": {
+                                    "ListDocuments_example2": {
+                                        "summary": "A knowledge base that does not exist, or that the caller may not see",
+                                        "description": "",
+                                        "value": {
+                                            "type": "https://build.caitlyn.ai/errors/NOT_FOUND",
+                                            "title": "Not found",
+                                            "status": 404,
+                                            "code": "NOT_FOUND",
+                                            "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B63"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "TooManyRequestsError 429 response",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds to wait before trying again, from the `Retry-After` header.",
+                                "schema": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "Seconds to wait before trying again, from the `Retry-After` header."
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TooManyRequestsErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "ServiceUnavailableError 503 response",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds to wait before trying again, from the `Retry-After` header.",
+                                "schema": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "Seconds to wait before trying again, from the `Retry-After` header."
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServiceUnavailableErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates a document from an upload; ingestion continues after the response.\n\nReturns 202 with the document in its initial state and the Operation that tracks ingestion, and\n`Location` names the Operation. Needs the files permission, read access to the knowledge base and\naccess to the folder; it does not need update access to the knowledge base, which is for the\nknowledge base's own configuration.",
+                "operationId": "CreateDocument",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateDocumentRequestContent"
+                            },
+                            "examples": {
+                                "CreateDocument_example1": {
+                                    "summary": "Add an uploaded file to the HR folder",
+                                    "description": "",
+                                    "value": {
+                                        "uploadId": "0193a6f2-1111-7a2b-8c3d-4e5f60718293",
+                                        "folder": "hr/",
+                                        "name": "Leave policy"
+                                    }
+                                },
+                                "CreateDocument_example2": {
+                                    "summary": "The upload was already used, or has expired",
+                                    "description": "",
+                                    "value": {
+                                        "uploadId": "0193a6f2-1111-7a2b-8c3d-4e5f60718293",
+                                        "folder": "hr/"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "parameters": [
+                    {
+                        "name": "knowledgeBaseId",
+                        "in": "path",
+                        "description": "The knowledge base to add the document to.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "description": "The knowledge base to add the document to."
+                        },
+                        "required": true,
+                        "examples": {
+                            "CreateDocument_example1": {
+                                "summary": "Add an uploaded file to the HR folder",
+                                "description": "",
+                                "value": "KB4T7YQ2WL"
+                            },
+                            "CreateDocument_example2": {
+                                "summary": "The upload was already used, or has expired",
+                                "description": "",
+                                "value": "KB4T7YQ2WL"
+                            }
+                        }
+                    },
+                    {
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "description": "Makes the request safe to retry. The SDKs generate one per call when the caller does not\nsupply one.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "description": "Makes the request safe to retry. The SDKs generate one per call when the caller does not\nsupply one."
+                        },
+                        "examples": {
+                            "CreateDocument_example1": {
+                                "summary": "Add an uploaded file to the HR folder",
+                                "description": "",
+                                "value": "3f0c9a1e-5d2b-4f7a-9c1e-2b8d4a6f0e13"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "CreateDocument 202 response",
+                        "headers": {
+                            "Caitlyn-Api-Version": {
+                                "description": "The server's model version, for example `5.120.0`. The SDKs keep the latest value they have\nseen and refuse to call operations or send members newer than it.",
+                                "schema": {
+                                    "type": "string",
+                                    "maxLength": 32,
+                                    "minLength": 5,
+                                    "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+                                    "description": "The server's model version, for example `5.120.0`. The SDKs keep the latest value they have\nseen and refuse to call operations or send members newer than it."
+                                }
+                            },
+                            "Caitlyn-Request-Id": {
+                                "description": "The request's identifier. The same value is in every error body; quote it to support.",
+                                "schema": {
+                                    "type": "string",
+                                    "maxLength": 128,
+                                    "minLength": 1,
+                                    "description": "The request's identifier. The same value is in every error body; quote it to support."
+                                }
+                            },
+                            "Location": {
+                                "description": "The Operation that tracks ingestion, as `/api/v3/operations/{operationId}`.",
+                                "schema": {
+                                    "type": "string",
+                                    "maxLength": 2048,
+                                    "minLength": 1,
+                                    "description": "The Operation that tracks ingestion, as `/api/v3/operations/{operationId}`."
+                                },
+                                "examples": {
+                                    "CreateDocument_example1": {
+                                        "summary": "Add an uploaded file to the HR folder",
+                                        "description": "",
+                                        "value": "/api/v3/operations/0193a6f2-2222-7b3c-9d4e-5f6071829304"
+                                    }
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CreateDocumentResponseContent"
+                                },
+                                "examples": {
+                                    "CreateDocument_example1": {
+                                        "summary": "Add an uploaded file to the HR folder",
+                                        "description": "",
+                                        "value": {
+                                            "document": {
+                                                "id": "doc-3b7f9e21",
+                                                "knowledgeBaseId": "KB4T7YQ2WL",
+                                                "name": "Leave policy",
+                                                "folder": "hr/",
+                                                "status": "pending",
+                                                "createdAt": "2026-11-10T01:02:03.000Z",
+                                                "updatedAt": "2026-11-10T01:02:03.000Z"
+                                            },
+                                            "operation": {
+                                                "id": "0193a6f2-2222-7b3c-9d4e-5f6071829304",
+                                                "kind": "document_ingestion",
+                                                "status": "queued",
+                                                "createdAt": "2026-11-10T01:02:03.000Z"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "PermissionDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PermissionDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "NotFoundError 404 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NotFoundErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "ConflictError 409 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConflictErrorResponseContent"
+                                },
+                                "examples": {
+                                    "CreateDocument_example2": {
+                                        "summary": "The upload was already used, or has expired",
+                                        "description": "",
+                                        "value": {
+                                            "type": "https://build.caitlyn.ai/errors/CONFLICT",
+                                            "title": "Conflict",
+                                            "status": 409,
+                                            "code": "CONFLICT",
+                                            "detail": "Upload 0193a6f2-1111-7a2b-8c3d-4e5f60718293 has already been used. Reserve a new upload.",
+                                            "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B64"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "UnprocessableContentError 422 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnprocessableContentErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "TooManyRequestsError 429 response",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds to wait before trying again, from the `Retry-After` header.",
+                                "schema": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "Seconds to wait before trying again, from the `Retry-After` header."
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TooManyRequestsErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "ServiceUnavailableError 503 response",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds to wait before trying again, from the `Retry-After` header.",
+                                "schema": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "Seconds to wait before trying again, from the `Retry-After` header."
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServiceUnavailableErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v3/uploads": {
+            "post": {
+                "description": "Reserves a short-lived slot for a file's bytes and returns a presigned URL bound to their\nchecksum.\n\nSend the bytes with `uploadMethod` to `uploadUrl`, with every header in `requiredHeaders`,\nbefore `expiresAt`; then pass the upload's `id` to the operation that uses it. The SDKs'\n`uploads.create(file)` does all of this.",
+                "operationId": "CreateUpload",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateUploadRequestContent"
+                            },
+                            "examples": {
+                                "CreateUpload_example1": {
+                                    "summary": "Reserve an upload for a PDF",
+                                    "description": "",
+                                    "value": {
+                                        "fileName": "leave-policy.pdf",
+                                        "contentType": "application/pdf",
+                                        "byteSize": 482113,
+                                        "sha256": "n4bQgYhMfWWaL+qgxVrQFaO/TxsrC4Is0V1sFbDwCgg="
+                                    }
+                                },
+                                "CreateUpload_example2": {
+                                    "summary": "A file over the size limit",
+                                    "description": "",
+                                    "value": {
+                                        "fileName": "archive.zip",
+                                        "contentType": "application/zip",
+                                        "byteSize": 9000000000,
+                                        "sha256": "n4bQgYhMfWWaL+qgxVrQFaO/TxsrC4Is0V1sFbDwCgg="
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "parameters": [
+                    {
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "description": "Makes the request safe to retry. The SDKs generate one per call when the caller does not\nsupply one.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "description": "Makes the request safe to retry. The SDKs generate one per call when the caller does not\nsupply one."
+                        },
+                        "examples": {
+                            "CreateUpload_example1": {
+                                "summary": "Reserve an upload for a PDF",
+                                "description": "",
+                                "value": "9b1d4e2a-7c3f-4a8e-b5d6-0e1f2a3b4c5d"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "CreateUpload 201 response",
+                        "headers": {
+                            "Caitlyn-Api-Version": {
+                                "description": "The server's model version, for example `5.120.0`. The SDKs keep the latest value they have\nseen and refuse to call operations or send members newer than it.",
+                                "schema": {
+                                    "type": "string",
+                                    "maxLength": 32,
+                                    "minLength": 5,
+                                    "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+                                    "description": "The server's model version, for example `5.120.0`. The SDKs keep the latest value they have\nseen and refuse to call operations or send members newer than it."
+                                }
+                            },
+                            "Caitlyn-Request-Id": {
+                                "description": "The request's identifier. The same value is in every error body; quote it to support.",
+                                "schema": {
+                                    "type": "string",
+                                    "maxLength": 128,
+                                    "minLength": 1,
+                                    "description": "The request's identifier. The same value is in every error body; quote it to support."
+                                }
+                            },
+                            "Location": {
+                                "description": "The upload, as `/api/v3/uploads/{uploadId}`.",
+                                "schema": {
+                                    "type": "string",
+                                    "maxLength": 2048,
+                                    "minLength": 1,
+                                    "description": "The upload, as `/api/v3/uploads/{uploadId}`."
+                                },
+                                "examples": {
+                                    "CreateUpload_example1": {
+                                        "summary": "Reserve an upload for a PDF",
+                                        "description": "",
+                                        "value": "/api/v3/uploads/0193a6f2-1111-7a2b-8c3d-4e5f60718293"
+                                    }
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CreateUploadResponseContent"
+                                },
+                                "examples": {
+                                    "CreateUpload_example1": {
+                                        "summary": "Reserve an upload for a PDF",
+                                        "description": "",
+                                        "value": {
+                                            "id": "0193a6f2-1111-7a2b-8c3d-4e5f60718293",
+                                            "uploadUrl": "https://uploads.example.com/0193a6f2-1111-7a2b-8c3d-4e5f60718293?signature=abc",
+                                            "uploadMethod": "PUT",
+                                            "requiredHeaders": {
+                                                "Content-Type": "application/pdf"
+                                            },
+                                            "expiresAt": "2026-11-10T01:17:03.000Z",
+                                            "status": "awaiting_bytes"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationError 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "UnauthenticatedError 401 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnauthenticatedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "PermissionDeniedError 403 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PermissionDeniedErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "ConflictError 409 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConflictErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "PayloadTooLargeError 413 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PayloadTooLargeErrorResponseContent"
+                                },
+                                "examples": {
+                                    "CreateUpload_example2": {
+                                        "summary": "A file over the size limit",
+                                        "description": "",
+                                        "value": {
+                                            "type": "https://build.caitlyn.ai/errors/PAYLOAD_TOO_LARGE",
+                                            "title": "Payload too large",
+                                            "status": 413,
+                                            "code": "PAYLOAD_TOO_LARGE",
+                                            "detail": "Files can be at most 500 MB.",
+                                            "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B65"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "UnprocessableContentError 422 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnprocessableContentErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "TooManyRequestsError 429 response",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds to wait before trying again, from the `Retry-After` header.",
+                                "schema": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "Seconds to wait before trying again, from the `Retry-After` header."
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TooManyRequestsErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "InternalError 500 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InternalErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "ServiceUnavailableError 503 response",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds to wait before trying again, from the `Retry-After` header.",
+                                "schema": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "description": "Seconds to wait before trying again, from the `Retry-After` header."
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServiceUnavailableErrorResponseContent"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "AgentConfiguration": {
+                "type": "object",
+                "description": "An agent version's configuration.",
+                "properties": {
+                    "identity": {
+                        "type": "string",
+                        "maxLength": 4000,
+                        "minLength": 0,
+                        "description": "The agent's identity statement. Absent when it was never set or was cleared."
+                    },
+                    "instructions": {
+                        "type": "string",
+                        "default": "",
+                        "maxLength": 100000,
+                        "minLength": 0,
+                        "description": "The agent's instructions. Empty when none are set."
+                    },
+                    "model": {
+                        "type": "string",
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "description": "The model the agent answers with."
+                    },
+                    "knowledgeBases": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/KnowledgeBaseBinding"
+                        },
+                        "maxItems": 50,
+                        "description": "The knowledge bases the agent searches, in no particular order."
+                    },
+                    "attachments": {
+                        "$ref": "#/components/schemas/AttachmentSettings"
+                    },
+                    "contentSafety": {
+                        "$ref": "#/components/schemas/ContentSafety"
+                    },
+                    "deniedDocuments": {
+                        "type": "boolean",
+                        "description": "When true, the answer stream tells the caller which documents were withheld from them.\nDefaults to false."
+                    }
+                },
+                "required": [
+                    "instructions"
+                ]
+            },
+            "AttachmentSettings": {
+                "type": "object",
+                "description": "Chat attachment settings.",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "Whether people may attach files in chat. Defaults to false."
+                    },
+                    "maxFiles": {
+                        "type": "number",
+                        "maximum": 20,
+                        "minimum": 1,
+                        "description": "The most files one message may carry, from 1 to 20."
+                    }
+                }
+            },
+            "ClearableDraftField": {
+                "type": "string",
+                "description": "The draft members that can be cleared. Open: an older SDK may send a newer value as a string.",
+                "enum": [
+                    "identity"
+                ]
+            },
+            "ConflictErrorResponseContent": {
+                "type": "object",
+                "description": "The resource's state does not allow the request, a unique name is taken, or a request with the\nsame idempotency key is still in progress.",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "minLength": 1,
+                        "description": "A stable URI for the code: its page in the public error reference,\n`https://build.caitlyn.ai/errors/{code}`."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "A short, human-readable summary of the problem, the same for every occurrence of the code."
+                    },
+                    "status": {
+                        "type": "number",
+                        "maximum": 599,
+                        "minimum": 100,
+                        "description": "The HTTP status code, repeated from the response."
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z][A-Z0-9_]{0,62}$",
+                        "description": "The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never\nrenamed; callers match on it."
+                    },
+                    "detail": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "What went wrong in this occurrence, written for the integrator. Never holds stack traces,\nstorage keys or another person's data."
+                    },
+                    "requestId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to\nsupport."
+                    },
+                    "errors": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FieldError"
+                        },
+                        "description": "Field-level problems, one per member or parameter at fault. Present only on 400\n`VALIDATION_FAILED`."
+                    }
+                },
+                "required": [
+                    "code",
+                    "requestId",
+                    "status",
+                    "title",
+                    "type"
+                ]
+            },
+            "ContentSafety": {
+                "type": "object",
+                "description": "The content safety setting on a version.",
+                "properties": {
+                    "guardrailId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The guardrail applied, from the guardrails list. Absent means none."
+                    }
+                }
+            },
+            "ContextItem": {
+                "type": "object",
+                "description": "One item of structured context, for example the page or record the person is looking at.",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "minLength": 1,
+                        "description": "What kind of thing the item describes, for example `page`."
+                    },
+                    "label": {
+                        "type": "string",
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "description": "A short label the agent can refer to."
+                    },
+                    "uri": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "Where the item lives, when it has an address."
+                    },
+                    "data": {
+                        "description": "The item's data, as JSON. Counts towards the 16 KB limit."
+                    }
+                },
+                "required": [
+                    "label",
+                    "type"
+                ]
+            },
+            "CreateDocumentRequestContent": {
+                "type": "object",
+                "properties": {
+                    "uploadId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The upload holding the document's bytes. Each upload can be used once."
+                    },
+                    "folder": {
+                        "type": "string",
+                        "maxLength": 1024,
+                        "minLength": 1,
+                        "pattern": "^(/|([^/]+/)+)$",
+                        "description": "The folder to put the document in."
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 1024,
+                        "minLength": 1,
+                        "description": "The document's name. Absent means the uploaded file's name."
+                    }
+                },
+                "required": [
+                    "folder",
+                    "uploadId"
+                ]
+            },
+            "CreateDocumentResponseContent": {
+                "type": "object",
+                "description": "Headers every v3 response carries. Every operation output uses this mixin.",
+                "properties": {
+                    "document": {
+                        "$ref": "#/components/schemas/Document"
+                    },
+                    "operation": {
+                        "$ref": "#/components/schemas/Operation"
+                    }
+                },
+                "required": [
+                    "document",
+                    "operation"
+                ]
+            },
+            "CreateUploadRequestContent": {
+                "type": "object",
+                "properties": {
+                    "fileName": {
+                        "type": "string",
+                        "maxLength": 1024,
+                        "minLength": 1,
+                        "description": "The file's name on the caller's machine."
+                    },
+                    "contentType": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "minLength": 3,
+                        "description": "The file's media type."
+                    },
+                    "byteSize": {
+                        "type": "number",
+                        "minimum": 1,
+                        "description": "The file's size in bytes."
+                    },
+                    "sha256": {
+                        "type": "string",
+                        "maxLength": 44,
+                        "minLength": 44,
+                        "pattern": "^[A-Za-z0-9+/]{43}=$",
+                        "description": "The base64-encoded SHA-256 of the file's bytes. The upload URL accepts only these bytes."
+                    }
+                },
+                "required": [
+                    "byteSize",
+                    "contentType",
+                    "fileName",
+                    "sha256"
+                ]
+            },
+            "CreateUploadResponseContent": {
+                "type": "object",
+                "description": "Headers every v3 response carries. Every operation output uses this mixin.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The upload's identifier, passed to the operation that uses it."
+                    },
+                    "uploadUrl": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "Where to send the bytes. Expires at `expiresAt`."
+                    },
+                    "uploadMethod": {
+                        "type": "string",
+                        "maxLength": 16,
+                        "minLength": 3,
+                        "pattern": "^[A-Z]+$",
+                        "description": "The HTTP method to send the bytes with, usually `PUT`."
+                    },
+                    "requiredHeaders": {
+                        "$ref": "#/components/schemas/HeaderMap"
+                    },
+                    "expiresAt": {
+                        "type": "string",
+                        "description": "When the upload URL stops working.",
+                        "format": "date-time"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/UploadStatus"
+                    }
+                },
+                "required": [
+                    "expiresAt",
+                    "id",
+                    "requiredHeaders",
+                    "status",
+                    "uploadMethod",
+                    "uploadUrl"
+                ]
+            },
+            "Document": {
+                "type": "object",
+                "description": "One document in a knowledge base, stable across new uploads of new bytes.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The document's identifier."
+                    },
+                    "knowledgeBaseId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The knowledge base the document is in."
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 1024,
+                        "minLength": 1,
+                        "description": "The document's name, as people see it."
+                    },
+                    "folder": {
+                        "type": "string",
+                        "maxLength": 1024,
+                        "minLength": 1,
+                        "pattern": "^(/|([^/]+/)+)$",
+                        "description": "The folder the document is in."
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/DocumentStatus"
+                    },
+                    "stage": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "While `processing`, what the server is doing, for display only."
+                    },
+                    "contentType": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "minLength": 3,
+                        "description": "The media type of the current bytes."
+                    },
+                    "byteSize": {
+                        "type": "number",
+                        "minimum": 0,
+                        "description": "The size of the current bytes, in bytes."
+                    },
+                    "sha256": {
+                        "type": "string",
+                        "maxLength": 44,
+                        "minLength": 44,
+                        "pattern": "^[A-Za-z0-9+/]{43}=$",
+                        "description": "The base64-encoded SHA-256 of the current bytes."
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "description": "When the document was created.",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "description": "When the document or its bytes last changed.",
+                        "format": "date-time"
+                    },
+                    "partialFailures": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PartialFailure"
+                        },
+                        "maxItems": 100,
+                        "description": "Enrichments that did not complete (a picture description, metadata extraction, a table).\nThey never fail the document. At most the first 100."
+                    }
+                },
+                "required": [
+                    "createdAt",
+                    "folder",
+                    "id",
+                    "knowledgeBaseId",
+                    "name",
+                    "status",
+                    "updatedAt"
+                ]
+            },
+            "DocumentStatus": {
+                "type": "string",
+                "description": "Where a document is in its lifecycle. Open: new values may be added. `indexed`,\n`partially_indexed` and `failed` are final.",
+                "enum": [
+                    "pending",
+                    "processing",
+                    "indexed",
+                    "partially_indexed",
+                    "failed",
+                    "deleting"
+                ]
+            },
+            "FieldError": {
+                "type": "object",
+                "description": "One problem with one request member or query parameter.",
+                "properties": {
+                    "pointer": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "A JSON Pointer (RFC 6901) into the request body, for example `/context/0/label`. Absent when\nthe problem is with a query parameter."
+                    },
+                    "parameter": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "The query parameter at fault, for example `filter[staus][eq]`. Absent when the problem is in\nthe body."
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z][A-Z0-9_]{0,62}$",
+                        "description": "The code for this field's problem, from the same catalogue as the response's own code."
+                    },
+                    "detail": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "What is wrong with the field, written for the integrator."
+                    }
+                },
+                "required": [
+                    "code"
+                ]
+            },
+            "GetAgentVersionResponseContent": {
+                "type": "object",
+                "description": "Headers every v3 response carries. Every operation output uses this mixin.",
+                "properties": {
+                    "agentId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The agent the version belongs to."
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 63,
+                        "minLength": 1,
+                        "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$",
+                        "description": "`draft`, `production` or the version's name."
+                    },
+                    "source": {
+                        "$ref": "#/components/schemas/VersionSource"
+                    },
+                    "basedOn": {
+                        "type": "string",
+                        "maxLength": 63,
+                        "minLength": 1,
+                        "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$",
+                        "description": "The version this one was made from, where there is one."
+                    },
+                    "matchesProduction": {
+                        "type": "boolean",
+                        "description": "True when this version's configuration is the one production currently answers with.\nDefaults to false."
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "description": "When the version was made; for the draft, when it was first created.",
+                        "format": "date-time"
+                    },
+                    "note": {
+                        "type": "string",
+                        "maxLength": 2000,
+                        "minLength": 0,
+                        "description": "The note written when the version was pinned or published."
+                    },
+                    "configuration": {
+                        "$ref": "#/components/schemas/AgentConfiguration"
+                    }
+                },
+                "required": [
+                    "agentId",
+                    "configuration",
+                    "createdAt",
+                    "name"
+                ]
+            },
+            "HeaderMap": {
+                "type": "object",
+                "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "minLength": 0,
+                    "description": "An HTTP header value."
+                },
+                "propertyNames": {
+                    "type": "string",
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "description": "An HTTP header name."
+                },
+                "description": "A map of HTTP header names to values."
+            },
+            "InternalErrorResponseContent": {
+                "type": "object",
+                "description": "An unexpected server failure. Not retried by the SDKs.",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "minLength": 1,
+                        "description": "A stable URI for the code: its page in the public error reference,\n`https://build.caitlyn.ai/errors/{code}`."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "A short, human-readable summary of the problem, the same for every occurrence of the code."
+                    },
+                    "status": {
+                        "type": "number",
+                        "maximum": 599,
+                        "minimum": 100,
+                        "description": "The HTTP status code, repeated from the response."
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z][A-Z0-9_]{0,62}$",
+                        "description": "The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never\nrenamed; callers match on it."
+                    },
+                    "detail": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "What went wrong in this occurrence, written for the integrator. Never holds stack traces,\nstorage keys or another person's data."
+                    },
+                    "requestId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to\nsupport."
+                    },
+                    "errors": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FieldError"
+                        },
+                        "description": "Field-level problems, one per member or parameter at fault. Present only on 400\n`VALIDATION_FAILED`."
+                    }
+                },
+                "required": [
+                    "code",
+                    "requestId",
+                    "status",
+                    "title",
+                    "type"
+                ]
+            },
+            "KnowledgeBaseBinding": {
+                "type": "object",
+                "description": "One knowledge base an agent searches, and how.",
+                "properties": {
+                    "knowledgeBaseId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The knowledge base searched."
+                    },
+                    "numberOfResults": {
+                        "type": "number",
+                        "maximum": 100,
+                        "minimum": 1,
+                        "description": "How many passages to retrieve per search, from 1 to 100. Absent means the server default."
+                    },
+                    "minimumScore": {
+                        "type": "number",
+                        "maximum": 1,
+                        "minimum": 0,
+                        "description": "The lowest relevance score a passage needs to be used, from 0 to 1. Absent means the server\ndefault.",
+                        "format": "float"
+                    }
+                },
+                "required": [
+                    "knowledgeBaseId"
+                ]
+            },
+            "ListDocumentsResponseContent": {
+                "type": "object",
+                "description": "Headers every v3 response carries. Every operation output uses this mixin.",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Document"
+                        },
+                        "description": "This page of documents."
+                    },
+                    "nextCursor": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "minLength": 1,
+                        "description": "The cursor for the next page. Absent on the last page."
+                    }
+                },
+                "required": [
+                    "items"
+                ]
+            },
+            "NotFoundErrorResponseContent": {
+                "type": "object",
+                "description": "The record does not exist, or the caller may not see it. The two are deliberately the same, so\nidentifiers cannot be probed.",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "minLength": 1,
+                        "description": "A stable URI for the code: its page in the public error reference,\n`https://build.caitlyn.ai/errors/{code}`."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "A short, human-readable summary of the problem, the same for every occurrence of the code."
+                    },
+                    "status": {
+                        "type": "number",
+                        "maximum": 599,
+                        "minimum": 100,
+                        "description": "The HTTP status code, repeated from the response."
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z][A-Z0-9_]{0,62}$",
+                        "description": "The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never\nrenamed; callers match on it."
+                    },
+                    "detail": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "What went wrong in this occurrence, written for the integrator. Never holds stack traces,\nstorage keys or another person's data."
+                    },
+                    "requestId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to\nsupport."
+                    },
+                    "errors": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FieldError"
+                        },
+                        "description": "Field-level problems, one per member or parameter at fault. Present only on 400\n`VALIDATION_FAILED`."
+                    }
+                },
+                "required": [
+                    "code",
+                    "requestId",
+                    "status",
+                    "title",
+                    "type"
+                ]
+            },
+            "Operation": {
+                "type": "object",
+                "description": "Background work that continues after the request that started it. Read it, wait on it or watch\nit; never start the work again to find out how it went.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The Operation's identifier."
+                    },
+                    "kind": {
+                        "$ref": "#/components/schemas/OperationKind"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/OperationStatus"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "description": "When the work was requested.",
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "createdAt",
+                    "id",
+                    "kind",
+                    "status"
+                ]
+            },
+            "OperationKind": {
+                "type": "string",
+                "description": "What kind of work an Operation is. Open: one value per kind of work, added as kinds are\nmodelled.",
+                "enum": [
+                    "document_ingestion"
+                ]
+            },
+            "OperationStatus": {
+                "type": "string",
+                "description": "Where an Operation is. Open: new values may be added. `succeeded`, `succeeded_with_failures`,\n`failed` and `cancelled` are final.",
+                "enum": [
+                    "queued",
+                    "running",
+                    "succeeded",
+                    "succeeded_with_failures",
+                    "failed",
+                    "cancelled"
+                ]
+            },
+            "PartialFailure": {
+                "type": "object",
+                "description": "An enrichment that did not complete. It never fails the document.",
+                "properties": {
+                    "targetId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The part of the document the enrichment was for, where there is one."
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z][A-Z0-9_]{0,62}$",
+                        "description": "What went wrong, as a stable code."
+                    },
+                    "detail": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "What went wrong, written for the integrator."
+                    }
+                },
+                "required": [
+                    "code"
+                ]
+            },
+            "PayloadTooLargeErrorResponseContent": {
+                "type": "object",
+                "description": "The body, a file or the send `context` is over its documented limit.",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "minLength": 1,
+                        "description": "A stable URI for the code: its page in the public error reference,\n`https://build.caitlyn.ai/errors/{code}`."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "A short, human-readable summary of the problem, the same for every occurrence of the code."
+                    },
+                    "status": {
+                        "type": "number",
+                        "maximum": 599,
+                        "minimum": 100,
+                        "description": "The HTTP status code, repeated from the response."
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z][A-Z0-9_]{0,62}$",
+                        "description": "The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never\nrenamed; callers match on it."
+                    },
+                    "detail": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "What went wrong in this occurrence, written for the integrator. Never holds stack traces,\nstorage keys or another person's data."
+                    },
+                    "requestId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to\nsupport."
+                    },
+                    "errors": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FieldError"
+                        },
+                        "description": "Field-level problems, one per member or parameter at fault. Present only on 400\n`VALIDATION_FAILED`."
+                    }
+                },
+                "required": [
+                    "code",
+                    "requestId",
+                    "status",
+                    "title",
+                    "type"
+                ]
+            },
+            "PermissionDeniedErrorResponseContent": {
+                "type": "object",
+                "description": "The caller may not call this operation: it lacks the permission, its credential type may not\ncall it, or the operation is served only on the organisation's primary workspace. Decided before\nany record is read. A record the caller may not see is 404 instead.",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "minLength": 1,
+                        "description": "A stable URI for the code: its page in the public error reference,\n`https://build.caitlyn.ai/errors/{code}`."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "A short, human-readable summary of the problem, the same for every occurrence of the code."
+                    },
+                    "status": {
+                        "type": "number",
+                        "maximum": 599,
+                        "minimum": 100,
+                        "description": "The HTTP status code, repeated from the response."
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z][A-Z0-9_]{0,62}$",
+                        "description": "The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never\nrenamed; callers match on it."
+                    },
+                    "detail": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "What went wrong in this occurrence, written for the integrator. Never holds stack traces,\nstorage keys or another person's data."
+                    },
+                    "requestId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to\nsupport."
+                    },
+                    "errors": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FieldError"
+                        },
+                        "description": "Field-level problems, one per member or parameter at fault. Present only on 400\n`VALIDATION_FAILED`."
+                    }
+                },
+                "required": [
+                    "code",
+                    "requestId",
+                    "status",
+                    "title",
+                    "type"
+                ]
+            },
+            "PreconditionFailedErrorResponseContent": {
+                "type": "object",
+                "description": "`If-Match` does not match the resource's current ETag: it changed since the caller read it.",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "minLength": 1,
+                        "description": "A stable URI for the code: its page in the public error reference,\n`https://build.caitlyn.ai/errors/{code}`."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "A short, human-readable summary of the problem, the same for every occurrence of the code."
+                    },
+                    "status": {
+                        "type": "number",
+                        "maximum": 599,
+                        "minimum": 100,
+                        "description": "The HTTP status code, repeated from the response."
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z][A-Z0-9_]{0,62}$",
+                        "description": "The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never\nrenamed; callers match on it."
+                    },
+                    "detail": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "What went wrong in this occurrence, written for the integrator. Never holds stack traces,\nstorage keys or another person's data."
+                    },
+                    "requestId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to\nsupport."
+                    },
+                    "errors": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FieldError"
+                        },
+                        "description": "Field-level problems, one per member or parameter at fault. Present only on 400\n`VALIDATION_FAILED`."
+                    }
+                },
+                "required": [
+                    "code",
+                    "requestId",
+                    "status",
+                    "title",
+                    "type"
+                ]
+            },
+            "PreconditionRequiredErrorResponseContent": {
+                "type": "object",
+                "description": "The update sent no `If-Match` header; read the resource and send its ETag.",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "minLength": 1,
+                        "description": "A stable URI for the code: its page in the public error reference,\n`https://build.caitlyn.ai/errors/{code}`."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "A short, human-readable summary of the problem, the same for every occurrence of the code."
+                    },
+                    "status": {
+                        "type": "number",
+                        "maximum": 599,
+                        "minimum": 100,
+                        "description": "The HTTP status code, repeated from the response."
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z][A-Z0-9_]{0,62}$",
+                        "description": "The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never\nrenamed; callers match on it."
+                    },
+                    "detail": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "What went wrong in this occurrence, written for the integrator. Never holds stack traces,\nstorage keys or another person's data."
+                    },
+                    "requestId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to\nsupport."
+                    },
+                    "errors": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FieldError"
+                        },
+                        "description": "Field-level problems, one per member or parameter at fault. Present only on 400\n`VALIDATION_FAILED`."
+                    }
+                },
+                "required": [
+                    "code",
+                    "requestId",
+                    "status",
+                    "title",
+                    "type"
+                ]
+            },
+            "ResumeConversationStreamOutputPayload": {
+                "type": "string",
+                "description": "The rest of the answer, as a stream of `ConversationEvent` events.",
+                "contentEncoding": "byte",
+                "contentMediaType": "text/event-stream"
+            },
+            "SendMessageOutputPayload": {
+                "type": "string",
+                "description": "The answer, as a stream of `ConversationEvent` events.",
+                "contentEncoding": "byte",
+                "contentMediaType": "text/event-stream"
+            },
+            "SendMessageRequestContent": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "maxLength": 32000,
+                        "minLength": 1,
+                        "description": "The message, at most 32,000 characters."
+                    },
+                    "context": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ContextItem"
+                        },
+                        "maxItems": 20,
+                        "description": "Structured context for this message only, at most 20 items and 16 KB in total. Not\nstored on the conversation."
+                    }
+                },
+                "required": [
+                    "message"
+                ]
+            },
+            "ServiceUnavailableErrorResponseContent": {
+                "type": "object",
+                "description": "A dependency is briefly unavailable, or the request's audit event could not be recorded; wait for\n`Retry-After` and try again.",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "minLength": 1,
+                        "description": "A stable URI for the code: its page in the public error reference,\n`https://build.caitlyn.ai/errors/{code}`."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "A short, human-readable summary of the problem, the same for every occurrence of the code."
+                    },
+                    "status": {
+                        "type": "number",
+                        "maximum": 599,
+                        "minimum": 100,
+                        "description": "The HTTP status code, repeated from the response."
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z][A-Z0-9_]{0,62}$",
+                        "description": "The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never\nrenamed; callers match on it."
+                    },
+                    "detail": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "What went wrong in this occurrence, written for the integrator. Never holds stack traces,\nstorage keys or another person's data."
+                    },
+                    "requestId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to\nsupport."
+                    },
+                    "errors": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FieldError"
+                        },
+                        "description": "Field-level problems, one per member or parameter at fault. Present only on 400\n`VALIDATION_FAILED`."
+                    }
+                },
+                "required": [
+                    "code",
+                    "requestId",
+                    "status",
+                    "title",
+                    "type"
+                ]
+            },
+            "TooManyRequestsErrorResponseContent": {
+                "type": "object",
+                "description": "Too many requests; wait for `Retry-After` and try again.",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "minLength": 1,
+                        "description": "A stable URI for the code: its page in the public error reference,\n`https://build.caitlyn.ai/errors/{code}`."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "A short, human-readable summary of the problem, the same for every occurrence of the code."
+                    },
+                    "status": {
+                        "type": "number",
+                        "maximum": 599,
+                        "minimum": 100,
+                        "description": "The HTTP status code, repeated from the response."
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z][A-Z0-9_]{0,62}$",
+                        "description": "The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never\nrenamed; callers match on it."
+                    },
+                    "detail": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "What went wrong in this occurrence, written for the integrator. Never holds stack traces,\nstorage keys or another person's data."
+                    },
+                    "requestId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to\nsupport."
+                    },
+                    "errors": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FieldError"
+                        },
+                        "description": "Field-level problems, one per member or parameter at fault. Present only on 400\n`VALIDATION_FAILED`."
+                    }
+                },
+                "required": [
+                    "code",
+                    "requestId",
+                    "status",
+                    "title",
+                    "type"
+                ]
+            },
+            "UnauthenticatedErrorResponseContent": {
+                "type": "object",
+                "description": "No credential was sent, or it is expired or not valid.",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "minLength": 1,
+                        "description": "A stable URI for the code: its page in the public error reference,\n`https://build.caitlyn.ai/errors/{code}`."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "A short, human-readable summary of the problem, the same for every occurrence of the code."
+                    },
+                    "status": {
+                        "type": "number",
+                        "maximum": 599,
+                        "minimum": 100,
+                        "description": "The HTTP status code, repeated from the response."
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z][A-Z0-9_]{0,62}$",
+                        "description": "The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never\nrenamed; callers match on it."
+                    },
+                    "detail": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "What went wrong in this occurrence, written for the integrator. Never holds stack traces,\nstorage keys or another person's data."
+                    },
+                    "requestId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to\nsupport."
+                    },
+                    "errors": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FieldError"
+                        },
+                        "description": "Field-level problems, one per member or parameter at fault. Present only on 400\n`VALIDATION_FAILED`."
+                    }
+                },
+                "required": [
+                    "code",
+                    "requestId",
+                    "status",
+                    "title",
+                    "type"
+                ]
+            },
+            "UnprocessableContentErrorResponseContent": {
+                "type": "object",
+                "description": "The idempotency key was already used with a different request body.",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "minLength": 1,
+                        "description": "A stable URI for the code: its page in the public error reference,\n`https://build.caitlyn.ai/errors/{code}`."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "A short, human-readable summary of the problem, the same for every occurrence of the code."
+                    },
+                    "status": {
+                        "type": "number",
+                        "maximum": 599,
+                        "minimum": 100,
+                        "description": "The HTTP status code, repeated from the response."
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z][A-Z0-9_]{0,62}$",
+                        "description": "The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never\nrenamed; callers match on it."
+                    },
+                    "detail": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "What went wrong in this occurrence, written for the integrator. Never holds stack traces,\nstorage keys or another person's data."
+                    },
+                    "requestId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to\nsupport."
+                    },
+                    "errors": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FieldError"
+                        },
+                        "description": "Field-level problems, one per member or parameter at fault. Present only on 400\n`VALIDATION_FAILED`."
+                    }
+                },
+                "required": [
+                    "code",
+                    "requestId",
+                    "status",
+                    "title",
+                    "type"
+                ]
+            },
+            "UpdateDraftVersionRequestContent": {
+                "type": "object",
+                "properties": {
+                    "identity": {
+                        "type": "string",
+                        "maxLength": 4000,
+                        "minLength": 0,
+                        "description": "The agent's identity statement, at most 4,000 characters."
+                    },
+                    "instructions": {
+                        "type": "string",
+                        "maxLength": 100000,
+                        "minLength": 0,
+                        "description": "The agent's instructions, at most 100,000 characters."
+                    },
+                    "model": {
+                        "type": "string",
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "description": "The model the agent answers with, from the agent models list."
+                    },
+                    "knowledgeBases": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/KnowledgeBaseBinding"
+                        },
+                        "maxItems": 50,
+                        "description": "The knowledge bases the agent searches. Replaces the whole list."
+                    },
+                    "attachments": {
+                        "$ref": "#/components/schemas/AttachmentSettings"
+                    },
+                    "contentSafety": {
+                        "$ref": "#/components/schemas/ContentSafety"
+                    },
+                    "deniedDocuments": {
+                        "type": "boolean",
+                        "description": "When true, the answer stream tells the caller which documents were withheld from them.\nDefaults to false."
+                    },
+                    "clear": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ClearableDraftField"
+                        },
+                        "description": "Draft members to return to their default."
+                    }
+                }
+            },
+            "UpdateDraftVersionResponseContent": {
+                "type": "object",
+                "description": "Headers every v3 response carries. Every operation output uses this mixin.",
+                "properties": {
+                    "agentId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The agent the version belongs to."
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 63,
+                        "minLength": 1,
+                        "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$",
+                        "description": "`draft`, `production` or the version's name."
+                    },
+                    "source": {
+                        "$ref": "#/components/schemas/VersionSource"
+                    },
+                    "basedOn": {
+                        "type": "string",
+                        "maxLength": 63,
+                        "minLength": 1,
+                        "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$",
+                        "description": "The version this one was made from, where there is one."
+                    },
+                    "matchesProduction": {
+                        "type": "boolean",
+                        "description": "True when this version's configuration is the one production currently answers with.\nDefaults to false."
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "description": "When the version was made; for the draft, when it was first created.",
+                        "format": "date-time"
+                    },
+                    "note": {
+                        "type": "string",
+                        "maxLength": 2000,
+                        "minLength": 0,
+                        "description": "The note written when the version was pinned or published."
+                    },
+                    "configuration": {
+                        "$ref": "#/components/schemas/AgentConfiguration"
+                    }
+                },
+                "required": [
+                    "agentId",
+                    "configuration",
+                    "createdAt",
+                    "name"
+                ]
+            },
+            "UploadStatus": {
+                "type": "string",
+                "description": "Where an upload is in its lifecycle. Open: new values may be added. `consumed` and `expired`\nare final.",
+                "enum": [
+                    "awaiting_bytes",
+                    "received",
+                    "consumed",
+                    "expired"
+                ]
+            },
+            "ValidationErrorResponseContent": {
+                "type": "object",
+                "description": "The request is malformed: a member is missing, the wrong type or out of range; it has a member,\nfilter or sort field the operation does not define; or its cursor is not valid for this list.",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "minLength": 1,
+                        "description": "A stable URI for the code: its page in the public error reference,\n`https://build.caitlyn.ai/errors/{code}`."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "A short, human-readable summary of the problem, the same for every occurrence of the code."
+                    },
+                    "status": {
+                        "type": "number",
+                        "maximum": 599,
+                        "minimum": 100,
+                        "description": "The HTTP status code, repeated from the response."
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z][A-Z0-9_]{0,62}$",
+                        "description": "The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never\nrenamed; callers match on it."
+                    },
+                    "detail": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "description": "What went wrong in this occurrence, written for the integrator. Never holds stack traces,\nstorage keys or another person's data."
+                    },
+                    "requestId": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "description": "The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to\nsupport."
+                    },
+                    "errors": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FieldError"
+                        },
+                        "description": "Field-level problems, one per member or parameter at fault. Present only on 400\n`VALIDATION_FAILED`."
+                    }
+                },
+                "required": [
+                    "code",
+                    "requestId",
+                    "status",
+                    "title",
+                    "type"
+                ]
+            },
+            "VersionSource": {
+                "type": "string",
+                "description": "How a version was made. Open: new values may be added.",
+                "enum": [
+                    "pin",
+                    "publish",
+                    "migration",
+                    "import"
+                ]
+            }
+        },
+        "securitySchemes": {
+            "smithy.api.httpBearerAuth": {
+                "type": "http",
+                "description": "HTTP Bearer authentication",
+                "scheme": "Bearer"
+            }
+        }
+    },
+    "security": [
+        {
+            "smithy.api.httpBearerAuth": []
+        }
+    ],
+    "servers": [
+        {
+            "url": "https://{workspace}/api",
+            "variables": {
+                "workspace": {
+                    "default": "your-company.getcaitlyn.ai",
+                    "description": "Your workspace's hostname."
+                }
+            }
+        }
+    ]
+}
