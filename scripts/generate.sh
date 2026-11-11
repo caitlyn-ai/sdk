@@ -9,12 +9,6 @@
 # Generated code is committed: a model change shows up as a reviewable diff.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-# codegen/smithy-build.json reads the generators from file:///work/codegen/build/repo, the path the
-# toolchain image mounts the repository at. CI checks the repository out elsewhere, so link it there.
-if [ "$root" != /work ]; then
-  ln -sfn "$root" /work
-  root=/work
-fi
 cd "$root"
 
 node scripts/prepare-model.mjs
@@ -27,7 +21,11 @@ echo "Compiling the generators"
 rm -rf "${HOME}/.m2/repository/ai/caitlyn" codegen/build/smithy
 
 echo "Running the generators"
-(cd codegen && smithy build --quiet --output build/smithy)
+# smithy-build.json names the generators' file repository as file:///work/codegen/build/repo, the path the
+# toolchain image mounts the repository at. CI checks it out elsewhere, so build from a copy that names
+# this checkout's own path.
+sed "s#file:///work/codegen/build/repo#file://${root}/codegen/build/repo#" codegen/smithy-build.json > codegen/smithy-build.local.json
+(cd codegen && smithy build --quiet --config smithy-build.local.json --output build/smithy)
 out=codegen/build/smithy
 
 echo "TypeScript: typescript/packages/sdk"
