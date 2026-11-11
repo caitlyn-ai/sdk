@@ -698,8 +698,9 @@ final class ServiceGenerator {
             }
             w.l("\n\tcore *core.Client\n}\n\n");
             w.l(Names.comment("NewClient returns a client for workspace (for example \"your-company.getcaitlyn.ai\"), authenticated by auth "
-                    + "(for example caitlyn.Token(\"pat_…\")). Options set the endpoint, the HTTP client, retries and telemetry; "
-                    + "nothing is read from the environment.", ""));
+                    + "(for example caitlyn.Token(\"pat_…\") or caitlyn.ClientCredentials{…}). The workspace sets the endpoint and the token audience, "
+                    + "https://<workspace>/api/v3. Options set the endpoint, the HTTP client, retries and telemetry; "
+                    + "nothing is read from the environment, except by caitlyn.AWSIAM sign-in.", ""));
             w.l("func NewClient(workspace string, auth Auth, opts ...Option) (*Client, error) {\n");
             w.l("\tcc, err := core.NewClient(core.SDKInfo{Version: SDKVersion, ModelVersion: ModelVersion}, workspace, auth, opts...)\n");
             w.l("\tif err != nil {\n\t\treturn nil, err\n\t}\n\tc := &Client{core: cc}\n");
@@ -711,6 +712,9 @@ final class ServiceGenerator {
             w.l("func (c *Client) ServerVersion() string { return c.core.ServerVersion() }\n\n");
             w.l("// Endpoint is the base URL requests are sent to: https://<workspace>/api, or the WithEndpoint value.\n");
             w.l("func (c *Client) Endpoint() string { return c.core.Endpoint() }\n\n");
+            w.l("// Auth is the client's sign-in: its mode and token, and the OAuth mode's steps (AuthorizationURL,\n");
+            w.l("// HandleCallback, SignOut).\n");
+            w.l("func (c *Client) Auth() *AuthSession { return c.core.Auth() }\n\n");
             for (Map.Entry<String, List<OperationInfo>> e : byNamespace.entrySet()) {
                 List<String> methods = new ArrayList<>();
                 for (OperationInfo o : e.getValue()) {
@@ -738,7 +742,7 @@ final class ServiceGenerator {
         String title = service.getTrait(software.amazon.smithy.model.traits.TitleTrait.class).map(t -> t.getValue()).orElse("Caitlyn API");
         ctx.fileManifest().writeFile("doc.go", GoWriter.HEADER + Names.comment("Package " + s.packageName() + " is the Go SDK for the "
                 + title + ", generated from its Smithy model by caitlyn-go-codegen. It depends only on the standard library and "
-                + "the hand-written runtime " + s.coreModule() + " (which adds the OpenTelemetry API); it reads no AWS configuration.", "")
+                + "the hand-written runtime " + s.coreModule() + " (which adds the OpenTelemetry API); it reads no AWS configuration outside AWSIAM sign-in.", "")
                 + "package " + s.packageName() + "\n");
         // A runtime inside the SDK's own module (github.com/caitlyn-ai/caitlyn-go/core) needs no go.mod entry: the
         // module's go.mod is hand-written, beside the runtime. A separate runtime module gets one.

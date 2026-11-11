@@ -5,7 +5,8 @@
 // resume, pagination, waiters, presigned uploads, @since checks and OpenTelemetry spans. Generated code
 // describes each operation and calls into this package; it holds no protocol logic of its own.
 //
-// The package reads no AWS configuration: no AWS_* environment variable, no ~/.aws file, no instance metadata.
+// The package reads no AWS configuration (no AWS_* environment variable, no ~/.aws file, no instance metadata),
+// except for the AWSIAM sign-in mode, which reads the AWS_* variables PROTOCOL.md section 12.2 lists.
 package core
 
 import (
@@ -80,7 +81,7 @@ func WithAppID(id string) Option { return func(s *settings) { s.appID = id } }
 // Client is the runtime half of a generated client. It is safe for concurrent use.
 type Client struct {
 	s         settings
-	auth      Auth
+	auth      *AuthSession
 	sdk       SDKInfo
 	userAgent string
 	tracer    trace.Tracer
@@ -92,15 +93,14 @@ type Client struct {
 // WorkspaceEndpoint is the base URL of a workspace's API: its hostname, over HTTPS, with the /api prefix
 // every Caitlyn route has. Operation paths (/v3/…) are appended to it.
 func WorkspaceEndpoint(workspace string) string {
-	host := workspace
-	if i := strings.Index(host, "://"); i >= 0 {
-		host = host[i+3:]
-	}
-	return "https://" + strings.TrimRight(host, "/") + "/api"
+	return "https://" + WorkspaceHost(workspace) + "/api"
 }
 
 // Endpoint is the base URL requests are sent to.
 func (c *Client) Endpoint() string { return c.s.endpoint }
+
+// Auth is the client's sign-in: its mode, its token, and the OAuth mode's sign-in steps.
+func (c *Client) Auth() *AuthSession { return c.auth }
 
 // NewClient returns a runtime client for workspace (for example "your-company.getcaitlyn.ai").
 func NewClient(sdk SDKInfo, workspace string, auth Auth, opts ...Option) (*Client, error) {
@@ -129,8 +129,9 @@ func NewClient(sdk SDKInfo, workspace string, auth Auth, opts ...Option) (*Clien
 	if s.propagator == nil {
 		s.propagator = otel.GetTextMapPropagator()
 	}
-	c := &Client{s: s, auth: auth, sdk: sdk}
+	c := &Client{s: s, sdk: sdk}
 	c.userAgent = userAgent(sdk.Version, s.appID)
+	c.auth = newAuthSession(auth, s.endpoint, workspace, s.httpClient, c.userAgent)
 	c.tracer = s.tracerProvider.Tracer("github.com/caitlyn-ai/caitlyn-go", trace.WithInstrumentationVersion(sdk.Version))
 	return c, nil
 }
