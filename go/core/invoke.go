@@ -77,6 +77,8 @@ type CallOption func(*callSettings)
 type callSettings struct {
 	ifMatch        *string
 	idempotencyKey string
+	// sentAuth is the Authorization header of the latest attempt, so a 401 forgets that token only.
+	sentAuth string
 }
 
 // WithIfMatch sends If-Match: etag, for optimistic concurrency.
@@ -150,8 +152,11 @@ func (c *Client) Do(ctx context.Context, op *Operation, req *Request, opts []Cal
 		trace.WithAttributes(attribute.String("rpc.system", "caitlyn"), attribute.String("rpc.method", op.Name)))
 	defer span.End()
 
-	for attempt := 0; ; attempt++ {
-		resp, err := c.attempt(ctx, op, req, &cs, idemKey, attempt)
+	// attempt counts toward the retries of section 6.4; sent counts every request, including the one sign-in
+	// retry after a 401 (section 12.4), which counts nothing against them.
+	signedInAgain := false
+	for attempt, sent := 0, 0; ; sent++ {
+		resp, err := c.attempt(ctx, op, req, &cs, idemKey, sent)
 		if resp != nil {
 			span.SetAttributes(attribute.String("caitlyn.request_id", resp.Header.Get("Caitlyn-Request-Id")))
 		}
@@ -161,6 +166,11 @@ func (c *Client) Do(ctx context.Context, op *Operation, req *Request, opts []Cal
 		var ae interface{ apiError() *APIError }
 		if errors.As(err, &ae) && ae.apiError().RequestID != "" {
 			span.SetAttributes(attribute.String("caitlyn.request_id", ae.apiError().RequestID))
+		}
+		if !signedInAgain && c.auth.renews() && ctx.Err() == nil && ae != nil && ae.apiError().Status == http.StatusUnauthorized {
+			signedInAgain = true
+			c.auth.invalidate(cs.sentAuth)
+			continue
 		}
 		delay, retry := c.retryDelay(ctx, op, err, attempt)
 		if !retry {
@@ -176,6 +186,7 @@ func (c *Client) Do(ctx context.Context, op *Operation, req *Request, opts []Cal
 			span.SetStatus(codes.Error, ctx.Err().Error())
 			return nil, ctx.Err()
 		}
+		attempt++
 	}
 }
 
@@ -216,8 +227,16 @@ func (c *Client) attempt(ctx context.Context, op *Operation, req *Request, cs *c
 		hr.Header.Set("If-Match", *cs.ifMatch)
 	}
 	if err := c.auth.Authorize(ctx, hr); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		var authErr *AuthError
+		if errors.As(err, &authErr) {
+			return nil, authErr
+		}
 		return nil, fmt.Errorf("caitlyn: authorise: %w", err)
 	}
+	cs.sentAuth = hr.Header.Get("Authorization")
 	c.s.propagator.Inject(ctx, propagation.HeaderCarrier(hr.Header))
 
 	resp, err := c.s.httpClient.Do(hr)

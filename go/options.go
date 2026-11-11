@@ -27,6 +27,32 @@ type (
 	Token = core.Token
 	// TokenFunc returns a bearer token for each request, for tokens refreshed elsewhere.
 	TokenFunc = core.TokenFunc
+	// ClientCredentials signs in with a client ID and secret (a machine client).
+	ClientCredentials = core.ClientCredentials
+	// OAuth signs a person in with the authorisation code flow and PKCE; see Client.Auth().
+	OAuth = core.OAuth
+	// AWSIAM signs in with AWS credentials (STS GetWebIdentityToken, then a token exchange).
+	AWSIAM = core.AWSIAM
+	// WorkloadIdentity signs in with a JWT from another trusted issuer, such as a GitLab CI id_tokens variable.
+	WorkloadIdentity = core.WorkloadIdentity
+	// Session signs in with the browser session cookie, for the Caitlyn app itself and local recording.
+	Session = core.Session
+	// AWSCredentials are AWS access keys, for AWSIAM.Credentials.
+	AWSCredentials = core.AWSCredentials
+	// AuthSession is a client's sign-in: its cached token and the OAuth steps. Get it with Client.Auth().
+	AuthSession = core.AuthSession
+	// AuthError is a sign-in failure, with the OAuth error code (invalid_client, invalid_grant…).
+	AuthError = core.AuthError
+	// OAuthTokens are the tokens the OAuth mode keeps in its TokenStore.
+	OAuthTokens = core.OAuthTokens
+	// TokenStore keeps the OAuth mode's tokens between processes.
+	TokenStore = core.TokenStore
+	// AuthorizationRequest is the start of an OAuth sign-in: the URL, and the state and PKCE verifier to keep.
+	AuthorizationRequest = core.AuthorizationRequest
+	// AuthorizationOptions overrides the OAuth settings for one sign-in.
+	AuthorizationOptions = core.AuthorizationOptions
+	// Callback is what the OAuth redirect brought back, for Client.Auth().HandleCallback.
+	Callback = core.Callback
 	// Error is an RFC 9457 problem from Caitlyn, or an error the SDK raises itself (Status 0). Every typed
 	// error (NotFoundError…) embeds it.
 	Error = core.APIError

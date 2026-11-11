@@ -18,8 +18,10 @@ type Client struct {
 }
 
 // NewClient returns a client for workspace (for example "your-company.getcaitlyn.ai"), authenticated
-// by auth (for example caitlyn.Token("pat_…")). Options set the endpoint, the HTTP client, retries and
-// telemetry; nothing is read from the environment.
+// by auth (for example caitlyn.Token("pat_…") or caitlyn.ClientCredentials{…}). The workspace sets the
+// endpoint and the token audience, https://<workspace>/api/v3. Options set the endpoint, the HTTP
+// client, retries and telemetry; nothing is read from the environment, except by caitlyn.AWSIAM
+// sign-in.
 func NewClient(workspace string, auth Auth, opts ...Option) (*Client, error) {
 	cc, err := core.NewClient(core.SDKInfo{Version: SDKVersion, ModelVersion: ModelVersion}, workspace, auth, opts...)
 	if err != nil {
@@ -38,6 +40,10 @@ func (c *Client) ServerVersion() string { return c.core.ServerVersion() }
 
 // Endpoint is the base URL requests are sent to: https://<workspace>/api, or the WithEndpoint value.
 func (c *Client) Endpoint() string { return c.core.Endpoint() }
+
+// Auth is the client's sign-in: its mode and token, and the OAuth mode's steps (AuthorizationURL,
+// HandleCallback, SignOut).
+func (c *Client) Auth() *AuthSession { return c.core.Auth() }
 
 // ConversationsClient holds the conversations operations (Resume, Send). Use Client.Conversations.
 type ConversationsClient struct{ c *Client }
