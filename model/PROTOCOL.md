@@ -178,7 +178,7 @@ Every suite runs against the mock server and covers, at least:
 
 ## 12. Sign-in
 
-How an SDK gets the credential it sends. The TypeScript runtime (`@caitlyn-ai/sdk-core`, `auth.ts`) and the Go runtime (`go/core`, `auth.go` and `aws.go`) implement this section; the conformance cases `auth.*` test it, and fail for any SDK whose runtime does not implement it yet.
+How an SDK gets the credential it sends. The TypeScript runtime (`@caitlyn-ai/sdk-core`, `auth.ts`), the Python runtime (`caitlyn_core.auth`, for both the synchronous and the asynchronous client) and the Go runtime (`go/core`, `auth.go` and `aws.go`) implement this section; the conformance cases `auth.*` test it, and fail for any SDK whose runtime does not implement it yet.
 
 ### 12.1 The workspace, the endpoint and the audience
 
@@ -233,7 +233,7 @@ Every mode except `token` and `session` ends in the same thing: a short-lived Ca
 
 ### 12.5 Sign-in errors
 
-A failed token request is a sign-in error (TypeScript `CaitlynAuthError`), not one of the operation error classes of section 6.2. It carries:
+A failed token request is a sign-in error (`CaitlynAuthError` in TypeScript and Python), not one of the operation error classes of section 6.2. It carries:
 
 | Field       | Source                                                                                      |
 | ----------- | ------------------------------------------------------------------------------------------- |

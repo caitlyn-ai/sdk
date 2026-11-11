@@ -584,6 +584,8 @@ final class ServiceGenerator {
         w.importFrom(CORE, core);
         w.importFrom(CORE, "ClientConfig");
         w.importFrom(CORE, "Interceptor");
+        w.importFrom(CORE, "Auth");
+        w.importFrom(CORE, async ? "AsyncAuthSession" : "SyncAuthSession");
         w.importFrom(CORE, "RetryPolicy");
         w.importFrom("collections.abc", "Sequence");
         w.importFrom("typing", "Self");
@@ -597,8 +599,9 @@ final class ServiceGenerator {
                          : "Synchronous client. Use as `with Caitlyn(...) as caitlyn:`, or call `close()`.")
                 + "\n\nArgs:\n"
                 + "    workspace: your workspace host, for example `your-company.getcaitlyn.ai`.\n"
-                + "    auth: how to sign in, for example `Token(os.environ[\"CAITLYN_TOKEN\"])`.\n"
-                + "    endpoint: overrides the URL built from `workspace`.\n"
+                + "    auth: how to sign in (`caitlyn.auth`), for example `Token(os.environ[\"CAITLYN_TOKEN\"])` or\n"
+                + "        `ClientCredentials(client_id, client_secret)`.\n"
+                + "    endpoint: overrides the URL built from `workspace` (a proxy, a local app). Tokens are still for `workspace`.\n"
                 + "    max_attempts: attempts per call, including the first (default 3).\n"
                 + "    max_retry_delay: the longest Retry-After to wait for, in seconds (default 60); above it the call fails at once.\n"
                 + "    retry: the full retry policy.\n"
@@ -607,6 +610,8 @@ final class ServiceGenerator {
                 + "    app_id: your application's name, sent in the user agent as `app/<app_id>`.\n"
                 + "    http_client: your own httpx client (its base URL must be the endpoint).";
         w.write("$D\n", doc);
+        w.write("auth: $L", async ? "AsyncAuthSession" : "SyncAuthSession");
+        w.write("$D", "The client's sign-in: the `OAuth` mode's `authorization_url`, `handle_callback` and `sign_out`, and the current token.");
         for (String ns : namespaces) {
             w.write("$L: $L", ns, resourceClass(ns, async));
         }
@@ -616,7 +621,7 @@ final class ServiceGenerator {
         w.write("self,");
         w.write("*,");
         w.write("workspace: str | None = None,");
-        w.write("auth: httpx.Auth | None = None,");
+        w.write("auth: Auth | httpx.Auth | None = None,");
         w.write("endpoint: str | None = None,");
         w.write("max_attempts: int | None = None,");
         w.write("max_retry_delay: float | None = None,");
@@ -646,6 +651,7 @@ final class ServiceGenerator {
         w.dedent();
         w.write(")");
         w.write("self._core = $L(config, http_client)", core);
+        w.write("self.auth = self._core.auth");
         for (String ns : namespaces) {
             w.write("self.$L = $L(self._core)", ns, resourceClass(ns, async));
         }
@@ -711,11 +717,14 @@ final class ServiceGenerator {
 
     private void writeAuth() {
         ctx.writerDelegator().useFileWriter(settings.file("auth"), module("auth"), w -> {
-            w.write("$D\n", "Sign-in modes. `Token` is implemented; `OAuth`, `ClientCredentials` and `AwsIam` are interfaces for later.");
-            for (String n : List.of("Auth", "AwsIam", "ClientCredentials", "OAuth", "Token")) {
+            w.write("$D\n", "Sign-in modes (model/PROTOCOL.md section 12): `Token`, `ClientCredentials`, `OAuth`, `AwsIam`, "
+                    + "`WorkloadIdentity` and `Session`.");
+            List<String> names = List.of("AsyncAuthSession", "Auth", "AuthorizationRequest", "AwsCredentials", "AwsIam", "CaitlynAuthError",
+                    "ClientCredentials", "OAuth", "OAuthTokens", "Session", "SyncAuthSession", "Token", "TokenStore", "WorkloadIdentity");
+            for (String n : names) {
                 w.importFrom(CORE + ".auth", n);
             }
-            w.write("__all__ = [\"Auth\", \"AwsIam\", \"ClientCredentials\", \"OAuth\", \"Token\"]");
+            w.write("__all__ = [$L]", String.join(", ", names.stream().map(n -> "\"" + n + "\"").toList()));
         });
     }
 
@@ -733,7 +742,7 @@ final class ServiceGenerator {
                 w.importFrom(module("_version"), n);
                 names.add(n);
             }
-            for (String n : List.of("AsyncEventStream", "AsyncPaginator", "CaitlynConnectionError", "CaitlynError", "CallContext", "EventStream",
+            for (String n : List.of("AsyncEventStream", "AsyncPaginator", "CaitlynAuthError", "CaitlynConnectionError", "CaitlynError", "CallContext", "EventStream",
                     "Interceptor", "NotSupportedByServer", "Paginator", "RetryPolicy", "StreamLostError")) {
                 w.importFrom(CORE, n);
                 names.add(n);
