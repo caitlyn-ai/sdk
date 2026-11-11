@@ -7,4 +7,4 @@ export type * from "../models/models_0";
 export * from "../models/enums";
 export * from "../models/errors";
 export { CaitlynServiceException as CaitlynError } from "../models/CaitlynServiceException";
-export { NotSupportedByServer, SseStream, type CaitlynOptions, type CallOptions, type CaitlynErrorFields, type WithRaw } from "@caitlyn-ai/sdk-core";
+export { NotSupportedByServer, SseStream, CaitlynAuthError, WaiterError, createAuth, workspaceAudience, type AuthOptions, type AuthSession, type AwsCredentials, type OAuthTokens, type TokenStore, type CaitlynOptions, type CallOptions, type CaitlynErrorFields, type WaiterOptions, type WithRaw } from "@caitlyn-ai/sdk-core";

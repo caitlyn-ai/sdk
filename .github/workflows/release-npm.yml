@@ -1,0 +1,51 @@
+# Publishes @caitlyn-ai/sdk-core and @caitlyn-ai/sdk to npm with provenance (npm trusted publishing).
+#
+# Runs on the GitHub mirror of custom-d/caitlyn/sdk (github.com/caitlyn-ai/sdk), never on GitLab: npm trusted publishing accepts OpenID
+# Connect tokens from GitHub Actions (and GitLab.com), not from git.customd.com. The mirror receives main and the
+# release tags from GitLab; nobody commits to it. Setting up the mirror, the npm trusted publishers and the
+# `npm` environment is described in CONTRIBUTING.md, "Releasing to npm".
+#
+# A tag v<version> publishes that version, which must match both packages' package.json. The `npm` environment
+# holds the job until a required reviewer approves it.
+name: release-npm
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # the OpenID Connect token npm exchanges for a short-lived publish credential
+    defaults:
+      run:
+        working-directory: typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      # Trusted publishing needs npm 11.5.1 or later.
+      - run: npm install -g npm@11.6.2
+      - name: Check the tag matches both packages
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for p in packages/sdk-core packages/sdk; do
+            actual="$(node -p "require('./$p/package.json').version")"
+            [ "$actual" = "$version" ] || { echo "$p is $actual, the tag is $GITHUB_REF_NAME" >&2; exit 1; }
+          done
+      - name: Test, build and check the packages
+        run: ../scripts/test-typescript.sh
+      - name: Publish @caitlyn-ai/sdk-core
+        run: npm publish --provenance --access public
+        working-directory: typescript/packages/sdk-core
+      - name: Publish @caitlyn-ai/sdk
+        run: npm publish --provenance --access public
+        working-directory: typescript/packages/sdk

@@ -1,13 +1,22 @@
 // Client options shared by every generated Caitlyn client, and the options every call accepts.
 import type { TracerProvider } from '@opentelemetry/api';
 import { CaitlynRetryStrategy } from './retry.js';
+import { AuthSession, tokenIdentityProvider, workspaceHost, type AuthOptions } from './auth.js';
 
 export interface CaitlynOptions {
-  /** The workspace hostname, for example "your-company.getcaitlyn.ai". */
+  /**
+   * The workspace hostname, for example "your-company.getcaitlyn.ai". Like an AWS region, it decides where
+   * requests go (https://<workspace>/api) and the audience every token is bound to (https://<workspace>/api/v3).
+   */
   workspace: string;
-  /** Only the bearer token mode exists so far; oauth, workloadIdentity and awsIam come with lane K1. */
-  auth: { mode: 'token'; token: string };
-  /** Overrides the base URL the operation paths (/v3/…) are appended to. Default: https://{workspace}/api. */
+  /** How the client signs in: token, clientCredentials, oauth, awsIam, workloadIdentity or session. */
+  auth: AuthOptions;
+  /** The fetch the sign-in requests use (token endpoint, STS, container credentials). Default: global fetch. */
+  fetch?: typeof fetch;
+  /**
+   * Overrides the base URL the operation paths (/v3/…) and the token endpoint (/oauth/token) are appended to,
+   * for a proxy or a local app. Default: https://{workspace}/api. It never changes the token audience.
+   */
   endpoint?: string;
   maxAttempts?: number;
   /** Longest Retry-After the SDK waits for (default 60 000 ms); above it the call fails at once. */
@@ -21,15 +30,21 @@ export interface CallOptions {
 
 /** The base URL of a workspace's API: its hostname, over HTTPS, with the /api prefix every Caitlyn route has. */
 export function workspaceEndpoint(workspace: string): string {
-  const host = workspace.replace(/^https?:\/\//, '').replace(/\/+$/, '');
-  return `https://${host}/api`;
+  return `https://${workspaceHost(workspace)}/api`;
+}
+
+/** The sign-in session for a set of options: what `client.auth` is. */
+export function createAuth(opts: CaitlynOptions): AuthSession {
+  return new AuthSession(opts.auth, (opts.endpoint ?? workspaceEndpoint(opts.workspace)).replace(/\/+$/, ''), workspaceHost(opts.workspace), opts.fetch);
 }
 
 /** The generated client's configuration for a set of options. */
-export function clientConfig(opts: CaitlynOptions) {
+export function clientConfig(opts: CaitlynOptions, auth: AuthSession = createAuth(opts)) {
   return {
+    /** The workspace this client is for; readable as client.config.workspace. */
+    workspace: workspaceHost(opts.workspace),
     endpoint: opts.endpoint ?? workspaceEndpoint(opts.workspace),
-    token: { token: opts.auth.token },
+    token: tokenIdentityProvider(auth),
     ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
     ...(opts.maxRetryDelayMs !== undefined ? { retryStrategy: new CaitlynRetryStrategy(opts.maxAttempts ?? 3, opts.maxRetryDelayMs) } : {}),
   };

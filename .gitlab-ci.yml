@@ -102,9 +102,9 @@ typescript:
   artifacts:
     when: always
     expire_in: 1 week
-    paths: [build/conformance/typescript.xml]
+    paths: [build/conformance/typescript.xml, build/conformance/typescript-runtime.xml, build/package/report.json]
     reports:
-      junit: build/conformance/typescript.xml
+      junit: [build/conformance/typescript.xml, build/conformance/typescript-runtime.xml]
   rules: !reference [.mr-and-main, rules]
 
 python:
@@ -283,10 +283,13 @@ docs:knowledge-base:
     - if: $RELEASES_ENABLED == "true" && $CI_COMMIT_TAG
       when: manual
 
+# npm releases run on the GitHub mirror, not here: npm trusted publishing (with provenance) accepts OpenID
+# Connect tokens from GitHub Actions, not from this GitLab. See .github/workflows/release-npm.yml and
+# CONTRIBUTING.md, "Releasing to npm". This placeholder says so if someone runs it.
 release:npm:
   extends: .release-placeholder
   variables:
-    RELEASE_WHAT: 'Publishing @caitlyn-ai/sdk and @caitlyn-ai/sdk-core to npm with trusted publishing'
+    RELEASE_WHAT: 'npm publishing here (it runs on the GitHub mirror: .github/workflows/release-npm.yml)'
 
 release:pypi:
   extends: .release-placeholder

@@ -33,6 +33,7 @@ conformance/
   cases/examples.json  one case per @examples entry, plus synthesised 403 and 404 cases (generated)
   mock-server/         the mock Caitlyn server, with fault injection and example matching
   typescript/ python/ go/   one thin harness per language
+examples/typescript/   the proposal's top-ten task examples in TypeScript, type-checked in CI
 docs/                  the developer docs (a skeleton until lane D2)
 cli/                   the Go CLI (lane C1)
 docker/Dockerfile      the toolchain image every make target and CI job runs in
@@ -76,3 +77,7 @@ Today the snapshot is the Gate 1 build of the model (seven operations), which is
   "Caitlyn v3 API and SDK platform — design".
 - `model/PROTOCOL.md` is the contract between the server and every SDK. It is changed in the app repository,
   agreed by all three generator lanes first, with a conformance case in the same change.
+
+## Licence
+
+The SDKs are licensed under the Apache License 2.0 (`LICENSE`, `NOTICE`), copyright Custom D Ltd.

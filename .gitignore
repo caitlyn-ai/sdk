@@ -10,3 +10,8 @@ __pycache__/
 *.pyc
 .DS_Store
 /codegen/smithy-build.local.json
+/typescript/packages/*/dist-*/
+/typescript/packages/*/README.md
+/typescript/packages/*/*.tgz
+/typescript/packages/*/LICENSE
+/typescript/packages/*/NOTICE

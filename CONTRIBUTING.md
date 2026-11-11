@@ -62,8 +62,8 @@ before each test and drives it through `/__mock/`:
 There are two kinds of case:
 
 - **Protocol cases** (`conformance/cases/protocol.json`): retries, pagination, streams, tolerance of unknown
-  data, typed errors, cancellation, updates, wire headers, the hostile AWS environment, `@since`, telemetry and
-  the endpoint. Each harness has one test per case, named after its id.
+  data, typed errors, cancellation, updates, wire headers, the hostile AWS environment, `@since`, telemetry,
+  the endpoint and sign-in. Each harness has one test per case, named after its id.
 - **Example cases** (`conformance/cases/examples.json`, generated): one per `@examples` entry in the model.
   The design guide (section 12) also asks for a 403 and a 404 case for every operation, so the generator
   synthesises the missing ones from the model: a 403 `PERMISSION_DENIED` for every operation (it is a service
@@ -124,6 +124,45 @@ project access token with `write_repository` and `api`.
 The SDKs send `Caitlyn-Sdk-Model`, the highest `@since` in the model they were generated from, and refuse,
 before sending, an operation or member newer than the server's `Caitlyn-Api-Version` (PROTOCOL.md section 9).
 Package versions are `0.0.1` everywhere until lane R2 decides the release scheme.
+
+## Releasing to npm
+
+`@caitlyn-ai/sdk-core` and `@caitlyn-ai/sdk` are published from a GitHub mirror of this repository, by
+`.github/workflows/release-npm.yml`, with npm provenance. npm trusted publishing accepts OpenID Connect tokens
+from GitHub Actions (and GitLab.com), not from this GitLab, so the mirror is what lets a release carry
+provenance and need no stored npm token. GitLab stays the source: the mirror only receives `main` and tags.
+
+None of this exists yet. Setting it up needs Sam (the GitHub organisation and the npm scope are his):
+
+1. **The mirror repository: `github.com/caitlyn-ai/sdk`** (created by Sam). Actions enabled; nobody pushes
+   to it except the mirror.
+2. **The push mirror, over HTTPS** (GitLab's "Set up a push mirror from GitLab to GitHub",
+   https://docs.gitlab.com/user/project/repository/mirror/push/#set-up-a-push-mirror-from-gitlab-to-github):
+   - In GitHub, create a fine-grained personal access token with resource owner `caitlyn-ai`, repository
+     access "Only select repositories" → `caitlyn-ai/sdk`, and permissions **Contents: read and write** and
+     **Workflows: read and write**. GitHub refuses a push that adds or changes a file under `.github/workflows/`
+     from a token without the Workflows permission, and this repository carries `release-npm.yml`.
+   - In GitLab, `custom-d/caitlyn/sdk` → Settings → Repository → Mirroring repositories → Add new: Git repository
+     URL `https://github.com/caitlyn-ai/sdk.git`, direction Push, authentication method "Username and Password",
+     username the GitHub account that owns the token, password the token.
+   - Turn on "Mirror only protected branches", so `main` reaches GitHub and work-in-progress branches do not.
+     Protect the release tags `v*` too (Settings → Repository → Protected tags) so they are mirrored.
+   - **The token expires.** Fine-grained tokens have an expiry date. Note it, and replace the token in the
+     mirror's settings before then: once it expires the mirror stops (GitLab shows the error on the mirror),
+     and a release tag pushed after that never reaches GitHub.
+3. **The `npm` environment.** In the GitHub repository, Settings → Environments → `npm`, with Sam as required
+   reviewer and deployment limited to `v*` tags. The workflow's publish job waits there for approval.
+4. **Trusted publishers on npm.** For each of `@caitlyn-ai/sdk-core` and `@caitlyn-ai/sdk`: Settings →
+   Trusted publishing → GitHub Actions, organisation `caitlyn-ai`, repository `sdk`, workflow
+   `release-npm.yml`, environment `npm`. Then set "Require two-factor authentication and disallow tokens" so the
+   workflow is the only way to publish. If npm still allows trusted publishers only on packages that already
+   exist, the first version is published once by hand from Sam's account (`npm publish --access public` in
+   each package after `npm run build`), and every version after it by the workflow.
+
+To release: set the version in `typescript/packages/sdk-core/package.json` (generation copies it to the SDK),
+regenerate, merge, then tag `v<version>` on `main` in GitLab. The tag reaches the mirror, the workflow tests,
+builds and checks the packages, and after approval publishes `sdk-core` then `sdk`. The GitLab job
+`release:npm` is a placeholder that says where releases run.
 
 ## Commit messages
 

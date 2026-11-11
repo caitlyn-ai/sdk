@@ -6,4 +6,7 @@ export { getCaitlynTelemetryPlugin } from './telemetry.js';
 export { SseStream, type SseSpec } from './stream.js';
 export { parseSse, type SseMessage } from './sse.js';
 export { uploadFile, type UploadMeta, type UploadSlot } from './upload.js';
-export { clientConfig, workspaceEndpoint, type CaitlynOptions, type CallOptions, type CaitlynErrorFields, type CaitlynFieldError } from './client.js';
+export { clientConfig, createAuth, workspaceEndpoint, type CaitlynOptions, type CallOptions, type CaitlynErrorFields, type CaitlynFieldError } from './client.js';
+export { AuthSession, CaitlynAuthError, workspaceAudience, workspaceHost, getCaitlynAuthPlugin, tokenIdentityProvider, type AuthOptions, type OAuthTokens, type TokenStore } from './auth.js';
+export { signV4, getWebIdentityToken, defaultAwsCredentials, type AwsCredentials, type AwsCredentialSource } from './aws.js';
+export { waitUntil, WaiterError, type WaiterOptions, type WaiterState } from './waiter.js';

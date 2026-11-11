@@ -16,12 +16,17 @@ import {
   PreconditionFailedError,
   ServiceUnavailableError,
   ValidationError,
+  CaitlynAuthError,
+  type AuthOptions,
   type CaitlynErrorFields,
+  type OAuthTokens,
+  type TokenStore,
 } from '@caitlyn-ai/sdk';
 import * as commands from '@caitlyn-ai/sdk/commands';
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { propagation } from '@opentelemetry/api';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
+import { MOCK_AWS, MOCK_CLIENT, MOCK_OAUTH_CLIENT, MOCK_PAT, MOCK_SESSION_COOKIE, mockOidcToken } from '../mock-server/auth.mjs';
 
 const ROOT = process.env.CAITLYN_REPO_ROOT ?? path.resolve(import.meta.dirname, '../..');
 const EXAMPLES: ExampleCase[] = JSON.parse(fs.readFileSync(path.join(ROOT, 'conformance/cases/examples.json'), 'utf8')).cases;
@@ -427,6 +432,302 @@ test('[endpoint.workspace] a workspace hostname resolves to https://<workspace>/
   const c = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 'pat_test' } });
   const endpoint = await (c.client.config as unknown as { endpoint: () => Promise<{ protocol: string; hostname: string; path: string }> }).endpoint();
   assert.equal(`${endpoint.protocol}//${endpoint.hostname}${endpoint.path}`, 'https://your-company.getcaitlyn.ai/api');
+});
+
+// ---------------------------------------------------------------- sign-in (PROTOCOL.md section 12)
+// Against the mock server's OAuth endpoints and STS stand-in (conformance/mock-server/auth.mjs). Each test turns
+// on the mock's `require` fault, so every /v3/ request needs a credential the mock issued or accepts.
+
+// The audience comes from the workspace, never from the endpoint override these tests use.
+const RESOURCE = 'https://your-company.getcaitlyn.ai/api/v3';
+const signInRequired = () => faults({ auth: { require: true } });
+const authCounts = async (): Promise<Record<string, number>> => (await (await fetch(`${BASE}/__mock/auth`)).json()).counts;
+const tokenRequests = async () => (await requests()).filter((r) => r.path === '/oauth/token').map((r) => new URLSearchParams(r.body));
+const signedIn = (auth: AuthOptions, workspace = 'your-company.getcaitlyn.ai') => new Caitlyn({ workspace, endpoint: BASE, auth, telemetry: { enabled: false } });
+const read = (c: Caitlyn) => c.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+const ccAuth = (extra: Partial<Extract<AuthOptions, { mode: 'clientCredentials' }>> = {}): AuthOptions => ({ mode: 'clientCredentials', clientId: MOCK_CLIENT.id, clientSecret: MOCK_CLIENT.secret, ...extra });
+
+async function authError(p: Promise<unknown>): Promise<CaitlynAuthError> {
+  try {
+    await p;
+  } catch (err) {
+    assert.ok(err instanceof CaitlynAuthError, `expected CaitlynAuthError, got ${(err as Error)?.name}: ${(err as Error)?.message}`);
+    return err;
+  }
+  assert.fail('expected a sign-in error');
+}
+
+const memoryStore = (initial?: OAuthTokens): TokenStore & { tokens?: OAuthTokens; clears: number } => {
+  const s = {
+    tokens: initial,
+    clears: 0,
+    load: () => s.tokens,
+    save: (t: OAuthTokens) => void (s.tokens = t),
+    clear: () => void ((s.tokens = undefined), s.clears++),
+  };
+  return s;
+};
+
+/** The `oauth` sign-in steps, following the mock's redirect as a browser would. */
+async function oauthSignIn(c: Caitlyn): Promise<URL> {
+  const { url, state, codeVerifier } = await c.auth.authorizationUrl();
+  const redirect = new URL((await fetch(url, { redirect: 'manual' })).headers.get('location')!);
+  await c.auth.handleCallback({ code: redirect.searchParams.get('code')!, state: redirect.searchParams.get('state')!, expectedState: state, codeVerifier });
+  return new URL(url);
+}
+
+test('[auth.workspace] the workspace sets the endpoint and the token audience; endpoint overrides only where requests go', async () => {
+  await signInRequired();
+  // A workspace given as a URL is reduced to its hostname.
+  await read(signedIn(ccAuth(), 'https://your-company.getcaitlyn.ai/'));
+  const [form] = await tokenRequests();
+  assert.ok(form, 'the token request went to the overriding endpoint');
+  assert.equal(form.get('resource'), RESOURCE);
+  assert.equal((await api()).length, 1);
+});
+
+test('[auth.token] a personal access token is sent as the bearer token, with no token request', async () => {
+  await signInRequired();
+  await read(signedIn({ mode: 'token', token: MOCK_PAT }));
+  assert.equal((await api())[0].headers.authorization, `Bearer ${MOCK_PAT}`);
+  assert.deepEqual(await authCounts(), { sts: 0 });
+});
+
+test('[auth.client-credentials] one token request serves concurrent calls, bound to the workspace resource', async () => {
+  await signInRequired();
+  const c = signedIn(ccAuth({ scopes: ['agents:read'] }));
+  await Promise.all([read(c), read(c), read(c)]);
+  await read(c);
+  assert.equal((await authCounts()).client_credentials, 1);
+  const auths = new Set((await api()).map((r) => r.headers.authorization));
+  assert.equal(auths.size, 1);
+  assert.match([...auths][0], /^Bearer cai_cc_/);
+  const [form] = await tokenRequests();
+  assert.equal(form.get('client_id'), MOCK_CLIENT.id);
+  assert.equal(form.get('resource'), RESOURCE);
+  assert.equal(form.get('scope'), 'agents:read');
+});
+
+test('[auth.client-credentials-refused] a wrong secret is a sign-in error with the OAuth code', async () => {
+  await signInRequired();
+  const err = await authError(read(signedIn(ccAuth({ clientSecret: 'wrong' }))));
+  assert.equal(err.code, 'invalid_client');
+  assert.equal(err.status, 401);
+  assert.equal((await api()).length, 0);
+});
+
+test('[auth.renew-before-expiry] a token is replaced before it expires: a minute early, or halfway through a short life', async () => {
+  await faults({ auth: { require: true, expiresIn: 1 } });
+  const c = signedIn(ccAuth());
+  await read(c);
+  await read(c);
+  assert.equal((await authCounts()).client_credentials, 1, 'reused within the first half of its life');
+  await new Promise((r) => setTimeout(r, 600));
+  await read(c);
+  assert.equal((await authCounts()).client_credentials, 2, 'replaced after half its life');
+  assert.equal((await api()).length, 3, 'no call was refused');
+});
+
+test('[auth.401-signs-in-again] a token the server stopped accepting is replaced once, and the call succeeds', async () => {
+  await signInRequired();
+  const c = signedIn(ccAuth());
+  await read(c);
+  await faults({ auth: { revokeIssued: true } });
+  const v = await read(c);
+  assert.equal(v.agentId, 'GHT7YRWXPL');
+  assert.equal((await authCounts()).client_credentials, 2);
+  assert.equal((await api()).length, 3, 'the first call, then the refused attempt and the one after signing in again');
+});
+
+test('[auth.401-once] a second 401 after signing in again is raised, with no third attempt', async () => {
+  await signInRequired();
+  const c = signedIn(ccAuth());
+  await read(c);
+  // From here every token the mock issues expires at once, so the new token is refused too.
+  await faults({ auth: { revokeIssued: true, expiresIn: 0 } });
+  await assert.rejects(read(c), (e: any) => e.$metadata?.httpStatusCode === 401 && e.code === 'UNAUTHENTICATED');
+  assert.equal((await authCounts()).client_credentials, 2, 'signed in again once');
+  assert.equal((await api()).length, 3, 'the first call, then two attempts at the second');
+});
+
+test('[auth.401-token-mode] a refused personal access token fails with 401, without retrying', async () => {
+  await signInRequired();
+  await assert.rejects(read(signedIn({ mode: 'token', token: 'pat_revoked' })), (e: any) => e.$metadata?.httpStatusCode === 401 && e.code === 'UNAUTHENTICATED');
+  assert.equal((await api()).length, 1);
+});
+
+test('[auth.oauth-sign-in] authorisation code with PKCE, then calls with the saved token', async () => {
+  await signInRequired();
+  const store = memoryStore();
+  const c = signedIn({ mode: 'oauth', clientId: MOCK_OAUTH_CLIENT.id, clientSecret: MOCK_OAUTH_CLIENT.secret, redirectUri: 'https://app.example.com/callback', scopes: ['chat:write'], tokenStore: store });
+  const u = await oauthSignIn(c);
+  assert.equal(u.pathname, '/oauth/authorize');
+  assert.equal(u.searchParams.get('response_type'), 'code');
+  assert.equal(u.searchParams.get('code_challenge_method'), 'S256');
+  assert.equal(u.searchParams.get('resource'), RESOURCE);
+  assert.equal(u.searchParams.get('scope'), 'chat:write');
+  const [form] = await tokenRequests();
+  assert.equal(form.get('grant_type'), 'authorization_code');
+  assert.equal(form.get('resource'), RESOURCE);
+  assert.ok(store.tokens?.refreshToken);
+  await read(c);
+  assert.match((await api())[0].headers.authorization, /^Bearer cai_code_/);
+});
+
+test('[auth.oauth-state] a callback whose state does not match is refused before any token request', async () => {
+  await signInRequired();
+  const c = signedIn({ mode: 'oauth', clientId: MOCK_OAUTH_CLIENT.id, redirectUri: 'https://app.example.com/callback' });
+  const err = await authError(c.auth.handleCallback({ code: 'x', state: 'forged', expectedState: 'expected', codeVerifier: 'v' }));
+  assert.equal(err.code, 'invalid_state');
+  assert.equal((await tokenRequests()).length, 0);
+});
+
+test('[auth.oauth-refresh] an expired access token is refreshed with the stored refresh token, and the rotated one saved', async () => {
+  await signInRequired();
+  const store = memoryStore();
+  await oauthSignIn(signedIn({ mode: 'oauth', clientId: MOCK_OAUTH_CLIENT.id, redirectUri: 'https://app.example.com/callback', tokenStore: store }));
+  const first = store.tokens!.refreshToken;
+  // A new process with an expired access token in the store
+  store.tokens = { ...store.tokens!, expiresAt: Date.now() - 1 };
+  const later = signedIn({ mode: 'oauth', clientId: MOCK_OAUTH_CLIENT.id, tokenStore: store });
+  await Promise.all([read(later), read(later)]);
+  assert.equal((await authCounts()).refresh_token, 1, 'one refresh however many calls wait');
+  assert.notEqual(store.tokens!.refreshToken, first);
+  assert.match((await api()).at(-1).headers.authorization, /^Bearer cai_refresh_/);
+});
+
+test('[auth.oauth-401-refreshes] a stored token the server refuses is not sent again: the refresh token replaces it', async () => {
+  await signInRequired();
+  const store = memoryStore();
+  const c = signedIn({ mode: 'oauth', clientId: MOCK_OAUTH_CLIENT.id, redirectUri: 'https://app.example.com/callback', tokenStore: store });
+  await oauthSignIn(c);
+  await read(c);
+  await faults({ auth: { revokeIssued: true } });
+  await read(c);
+  assert.equal((await authCounts()).refresh_token, 1);
+  const sent = (await api()).map((r) => r.headers.authorization);
+  assert.equal(sent.length, 3);
+  assert.equal(sent[1], sent[0], 'the refused token');
+  assert.match(sent[2], /^Bearer cai_refresh_/);
+});
+
+test('[auth.oauth-refresh-refused] a refused refresh token clears the store and asks for sign-in', async () => {
+  await signInRequired();
+  const store = memoryStore({ accessToken: 'old', refreshToken: 'rt_unknown', expiresAt: Date.now() - 1 });
+  const err = await authError(read(signedIn({ mode: 'oauth', clientId: MOCK_OAUTH_CLIENT.id, tokenStore: store })));
+  assert.equal(err.code, 'invalid_grant');
+  assert.equal(store.tokens, undefined);
+  assert.equal(store.clears, 1);
+  assert.equal((await api()).length, 0);
+});
+
+test('[auth.oauth-not-signed-in] a call before sign-in fails with sign_in_required and sends nothing', async () => {
+  await signInRequired();
+  const err = await authError(read(signedIn({ mode: 'oauth', clientId: MOCK_OAUTH_CLIENT.id })));
+  assert.equal(err.code, 'sign_in_required');
+  assert.equal((await requests()).length, 0);
+});
+
+const awsAuth = (extra: Partial<Extract<AuthOptions, { mode: 'awsIam' }>> = {}): AuthOptions => ({
+  mode: 'awsIam',
+  region: MOCK_AWS.region,
+  stsEndpoint: `${BASE}/__sts/`,
+  credentials: { accessKeyId: MOCK_AWS.accessKeyId, secretAccessKey: MOCK_AWS.secretAccessKey, sessionToken: 'session-token' },
+  ...extra,
+});
+
+test('[auth.aws-iam] a signed STS GetWebIdentityToken call, one token exchange, then bearer calls', async () => {
+  await signInRequired();
+  const c = signedIn(awsAuth());
+  await Promise.all([read(c), read(c)]);
+  const n = await authCounts();
+  assert.equal(n.sts, 1);
+  assert.equal(n['urn:ietf:params:oauth:grant-type:token-exchange'], 1);
+  assert.match((await api())[0].headers.authorization, /^Bearer cai_x_aws_/);
+  const sts = new URLSearchParams((await requests()).find((r) => r.path === '/__sts/').body);
+  assert.equal(sts.get('Action'), 'GetWebIdentityToken');
+  assert.equal(sts.get('Audience.member.1'), RESOURCE);
+  assert.equal(sts.get('SigningAlgorithm'), 'ES384');
+  assert.equal(sts.get('DurationSeconds'), '300');
+  const [form] = await tokenRequests();
+  assert.equal(form.get('subject_token_type'), 'urn:ietf:params:oauth:token-type:jwt');
+  assert.equal(form.get('resource'), RESOURCE);
+});
+
+test('[auth.aws-iam-provider] credentials can come from a provider the caller passes, asked when signing in', async () => {
+  await signInRequired();
+  let calls = 0;
+  const provider = async () => (calls++, { accessKeyId: MOCK_AWS.accessKeyId, secretAccessKey: MOCK_AWS.secretAccessKey });
+  await read(signedIn(awsAuth({ credentials: provider })));
+  assert.equal(calls, 1);
+  assert.equal((await authCounts()).sts, 1);
+});
+
+test('[auth.aws-iam-env] without credentials it uses AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_REGION', async () => {
+  await signInRequired();
+  const keys = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION'] as const;
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  Object.assign(process.env, { AWS_ACCESS_KEY_ID: MOCK_AWS.accessKeyId, AWS_SECRET_ACCESS_KEY: MOCK_AWS.secretAccessKey, AWS_REGION: MOCK_AWS.region });
+  try {
+    await read(signedIn(awsAuth({ credentials: undefined, region: undefined })));
+  } finally {
+    for (const k of keys) if (saved[k] === undefined) delete process.env[k];
+    else process.env[k] = saved[k];
+  }
+  assert.equal((await authCounts()).sts, 1);
+});
+
+test('[auth.aws-iam-bad-signature] an STS refusal is a sign-in error with the STS code', async () => {
+  await signInRequired();
+  const err = await authError(read(signedIn(awsAuth({ credentials: { accessKeyId: MOCK_AWS.accessKeyId, secretAccessKey: 'wrong' } }))));
+  assert.equal(err.code, 'SignatureDoesNotMatch');
+  assert.equal((await api()).length, 0);
+});
+
+test('[auth.aws-iam-no-credentials] with no credentials anywhere, awsIam fails with aws_identity_failed and sends nothing', async () => {
+  await signInRequired();
+  const keys = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_CONTAINER_CREDENTIALS_FULL_URI', 'AWS_CONTAINER_CREDENTIALS_RELATIVE_URI'] as const;
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  for (const k of keys) delete process.env[k];
+  try {
+    const err = await authError(read(signedIn(awsAuth({ credentials: undefined }))));
+    assert.equal(err.code, 'aws_identity_failed');
+  } finally {
+    for (const k of keys) if (saved[k] !== undefined) process.env[k] = saved[k];
+  }
+  assert.equal((await requests()).length, 0);
+});
+
+test('[auth.workload-identity] a CI identity token is exchanged once; a token for another workspace is refused', async () => {
+  await signInRequired();
+  let asked = 0;
+  await read(signedIn({ mode: 'workloadIdentity', token: async () => (asked++, mockOidcToken(RESOURCE)) }));
+  assert.equal(asked, 1);
+  assert.match((await api())[0].headers.authorization, /^Bearer cai_x_oidc_/);
+  const err = await authError(read(signedIn({ mode: 'workloadIdentity', token: () => mockOidcToken('https://other.getcaitlyn.ai/api/v3') })));
+  assert.equal(err.code, 'invalid_grant');
+});
+
+test('[auth.workload-identity-single-use] a replayed identity token is refused', async () => {
+  await signInRequired();
+  const jwt = mockOidcToken(RESOURCE);
+  await read(signedIn({ mode: 'workloadIdentity', token: () => jwt }));
+  const err = await authError(read(signedIn({ mode: 'workloadIdentity', token: () => jwt })));
+  assert.equal(err.code, 'invalid_grant');
+});
+
+test('[auth.session] the session cookie, Origin on writes, and no Authorization header', async () => {
+  await signInRequired();
+  const c = signedIn({ mode: 'session', cookie: MOCK_SESSION_COOKIE, origin: 'https://caitlyn.lndo.site' });
+  const v = await read(c);
+  await c.versions.updateDraft('GHT7YRWXPL', { instructions: 'Cite clause numbers.' }, { ifMatch: v.etag! });
+  const [get, patch] = await api();
+  assert.equal(get.headers.authorization, undefined);
+  assert.equal(get.headers.cookie, MOCK_SESSION_COOKIE);
+  assert.equal(get.headers.origin, undefined);
+  assert.equal(patch.headers.origin, 'https://caitlyn.lndo.site');
+  assert.equal(patch.headers.authorization, undefined);
+  assert.equal((await tokenRequests()).length, 0);
 });
 
 // ---------------------------------------------------------------- the model's @examples

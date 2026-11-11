@@ -8,7 +8,10 @@
   ],
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "conformance": "node scripts/build-conformance.mjs && node --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=../build/conformance/typescript.xml dist/conformance.test.mjs"
+    "conformance": "node scripts/build-conformance.mjs && node --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=../build/conformance/typescript.xml dist/conformance.test.mjs",
+    "test:runtime": "node scripts/build-conformance.mjs && node --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=../build/conformance/typescript-runtime.xml dist/auth.test.mjs dist/waiter.test.mjs",
+    "build": "node scripts/build-packages.mjs",
+    "check:package": "node scripts/check-package.mjs"
   },
   "devDependencies": {
     "@opentelemetry/core": "2.12.0",

@@ -1,11 +1,41 @@
 {
     "name": "@caitlyn-ai/sdk",
-    "description": "@caitlyn-ai/sdk client",
+    "description": "The TypeScript SDK for the Caitlyn v3 API.",
     "version": "0.0.1",
-    "main": "./dist-cjs/index.js",
-    "types": "./dist-types/index.d.ts",
-    "module": "./dist-es/index.js",
+    "license": "Apache-2.0",
+    "homepage": "https://build.caitlyn.ai",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/caitlyn-ai/sdk.git",
+        "directory": "typescript/packages/sdk"
+    },
     "sideEffects": false,
+    "main": "./dist-cjs/sdk/index.cjs",
+    "module": "./dist-es/sdk/index.mjs",
+    "types": "./dist-types/sdk/index.d.ts",
+    "exports": {
+        ".": {
+            "caitlyn-source": "./src/sdk/index.ts",
+            "types": "./dist-types/sdk/index.d.ts",
+            "browser": "./dist-browser/sdk/index.mjs",
+            "worker": "./dist-browser/sdk/index.mjs",
+            "workerd": "./dist-browser/sdk/index.mjs",
+            "deno": "./dist-browser/sdk/index.mjs",
+            "edge-light": "./dist-browser/sdk/index.mjs",
+            "import": "./dist-es/sdk/index.mjs",
+            "require": "./dist-cjs/sdk/index.cjs"
+        },
+        "./package.json": "./package.json"
+    },
+    "files": [
+        "dist-*/**",
+        "README.md",
+        "LICENSE",
+        "NOTICE"
+    ],
+    "engines": {
+        "node": ">=20.0.0"
+    },
     "dependencies": {
         "tslib": "^2.6.2",
         "@caitlyn-ai/sdk-core": "0.0.1",
@@ -14,25 +44,7 @@
         "@smithy/node-http-handler": "^4.13.0",
         "@smithy/types": "^4.19.0"
     },
-    "engines": {
-        "node": ">=20.0.0"
-    },
-    "typesVersions": {
-        "<4.5": {
-            "dist-types/*": [
-                "dist-types/ts3.4/*"
-            ]
-        }
-    },
-    "files": [
-        "dist-*/**"
-    ],
-    "license": "UNLICENSED",
-    "private": true,
-    "browser": {
-        "./dist-es/runtimeConfig": "./dist-es/runtimeConfig.browser"
-    },
-    "react-native": {
-        "./dist-es/runtimeConfig": "./dist-es/runtimeConfig.native"
+    "publishConfig": {
+        "access": "public"
     }
 }

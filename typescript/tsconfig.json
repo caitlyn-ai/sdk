@@ -12,6 +12,9 @@
       "node"
     ],
     "paths": {
+      "@caitlyn-ai/sdk-core": [
+        "./packages/sdk-core/src/index.ts"
+      ],
       "@caitlyn-ai/sdk": [
         "./packages/sdk/src/sdk/index.ts"
       ],
@@ -22,11 +25,17 @@
         "./node_modules/*",
         "./node_modules/@types/*"
       ]
-    }
+    },
+    "customConditions": [
+      "caitlyn-source"
+    ],
+    "allowJs": true
   },
   "include": [
     "packages/sdk/src",
     "packages/sdk-core/src",
-    "../conformance/typescript"
+    "../conformance/typescript",
+    "test",
+    "../examples/typescript"
   ]
 }
