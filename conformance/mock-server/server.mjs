@@ -11,6 +11,8 @@
 //   POST /__mock/example            prime the next request with an example case from
 //                                   conformance/cases/examples.json: {"id": "<case id>"}
 //   GET  /__mock/example            the primed case's result: {"id", "served", "mismatches": [...]}
+//   GET  /__mock/auth               sign-in counters (auth.mjs, which also serves /oauth/* and the STS
+//                                   stand-in at /__sts/; fault key `auth`)
 //
 // An example case checks the request against the one the case expects (method, path, query,
 // headers, JSON body) and answers with the case's response. A request that does not match is
@@ -21,6 +23,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { authFaults, authorised, handleAuth, resetAuth } from './auth.mjs';
 
 const API_VERSION_DEFAULT = '5.120.0';
 const EXAMPLES = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '../cases/examples.json'), 'utf8')).cases;
@@ -559,7 +562,7 @@ async function updateDraft(req, res, rid, [agentId], url, body) {
 
 // ---------------------------------------------------------------------------
 
-const LOGGED_HEADERS = ['authorization', 'idempotency-key', 'if-match', 'last-event-id', 'accept', 'content-type', 'user-agent', 'traceparent', 'caitlyn-sdk-model', 'caitlyn-api-version'];
+const LOGGED_HEADERS = ['authorization', 'cookie', 'origin', 'idempotency-key', 'if-match', 'last-event-id', 'accept', 'content-type', 'user-agent', 'traceparent', 'caitlyn-sdk-model', 'caitlyn-api-version'];
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -567,11 +570,13 @@ const server = http.createServer(async (req, res) => {
   try {
     if (url.pathname === '/__mock/reset' && req.method === 'POST') {
       reset();
+      resetAuth();
       res.writeHead(204);
       return res.end();
     }
     if (url.pathname === '/__mock/faults' && req.method === 'POST') {
-      const patch = parseJson(await readBody(req));
+      const { auth, ...patch } = parseJson(await readBody(req));
+      if (auth) authFaults(auth);
       faults = { ...faults, ...patch, status: { ...faults.status, ...(patch.status ?? {}) } };
       res.writeHead(204);
       return res.end();
@@ -599,6 +604,8 @@ const server = http.createServer(async (req, res) => {
     const entry = { headerNames: Object.keys(req.headers), method: req.method, path: url.pathname, query: url.search, headers: {}, body: body.length && body.length < 10_000 ? body.toString() : undefined, at: Date.now(), requestId: rid };
     for (const h of LOGGED_HEADERS) if (req.headers[h] != null) entry.headers[h] = req.headers[h];
     log.push(entry);
+    if (await handleAuth(req, res, url, body)) return;
+    if (url.pathname.startsWith('/v3/') && !authorised(req)) return problem(res, rid, 401, 'UNAUTHENTICATED', 'The bearer token is missing, expired or not valid for this workspace');
     if (primed && !primed.served && !url.pathname.startsWith('/__s3/')) return await serveExample(req, res, url, body);
     for (const [method, re, handler] of routes) {
       if (req.method !== method) continue;

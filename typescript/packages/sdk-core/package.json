@@ -1,18 +1,42 @@
 {
   "name": "@caitlyn-ai/sdk-core",
   "version": "0.0.1",
-  "private": true,
-  "description": "Hand-written runtime core for Caitlyn's generated TypeScript SDK: the restJson protocol and SDK identity.",
-  "type": "module",
+  "description": "The runtime core of the Caitlyn TypeScript SDK: the Caitlyn REST JSON protocol, sign-in, retries, server-sent events, waiters and telemetry.",
+  "license": "Apache-2.0",
+  "homepage": "https://build.caitlyn.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/caitlyn-ai/sdk.git",
+    "directory": "typescript/packages/sdk-core"
+  },
   "sideEffects": false,
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist-cjs/index.cjs",
+  "module": "./dist-es/index.mjs",
+  "types": "./dist-types/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "caitlyn-source": "./src/index.ts",
+      "types": "./dist-types/index.d.ts",
+      "import": "./dist-es/index.mjs",
+      "require": "./dist-cjs/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist-*/**",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
-    "@smithy/core": "3.39.0",
-    "@smithy/types": "4.20.0",
-    "@opentelemetry/api": "1.9.0"
+    "@smithy/core": "^3.39.0",
+    "@smithy/types": "^4.20.0",
+    "@opentelemetry/api": "^1.9.0"
   }
 }

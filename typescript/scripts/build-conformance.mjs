@@ -1,4 +1,5 @@
-// Bundles the TypeScript conformance harness (conformance/typescript) against the SDK in this workspace.
+// Bundles the TypeScript conformance harness (conformance/typescript) and the runtime tests (test/) against the
+// SDK in this workspace.
 // Type checking is `npm run typecheck`; this only bundles.
 import { build } from 'esbuild';
 import fs from 'node:fs';
@@ -7,8 +8,13 @@ import path from 'node:path';
 const root = path.resolve(import.meta.dirname, '..');
 fs.mkdirSync(path.join(root, '../build/conformance'), { recursive: true });
 await build({
-  entryPoints: [path.join(root, '../conformance/typescript/conformance.test.ts')],
-  outfile: path.join(root, 'dist/conformance.test.mjs'),
+  entryPoints: {
+    'conformance.test': path.join(root, '../conformance/typescript/conformance.test.ts'),
+    'auth.test': path.join(root, 'test/auth.test.ts'),
+    'waiter.test': path.join(root, 'test/waiter.test.ts'),
+  },
+  outdir: path.join(root, 'dist'),
+  outExtension: { '.js': '.mjs' },
   bundle: true,
   platform: 'node',
   format: 'esm',

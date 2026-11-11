@@ -35,12 +35,41 @@ for (const [file, list] of Object.entries(edits)) {
 console.log('postgen-ts: removed defaults-mode resolution from runtimeConfig.ts and runtimeConfig.browser.ts');
 
 // The generated package.json carries smithy-typescript's yarn build scripts and their devDependencies. The
-// repository builds and tests the SDK from typescript/package.json (an npm workspace), so they are dropped
-// here; packaging for npm (entry points, dual builds) is lane K1's.
+// repository builds and tests the SDK from typescript/package.json (an npm workspace), so they are dropped, and
+// the package is described for npm: entry points for Node (ESM and CommonJS), for browsers and edge runtimes
+// (fetch), types, and the files typescript/scripts/build-packages.mjs writes.
 const pkgUrl = new URL('../typescript/packages/sdk/package.json', import.meta.url);
 const pkg = JSON.parse(fs.readFileSync(pkgUrl, 'utf8'));
-delete pkg.scripts;
-delete pkg.devDependencies;
-pkg.private = true;
-fs.writeFileSync(pkgUrl, JSON.stringify(pkg, null, 4) + '\n');
-console.log('postgen-ts: removed the generated yarn scripts and devDependencies from packages/sdk/package.json');
+const corePkg = JSON.parse(fs.readFileSync(new URL('../typescript/packages/sdk-core/package.json', import.meta.url), 'utf8'));
+const entry = (name) => ({
+  // In this repository the workspace resolves the TypeScript source (typescript/tsconfig.json customConditions).
+  'caitlyn-source': `./src/${name}.ts`,
+  types: `./dist-types/${name}.d.ts`,
+  browser: `./dist-browser/${name}.mjs`,
+  worker: `./dist-browser/${name}.mjs`,
+  workerd: `./dist-browser/${name}.mjs`,
+  deno: `./dist-browser/${name}.mjs`,
+  'edge-light': `./dist-browser/${name}.mjs`,
+  import: `./dist-es/${name}.mjs`,
+  require: `./dist-cjs/${name}.cjs`,
+});
+const published = {
+  name: pkg.name,
+  description: 'The TypeScript SDK for the Caitlyn v3 API.',
+  version: corePkg.version,
+  license: corePkg.license,
+  homepage: 'https://build.caitlyn.ai',
+  // npm provenance checks this against the GitHub repository the release workflow runs in.
+  repository: { type: 'git', url: 'git+https://github.com/caitlyn-ai/sdk.git', directory: 'typescript/packages/sdk' },
+  sideEffects: false,
+  main: './dist-cjs/sdk/index.cjs',
+  module: './dist-es/sdk/index.mjs',
+  types: './dist-types/sdk/index.d.ts',
+  exports: { '.': entry('sdk/index'), './package.json': './package.json' },
+  files: ['dist-*/**', 'README.md', 'LICENSE', 'NOTICE'],
+  engines: pkg.engines,
+  dependencies: { ...pkg.dependencies, '@caitlyn-ai/sdk-core': corePkg.version },
+  publishConfig: corePkg.publishConfig,
+};
+fs.writeFileSync(pkgUrl, JSON.stringify(published, null, 4) + '\n');
+console.log('postgen-ts: wrote the npm description of packages/sdk/package.json');
