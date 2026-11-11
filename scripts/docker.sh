@@ -12,7 +12,7 @@ docker image inspect "$image" > /dev/null 2>&1 \
   || docker build -q -t "$image" -f "$root/docker/Dockerfile" "$root"
 tty=()
 [ -t 0 ] && [ -t 1 ] && tty=(-it)
-# Named volumes keep the Gradle, Maven, Go, npm and uv caches between runs. typescript/node_modules lives in
+# Named volumes keep the Gradle, Maven, Go, npm, uv and Cargo caches (and Cargo's build output) between runs. typescript/node_modules lives in
 # a volume too, because esbuild's binary differs between macOS and Linux. python/.venv is a Linux
 # environment in the checkout (it is ignored by git).
 docker run --rm ${tty[@]+"${tty[@]}"} \
@@ -24,6 +24,10 @@ docker run --rm ${tty[@]+"${tty[@]}"} \
   -v caitlyn-sdk-npm:/root/.npm \
   -v caitlyn-sdk-uv:/root/.cache/uv \
   -v caitlyn-sdk-node-modules:/work/typescript/node_modules \
+  -v caitlyn-sdk-cargo:/root/.cargo \
+  -v caitlyn-sdk-cargo-target:/work/build/rust-target \
   -e GRADLE_USER_HOME=/root/.gradle \
+  -e CARGO_HOME=/root/.cargo \
+  -e CARGO_TARGET_DIR=/work/build/rust-target \
   -w /work \
   "$image" "$@"

@@ -1,0 +1,31 @@
+# The Rust conformance harness: every case in conformance/cases/ against the generated Rust SDK and the mock
+# server, plus the sign-in cases and Rust-only cases. `cargo test` runs it (scripts/test-rust.sh); it writes
+# build/conformance/rust.json for scripts/check-conformance.mjs.
+[package]
+name = "caitlyn-conformance"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "Apache-2.0"
+
+[dependencies]
+
+[dev-dependencies]
+caitlyn-sdk = { path = "../../rust/caitlyn-sdk" }
+caitlyn-sdk-core = { path = "../../rust/caitlyn-sdk-core" }
+tokio = { version = "1.40", features = ["full"] }
+serde_json = "1"
+serde = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["registry", "std"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+url = "2"
+http = "1"
+regex-lite = "0.1"
+futures-util = { version = "0.3", default-features = false }
+
+[[test]]
+name = "conformance"
+path = "tests/conformance.rs"
+harness = false

@@ -4,7 +4,7 @@
 #                          runs in that image, the same one `make` uses locally.
 #   generate               Regenerates every SDK from the committed model snapshot and fails if the committed
 #                          generated code differs: generated code is reviewed in merge requests, never edited.
-#   typescript/python/go   Install, strict type checks, lint, and the conformance harness against the mock server.
+#   typescript/python/go/rust  Install, strict type checks, lint, and the conformance harness against the mock server.
 #   conformance            Checks that every language ran and passed every protocol and example case.
 #   model:version-check    Is the snapshot the latest published model? A warning on merge requests when not.
 #   regenerate             An app release that publishes a model triggers this project (multi-project pipeline);
@@ -37,7 +37,7 @@ stages:
 
 variables:
   # Bump when docker/Dockerfile or scripts/install-smithy-cli.sh changes; the toolchain job pushes this tag.
-  TOOLCHAIN_VERSION: '1'
+  TOOLCHAIN_VERSION: '2'
   TOOLCHAIN_IMAGE: '$CI_REGISTRY_IMAGE/toolchain:$TOOLCHAIN_VERSION'
   # The app project's package registry, where each app release publishes caitlyn-v3-model/<version>/.
   MODEL_PROJECT_ID: '653'
@@ -47,6 +47,7 @@ variables:
   GOCACHE: '$CI_PROJECT_DIR/.cache/go-build'
   npm_config_cache: '$CI_PROJECT_DIR/.cache/npm'
   UV_CACHE_DIR: '$CI_PROJECT_DIR/.cache/uv'
+  CARGO_HOME: '$CI_PROJECT_DIR/.cache/cargo'
 
 .toolchain:
   image: $TOOLCHAIN_IMAGE
@@ -88,7 +89,7 @@ generate:
   script:
     - scripts/generate.sh
     - |
-      if ! git diff --exit-code --stat -- typescript/packages/sdk python/caitlyn go conformance/cases; then
+      if ! git diff --exit-code --stat -- typescript/packages/sdk python/caitlyn go rust/caitlyn-sdk conformance/cases; then
         echo "The committed generated code differs from a fresh generation. Run make generate and commit the result."
         exit 1
       fi
@@ -131,10 +132,21 @@ go:
     paths: [build/conformance/go.json]
   rules: !reference [.mr-and-main, rules]
 
+rust:
+  extends: .toolchain
+  stage: test
+  script:
+    - scripts/test-rust.sh
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths: [build/conformance/rust.json]
+  rules: !reference [.mr-and-main, rules]
+
 conformance:
   extends: .toolchain
   stage: conformance
-  needs: [typescript, python, go]
+  needs: [typescript, python, go, rust]
   script:
     - node scripts/check-conformance.mjs
   rules: !reference [.mr-and-main, rules]
@@ -144,7 +156,8 @@ conformance:
 model:version-check:
   extends: .toolchain
   stage: generate
-  needs: []
+  # Inherits needs from .toolchain, so it waits for a rebuilt toolchain image instead of pulling a tag that
+  # doesn't exist yet.
   script:
     - scripts/model-check.sh
   # Exit 2 means "behind, unpublished, or nothing published yet": a warning, not a failure.
@@ -173,7 +186,7 @@ regenerate:
         exit 0
       fi
     - scripts/generate.sh
-    - scripts/test-typescript.sh && scripts/test-python.sh && scripts/test-go.sh && node scripts/check-conformance.mjs
+    - scripts/test-typescript.sh && scripts/test-python.sh && scripts/test-go.sh && scripts/test-rust.sh && node scripts/check-conformance.mjs
     - scripts/open-model-mr.sh
   rules:
     - if: $CI_PIPELINE_SOURCE == "pipeline"
@@ -300,6 +313,12 @@ release:go:
   extends: .release-placeholder
   variables:
     RELEASE_WHAT: 'Mirroring go/ to github.com/caitlyn-ai/caitlyn-go and tagging the module'
+
+# The first upload claims the crate names; crates.io trusted publishing (GitHub Actions OIDC) is lane R2's.
+release:crates:
+  extends: .release-placeholder
+  variables:
+    RELEASE_WHAT: 'Publishing caitlyn-sdk-core, then caitlyn-sdk, to crates.io'
 
 release:homebrew:
   extends: .release-placeholder

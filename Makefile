@@ -2,16 +2,16 @@
 # JDK or Go on developer machines. CI runs the same scripts in the same image. `make help` lists the targets.
 RUN := scripts/docker.sh
 
-.PHONY: help generate check-generated typescript python go conformance check docs docs-kb-dry-run model-check shell clean
+.PHONY: help generate check-generated typescript python go rust conformance check docs docs-kb-dry-run model-check shell clean
 
 help: ## List the targets
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
 
-generate: ## Regenerate all three SDKs and the example cases from model/model.json
+generate: ## Regenerate all four SDKs and the example cases from model/model.json
 	@$(RUN) scripts/generate.sh
 
 check-generated: generate ## Fail if the committed generated code differs from a fresh generation
-	@git diff --exit-code --stat -- typescript/packages/sdk python/caitlyn go conformance/cases \
+	@git diff --exit-code --stat -- typescript/packages/sdk python/caitlyn go rust/caitlyn-sdk conformance/cases \
 	  || { echo "Generated code is out of date: run make generate and commit the result."; exit 1; }
 
 typescript: ## TypeScript: install, type-check, conformance
@@ -23,7 +23,10 @@ python: ## Python: install, pyright --strict, generator tests, conformance
 go: ## Go: build, vet, staticcheck, conformance (also with the race detector)
 	@$(RUN) scripts/test-go.sh
 
-conformance: typescript python go ## All three conformance suites, then the per-case check
+rust: ## Rust: rustfmt, clippy, unit and doc tests, conformance
+	@$(RUN) scripts/test-rust.sh
+
+conformance: typescript python go rust ## All four conformance suites, then the per-case check
 	@$(RUN) node scripts/check-conformance.mjs
 
 check: generate conformance ## What a merge request pipeline runs

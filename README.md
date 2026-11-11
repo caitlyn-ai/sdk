@@ -8,9 +8,10 @@ conformance suite, and (later) the Go CLI, the integrations MCP server and the d
 | TypeScript | `@caitlyn-ai/sdk` | smithy-typescript with Caitlyn's integration (`codegen/typescript`) | `@caitlyn-ai/sdk-core` | `typescript/` |
 | Python | `caitlyn` | Caitlyn's own generator (`codegen/python`): Pydantic v2 and httpx | `caitlyn-core` | `python/` |
 | Go | `github.com/caitlyn-ai/caitlyn-go` | Caitlyn's own generator (`codegen/go`) | `github.com/caitlyn-ai/caitlyn-go/core` | `go/` |
+| Rust | `caitlyn-sdk` | Caitlyn's own generator (`codegen/rust`): serde and tokio | `caitlyn-sdk-core` | `rust/` |
 
-None of them uses an AWS runtime: no `@aws-sdk` package, no botocore, no aws-sdk-go, and none reads AWS
-configuration. They depend on the OpenTelemetry API only. Nothing is published yet (lane R2).
+None of them uses an AWS runtime: no `@aws-sdk` package, no botocore, no aws-sdk-go, no aws-smithy crate, and
+none reads AWS configuration. They depend on the OpenTelemetry API only (Rust: the `tracing` crate). Nothing is published yet (lane R2).
 
 ## Where things are
 
@@ -23,16 +24,17 @@ model/                 the model snapshot the SDKs are generated from, and its l
 codegen/               the generators: one Gradle build, one smithy-build plugin per language
   model-support/       model-reading rules the generators share (client-method names, result names, SSE
                        unions and their failure event, problem-details members, versions)
-  typescript/ python/ go/
-  smithy-build.json    runs all three over the prepared model
+  typescript/ python/ go/ rust/
+  smithy-build.json    runs all four over the prepared model
 typescript/            npm workspace: packages/sdk (generated), packages/sdk-core (hand-written)
 python/                uv workspace: caitlyn (generated), caitlyn-core (hand-written)
 go/                    one Go module: the generated package at the root, core/ hand-written
+rust/                  Cargo workspace: caitlyn-sdk (generated), caitlyn-sdk-core (hand-written)
 conformance/
   cases/protocol.json  the protocol cases every SDK must pass (PROTOCOL.md section 11)
   cases/examples.json  one case per @examples entry, plus synthesised 403 and 404 cases (generated)
   mock-server/         the mock Caitlyn server, with fault injection and example matching
-  typescript/ python/ go/   one thin harness per language
+  typescript/ python/ go/ rust/   one thin harness per language
 examples/typescript/   the proposal's top-ten task examples in TypeScript, type-checked in CI
 docs/                  the developer docs (a skeleton until lane D2)
 cli/                   the Go CLI (lane C1)
@@ -42,11 +44,11 @@ scripts/               generation, model pull and check, tests, docs
 
 ## Quick start
 
-You need Docker and make. Java, Go, Node and uv all run in the toolchain image.
+You need Docker and make. Java, Go, Node, uv and Rust all run in the toolchain image.
 
 ```bash
-make generate      # regenerate the three SDKs and the example cases from model/model.json
-make conformance   # run the three conformance suites against the mock server, then check every case passed
+make generate      # regenerate the four SDKs and the example cases from model/model.json
+make conformance   # run the four conformance suites against the mock server, then check every case passed
 make help          # everything else
 ```
 

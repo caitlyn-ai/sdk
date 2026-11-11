@@ -6,8 +6,8 @@ for you. CI runs the same scripts in the same image, so a local run and CI agree
 ## Rules
 
 - **Never edit generated code.** `typescript/packages/sdk`, `python/caitlyn`, the generated `go/*.go` files
-  (each starts with `// Code generated … DO NOT EDIT.`) and `conformance/cases/examples.json` come from the
-  model. Change the generator, the runtime or the model, then `make generate`, and commit both. The `generate`
+  (each starts with `// Code generated … DO NOT EDIT.`), `rust/caitlyn-sdk` and `conformance/cases/examples.json`
+  come from the model. Change the generator, the runtime or the model, then `make generate`, and commit both. The `generate`
   CI job fails when the committed code differs from a fresh generation.
 - **Never edit `model/` by hand.** It is a copy of a published model; `scripts/model-pull.sh` writes it and its
   lock file together, and `scripts/prepare-model.mjs` refuses a snapshot whose SHA-256 does not match the lock.
@@ -31,21 +31,22 @@ make generate
 2. `scripts/gen-example-cases.mjs`: writes `conformance/cases/examples.json` from the model's `@examples`.
 3. `gradle test publish` in `codegen/`: compiles and tests the generators and writes them to
    `codegen/build/repo`, a file repository. Nothing is published anywhere else.
-4. `smithy build` in `codegen/`: runs the three generators (`codegen/smithy-build.json`).
-5. Copies the output into `typescript/packages/sdk`, `python/caitlyn` and `go/`, then tidies it
-   (`scripts/postgen-ts.mjs`, `gofmt`).
+4. `smithy build` in `codegen/`: runs the four generators (`codegen/smithy-build.json`).
+5. Copies the output into `typescript/packages/sdk`, `python/caitlyn`, `go/` and `rust/caitlyn-sdk`, then tidies
+   it (`scripts/postgen-ts.mjs`, `gofmt`, `rustfmt`).
 
 The generators share their model-reading rules through `codegen/model-support`: how operations become client
 methods (PROTOCOL.md section 10), how outputs are named, which SSE union member is the failure event, which
-error members the runtimes already carry. Change a naming rule there and all three SDKs change together.
+error members the runtimes already carry. Change a naming rule there and every SDK changes together.
 
 ## Running conformance
 
 ```bash
-make conformance        # all three, then scripts/check-conformance.mjs
+make conformance        # all four, then scripts/check-conformance.mjs
 make typescript         # or one language: type checks, lint and its harness
 make python
 make go
+make rust
 ```
 
 Each harness starts the mock server (`conformance/mock-server/server.mjs`, Node, no dependencies), resets it
@@ -71,8 +72,8 @@ There are two kinds of case:
   entity and whose examples have no 404. The case holds the input, the exact request an SDK must send for it (worked out from the HTTP bindings)
   and the response. The harness calls the operation with the input; the mock server checks the request; the
   harness checks the output or the typed error. A new operation gets cases the moment the model has examples
-  for it: TypeScript and Python find the method from the model, the Go harness needs one line in its
-  `examples` table and fails until it has it.
+  for it: TypeScript and Python find the method from the model; the Go and Rust harnesses need an entry in their
+  example tables (`examples` in Go, `call_example` in Rust) and fail until they have it.
 
 `scripts/check-conformance.mjs` reads each harness's report (`build/conformance/`) and fails if any case is
 missing or failed in any language.

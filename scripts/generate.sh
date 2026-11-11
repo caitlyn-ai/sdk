@@ -3,8 +3,8 @@
 # `make generate` (scripts/docker.sh), in CI directly.
 #   1. build/model/model.json from model/model.json (scripts/prepare-model.mjs);
 #   2. compile the generators and publish them to codegen/build/repo;
-#   3. `smithy build` in codegen/, which runs the three generators (codegen/smithy-build.json);
-#   4. copy the output into typescript/packages/sdk, python/caitlyn and go/, and tidy it;
+#   3. `smithy build` in codegen/, which runs the four generators (codegen/smithy-build.json);
+#   4. copy the output into typescript/packages/sdk, python/caitlyn, go/ and rust/caitlyn-sdk, and tidy it;
 #   5. conformance/cases/examples.json from the model's @examples (scripts/gen-example-cases.mjs).
 # Generated code is committed: a model change shows up as a reviewable diff.
 set -euo pipefail
@@ -44,5 +44,10 @@ for f in go/*.go; do
 done
 cp "$out"/go/caitlyn-go-client-codegen/*.go go/
 gofmt -w go/*.go
+
+echo "Rust: rust/caitlyn-sdk"
+rm -rf rust/caitlyn-sdk
+cp -R "$out/rust/caitlyn-rust-client-codegen" rust/caitlyn-sdk
+rustfmt --edition 2021 --config-path rust/rustfmt.toml rust/caitlyn-sdk/src/lib.rs
 
 echo "Generated from $(node -p "require('./model/model.lock.json').version ?? 'an unpublished model'")."
