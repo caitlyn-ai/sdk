@@ -1,0 +1,13 @@
+# The Rust SDK workspace: caitlyn-sdk-core (hand-written runtime) and caitlyn-sdk (generated from the model by
+# codegen/rust; never edit it). The conformance harness is a separate crate in conformance/rust.
+[workspace]
+resolver = "2"
+members = ["caitlyn-sdk-core", "caitlyn-sdk"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["Custom D Ltd"]
+repository = "https://github.com/caitlyn-ai/sdk"
+homepage = "https://build.caitlyn.ai/"

@@ -12,7 +12,8 @@
       "software.amazon.smithy.typescript:smithy-typescript-codegen:0.55.0",
       "ai.caitlyn:typescript:0.0.1",
       "ai.caitlyn:python:0.0.1",
-      "ai.caitlyn:go:0.0.1"
+      "ai.caitlyn:go:0.0.1",
+      "ai.caitlyn:rust:0.0.1"
     ]
   },
   "projections": {
@@ -46,6 +47,19 @@
           "package": "caitlyn",
           "version": "0.0.1",
           "coreModule": "github.com/caitlyn-ai/caitlyn-go/core"
+        }
+      }
+    },
+    "rust": {
+      "plugins": {
+        "caitlyn-rust-client-codegen": {
+          "service": "ai.caitlyn.v3#Caitlyn",
+          "crate": "caitlyn-sdk",
+          "version": "0.0.1",
+          "coreCrate": "caitlyn-sdk-core",
+          "coreVersion": "0.0.1",
+          "corePath": "../caitlyn-sdk-core",
+          "repository": "https://github.com/caitlyn-ai/sdk"
         }
       }
     }

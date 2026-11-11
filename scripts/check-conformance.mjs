@@ -3,8 +3,9 @@
 //   build/conformance/typescript.xml   node --test, JUnit reporter
 //   build/conformance/python.xml       pytest --junitxml
 //   build/conformance/go.json          go test -json
+//   build/conformance/rust.json        the Rust harness's own report: {"results": {"<test name>": passed}}
 // Prints a table of counts and exits non-zero when a case is missing or failed in any language given.
-// Usage: node scripts/check-conformance.mjs [typescript] [python] [go]   (default: all three)
+// Usage: node scripts/check-conformance.mjs [typescript] [python] [go] [rust]   (default: all four)
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -37,6 +38,9 @@ function goJson(file) {
   return out;
 }
 
+/** The Rust harness's report: test name -> passed. */
+const rustJson = (file) => new Map(Object.entries(JSON.parse(fs.readFileSync(file, 'utf8')).results));
+
 // Each language names its tests differently; these find a case's test.
 const languages = {
   typescript: {
@@ -57,6 +61,12 @@ const languages = {
     protocol: (results, id) => [...results].find(([n]) => n === `TestProtocol/${id}`),
     // go test writes spaces in subtest names as underscores.
     example: (results, id) => [...results].find(([n]) => n === `TestExamples/${id.replaceAll(' ', '_')}`),
+  },
+  rust: {
+    report: 'build/conformance/rust.json',
+    load: rustJson,
+    protocol: (results, id) => [...results].find(([n]) => n.startsWith(`[${id}] `)),
+    example: (results, id) => [...results].find(([n]) => n === `[example] ${id}`),
   },
 };
 
