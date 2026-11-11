@@ -9,6 +9,12 @@
 # Generated code is committed: a model change shows up as a reviewable diff.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
+# codegen/smithy-build.json reads the generators from file:///work/codegen/build/repo, the path the
+# toolchain image mounts the repository at. CI checks the repository out elsewhere, so link it there.
+if [ "$root" != /work ]; then
+  ln -sfn "$root" /work
+  root=/work
+fi
 cd "$root"
 
 node scripts/prepare-model.mjs
