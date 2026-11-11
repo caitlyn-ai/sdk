@@ -21,7 +21,11 @@ echo "Compiling the generators"
 rm -rf "${HOME}/.m2/repository/ai/caitlyn" codegen/build/smithy
 
 echo "Running the generators"
-(cd codegen && smithy build --quiet --output build/smithy)
+# smithy-build.json names the generators' file repository as file:///work/codegen/build/repo, the path the
+# toolchain image mounts the repository at. CI checks it out elsewhere, so build from a copy that names
+# this checkout's own path.
+sed "s#file:///work/codegen/build/repo#file://${root}/codegen/build/repo#" codegen/smithy-build.json > codegen/smithy-build.local.json
+(cd codegen && smithy build --quiet --config smithy-build.local.json --output build/smithy)
 out=codegen/build/smithy
 
 echo "TypeScript: typescript/packages/sdk"
