@@ -3,5 +3,5 @@
 // Package caitlyn is the Go SDK for the Caitlyn API, generated from its Smithy model by
 // caitlyn-go-codegen. It depends only on the standard library and the hand-written runtime
 // github.com/caitlyn-ai/caitlyn-go/core (which adds the OpenTelemetry API); it reads no AWS
-// configuration.
+// configuration outside AWSIAM sign-in.
 package caitlyn
