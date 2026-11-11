@@ -32,6 +32,7 @@ from ._protocol import (
 from ._retry import RetryPolicy, error_retry_delay, transport_retry_delay
 from ._spec import OperationSpec
 from ._sse import SseDecoder, SseMessage
+from .auth import AsyncAuthSession, Auth, SyncAuthSession, workspace_host
 
 USER_AGENT_PREFIX = "caitlyn-sdk-python"
 
@@ -39,14 +40,14 @@ USER_AGENT_PREFIX = "caitlyn-sdk-python"
 def workspace_endpoint(workspace: str) -> str:
     """The base URL of a workspace's API: its hostname, over HTTPS, with the /api prefix every Caitlyn
     route has. Operation paths (``/v3/…``) are appended to it."""
-    host = workspace.split("://", 1)[-1].rstrip("/")
-    return f"https://{host}/api"
+    return f"https://{workspace_host(workspace)}/api"
 
 
 @dataclass(frozen=True, slots=True)
 class ClientConfig:
     endpoint: str
-    auth: httpx.Auth | None
+    auth: Auth | httpx.Auth | None
+    """A sign-in mode (``caitlyn_core.auth``), which the client binds to its workspace, or any ``httpx.Auth``."""
     sdk_version: str
     sdk_model: str
     """The model version the SDK was generated from (the highest @since); sent as Caitlyn-Sdk-Model."""
@@ -57,6 +58,8 @@ class ClientConfig:
     app_id: str | None = None
     """Appended to the user agent as ``app/<app_id>``. Declared only; never used for authorisation."""
     max_reconnects: int = 3
+    workspace: str = ""
+    """The workspace hostname: it sets the token audience, ``https://<workspace>/api/v3``, whatever the endpoint."""
 
     @classmethod
     def create(
@@ -64,7 +67,7 @@ class ClientConfig:
         *,
         workspace: str | None,
         endpoint: str | None,
-        auth: httpx.Auth | None,
+        auth: Auth | httpx.Auth | None,
         sdk_version: str,
         sdk_model: str,
         max_attempts: int | None,
@@ -80,6 +83,8 @@ class ClientConfig:
             if workspace is None:
                 raise ValueError("Pass workspace= (for example 'your-company.getcaitlyn.ai') or endpoint=")
             endpoint = workspace_endpoint(workspace)
+        # The audience comes from the workspace; with only an endpoint, from the endpoint's host.
+        host = workspace_host(workspace) if workspace is not None else httpx.URL(endpoint).host
         policy = retry or RetryPolicy()
         if max_attempts is not None:
             policy = dataclasses.replace(policy, max_attempts=max_attempts)
@@ -95,6 +100,7 @@ class ClientConfig:
             tracer_provider=tracer_provider,
             interceptors=tuple(interceptors),
             app_id=app_id,
+            workspace=host,
         )
 
     def headers(self) -> dict[str, str]:
@@ -182,6 +188,10 @@ class SyncClientCore(_CoreBase):
         super().__init__(config)
         self._http = http_client or httpx.Client(base_url=config.endpoint, timeout=config.timeout)
         self._owns_http = http_client is None
+        a = config.auth
+        self.auth = SyncAuthSession(a if isinstance(a, Auth) else None, config.endpoint, config.workspace, self._http)
+        """The client's sign-in: its token, and the ``OAuth`` mode's sign-in steps."""
+        self._send_auth: httpx.Auth | None = self.auth if isinstance(a, Auth) else a
 
     def close(self) -> None:
         if self._owns_http:
@@ -195,7 +205,7 @@ class SyncClientCore(_CoreBase):
             while True:
                 request, span = self._request_for(self._http, call, _accept(spec))
                 try:
-                    response = self._http.send(request, auth=self.config.auth or httpx.USE_CLIENT_DEFAULT, stream=True)
+                    response = self._http.send(request, auth=self._send_auth or httpx.USE_CLIENT_DEFAULT, stream=True)
                 except httpx.TransportError as e:
                     self._after_attempt(call, span, request, None, e)
                     delay = transport_retry_delay(policy, spec.retry_safe, call.context.attempt, e)
@@ -204,6 +214,9 @@ class SyncClientCore(_CoreBase):
                     time.sleep(delay)
                     call.context.attempt += 1
                     continue
+                except BaseException as e:  # signing in failed, or interrupted while waiting
+                    self._after_attempt(call, span, request, None, e)
+                    raise
                 self._after_attempt(call, span, request, response, None)
                 if not response.is_success or not spec.streaming:
                     try:
@@ -253,6 +266,10 @@ class AsyncClientCore(_CoreBase):
         super().__init__(config)
         self._http = http_client or httpx.AsyncClient(base_url=config.endpoint, timeout=config.timeout)
         self._owns_http = http_client is None
+        a = config.auth
+        self.auth = AsyncAuthSession(a if isinstance(a, Auth) else None, config.endpoint, config.workspace, self._http)
+        """The client's sign-in: its token, and the ``OAuth`` mode's sign-in steps."""
+        self._send_auth: httpx.Auth | None = self.auth if isinstance(a, Auth) else a
 
     async def aclose(self) -> None:
         if self._owns_http:
@@ -265,7 +282,7 @@ class AsyncClientCore(_CoreBase):
             while True:
                 request, span = self._request_for(self._http, call, _accept(spec))
                 try:
-                    response = await self._http.send(request, auth=self.config.auth or httpx.USE_CLIENT_DEFAULT, stream=True)
+                    response = await self._http.send(request, auth=self._send_auth or httpx.USE_CLIENT_DEFAULT, stream=True)
                 except httpx.TransportError as e:
                     self._after_attempt(call, span, request, None, e)
                     delay = transport_retry_delay(policy, spec.retry_safe, call.context.attempt, e)

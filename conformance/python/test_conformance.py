@@ -5,16 +5,23 @@ brackets (pytest's `ids`); scripts/check-conformance.mjs checks that every case 
 from __future__ import annotations
 
 import asyncio
+import base64
+import dataclasses
 import json
+import os
 import re
 import time
-from collections.abc import AsyncIterable, Awaitable, Callable
+import urllib.parse
+import uuid
+from collections.abc import AsyncIterable, Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
 import caitlyn
+import httpx
 import pytest
 from caitlyn import (
     AsyncCaitlyn,
@@ -24,10 +31,12 @@ from caitlyn import (
     NotSupportedByServer,
     PreconditionFailedError,
     ServiceUnavailableError,
+    UnauthenticatedError,
     ValidationError,
 )
 from caitlyn import _operations as operations  # pyright: ignore[reportPrivateUsage]
-from caitlyn.auth import Token
+from caitlyn.auth import Auth, AwsCredentials, AwsIam, CaitlynAuthError, ClientCredentials, OAuth, OAuthTokens, Session, Token, WorkloadIdentity
+from caitlyn.models import AgentVersion
 from caitlyn_core import workspace_endpoint
 from conftest import ROOT, Mock
 from opentelemetry.sdk.trace import TracerProvider
@@ -440,6 +449,375 @@ async def test_endpoint(mock: Mock, case_id: str) -> None:
     await c.aclose()
 
 
+# ------------------------------------------------------------------ sign-in (PROTOCOL.md section 12)
+# Against the mock server's OAuth endpoints and STS stand-in (conformance/mock-server/auth.mjs). Each test turns
+# on the mock's `require` fault, so every /v3/ request needs a credential the mock issued or accepts.
+
+# The mock's accepted credentials (conformance/mock-server/auth.mjs: MOCK_CLIENT, MOCK_OAUTH_CLIENT, MOCK_AWS…).
+MOCK_CLIENT = ("machine-client", "machine-secret")
+MOCK_OAUTH_CLIENT = ("studio-client", "studio-secret")
+MOCK_AWS = AwsCredentials("AKIDMOCKCAITLYN", "mock-secret-key", "session-token")
+MOCK_AWS_REGION = "ap-southeast-2"
+MOCK_PAT = "pat_test"
+MOCK_SESSION_COOKIE = "caitlyn_session=mock-session"
+# The audience comes from the workspace, never from the endpoint override these tests use.
+RESOURCE = "https://your-company.getcaitlyn.ai/api/v3"
+REDIRECT = "https://app.example.com/callback"
+
+
+def signed_in(mock: Mock, auth: Auth, workspace: str = "your-company.getcaitlyn.ai") -> AsyncCaitlyn:
+    return AsyncCaitlyn(workspace=workspace, endpoint=mock.base, auth=auth)
+
+
+def read(c: AsyncCaitlyn) -> Awaitable[AgentVersion]:
+    return c.versions.get(agent_id="GHT7YRWXPL", version="draft")
+
+
+def cc_auth(**kw: Any) -> ClientCredentials:
+    return dataclasses.replace(ClientCredentials(MOCK_CLIENT[0], MOCK_CLIENT[1]), **kw)
+
+
+def aws_auth(**kw: Any) -> AwsIam:
+    return dataclasses.replace(AwsIam(region=MOCK_AWS_REGION, credentials=MOCK_AWS), **kw)
+
+
+def sign_in_required(mock: Mock) -> None:
+    mock.faults(auth={"require": True})
+
+
+async def auth_error(aw: Awaitable[Any]) -> CaitlynAuthError:
+    with pytest.raises(CaitlynAuthError) as info:
+        await aw
+    return info.value
+
+
+class MemoryStore:
+    """A token store that counts how often it is cleared."""
+
+    def __init__(self, tokens: OAuthTokens | None = None) -> None:
+        self.tokens = tokens
+        self.clears = 0
+
+    def load(self) -> OAuthTokens | None:
+        return self.tokens
+
+    def save(self, tokens: OAuthTokens) -> None:
+        self.tokens = tokens
+
+    def clear(self) -> None:
+        self.tokens = None
+        self.clears += 1
+
+
+def mock_oidc_token(aud: str) -> str:
+    """A workload identity token, as GitLab CI would mint it (the mock reads it without checking a signature)."""
+
+    def b64(d: dict[str, Any]) -> str:
+        return base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b"=").decode()
+
+    now = int(time.time())
+    claims = {"iss": "https://git.example.com", "sub": "project_path:group/project:ref_type:branch:ref:main", "aud": aud, "iat": now, "exp": now + 300, "jti": str(uuid.uuid4())}
+    return f"{b64({'alg': 'none', 'typ': 'JWT'})}.{b64(claims)}.mock"
+
+
+async def oauth_sign_in(c: AsyncCaitlyn) -> httpx.URL:
+    """The OAuth sign-in steps, following the mock's redirect as a browser would."""
+    start = c.auth.authorization_url()
+    async with httpx.AsyncClient() as browser:
+        redirect = httpx.URL((await browser.get(start.url)).headers["location"])
+    await c.auth.handle_callback(code=redirect.params["code"], state=redirect.params.get("state"), expected_state=start.state, code_verifier=start.code_verifier)
+    return httpx.URL(start.url)
+
+
+@contextmanager
+def environment(**values: str | None) -> Iterator[None]:
+    saved = {k: os.environ.get(k) for k in values}
+    try:
+        for k, v in values.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        yield
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+@case("auth.workspace")
+async def test_auth_workspace(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    # A workspace given as a URL is reduced to its hostname.
+    await read(signed_in(mock, cc_auth(), "https://your-company.getcaitlyn.ai/"))
+    [form] = mock.token_requests()  # sent to the overriding endpoint
+    assert form["resource"] == RESOURCE
+    assert len(mock.api()) == 1
+
+
+@case("auth.token")
+async def test_auth_token(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    await read(signed_in(mock, Token(MOCK_PAT)))
+    assert mock.api()[0]["headers"]["authorization"] == f"Bearer {MOCK_PAT}"
+    assert mock.auth_counts() == {"sts": 0}
+
+
+@case("auth.client-credentials")
+async def test_auth_client_credentials(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    c = signed_in(mock, cc_auth(scopes=["agents:read"]))
+    await asyncio.gather(read(c), read(c), read(c))
+    await read(c)
+    assert mock.auth_counts()["client_credentials"] == 1
+    sent = {r["headers"]["authorization"] for r in mock.api()}
+    assert len(sent) == 1
+    assert sent.pop().startswith("Bearer cai_cc_")
+    [form] = mock.token_requests()
+    assert form["client_id"] == MOCK_CLIENT[0]
+    assert form["resource"] == RESOURCE
+    assert form["scope"] == "agents:read"
+
+
+@case("auth.client-credentials-refused")
+async def test_auth_client_credentials_refused(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    err = await auth_error(read(signed_in(mock, cc_auth(client_secret="wrong"))))
+    assert (err.code, err.status) == ("invalid_client", 401)
+    assert len(mock.api()) == 0
+
+
+@case("auth.renew-before-expiry")
+async def test_auth_renew_before_expiry(mock: Mock, case_id: str) -> None:
+    mock.faults(auth={"require": True, "expiresIn": 1})
+    c = signed_in(mock, cc_auth())
+    await read(c)
+    await read(c)
+    assert mock.auth_counts()["client_credentials"] == 1, "reused within the first half of its life"
+    await asyncio.sleep(0.6)
+    await read(c)
+    assert mock.auth_counts()["client_credentials"] == 2, "replaced after half its life"
+    assert len(mock.api()) == 3, "no call was refused"
+
+
+@case("auth.401-signs-in-again")
+async def test_auth_401_signs_in_again(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    c = signed_in(mock, cc_auth())
+    await read(c)
+    mock.faults(auth={"revokeIssued": True})
+    v = await read(c)
+    assert v.agent_id == "GHT7YRWXPL"
+    assert mock.auth_counts()["client_credentials"] == 2
+    assert len(mock.api()) == 3, "the first call, then the refused attempt and the one after signing in again"
+
+
+@case("auth.401-once")
+async def test_auth_401_once(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    c = signed_in(mock, cc_auth())
+    await read(c)
+    # From here every token the mock issues expires at once, so the new token is refused too.
+    mock.faults(auth={"revokeIssued": True, "expiresIn": 0})
+    err = await expect_error(read(c))
+    assert isinstance(err, UnauthenticatedError)
+    assert (err.status, err.code) == (401, "UNAUTHENTICATED")
+    assert mock.auth_counts()["client_credentials"] == 2, "signed in again once"
+    assert len(mock.api()) == 3, "the first call, then two attempts at the second"
+
+
+@case("auth.401-token-mode")
+async def test_auth_401_token_mode(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    err = await expect_error(read(signed_in(mock, Token("pat_revoked"))))
+    assert (err.status, err.code) == (401, "UNAUTHENTICATED")
+    assert len(mock.api()) == 1
+
+
+@case("auth.oauth-sign-in")
+async def test_auth_oauth_sign_in(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    store = MemoryStore()
+    c = signed_in(mock, OAuth(MOCK_OAUTH_CLIENT[0], MOCK_OAUTH_CLIENT[1], redirect_uri=REDIRECT, scopes=["chat:write"], token_store=store))
+    u = await oauth_sign_in(c)
+    assert u.path == "/oauth/authorize"
+    assert u.params["response_type"] == "code"
+    assert u.params["code_challenge_method"] == "S256"
+    assert u.params["resource"] == RESOURCE
+    assert u.params["scope"] == "chat:write"
+    [form] = mock.token_requests()
+    assert form["grant_type"] == "authorization_code"
+    assert form["resource"] == RESOURCE
+    assert store.tokens is not None and store.tokens.refresh_token
+    await read(c)
+    assert mock.api()[0]["headers"]["authorization"].startswith("Bearer cai_code_")
+
+
+@case("auth.oauth-state")
+async def test_auth_oauth_state(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    c = signed_in(mock, OAuth(MOCK_OAUTH_CLIENT[0], redirect_uri=REDIRECT))
+    err = await auth_error(c.auth.handle_callback(code="x", state="forged", expected_state="expected", code_verifier="v"))
+    assert err.code == "invalid_state"
+    assert mock.token_requests() == []
+
+
+@case("auth.oauth-refresh")
+async def test_auth_oauth_refresh(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    store = MemoryStore()
+    await oauth_sign_in(signed_in(mock, OAuth(MOCK_OAUTH_CLIENT[0], redirect_uri=REDIRECT, token_store=store)))
+    assert store.tokens is not None
+    first = store.tokens.refresh_token
+    # A new process with an expired access token in the store
+    store.tokens = dataclasses.replace(store.tokens, expires_at=time.time() - 1)
+    later = signed_in(mock, OAuth(MOCK_OAUTH_CLIENT[0], token_store=store))
+    await asyncio.gather(read(later), read(later))
+    assert mock.auth_counts()["refresh_token"] == 1, "one refresh however many calls wait"
+    assert store.tokens.refresh_token != first
+    assert mock.api()[-1]["headers"]["authorization"].startswith("Bearer cai_refresh_")
+
+
+@case("auth.oauth-401-refreshes")
+async def test_auth_oauth_401_refreshes(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    store = MemoryStore()
+    c = signed_in(mock, OAuth(MOCK_OAUTH_CLIENT[0], redirect_uri=REDIRECT, token_store=store))
+    await oauth_sign_in(c)
+    await read(c)
+    mock.faults(auth={"revokeIssued": True})
+    await read(c)
+    assert mock.auth_counts()["refresh_token"] == 1
+    sent = [r["headers"]["authorization"] for r in mock.api()]
+    assert len(sent) == 3
+    assert sent[1] == sent[0], "the refused token"
+    assert sent[2].startswith("Bearer cai_refresh_")
+
+
+@case("auth.oauth-refresh-refused")
+async def test_auth_oauth_refresh_refused(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    store = MemoryStore(OAuthTokens("old", "rt_unknown", time.time() - 1))
+    err = await auth_error(read(signed_in(mock, OAuth(MOCK_OAUTH_CLIENT[0], token_store=store))))
+    assert err.code == "invalid_grant"
+    assert store.tokens is None
+    assert store.clears == 1
+    assert len(mock.api()) == 0
+
+
+@case("auth.oauth-not-signed-in")
+async def test_auth_oauth_not_signed_in(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    err = await auth_error(read(signed_in(mock, OAuth(MOCK_OAUTH_CLIENT[0]))))
+    assert err.code == "sign_in_required"
+    assert len(mock.requests()) == 0
+
+
+@case("auth.aws-iam")
+async def test_auth_aws_iam(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    c = signed_in(mock, aws_auth(sts_endpoint=f"{mock.base}/__sts/"))
+    await asyncio.gather(read(c), read(c))
+    n = mock.auth_counts()
+    assert n["sts"] == 1
+    assert n["urn:ietf:params:oauth:grant-type:token-exchange"] == 1
+    assert mock.api()[0]["headers"]["authorization"].startswith("Bearer cai_x_aws_")
+    sts = dict(urllib.parse.parse_qsl(next(r for r in mock.requests() if r["path"] == "/__sts/")["body"]))
+    assert sts["Action"] == "GetWebIdentityToken"
+    assert sts["Audience.member.1"] == RESOURCE
+    assert sts["SigningAlgorithm"] == "ES384"
+    assert sts["DurationSeconds"] == "300"
+    [form] = mock.token_requests()
+    assert form["subject_token_type"] == "urn:ietf:params:oauth:token-type:jwt"
+    assert form["resource"] == RESOURCE
+
+
+@case("auth.aws-iam-provider")
+async def test_auth_aws_iam_provider(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    calls = 0
+
+    async def provider() -> AwsCredentials:
+        nonlocal calls
+        calls += 1
+        return AwsCredentials(MOCK_AWS.access_key_id, MOCK_AWS.secret_access_key)
+
+    await read(signed_in(mock, aws_auth(credentials=provider, sts_endpoint=f"{mock.base}/__sts/")))
+    assert calls == 1
+    assert mock.auth_counts()["sts"] == 1
+
+
+@case("auth.aws-iam-env")
+async def test_auth_aws_iam_env(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    with environment(AWS_ACCESS_KEY_ID=MOCK_AWS.access_key_id, AWS_SECRET_ACCESS_KEY=MOCK_AWS.secret_access_key, AWS_SESSION_TOKEN=None, AWS_REGION=MOCK_AWS_REGION):
+        await read(signed_in(mock, AwsIam(sts_endpoint=f"{mock.base}/__sts/")))
+    assert mock.auth_counts()["sts"] == 1
+
+
+@case("auth.aws-iam-bad-signature")
+async def test_auth_aws_iam_bad_signature(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    wrong = AwsCredentials(MOCK_AWS.access_key_id, "wrong")
+    err = await auth_error(read(signed_in(mock, aws_auth(credentials=wrong, sts_endpoint=f"{mock.base}/__sts/"))))
+    assert err.code == "SignatureDoesNotMatch"
+    assert len(mock.api()) == 0
+
+
+@case("auth.aws-iam-no-credentials")
+async def test_auth_aws_iam_no_credentials(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    keys = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"]
+    with environment(**dict.fromkeys(keys)):
+        err = await auth_error(read(signed_in(mock, aws_auth(credentials=None, sts_endpoint=f"{mock.base}/__sts/"))))
+    assert err.code == "aws_identity_failed"
+    assert len(mock.requests()) == 0
+
+
+@case("auth.workload-identity")
+async def test_auth_workload_identity(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    asked = 0
+
+    async def ci_token() -> str:
+        nonlocal asked
+        asked += 1
+        return mock_oidc_token(RESOURCE)
+
+    await read(signed_in(mock, WorkloadIdentity(ci_token)))
+    assert asked == 1
+    assert mock.api()[0]["headers"]["authorization"].startswith("Bearer cai_x_oidc_")
+    err = await auth_error(read(signed_in(mock, WorkloadIdentity(lambda: mock_oidc_token("https://other.getcaitlyn.ai/api/v3")))))
+    assert err.code == "invalid_grant"
+
+
+@case("auth.workload-identity-single-use")
+async def test_auth_workload_identity_single_use(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    jwt = mock_oidc_token(RESOURCE)
+    await read(signed_in(mock, WorkloadIdentity(lambda: jwt)))
+    err = await auth_error(read(signed_in(mock, WorkloadIdentity(lambda: jwt))))
+    assert err.code == "invalid_grant"
+
+
+@case("auth.session")
+async def test_auth_session(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    c = signed_in(mock, Session(cookie=MOCK_SESSION_COOKIE, origin="https://caitlyn.lndo.site"))
+    v = await read(c)
+    assert v.etag is not None
+    await c.versions.update_draft("GHT7YRWXPL", if_match=v.etag, instructions="Cite clause numbers.")
+    get, patch = mock.api()
+    assert "authorization" not in get["headers"]
+    assert get["headers"]["cookie"] == MOCK_SESSION_COOKIE
+    assert "origin" not in get["headers"]
+    assert patch["headers"]["origin"] == "https://caitlyn.lndo.site"
+    assert "authorization" not in patch["headers"]
+    assert mock.token_requests() == []
+
+
 # ------------------------------------------------------------------ the model's @examples
 
 
@@ -523,3 +901,60 @@ def test_sync_stream_is_incremental(mock: Mock) -> None:
         answer = stream.final_message()
     assert answer is not None and answer.text == "Staff receive 20 days of annual leave."
     assert first_at is not None and first_at < 0.5, f"first event after {first_at}s: not incremental"
+
+
+def test_sync_sign_in_one_token_across_threads(mock: Mock) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    from caitlyn import Caitlyn
+
+    sign_in_required(mock)
+    c = Caitlyn(workspace="your-company.getcaitlyn.ai", endpoint=mock.base, auth=cc_auth())
+    def call(_: int) -> AgentVersion:
+        return c.versions.get(agent_id="GHT7YRWXPL", version="draft")
+
+    with ThreadPoolExecutor(8) as pool:
+        list(pool.map(call, range(8)))
+    assert mock.auth_counts()["client_credentials"] == 1
+    mock.faults(auth={"revokeIssued": True})
+    c.versions.get(agent_id="GHT7YRWXPL", version="draft")
+    assert mock.auth_counts()["client_credentials"] == 2, "signed in again once after the 401"
+    assert len(mock.api()) == 10
+
+
+def test_sync_oauth_sign_in_refresh_and_sign_out(mock: Mock) -> None:
+    from caitlyn import Caitlyn
+
+    sign_in_required(mock)
+    store = MemoryStore()
+    c = Caitlyn(workspace="your-company.getcaitlyn.ai", endpoint=mock.base, auth=OAuth(MOCK_OAUTH_CLIENT[0], redirect_uri=REDIRECT, token_store=store))
+    start = c.auth.authorization_url(state="kept")
+    assert start.state == "kept"
+    redirect = httpx.URL(httpx.get(start.url).headers["location"])
+    c.auth.handle_callback(code=redirect.params["code"], state=redirect.params["state"], expected_state="kept", code_verifier=start.code_verifier)
+    c.versions.get(agent_id="GHT7YRWXPL", version="draft")
+    mock.faults(auth={"revokeIssued": True})
+    c.versions.get(agent_id="GHT7YRWXPL", version="draft")
+    assert mock.auth_counts()["refresh_token"] == 1
+    c.auth.sign_out()
+    assert store.tokens is None
+    revoke = [f for f in mock.token_requests() if f.get("action") == "revoke"]
+    assert len(revoke) == 1
+
+
+def test_sync_client_refuses_async_callbacks(mock: Mock) -> None:
+    from caitlyn import Caitlyn
+
+    async def ci_token() -> str:
+        return mock_oidc_token(RESOURCE)
+
+    c = Caitlyn(workspace="your-company.getcaitlyn.ai", endpoint=mock.base, auth=WorkloadIdentity(ci_token))
+    with pytest.raises(TypeError, match="AsyncCaitlyn"):
+        c.versions.get(agent_id="GHT7YRWXPL", version="draft")
+
+
+async def test_oauth_steps_need_oauth_mode(mock: Mock) -> None:
+    c = signed_in(mock, cc_auth())
+    with pytest.raises(CaitlynAuthError) as info:
+        c.auth.authorization_url(redirect_uri=REDIRECT)
+    assert info.value.code == "invalid_request"

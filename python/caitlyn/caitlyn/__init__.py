@@ -14,6 +14,7 @@ from __future__ import annotations
 from caitlyn_core import (
     AsyncEventStream,
     AsyncPaginator,
+    CaitlynAuthError,
     CaitlynConnectionError,
     CaitlynError,
     CallContext,
@@ -89,6 +90,7 @@ __all__ = [
     "AsyncPaginator",
     "AttachmentSettings",
     "Caitlyn",
+    "CaitlynAuthError",
     "CaitlynConnectionError",
     "CaitlynError",
     "CallContext",

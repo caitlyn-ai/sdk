@@ -9,15 +9,18 @@ from typing import Literal, Self
 
 import httpx
 from caitlyn_core import (
+    AsyncAuthSession,
     AsyncClientCore,
     AsyncEventStream,
     AsyncPaginator,
+    Auth,
     ClientConfig,
     EventStream,
     Interceptor,
     Paginator,
     Resume,
     RetryPolicy,
+    SyncAuthSession,
     SyncClientCore,
     read_upload,
 )
@@ -846,8 +849,9 @@ class Caitlyn:
 
     Args:
         workspace: your workspace host, for example `your-company.getcaitlyn.ai`.
-        auth: how to sign in, for example `Token(os.environ["CAITLYN_TOKEN"])`.
-        endpoint: overrides the URL built from `workspace`.
+        auth: how to sign in (`caitlyn.auth`), for example `Token(os.environ["CAITLYN_TOKEN"])` or
+            `ClientCredentials(client_id, client_secret)`.
+        endpoint: overrides the URL built from `workspace` (a proxy, a local app). Tokens are still for `workspace`.
         max_attempts: attempts per call, including the first (default 3).
         max_retry_delay: the longest Retry-After to wait for, in seconds (default 60); above it the call fails at once.
         retry: the full retry policy.
@@ -857,6 +861,8 @@ class Caitlyn:
         http_client: your own httpx client (its base URL must be the endpoint).
     """
 
+    auth: SyncAuthSession
+    """The client's sign-in: the `OAuth` mode's `authorization_url`, `handle_callback` and `sign_out`, and the current token."""
     conversations: ConversationsResource
     documents: DocumentsResource
     uploads: UploadsResource
@@ -866,7 +872,7 @@ class Caitlyn:
         self,
         *,
         workspace: str | None = None,
-        auth: httpx.Auth | None = None,
+        auth: Auth | httpx.Auth | None = None,
         endpoint: str | None = None,
         max_attempts: int | None = None,
         max_retry_delay: float | None = None,
@@ -892,6 +898,7 @@ class Caitlyn:
             app_id=app_id,
         )
         self._core = SyncClientCore(config, http_client)
+        self.auth = self._core.auth
         self.conversations = ConversationsResource(self._core)
         self.documents = DocumentsResource(self._core)
         self.uploads = UploadsResource(self._core)
@@ -924,8 +931,9 @@ class AsyncCaitlyn:
 
     Args:
         workspace: your workspace host, for example `your-company.getcaitlyn.ai`.
-        auth: how to sign in, for example `Token(os.environ["CAITLYN_TOKEN"])`.
-        endpoint: overrides the URL built from `workspace`.
+        auth: how to sign in (`caitlyn.auth`), for example `Token(os.environ["CAITLYN_TOKEN"])` or
+            `ClientCredentials(client_id, client_secret)`.
+        endpoint: overrides the URL built from `workspace` (a proxy, a local app). Tokens are still for `workspace`.
         max_attempts: attempts per call, including the first (default 3).
         max_retry_delay: the longest Retry-After to wait for, in seconds (default 60); above it the call fails at once.
         retry: the full retry policy.
@@ -935,6 +943,8 @@ class AsyncCaitlyn:
         http_client: your own httpx client (its base URL must be the endpoint).
     """
 
+    auth: AsyncAuthSession
+    """The client's sign-in: the `OAuth` mode's `authorization_url`, `handle_callback` and `sign_out`, and the current token."""
     conversations: AsyncConversationsResource
     documents: AsyncDocumentsResource
     uploads: AsyncUploadsResource
@@ -944,7 +954,7 @@ class AsyncCaitlyn:
         self,
         *,
         workspace: str | None = None,
-        auth: httpx.Auth | None = None,
+        auth: Auth | httpx.Auth | None = None,
         endpoint: str | None = None,
         max_attempts: int | None = None,
         max_retry_delay: float | None = None,
@@ -970,6 +980,7 @@ class AsyncCaitlyn:
             app_id=app_id,
         )
         self._core = AsyncClientCore(config, http_client)
+        self.auth = self._core.auth
         self.conversations = AsyncConversationsResource(self._core)
         self.documents = AsyncDocumentsResource(self._core)
         self.uploads = AsyncUploadsResource(self._core)

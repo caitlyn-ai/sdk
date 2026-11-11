@@ -14,6 +14,7 @@ from ._client import (
 )
 from ._errors import CaitlynConnectionError, CaitlynError, NotSupportedByServer, StreamLostError
 from ._hooks import CallContext, Interceptor
+from .auth import AsyncAuthSession, Auth, CaitlynAuthError, SyncAuthSession
 from ._models import CaitlynEvent, CaitlynModel, OpenEnum
 from ._pagination import AsyncPaginator, Paginator
 from ._retry import RetryPolicy
@@ -23,9 +24,12 @@ from ._uploads import UploadFile, read_upload
 __version__ = "0.0.1"
 
 __all__ = [
+    "AsyncAuthSession",
     "AsyncClientCore",
     "AsyncEventStream",
     "AsyncPaginator",
+    "Auth",
+    "CaitlynAuthError",
     "CaitlynConnectionError",
     "CaitlynError",
     "CaitlynEvent",
@@ -43,6 +47,7 @@ __all__ = [
     "Resume",
     "RetryPolicy",
     "StreamLostError",
+    "SyncAuthSession",
     "SyncClientCore",
     "UploadFile",
     "read_upload",

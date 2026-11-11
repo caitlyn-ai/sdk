@@ -4,6 +4,7 @@ import json
 import os
 import random
 import subprocess
+import urllib.parse
 import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
@@ -37,6 +38,14 @@ class Mock:
     def api(self) -> list[dict[str, Any]]:
         """Requests to the API itself (not the upload target)."""
         return [r for r in self.requests() if str(r.get("path", "")).startswith("/v3/")]
+
+    def auth_counts(self) -> dict[str, int]:
+        """Sign-in counters: token requests by grant type, and STS calls."""
+        return self._get("/__mock/auth")["counts"]
+
+    def token_requests(self) -> list[dict[str, str]]:
+        """The forms posted to the token endpoint, in order."""
+        return [dict(urllib.parse.parse_qsl(r.get("body") or "")) for r in self.requests() if r.get("path") == "/oauth/token"]
 
     def prime_example(self, case_id: str) -> None:
         self._post("/__mock/example", {"id": case_id})
