@@ -576,7 +576,8 @@ test('[telemetry.attributes] the shared span names and attributes, on a failed c
   assert.equal(call.attributes['caitlyn.error.code'], 'NOT_FOUND');
   assert.equal(call.attributes['caitlyn.request_id'], sent.at(-1).requestId);
   assert.equal(call.status.code, SpanStatusCode.ERROR);
-  assert.ok(call.events.some((e) => e.name === 'exception'), 'exception event');
+  assert.ok(call.status.message, 'call status message');
+  assert.ok(call.events.some((e) => e.name === 'exception' && e.attributes?.['exception.type'] === 'NotFoundError'), 'call exception event');
   const attempts = children(call);
   assert.deepEqual(attempts.map((s) => s.name), ['caitlyn.attempt', 'caitlyn.attempt']);
   assert.deepEqual(attempts.map((s) => s.attributes['http.request.resend_count']), [0, 1]);
@@ -588,7 +589,14 @@ test('[telemetry.attributes] the shared span names and attributes, on a failed c
     assert.equal(a.attributes['url.full'], `${BASE}/v3/agents/GHT7YRWXPL/versions/nope`);
     assert.equal(a.attributes['caitlyn.server.api_version'], '5.120.0');
     assert.equal(a.status.code, SpanStatusCode.ERROR);
+    assert.ok(a.status.message, 'attempt status message');
   }
+  assert.deepEqual(attempts.map((s) => s.attributes['error.type']), ['ServiceUnavailableError', 'NotFoundError']);
+  assert.deepEqual(attempts.map((s) => s.attributes['caitlyn.error.code']), ['SERVICE_UNAVAILABLE', 'NOT_FOUND']);
+  assert.deepEqual(
+    attempts.map((s) => s.events.find((e) => e.name === 'exception')?.attributes?.['exception.type']),
+    ['ServiceUnavailableError', 'NotFoundError'],
+  );
 
   const list = spans.find((s) => s.name === 'caitlyn.call' && s.attributes['rpc.method'] === 'ListDocuments')!;
   assert.deepEqual(children(list).map((s) => s.attributes['url.full']), [`${BASE}/v3/knowledge-bases/KB4T7YQ2WL/documents`]);

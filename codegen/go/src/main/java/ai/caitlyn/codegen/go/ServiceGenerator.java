@@ -703,7 +703,7 @@ final class ServiceGenerator {
                     + "https://<workspace>/api. Options set the endpoint, the HTTP client, retries and telemetry; "
                     + "nothing is read from the environment, except by caitlyn.AWSIAM sign-in.", ""));
             w.l("func NewClient(workspace string, auth Auth, opts ...Option) (*Client, error) {\n");
-            w.l("\tcc, err := core.NewClient(core.SDKInfo{Version: SDKVersion, ModelVersion: ModelVersion}, workspace, auth, opts...)\n");
+            w.l("\tcc, err := core.NewClient(core.SDKInfo{Version: core.ModuleVersion(ModulePath, SDKVersion), ModelVersion: ModelVersion}, workspace, auth, opts...)\n");
             w.l("\tif err != nil {\n\t\treturn nil, err\n\t}\n\tc := &Client{core: cc}\n");
             for (String ns : byNamespace.keySet()) {
                 w.l("\tc." + ns + " = &" + ns + "Client{c: c}\n");
@@ -730,7 +730,12 @@ final class ServiceGenerator {
 
     private void version() {
         ctx.writerDelegator().useFileWriter("version.go", "", w -> {
-            w.l("// SDKVersion is this SDK's version.\nconst SDKVersion = " + Names.str(ctx.settings().version()) + "\n\n");
+            w.l("// SDKVersion is the version stamped into the source: a release's version, or the 0.0.0 placeholder in the\n"
+                    + "// repository. Go installs from a git tag, so a client reports the module version it was built with instead\n"
+                    + "// (core.ModuleVersion), and SDKVersion only when the build information has none.\nconst SDKVersion = "
+                    + Names.str(ctx.settings().version()) + "\n\n");
+            w.l("// ModulePath is this SDK's module path, which core.ModuleVersion looks up in the build information.\n"
+                    + "const ModulePath = " + Names.str(ctx.settings().module()) + "\n\n");
             w.l("// ModelVersion is the Caitlyn release the SDK was generated from (the highest @since in the model), sent as Caitlyn-Sdk-Model.\n");
             w.l("const ModelVersion = " + Names.str(facts.apiVersion) + "\n");
         });

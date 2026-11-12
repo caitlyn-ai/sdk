@@ -305,7 +305,7 @@ Every SDK emits the same OpenTelemetry spans. The span names and attributes are 
 | `caitlyn.upload`, the bytes of an upload helper's `PUT` | client; the caller's current span | `http.request.method`, `server.address`, `url.full`, `http.response.status_code` |
 
 - `url.full` never carries the query string, fragment or user information: a presigned upload URL's query is its signature.
-- An attempt span's status is error when the response is 400 or above, or no response arrived.
-- A failed call or upload sets the span's status to error, `error.type` to the error's class name, `caitlyn.error.code` to its `code` when it has one, and records an `exception` event. The class name is the same in every SDK: the model's error shape for a typed error (`NotFoundError`), `CaitlynError` for the generic one, `CaitlynConnectionError`, `CaitlynAuthError`, `NotSupportedByServer`.
+- A failed call, attempt or upload records its failure the same way: the span's status is error, with the error's message as the status description (`otel.status_message` in Rust); `error.type` is the error's class name; `caitlyn.error.code` is its `code` when it has one; and an `exception` event records the class name and the message.
+- An attempt fails when its response is 400 or above, with the error that response is (`ServiceUnavailableError` for a 503), or when no response arrived, which it reports as the call does once retries are spent: `CaitlynConnectionError`, `CONNECTION_ERROR`. The class name is the same in every SDK: the model's error shape for a typed error (`NotFoundError`), `CaitlynError` for the generic one, `CaitlynConnectionError`, `CaitlynAuthError`, `NotSupportedByServer`.
 - `traceparent`, `tracestate` and `baggage` are injected from the attempt span (section 3.1).
 

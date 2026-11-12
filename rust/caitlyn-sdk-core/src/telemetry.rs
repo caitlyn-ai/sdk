@@ -64,19 +64,26 @@ pub fn error_type(e: &Error, shapes: &[(u16, &'static str)]) -> &'static str {
     }
 }
 
-/// Marks `span` failed: `otel.status_code`, `error.type`, `caitlyn.error.code`, and an `exception` event.
+/// Marks `span` failed: `otel.status_code` and `otel.status_message`, `error.type`, `caitlyn.error.code`, and an
+/// `exception` event (PROTOCOL.md 13).
 pub(crate) fn record_failure(span: &tracing::Span, e: &Error, shapes: &[(u16, &'static str)]) {
-    let kind = error_type(e, shapes);
-    span.record("otel.status_code", "ERROR");
-    span.record("error.type", kind);
     let code = match e {
         Error::Api(a) => Some(a.code.as_str()),
         Error::Auth(a) => Some(a.code.as_str()),
         Error::Connection(_) => Some(CONNECTION_ERROR),
         _ => None,
     };
+    record_failure_fields(span, error_type(e, shapes), code, &e.to_string());
+}
+
+/// What [`record_failure`] records, for a failure that is not (yet) an [`Error`]: an attempt that got no response
+/// reports the connection error its call raises.
+pub(crate) fn record_failure_fields(span: &tracing::Span, kind: &str, code: Option<&str>, message: &str) {
+    span.record("otel.status_code", "ERROR");
+    span.record("otel.status_message", message);
+    span.record("error.type", kind);
     if let Some(c) = code {
         span.record("caitlyn.error.code", c);
     }
-    tracing::event!(parent: span, tracing::Level::ERROR, "exception.type" = kind, "exception.message" = %e, "exception");
+    tracing::event!(parent: span, tracing::Level::ERROR, "exception.type" = kind, "exception.message" = message, "exception");
 }

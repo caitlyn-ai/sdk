@@ -735,12 +735,20 @@ var protocol = map[string]func(t *testing.T, m mock){
 			a["caitlyn.request_id"] != sent[len(sent)-1].RequestID || call.Status.Code != codes.Error {
 			t.Fatalf("call span %v status %v", a, call.Status)
 		}
-		exception := false
-		for _, e := range call.Events {
-			exception = exception || e.Name == "exception"
+		exceptionType := func(s tracetest.SpanStub) any {
+			for _, e := range s.Events {
+				if e.Name == "exception" {
+					for _, a := range e.Attributes {
+						if a.Key == "exception.type" {
+							return a.Value.AsInterface()
+						}
+					}
+				}
+			}
+			return nil
 		}
-		if !exception {
-			t.Fatal("no exception event")
+		if exceptionType(call) != "NotFoundError" || call.Status.Description == "" {
+			t.Fatalf("call exception %v status %q", exceptionType(call), call.Status.Description)
 		}
 		attempts := children(call)
 		if len(attempts) != 2 {
@@ -758,8 +766,12 @@ var protocol = map[string]func(t *testing.T, m mock){
 					t.Fatalf("attempt %d %s = %v, want %v", i, k, a[k], v)
 				}
 			}
-			if s.Name != "caitlyn.attempt" || s.Status.Code != codes.Error {
+			if s.Name != "caitlyn.attempt" || s.Status.Code != codes.Error || s.Status.Description == "" {
 				t.Fatalf("attempt %d %s status %v", i, s.Name, s.Status)
+			}
+			wantType, wantCode := []string{"ServiceUnavailableError", "NotFoundError"}[i], []string{"SERVICE_UNAVAILABLE", "NOT_FOUND"}[i]
+			if a["error.type"] != wantType || a["caitlyn.error.code"] != wantCode || exceptionType(s) != wantType {
+				t.Fatalf("attempt %d error.type %v code %v exception %v", i, a["error.type"], a["caitlyn.error.code"], exceptionType(s))
 			}
 		}
 		list := children(find("caitlyn.call", "ListDocuments"))

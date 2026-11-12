@@ -150,6 +150,17 @@ A release build stamps the tag's version instead, with Node only and no generato
 node scripts/version.mjs release 0.1.0   # VERSION and every file above at 0.1.0, then checked
 ```
 
+Installed from git rather than from a registry, the SDKs see the repository as committed, at 0.0.0:
+
+- **Go** installs only from git tags, so a Go client reports the version of the module it was built with, which
+  Go records in the binary (`core.ModuleVersion`, from `runtime/debug.ReadBuildInfo`): `go get …@v0.1.1` sends
+  `caitlyn-sdk-go/0.1.1`. It reads the module path from the generated `ModulePath`, so it works for a module in a
+  subdirectory too, whose tags are `go/vX.Y.Z`. `SDKVersion` (0.0.0) is the fallback, for a local `replace` or a
+  build from a working tree.
+- **Python** (`pip install "git+…#subdirectory=python/caitlyn"`) and **Rust** (a `git` dependency) build what is
+  committed, so they report 0.0.0. Their released versions are to come from PyPI and crates.io, whose release jobs
+  stamp the version first, as the npm one does.
+
 It writes the version in exactly the places generation does, so the result is what `make generate` at that version
 would commit. `.github/workflows/release-npm.yml` runs it on the tag's checkout; the PyPI, Go and crates.io
 releases are to run the same command before they build.

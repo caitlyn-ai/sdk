@@ -1147,7 +1147,8 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                     && field(&call, "error.type") == "NotFoundError"
                     && field(&call, "caitlyn.error.code") == "NOT_FOUND"
                     && field(&call, "caitlyn.request_id") == str_at(sent.last().unwrap(), "requestId")
-                    && field(&call, "otel.status_code") == "ERROR",
+                    && field(&call, "otel.status_code") == "ERROR"
+                    && !field(&call, "otel.status_message").is_empty(),
                 "call span {:?}",
                 call.fields
             );
@@ -1170,10 +1171,21 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                     ("caitlyn.request_id", str_at(&sent[i], "requestId").to_owned()),
                     ("caitlyn.server.api_version", "5.120.0".to_owned()),
                     ("otel.status_code", "ERROR".to_owned()),
+                    ("error.type", ["ServiceUnavailableError", "NotFoundError"][i].to_owned()),
+                    ("caitlyn.error.code", ["SERVICE_UNAVAILABLE", "NOT_FOUND"][i].to_owned()),
                 ];
                 for (k, v) in want {
                     ensure!(field(a, k) == v, "attempt {i} {k} = {:?}, want {v:?}", field(a, k));
                 }
+                ensure!(!field(a, "otel.status_message").is_empty(), "attempt {i} has no status message");
+                let want_type = ["ServiceUnavailableError", "NotFoundError"][i];
+                ensure!(
+                    a.events
+                        .iter()
+                        .any(|e| e.get("exception.type").map(String::as_str) == Some(want_type)),
+                    "attempt {i} exception events {:?}",
+                    a.events
+                );
             }
             let list = children(&find("caitlyn.call", "ListDocuments")?);
             ensure!(

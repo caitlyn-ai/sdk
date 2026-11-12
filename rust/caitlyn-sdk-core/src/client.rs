@@ -9,7 +9,7 @@ use tracing::field::Empty;
 use tracing::Instrument;
 
 use crate::auth::{Auth, AuthSession, Credential};
-use crate::error::{header, problem_from_response, ConnectionError, Error, NotSupportedByServer};
+use crate::error::{header, problem_from_response, ConnectionError, Error, NotSupportedByServer, CONNECTION_ERROR};
 use crate::request::{CallOptions, Operation, Request, Response};
 use crate::telemetry::Propagator;
 
@@ -256,6 +256,7 @@ impl Client {
             otel.name = "caitlyn.call",
             otel.kind = "client",
             otel.status_code = Empty,
+            otel.status_message = Empty,
             rpc.system = "caitlyn",
             rpc.method = op.name,
             caitlyn.request_id = Empty,
@@ -272,6 +273,9 @@ impl Client {
                     otel.name = "caitlyn.attempt",
                     otel.kind = "client",
                     otel.status_code = Empty,
+                    otel.status_message = Empty,
+                    error.type = Empty,
+                    caitlyn.error.code = Empty,
                     http.request.method = op.method,
                     server.address = server_address.as_str(),
                     url.full = url_full.as_str(),
@@ -382,7 +386,9 @@ impl Client {
         }
         let attempt_span = tracing::Span::current();
         let resp = rb.send().await.map_err(|e| {
-            attempt_span.record("otel.status_code", "ERROR");
+            // The call raises this as Error::Connection once retries are spent; the attempt reports it as one.
+            let message = format!("caitlyn: {CONNECTION_ERROR}: {}: no response: {e}", op.name);
+            crate::telemetry::record_failure_fields(&attempt_span, "CaitlynConnectionError", Some(CONNECTION_ERROR), &message);
             AttemptError::NoResponse(e)
         })?;
         let status = resp.status().as_u16();
@@ -392,9 +398,6 @@ impl Client {
         }
         if let Some(v) = header(resp.headers(), "caitlyn-api-version") {
             attempt_span.record("caitlyn.server.api_version", v.as_str());
-        }
-        if status >= 400 {
-            attempt_span.record("otel.status_code", "ERROR");
         }
         self.note_server_version(resp.headers());
         if resp.status().is_success() {
@@ -406,9 +409,9 @@ impl Client {
         }
         let headers = resp.headers().clone();
         let body = read_limited(resp, 1 << 20).await;
-        Err(AttemptError::Other(Error::Api(Box::new(problem_from_response(
-            status, &headers, &body,
-        )))))
+        let e = Error::Api(Box::new(problem_from_response(status, &headers, &body)));
+        crate::telemetry::record_failure(&attempt_span, &e, self.inner.sdk.error_shapes);
+        Err(AttemptError::Other(e))
     }
 
     /// PROTOCOL.md 6.4: only retry-safe operations, only modelled retryable statuses or no response at all.
