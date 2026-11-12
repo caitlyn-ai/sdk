@@ -1,6 +1,7 @@
 // Sign-in for the mock Caitlyn server: the workspace's OAuth endpoints and a stand-in for AWS STS.
 //
-//   GET  /oauth/authorize   authorisation code with PKCE: redirects to redirect_uri with code and state
+//   GET  /oauth/authorize   authorisation code with PKCE: redirects to redirect_uri with code and state (with
+//                           Accept: application/json, answers {location} instead, for a browser page)
 //   POST /oauth/token       client_credentials, authorization_code, refresh_token (rotating; a reused
 //                           refresh token is refused with invalid_grant), RFC 8693 token exchange of a JWT
 //                           (exact audience = the resource parameter, unexpired, single-use jti), revoke
@@ -109,6 +110,8 @@ export async function handleAuth(req, res, url, body) {
     const to = new URL(q.get('redirect_uri'));
     to.searchParams.set('code', code);
     if (q.get('state')) to.searchParams.set('state', q.get('state'));
+    // A browser page cannot read a redirect's Location, so the browser conformance run asks for it as JSON.
+    if (req.headers.accept === 'application/json') return json(res, 200, { location: to.toString() }), true;
     res.writeHead(302, { Location: to.toString() });
     return res.end(), true;
   }

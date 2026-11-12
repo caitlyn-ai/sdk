@@ -16,13 +16,17 @@
     "exports": {
         ".": {
             "types": "./dist-types/sdk/index.d.ts",
+            "workerd": "./dist-edge/sdk/index.mjs",
+            "worker": "./dist-edge/sdk/index.mjs",
+            "deno": "./dist-edge/sdk/index.mjs",
+            "edge-light": "./dist-edge/sdk/index.mjs",
             "browser": "./dist-browser/sdk/index.mjs",
-            "worker": "./dist-browser/sdk/index.mjs",
-            "workerd": "./dist-browser/sdk/index.mjs",
-            "deno": "./dist-browser/sdk/index.mjs",
-            "edge-light": "./dist-browser/sdk/index.mjs",
             "import": "./dist-es/sdk/index.mjs",
             "require": "./dist-cjs/sdk/index.cjs"
+        },
+        "./browser": {
+            "types": "./dist-types/sdk/index.d.ts",
+            "default": "./dist-browser/sdk/index.mjs"
         },
         "./package.json": "./package.json"
     },

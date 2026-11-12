@@ -6,7 +6,9 @@
 //   3. checks no @aws-sdk package was installed;
 //   4. checks error classes keep their names: constructor.name in the built ESM and CommonJS output and in an
 //      application's unminified browser bundle, err.name in a minified one;
-//   5. bundles realistic imports for a browser, as an application bundler would, and checks each against its budget.
+//   5. bundles realistic imports for a browser, as an application bundler would, and checks each against its budget;
+//   6. checks which build each export condition gives a bundler: the browser build for `browser` and for the explicit
+//      `@caitlyn-ai/sdk/browser` under any conditions, the edge build for `worker` (and the other edge runtimes).
 // Run after scripts/build-packages.mjs. Writes build/package/report.json.
 import { build } from 'esbuild';
 import { execFileSync } from 'node:child_process';
@@ -16,17 +18,20 @@ import { gzipSync } from 'node:zlib';
 
 // Size budgets, per realistic import, for what a web app ships: each entry below is bundled for a browser the way
 // an application bundler does it (ESM, minified, tree-shaken, code splitting on), and the budget applies to what
-// loads up front, the entry chunk plus the chunks it imports statically, gzipped. Code behind a dynamic import
-// (the AWS signer of the awsIam mode) is reported as lazy and is not counted. Budgets are in bytes; set from the
-// sizes measured on 11 November 2026 plus a margin, so growth is a decision rather than an accident.
+// loads up front, the entry chunk plus the chunks it imports statically, gzipped. Code behind a dynamic import is
+// reported as lazy and is not counted: in the browser build that is only @smithy/core's AWS event-stream support,
+// which @smithy/core/protocols (imported by the fetch handler) loads on demand and the SDK never asks for. Budgets are in bytes; set from the
+// sizes measured on 13 November 2026, with the browser build (dist-browser), plus a margin, so growth is a decision
+// rather than an accident. Before the browser build (0.1.1, the edge build's code) they were 43 126, 43 207, 44 230
+// and 44 902 bytes.
 const ENTRIES = {
   'client + one operation': {
-    budget: 44_500,
+    budget: 27_500,
     code: `import { createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk';
 export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
   },
   'client + one operation + oauth sign-in': {
-    budget: 44_500,
+    budget: 27_500,
     code: `import { createAuth, createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk';
 const options = { workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'oauth', clientId: 'app', redirectUri: location.origin + '/callback' } };
 const auth = createAuth(options);
@@ -36,15 +41,23 @@ export const finish = (p) => auth.handleCallback(p);
 export const run = () => getAgentVersion(client, { agentId: 'A', version: 'draft' });`,
   },
   'client + streaming chat': {
-    budget: 45_500,
+    budget: 28_700,
     code: `import { createCaitlynClient, sendMessage } from '@caitlyn-ai/sdk';
 const client = createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'session' } });
 export const ask = async (id, message, onText) => { for await (const e of sendMessage(client, id, { message })) if (e.type === 'text.delta') onText(e.delta); };`,
   },
   'Caitlyn class (every operation)': {
-    budget: 46_000, // grows with every operation the model gains: raise it with the model change that needs it
+    budget: 29_300, // grows with every operation the model gains: raise it with the model change that needs it
     code: `import { Caitlyn } from '@caitlyn-ai/sdk';
 export const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 't' } });`,
+  },
+  // A web worker bundled by webpack gets the edge build from '@caitlyn-ai/sdk' (the `worker` condition comes first),
+  // and the browser build when it imports '@caitlyn-ai/sdk/browser'.
+  'client + one operation, @caitlyn-ai/sdk/browser in a web worker': {
+    budget: 27_500,
+    conditions: ['worker'],
+    code: `import { createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk/browser';
+export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
   },
 };
 
@@ -99,9 +112,10 @@ fs.writeFileSync(path.join(browserDir, 'package.json'), JSON.stringify({ name: '
 run('npm', ['install', '--no-audit', '--no-fund', '--silent', ...tarballs, `typescript@${JSON.parse(fs.readFileSync(path.join(root, 'node_modules/typescript/package.json'))).version}`], browserDir);
 if (fs.existsSync(path.join(browserDir, 'node_modules/@types/node'))) throw new Error('the browser check installed @types/node');
 fs.writeFileSync(path.join(browserDir, 'app.ts'), typed);
-fs.writeFileSync(path.join(browserDir, 'tsconfig.json'), JSON.stringify({ compilerOptions: { noEmit: true, strict: true, skipLibCheck: false, target: 'es2022', module: 'esnext', moduleResolution: 'bundler', lib: ['es2022', 'dom', 'dom.iterable'], types: [] }, files: ['app.ts'] }));
+fs.writeFileSync(path.join(browserDir, 'explicit.ts'), typed.replace("from '@caitlyn-ai/sdk'", "from '@caitlyn-ai/sdk/browser'"));
+fs.writeFileSync(path.join(browserDir, 'tsconfig.json'), JSON.stringify({ compilerOptions: { noEmit: true, strict: true, skipLibCheck: false, target: 'es2022', module: 'esnext', moduleResolution: 'bundler', lib: ['es2022', 'dom', 'dom.iterable'], types: [] }, files: ['app.ts', 'explicit.ts'] }));
 run(path.join(browserDir, 'node_modules/.bin/tsc'), ['-p', 'tsconfig.json'], browserDir);
-console.log('types ok (nodenext ESM and CommonJS, bundler, and a browser-only project without @types/node)');
+console.log('types ok (nodenext ESM and CommonJS, bundler, and a browser-only project without @types/node, for @caitlyn-ai/sdk and @caitlyn-ai/sdk/browser)');
 
 // 3. No AWS runtime
 if (fs.existsSync(path.join(work, 'node_modules/@aws-sdk'))) throw new Error('an @aws-sdk package was installed');
@@ -123,10 +137,10 @@ console.log('error class names survive bundling (constructor.name unminified, er
 
 // 5. Size
 const sizes = {};
-for (const [name, { code, budget }] of Object.entries(ENTRIES)) {
+for (const [name, { code, budget, conditions }] of Object.entries(ENTRIES)) {
   const file = path.join(work, `size-${Object.keys(sizes).length}.mjs`);
   fs.writeFileSync(file, code);
-  const out = await build({ entryPoints: [file], bundle: true, minify: true, splitting: true, format: 'esm', platform: 'browser', outdir: path.join(work, 'size-out', String(Object.keys(sizes).length)), write: false, metafile: true, logLevel: 'error', absWorkingDir: work });
+  const out = await build({ entryPoints: [file], bundle: true, minify: true, splitting: true, format: 'esm', platform: 'browser', conditions, outdir: path.join(work, 'size-out', String(Object.keys(sizes).length)), write: false, metafile: true, logLevel: 'error', absWorkingDir: work });
   const files = new Map(out.outputFiles.map((f) => [path.relative(work, f.path), f.contents]));
   const outputs = out.metafile.outputs;
   const entry = Object.keys(outputs).find((k) => outputs[k].entryPoint && !k.endsWith('.map'));
@@ -143,6 +157,24 @@ for (const [name, { code, budget }] of Object.entries(ENTRIES)) {
   sizes[name] = { minified: now.length, gzip: gzipSync(now, { level: 9 }).length, budget, lazyGzip: lazy.length ? gzipSync(lazy, { level: 9 }).length : 0 };
 }
 console.table(sizes);
+
+// 6. Which build each export condition gives a bundler
+const conditionsFile = path.join(work, 'conditions.mjs');
+fs.writeFileSync(conditionsFile, `export { createCaitlynClient } from '@caitlyn-ai/sdk';`);
+const builds = {
+  'browser (Vite, webpack for the web, esbuild platform browser)': { platform: 'browser', want: 'dist-browser' },
+  'worker (webpack for a web worker)': { platform: 'browser', conditions: ['worker'], want: 'dist-edge' },
+  'workerd (Cloudflare Workers)': { platform: 'browser', conditions: ['workerd', 'worker'], want: 'dist-edge' },
+  'edge-light (Vercel Edge)': { platform: 'browser', conditions: ['edge-light'], want: 'dist-edge' },
+  'node': { platform: 'node', want: 'dist-es' },
+};
+for (const [name, { want, ...options }] of Object.entries(builds)) {
+  const r = await build({ entryPoints: [conditionsFile], bundle: true, format: 'esm', write: false, metafile: true, logLevel: 'error', absWorkingDir: work, outdir: path.join(work, 'conditions-out'), ...options });
+  const sdkInput = Object.keys(r.metafile.inputs).find((k) => k.includes('@caitlyn-ai/sdk/dist-'));
+  if (!sdkInput?.includes(`/${want}/`)) throw new Error(`${name}: a bundler gets ${sdkInput}, not ${want}`);
+  if (want === 'dist-browser' && Object.keys(r.metafile.inputs).some((k) => k.includes('@caitlyn-ai/sdk-core/dist-es'))) throw new Error(`${name}: the browser build loads sdk-core's Node build`);
+}
+console.log(`export conditions ok (${Object.keys(builds).join('; ')})`);
 fs.writeFileSync(path.join(work, 'report.json'), JSON.stringify({ sizes }, null, 2));
 const over = Object.entries(sizes).filter(([, s]) => s.gzip > s.budget);
 if (over.length) throw new Error(`over the size budget: ${over.map(([n, s]) => `${n} ${s.gzip} B > ${s.budget} B`).join(', ')}`);

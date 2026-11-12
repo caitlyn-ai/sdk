@@ -5,6 +5,8 @@
 #   generate               Regenerates every SDK from the committed model snapshot and fails if the committed
 #                          generated code differs: generated code is reviewed in merge requests, never edited.
 #   typescript/python/go/rust  Install, strict type checks, lint, and the conformance harness against the mock server.
+#   typescript:browser     The TypeScript conformance harness against the browser build, in headless Chromium,
+#                          Firefox and WebKit (Playwright's image), from a page on another origin than the mock server.
 #   conformance            Checks that every language ran and passed every protocol and example case.
 #   model:version-check    Is the snapshot the latest published model? A warning on merge requests when not.
 #   regenerate             An app release that publishes a model triggers this project (multi-project pipeline);
@@ -125,9 +127,32 @@ typescript:
   artifacts:
     when: always
     expire_in: 1 week
-    paths: [build/conformance/typescript.xml, build/conformance/typescript-runtime.xml, build/package/report.json]
+    paths: [build/conformance/typescript.xml, build/conformance/typescript-browser-build.xml, build/conformance/typescript-runtime.xml, build/package/report.json]
     reports:
-      junit: [build/conformance/typescript.xml, build/conformance/typescript-runtime.xml]
+      junit: [build/conformance/typescript.xml, build/conformance/typescript-browser-build.xml, build/conformance/typescript-runtime.xml]
+  rules: !reference [.mr-and-main, rules]
+
+# The browser build in real browsers. Playwright's image carries the browsers for one Playwright version: keep its
+# tag the same as the playwright version in typescript/package.json.
+typescript:browser:
+  stage: test
+  image: mcr.microsoft.com/playwright:v1.64.1-noble
+  interruptible: true
+  needs: []
+  cache:
+    key: 'playwright-npm'
+    paths:
+      - .cache/npm/
+  script:
+    - cd typescript
+    - npm ci --no-audit --no-fund --silent
+    - npm run -s conformance:browser
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths: [build/conformance/typescript-browser-*.xml]
+    reports:
+      junit: build/conformance/typescript-browser-*.xml
   rules: !reference [.mr-and-main, rules]
 
 python:
@@ -168,7 +193,7 @@ rust:
 conformance:
   extends: .toolchain
   stage: conformance
-  needs: [typescript, python, go, rust]
+  needs: [typescript, 'typescript:browser', python, go, rust]
   script:
     - node scripts/check-conformance.mjs
   rules: !reference [.mr-and-main, rules]

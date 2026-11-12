@@ -1,7 +1,13 @@
 // TypeScript conformance harness: the protocol cases in conformance/cases/protocol.json and the example
 // cases in conformance/cases/examples.json, against the mock server. Test names start with the case id in
 // square brackets; scripts/check-conformance.mjs checks that every case ran and passed.
-import { test, before, after, beforeEach } from 'node:test';
+//
+// It also runs against the browser build (CAITLYN_SDK_BUILD=browser): in Node (typescript/dist/
+// conformance-browser.test.mjs) and in real browsers (conformance/typescript/browser/run.mjs, which starts the mock
+// server itself and passes its port as CAITLYN_MOCK_PORT). There, the cases that sign in with a mode a browser may
+// not use pass only if the browser build refuses the mode before sending anything (PROTOCOL.md 12.6), and the
+// [browser.*] tests cover the same sign-in behaviour with oauth and no client secret.
+import { test as nodeTest, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
@@ -34,9 +40,49 @@ const ROOT = process.env.CAITLYN_REPO_ROOT ?? path.resolve(import.meta.dirname, 
 const EXAMPLES: ExampleCase[] = JSON.parse(fs.readFileSync(path.join(ROOT, 'conformance/cases/examples.json'), 'utf8')).cases;
 const SDK_VERSION = fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim(); // every SDK sends it in its user agent
 const SDK_MODEL = JSON.parse(fs.readFileSync(path.join(ROOT, 'model/model.lock.json'), 'utf8')).stampNext as string;
-const PORT = 4100 + Math.floor(Math.random() * 500);
+const PORT = Number(process.env.CAITLYN_MOCK_PORT) || 4100 + Math.floor(Math.random() * 500);
 const BASE = `http://127.0.0.1:${PORT}`;
-let server: ChildProcess;
+let server: ChildProcess | undefined;
+
+/** The SDK under test is the browser build. */
+const BROWSER_BUILD = process.env.CAITLYN_SDK_BUILD === 'browser';
+/** The harness runs in a browser page, not in Node. */
+const IN_PAGE = typeof (globalThis as { document?: unknown }).document !== 'undefined';
+
+/** Cases that sign in with clientCredentials, oauth with a client secret, awsIam or workloadIdentity. */
+const SERVER_SIGN_IN = new Set([
+  'auth.workspace',
+  'auth.client-credentials',
+  'auth.client-credentials-refused',
+  'auth.renew-before-expiry',
+  'auth.401-signs-in-again',
+  'auth.401-once',
+  'auth.oauth-sign-in',
+  'auth.aws-iam',
+  'auth.aws-iam-provider',
+  'auth.aws-iam-env',
+  'auth.aws-iam-bad-signature',
+  'auth.aws-iam-no-credentials',
+  'auth.workload-identity',
+  'auth.workload-identity-single-use',
+]);
+
+/** Cases a browser page cannot run at all, and why. */
+const NOT_IN_A_PAGE: Record<string, string> = {
+  'environment.hostile-aws': 'a page has no environment variables or ~/.aws files',
+  'auth.session': 'a page cannot set Cookie or Origin: the browser sends its own',
+};
+
+function test(name: string, fn: () => Promise<void>): void {
+  const id = /^\[([^\]]+)\]/.exec(name)?.[1] ?? '';
+  if (IN_PAGE && NOT_IN_A_PAGE[id]) return void nodeTest(name, { skip: NOT_IN_A_PAGE[id] }, fn);
+  if (!BROWSER_BUILD || !SERVER_SIGN_IN.has(id)) return void nodeTest(name, fn);
+  // The browser build leaves these modes out: it must refuse them when the client is created, before any request.
+  nodeTest(name, async () => {
+    await assert.rejects(fn(), (e: unknown) => e instanceof CaitlynAuthError && e.code === 'not_allowed_in_browser');
+    assert.deepEqual(await requests(), [], 'nothing was sent');
+  });
+}
 
 interface ExampleCase {
   id: string;
@@ -47,10 +93,11 @@ interface ExampleCase {
 }
 
 before(async () => {
+  if (process.env.CAITLYN_MOCK_PORT) return; // started by the caller
   server = spawn(process.execPath, [path.join(ROOT, 'conformance/mock-server/server.mjs')], { env: { ...process.env, PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'inherit'] });
-  await new Promise<void>((resolve) => server.stdout!.on('data', (d) => String(d).includes('listening') && resolve()));
+  await new Promise<void>((resolve) => server!.stdout!.on('data', (d) => String(d).includes('listening') && resolve()));
 });
-after(() => server.kill());
+after(() => server?.kill());
 beforeEach(async () => {
   await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
 });
@@ -313,7 +360,7 @@ test('[errors.raw-body-limit] rawBody keeps at most 8 KiB, cut on a character bo
   const get = (version: string) => expectError(c.versions.get({ agentId: 'GHT7YRWXPL', version }));
   const page = await get('draft');
   assert.ok((page as unknown) instanceof NotFoundError);
-  assert.equal(Buffer.byteLength(page.rawBody!), 8192);
+  assert.equal(new TextEncoder().encode(page.rawBody!).byteLength, 8192);
   assert.equal(page.rawBody, PAGE_20K.slice(0, 8192));
   assert.equal(page.rawBodyTruncated, true);
   const straddle = await get('draft');
@@ -327,6 +374,7 @@ test('[errors.raw-body-limit] rawBody keeps at most 8 KiB, cut on a character bo
 
 /** An endpoint nothing listens on: a port the system handed out, then closed. */
 async function refusedEndpoint(): Promise<string> {
+  if (process.env.CAITLYN_REFUSED_ENDPOINT) return process.env.CAITLYN_REFUSED_ENDPOINT; // a page cannot open a port
   const s = net.createServer();
   await new Promise<void>((resolve) => s.listen(0, '127.0.0.1', resolve));
   const { port } = s.address() as net.AddressInfo;
@@ -335,7 +383,9 @@ async function refusedEndpoint(): Promise<string> {
 }
 
 test('[errors.connection] a connection closed before any response, and a refused connection, are the connection error', async () => {
-  await faults({ status: { GetAgentVersion: [{ close: true }] } });
+  // A browser resends a request whose connection closed before any response by itself (Chromium once, WebKit
+  // several times), so in a page the mock closes it every time.
+  await faults({ status: { GetAgentVersion: IN_PAGE ? Array.from({ length: 10 }, () => ({ close: true })) : [{ close: true }] } });
   const closed = await expectError(client({ maxAttempts: 1 }).versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }));
   const refused = await expectError(client({ maxAttempts: 1, endpoint: await refusedEndpoint() }).versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }));
   for (const err of [closed, refused]) {
@@ -344,7 +394,9 @@ test('[errors.connection] a connection closed before any response, and a refused
     assert.ok(err.cause instanceof Error, 'the network error is the cause');
     assert.match(err.message, /^GetAgentVersion: no response: /);
   }
-  assert.equal((await api()).length, 1); // the closed connection was asked once; the refused one never arrived
+  // the closed connection was asked once (by the SDK: a page's browser may resend it); the refused one never arrived
+  if (IN_PAGE) assert.ok((await api()).length >= 1);
+  else assert.equal((await api()).length, 1);
 });
 
 test("[errors.unmodelled-status] a status the operation does not list is still that status's class", async () => {
@@ -462,7 +514,10 @@ test('[wire.headers] exactly the SDK headers: Caitlyn user agent, Caitlyn-Sdk-Mo
   for (const r of sent) {
     const aws = r.headerNames.filter((h: string) => /^(x-amz|amz-sdk|x-amzn)/.test(h));
     assert.deepEqual(aws, [], `AWS headers sent: ${aws.join(', ')}`);
-    assert.match(r.headers['user-agent'], new RegExp(`^caitlyn-sdk-ts/${SDK_VERSION.replaceAll('.', '\\.')} lang/js md/nodejs#\\d+\\.\\d+\\.\\d+$`));
+    // A page sends the SDK's User-Agent where the browser allows it (Firefox), and its own where it does not (Chromium, WebKit).
+    const runtime = IN_PAGE ? 'md/browser' : 'md/nodejs#\\d+\\.\\d+\\.\\d+';
+    if (!IN_PAGE || r.headers['user-agent'].startsWith('caitlyn-sdk-ts/'))
+      assert.match(r.headers['user-agent'], new RegExp(`^caitlyn-sdk-ts/${SDK_VERSION.replaceAll('.', '\\.')} lang/js ${runtime}$`));
     assert.equal(r.headers['caitlyn-sdk-model'], SDK_MODEL);
     assert.equal(r.headers.authorization, 'Bearer pat_test');
     assert.equal(r.headers['caitlyn-api-version'], undefined, 'a response header only');
@@ -652,7 +707,9 @@ const memoryStore = (initial?: OAuthTokens): TokenStore & { tokens?: OAuthTokens
 /** The `oauth` sign-in steps, following the mock's redirect as a browser would. */
 async function oauthSignIn(c: Caitlyn): Promise<URL> {
   const { url, state, codeVerifier } = await c.auth.authorizationUrl();
-  const redirect = new URL((await fetch(url, { redirect: 'manual' })).headers.get('location')!);
+  // A page cannot read a redirect's Location (fetch gives an opaque response), so there the mock answers with it.
+  const location = IN_PAGE ? (await (await fetch(url, { headers: { accept: 'application/json' } })).json()).location : (await fetch(url, { redirect: 'manual' })).headers.get('location');
+  const redirect = new URL(location!);
   await c.auth.handleCallback({ code: redirect.searchParams.get('code')!, state: redirect.searchParams.get('state')!, expectedState: state, codeVerifier });
   return new URL(url);
 }
@@ -808,6 +865,55 @@ test('[auth.oauth-not-signed-in] a call before sign-in fails with sign_in_requir
   assert.equal(err.code, 'sign_in_required');
   assert.equal((await requests()).length, 0);
 });
+
+// The browser build refuses the server sign-in modes, so these cover what the refused cases cover (the workspace
+// audience, one token request for concurrent calls, renewal before expiry, one sign-in retry on a 401) with the
+// mode a browser uses: oauth with PKCE and no client secret.
+if (BROWSER_BUILD) {
+  const browserApp = (store = memoryStore(), workspace = 'your-company.getcaitlyn.ai') =>
+    signedIn({ mode: 'oauth', clientId: MOCK_OAUTH_CLIENT.id, redirectUri: 'https://app.example.com/callback', scopes: ['chat:write'], tokenStore: store }, workspace);
+
+  nodeTest('[browser.oauth-sign-in] PKCE with no client secret, bound to the workspace, then calls with the saved token', async () => {
+    await signInRequired();
+    const store = memoryStore();
+    // A workspace given as a URL is reduced to its hostname.
+    const c = browserApp(store, 'https://your-company.getcaitlyn.ai/');
+    const u = await oauthSignIn(c);
+    assert.equal(u.searchParams.get('code_challenge_method'), 'S256');
+    assert.equal(u.searchParams.get('resource'), RESOURCE);
+    const [form] = await tokenRequests();
+    assert.equal(form.get('grant_type'), 'authorization_code');
+    assert.equal(form.get('client_secret'), null);
+    assert.equal(form.get('resource'), RESOURCE);
+    await Promise.all([read(c), read(c), read(c)]);
+    assert.equal((await tokenRequests()).length, 1, 'one token request');
+    assert.equal(new Set((await api()).map((r) => r.headers.authorization)).size, 1);
+    assert.match((await api())[0].headers.authorization, /^Bearer cai_code_/);
+  });
+
+  nodeTest('[browser.renew-before-expiry] a short-lived token is refreshed halfway through its life', async () => {
+    await faults({ auth: { require: true, expiresIn: 1 } });
+    const c = browserApp();
+    await oauthSignIn(c);
+    await read(c);
+    assert.equal((await authCounts()).refresh_token ?? 0, 0, 'used within the first half of its life');
+    await new Promise((r) => setTimeout(r, 600));
+    await read(c);
+    assert.equal((await authCounts()).refresh_token, 1, 'refreshed after half its life');
+    assert.equal((await api()).length, 2, 'no call was refused');
+  });
+
+  nodeTest('[browser.401-once] a refused token is refreshed once; a second 401 is raised', async () => {
+    await signInRequired();
+    const c = browserApp();
+    await oauthSignIn(c);
+    await read(c);
+    await faults({ auth: { revokeIssued: true, expiresIn: 0 } });
+    await assert.rejects(read(c), (e: any) => e.$metadata?.httpStatusCode === 401 && e.code === 'UNAUTHENTICATED');
+    assert.equal((await authCounts()).refresh_token, 1, 'refreshed once');
+    assert.equal((await api()).length, 3, 'the first call, then two attempts at the second');
+  });
+}
 
 const awsAuth = (extra: Partial<Extract<AuthOptions, { mode: 'awsIam' }>> = {}): AuthOptions => ({
   mode: 'awsIam',

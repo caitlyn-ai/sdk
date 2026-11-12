@@ -36,18 +36,20 @@ console.log('postgen-ts: removed defaults-mode resolution from runtimeConfig.ts 
 
 // The generated package.json carries smithy-typescript's yarn build scripts and their devDependencies. The
 // repository builds and tests the SDK from typescript/package.json (an npm workspace), so they are dropped, and
-// the package is described for npm: entry points for Node (ESM and CommonJS), for browsers and edge runtimes
-// (fetch), types, and the files typescript/scripts/build-packages.mjs writes.
+// the package is described for npm: entry points for Node (ESM and CommonJS), for edge runtimes (fetch), for
+// browser pages (the browser build, also as the explicit `@caitlyn-ai/sdk/browser`), types, and the files
+// typescript/scripts/build-packages.mjs writes. The edge conditions come before `browser`, so a bundler that sets
+// both (Cloudflare's, or webpack for a web worker) takes the edge build, which has every sign-in mode.
 const pkgUrl = new URL('../typescript/packages/sdk/package.json', import.meta.url);
 const pkg = JSON.parse(fs.readFileSync(pkgUrl, 'utf8'));
 const corePkg = JSON.parse(fs.readFileSync(new URL('../typescript/packages/sdk-core/package.json', import.meta.url), 'utf8'));
 const entry = (name) => ({
   types: `./dist-types/${name}.d.ts`,
+  workerd: `./dist-edge/${name}.mjs`,
+  worker: `./dist-edge/${name}.mjs`,
+  deno: `./dist-edge/${name}.mjs`,
+  'edge-light': `./dist-edge/${name}.mjs`,
   browser: `./dist-browser/${name}.mjs`,
-  worker: `./dist-browser/${name}.mjs`,
-  workerd: `./dist-browser/${name}.mjs`,
-  deno: `./dist-browser/${name}.mjs`,
-  'edge-light': `./dist-browser/${name}.mjs`,
   import: `./dist-es/${name}.mjs`,
   require: `./dist-cjs/${name}.cjs`,
 });
@@ -63,7 +65,11 @@ const published = {
   main: './dist-cjs/sdk/index.cjs',
   module: './dist-es/sdk/index.mjs',
   types: './dist-types/sdk/index.d.ts',
-  exports: { '.': entry('sdk/index'), './package.json': './package.json' },
+  exports: {
+    '.': entry('sdk/index'),
+    './browser': { types: './dist-types/sdk/index.d.ts', default: './dist-browser/sdk/index.mjs' },
+    './package.json': './package.json',
+  },
   files: ['dist-*/**', 'README.md', 'LICENSE', 'NOTICE'],
   engines: pkg.engines,
   dependencies: { ...pkg.dependencies, '@caitlyn-ai/sdk-core': corePkg.version },
