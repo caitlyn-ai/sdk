@@ -1,5 +1,8 @@
 # Caitlyn SDK for TypeScript
 
+> **Preview.** This SDK needs a Caitlyn with the v3 API, which is not released yet, and its API will change
+> before version 1.0.
+
 `@caitlyn-ai/sdk` is the TypeScript client for the Caitlyn v3 API. It runs on Node 20 and later, Bun, Deno,
 browsers and edge runtimes, ships ECMAScript modules and CommonJS with types, and has no AWS runtime: its
 only telemetry dependency is the OpenTelemetry API.
@@ -8,7 +11,7 @@ only telemetry dependency is the OpenTelemetry API.
 npm install @caitlyn-ai/sdk
 ```
 
-The package is not on npm yet. Runnable examples are in `examples/typescript/` in the SDK repository.
+Runnable examples are in `examples/typescript/` in the SDK repository.
 
 ## Creating a client
 
