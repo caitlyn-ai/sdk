@@ -27,6 +27,7 @@ impl Client {
             rt::SdkInfo {
                 version: crate::SDK_VERSION,
                 model_version: crate::MODEL_VERSION,
+                error_shapes: crate::error::ERROR_SHAPES,
             },
             workspace,
             auth.into(),

@@ -2,10 +2,10 @@
 
 use caitlyn_sdk_core as rt;
 
-/// Everything a call can fail with. A problem response is the variant for its HTTP status, among the
-/// operation's modelled errors (PROTOCOL.md 6.2); any other status, and errors the SDK raises itself
-/// (`STREAM_LOST`, `NO_FINAL_EVENT`, `UPLOAD_PUT_FAILED`, with status 0), are [`Error::Api`]. Every
-/// problem variant carries an [`ApiError`](rt::ApiError) with `status`, `code` and `request_id`;
+/// Everything a call can fail with. A problem response is the variant for its HTTP status, whether or
+/// not the operation lists that error (PROTOCOL.md 6.2); any other status, and errors the SDK raises
+/// itself (`STREAM_LOST`, `NO_FINAL_EVENT`, `UPLOAD_PUT_FAILED`, with status 0), are [`Error::Api`].
+/// Every problem variant carries an [`ApiError`](rt::ApiError) with `status`, `code` and `request_id`;
 /// [`Error::api`] reads it whichever variant it is. A call that got no response is
 /// [`Error::Connection`], with status 0 and code `CONNECTION_ERROR` (PROTOCOL.md 6.5).
 #[derive(Debug)]
@@ -161,6 +161,22 @@ impl From<rt::Error> for Error {
         Error::from_core(e, &[400, 401, 403, 404, 409, 412, 413, 422, 428, 429, 500, 503])
     }
 }
+
+/// Every error shape in the model, by HTTP status: the class name telemetry reports as `error.type`.
+pub(crate) const ERROR_SHAPES: &[(u16, &str)] = &[
+    (400, "ValidationError"),
+    (401, "UnauthenticatedError"),
+    (403, "PermissionDeniedError"),
+    (404, "NotFoundError"),
+    (409, "ConflictError"),
+    (412, "PreconditionFailedError"),
+    (413, "PayloadTooLargeError"),
+    (422, "UnprocessableContentError"),
+    (428, "PreconditionRequiredError"),
+    (429, "TooManyRequestsError"),
+    (500, "InternalError"),
+    (503, "ServiceUnavailableError"),
+];
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

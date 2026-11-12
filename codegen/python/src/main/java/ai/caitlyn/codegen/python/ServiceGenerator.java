@@ -144,7 +144,7 @@ final class ServiceGenerator {
             w.write("response_headers=($L,),", String.join(", ", headers));
         }
         Map<Integer, String> errors = new LinkedHashMap<>();
-        for (Shape e : OperationIndex.of(model).getErrors(service, o.op)) {
+        for (Shape e : serviceErrors()) {
             e.getTrait(HttpErrorTrait.class).ifPresent(t -> {
                 Symbol s = symbols.toSymbol(e);
                 w.importFrom(s.getNamespace(), s.getName());
@@ -365,7 +365,8 @@ final class ServiceGenerator {
         for (Shape e : OperationIndex.of(model).getErrors(o.op)) {
             raises.add("    " + symbols.toSymbol(e).getName() + ": HTTP " + e.getTrait(HttpErrorTrait.class).map(t -> String.valueOf(t.getCode())).orElse("error") + ".");
         }
-        raises.add("    CaitlynError: any other error response, after retries.");
+        raises.add("    CaitlynError: any other error response, after retries. A status the operation does not list, but the API"
+                + " models elsewhere, raises that status's class (NotFoundError for 404).");
         doc.append("\n\nRaises:\n").append(String.join("\n", raises));
         return doc.toString();
     }
@@ -813,4 +814,18 @@ final class ServiceGenerator {
     static boolean isHeader(MemberShape m) {
         return m.hasTrait(HttpHeaderTrait.class);
     }
+
+    /**
+     * Every error shape in the service, by status. The class of an error response is the one for its HTTP status
+     * whether or not the operation models it (PROTOCOL.md 6.2); the operation's own list is documentation.
+     */
+    private List<StructureShape> serviceErrors() {
+        return new software.amazon.smithy.model.neighbor.Walker(model).walkShapes(service).stream()
+                .filter(s -> s.isStructureShape() && s.hasTrait(software.amazon.smithy.model.traits.ErrorTrait.class)
+                        && s.hasTrait(HttpErrorTrait.class))
+                .map(s -> (StructureShape) s)
+                .sorted(java.util.Comparator.comparingInt((StructureShape s) -> s.expectTrait(HttpErrorTrait.class).getCode()))
+                .toList();
+    }
+
 }

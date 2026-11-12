@@ -62,8 +62,9 @@ waiting, renewed a minute before it expires (or halfway through a shorter life),
 
 ### Telemetry
 
-Each call is a `caitlyn.call` span with one `caitlyn.attempt` child per HTTP attempt, using the attribute names the
-other SDKs use (`rpc.method`, `http.request.resend_count`, `caitlyn.request_id`…). With `tracing-opentelemetry`
+Each call is a `caitlyn.call` span with one `caitlyn.attempt` child per HTTP attempt, and an upload's bytes are a
+`caitlyn.upload` span, with the names and attributes every Caitlyn SDK uses (`model/PROTOCOL.md` section 13:
+`rpc.method`, `url.full`, `http.request.resend_count`, `caitlyn.request_id`, `error.type`…). With `tracing-opentelemetry`
 they become OpenTelemetry spans; `ClientBuilder::propagator` sends `traceparent` (see
 `caitlyn_sdk_core::telemetry`).
 

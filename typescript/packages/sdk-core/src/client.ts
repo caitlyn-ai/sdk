@@ -1,6 +1,8 @@
 // Client options shared by every generated Caitlyn client, and the options every call accepts.
 import type { TracerProvider } from '@opentelemetry/api';
+import type { HttpHandlerUserInput } from '@smithy/core/protocols';
 import { CaitlynRetryStrategy } from './retry.js';
+import { caitlynTracer } from './telemetry.js';
 import { AuthSession, tokenIdentityProvider, workspaceHost, type AuthOptions } from './auth.js';
 
 export interface CaitlynOptions {
@@ -18,6 +20,13 @@ export interface CaitlynOptions {
    * for a proxy or a local app. Default: https://{workspace}/api. It never changes the token audience.
    */
   endpoint?: string;
+  /**
+   * The HTTP handler API calls go through, for this client only: a `NodeHttpHandler` with your own `https.Agent`
+   * (a private certificate authority, a proxy, keep-alive settings), a `FetchHttpHandler`, any object with
+   * `handle(request)`, or the default handler's options (`{ httpsAgent }` on Node). Default: a handler of the
+   * client's own. Sign-in requests go through `fetch`.
+   */
+  requestHandler?: HttpHandlerUserInput;
   maxAttempts?: number;
   /** Longest Retry-After the SDK waits for (default 60 000 ms); above it the call fails at once. */
   maxRetryDelayMs?: number;
@@ -45,6 +54,9 @@ export function clientConfig(opts: CaitlynOptions, auth: AuthSession = createAut
     workspace: workspaceHost(opts.workspace),
     endpoint: opts.endpoint ?? workspaceEndpoint(opts.workspace),
     token: tokenIdentityProvider(auth),
+    /** The tracer upload helpers record the byte transfer with (PROTOCOL.md 13); absent with telemetry off. */
+    caitlynTracer: opts.telemetry?.enabled === false ? undefined : caitlynTracer(opts.telemetry?.tracerProvider),
+    ...(opts.requestHandler !== undefined ? { requestHandler: opts.requestHandler } : {}),
     ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
     ...(opts.maxRetryDelayMs !== undefined ? { retryStrategy: new CaitlynRetryStrategy(opts.maxAttempts ?? 3, opts.maxRetryDelayMs) } : {}),
   };

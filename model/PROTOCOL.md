@@ -90,6 +90,8 @@ An absent header is `undefined`, `None`, `""` or `None`. The metadata is never s
 6. A transport failure mid-stream, **or a clean end of stream before the final event** (what a proxy or load balancer produces when it cuts a connection), reconnects with the `resumeWith` operation and `Last-Event-ID` set to the last `id` seen. Labels are copied from the original input by member name. At most 3 reconnects; then the stream fails with `STREAM_LOST`. Without `resumeWith`, the failure is raised.
 7. Without a `final` member, a clean end of stream ends the stream.
 8. Cancellation (`AbortSignal` in TypeScript, task cancellation in Python) closes the connection and raises the language's own cancellation error, never `STREAM_LOST`.
+9. **A response that ends cleanly without carrying any event ends the stream**, with no error and no reconnect. It is what the server sends to a resume after the answer has finished (the model: such a stream "ends at once"), whether the caller resumed directly or the SDK reconnected. Iterating it yields nothing; `finalMessage()` fails with `NO_FINAL_EVENT`, because the final event went to the earlier stream. Comment lines (keep-alives) are not events; an event the SDK skips (unknown name, duplicate id) is.
+10. Every stream exposes the `Caitlyn-Request-Id` of the response that opened it (TypeScript `requestId`, set once iteration starts; Python `request_id`; Go `RequestID()`; Rust `request_id()`), and every event its SSE event name (TypeScript and Python `type`, Go `EventType()`, Rust `event_type()`). Rust events serialise to their JSON object with `type` added, the shape TypeScript gives them.
 
 ## 6. Errors
 
@@ -114,9 +116,9 @@ Error responses are RFC 9457 problem details, `application/problem+json`:
 
 ### 6.2 Choosing the error class
 
-1. Collect the operation's error shapes, then the service's.
-2. The class is the one whose `@httpError` equals the response status. Lint rule 1 makes this unique.
-3. If none matches, the SDK raises its generic error (TypeScript `CaitlynError`, the generated base `CaitlynServiceException`, with `name = code`; Python `CaitlynError`). It still carries every field below.
+1. Collect every error shape in the service (the operations' and the service's).
+2. The class is the one whose `@httpError` equals the response status, **whether or not the operation lists that error**: a 404 from an operation that models no 404 is still the not-found class, because that is what callers switch on. Lint rule 1 makes the class unique. The operation's own list is documentation and decides nothing.
+3. If no error shape in the service has the status (a 405, a 502), the SDK raises its generic error: TypeScript `CaitlynError` (the generated base `CaitlynServiceException`), Python `CaitlynError`, Go `*Error`, Rust `Error::Api`. Its class name is `CaitlynError` in TypeScript (`name`) and Python; the code stays in `code`. It still carries every field below.
 4. Per-code subclasses (one class for `DRAFT_CHANGED`, say) are deferred. If they come, they will be an opt-in trait mapping `code` values to subclasses of the status class, so existing `catch` and `except` blocks keep working.
 
 ### 6.3 Fields every error carries
@@ -205,6 +207,9 @@ Every suite runs against the mock server and covers, at least:
 - wire headers: section 3.1, with no AWS headers;
 - a hostile `AWS_*` environment changes nothing;
 - telemetry: one span per call and one per attempt;
+- telemetry: span names and attributes as section 13 lists them, on a failed call and an upload;
+- an error status the operation does not list is still that status's class (section 6.2);
+- a resume after the answer finished ends with no events and no error (section 5.9);
 - every `@examples` entry in the model, as a request the mock server answers with the example's output or error (design guide, section 14);
 - sign-in: each mode, the shared token request and early renewal, and the one retry after a 401 (section 12).
 
@@ -288,3 +293,19 @@ In a browser, creating a client (`new Caitlyn(…)`, `createCaitlynClient(…)` 
 | `awsIam`, `workloadIdentity` | Refused the same way: they sign in a server workload with its own identity. |
 | `token` | Allowed, with one `console.warn` per client: a long-lived token in a browser is exposed to anyone who can run script on the page, so the mode is for local testing, and `oauth` should be used instead. `allowBrowserToken: true` on the mode silences the warning. |
 | `session`, and `oauth` without a `clientSecret` | Unaffected. |
+
+## 13. Telemetry
+
+Every SDK emits the same OpenTelemetry spans. The span names and attributes are in the shared registry (the app repository's `telemetry/registry`, which the server uses too), alongside the OpenTelemetry semantic conventions. TypeScript, Python and Go use the OpenTelemetry API, a no-op until the caller configures a provider; Rust uses `tracing` spans, which `tracing-opentelemetry` turns into the same spans (`otel.name`, `otel.kind` and `otel.status_code` fields).
+
+| Span | Kind and parent | Attributes |
+| ---- | --------------- | ---------- |
+| `caitlyn.call`, one per call | client; the caller's current span | `rpc.system` = `caitlyn`, `rpc.method` = the operation (`GetAgentVersion`), `caitlyn.request_id` (the last attempt's) |
+| `caitlyn.attempt`, one per HTTP attempt | client; the call span | `http.request.method`, `server.address`, `url.full`, `http.request.resend_count` (0 for the first), and when a response arrived `http.response.status_code`, `caitlyn.request_id` and `caitlyn.server.api_version` |
+| `caitlyn.upload`, the bytes of an upload helper's `PUT` | client; the caller's current span | `http.request.method`, `server.address`, `url.full`, `http.response.status_code` |
+
+- `url.full` never carries the query string, fragment or user information: a presigned upload URL's query is its signature.
+- An attempt span's status is error when the response is 400 or above, or no response arrived.
+- A failed call or upload sets the span's status to error, `error.type` to the error's class name, `caitlyn.error.code` to its `code` when it has one, and records an `exception` event. The class name is the same in every SDK: the model's error shape for a typed error (`NotFoundError`), `CaitlynError` for the generic one, `CaitlynConnectionError`, `CaitlynAuthError`, `NotSupportedByServer`.
+- `traceparent`, `tracestate` and `baggage` are injected from the attempt span (section 3.1).
+

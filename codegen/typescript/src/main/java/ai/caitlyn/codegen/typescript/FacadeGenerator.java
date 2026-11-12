@@ -257,7 +257,7 @@ final class FacadeGenerator {
             .append("  const Typed = ERROR_CLASSES[status];\n")
             .append("  const error = Typed\n")
             .append("    ? new Typed({ $fault: fault, $metadata: {}, message })\n")
-            .append("    : new CaitlynServiceException({ name: String(problem.code ?? \"Error\"), $fault: fault, $metadata: {}, message });\n")
+            .append("    : new CaitlynServiceException({ name: \"CaitlynError\", $fault: fault, $metadata: {}, message });\n")
             .append("  return Object.assign(error, problem, { message });\n")
             .append("};\n\n");
 
@@ -326,8 +326,8 @@ final class FacadeGenerator {
                                 : rm.getMemberName() + ": (input as Record<string, string>)." + rm.getMemberName());
                         }
                     }
-                    resume = "async (lastEventId) =>\n      (await client.send(new " + r.getId().getName() + "Command({ "
-                        + String.join(", ", fields) + " }), { abortSignal: signal })).events as unknown as AsyncIterable<Uint8Array>";
+                    resume = "(lastEventId) =>\n      client.send(new " + r.getId().getName() + "Command({ "
+                        + String.join(", ", fields) + " }), { abortSignal: signal })";
                 }
                 body.append("export function ").append(fn).append("(client: CaitlynClient, ").append(positionalParam)
                     .append("input: ").append(inputType).append(", ").append(optionsParam)
@@ -336,8 +336,8 @@ final class FacadeGenerator {
                     .append("  return new SseStream<").append(events).append(", ").append(finalType).append(">(\n")
                     .append("    { known: ").append(events).append("Names, final: ").append(finalSpec)
                     .append(", errorEvent: ").append(errorEvent).append(", toError },\n")
-                    .append("    async () => (await client.send(new ").append(opName).append("Command(").append(commandInput)
-                    .append("), { abortSignal: signal })).events as unknown as AsyncIterable<Uint8Array>,\n")
+                    .append("    () => client.send(new ").append(opName).append("Command(").append(commandInput)
+                    .append("), { abortSignal: signal }),\n")
                     .append("    ").append(resume).append(",\n")
                     .append("    signal,\n  );\n}\n\n");
             } else if (page.isPresent()) {
@@ -377,7 +377,8 @@ final class FacadeGenerator {
                 .append("export function ").append(fn).append("FromFile(client: CaitlynClient, input: { file: Blob; fileName: string } & Omit<")
                 .append(in).append(", \"fileName\" | \"contentType\" | \"byteSize\" | \"sha256\" | \"idempotencyKey\">, options: CallOptions & { idempotencyKey?: string } = {}) {\n")
                 .append("  const { file, fileName, ...rest } = input;\n")
-                .append("  return uploadFile(file, fileName, (meta) => ").append(fn).append("(client, { ...rest, ...meta }, options), toError, options.signal);\n}\n\n");
+                .append("  return uploadFile(file, fileName, (meta) => ").append(fn).append("(client, { ...rest, ...meta }, options), toError, options.signal,\n")
+                .append("    (client.config as { caitlynTracer?: Parameters<typeof uploadFile>[5] }).caitlynTracer);\n}\n\n");
             for (OperationShape op : methods.keySet()) {
                 Optional<String> member = op.findTrait(UPLOAD_TARGET)
                     .map(t -> t.toNode().expectObjectNode().expectStringMember("member").getValue());

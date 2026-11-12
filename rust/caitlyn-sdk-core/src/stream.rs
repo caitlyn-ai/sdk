@@ -55,6 +55,8 @@ pub struct Stream<E, F, Er> {
     done: bool,
     request_id: Option<String>,
     api_version: Option<String>,
+    /// SSE events (known or not) the current response has carried.
+    on_response: usize,
 }
 
 impl<E, F, Er> std::fmt::Debug for Stream<E, F, Er> {
@@ -84,6 +86,7 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
             done: false,
             request_id,
             api_version,
+            on_response: 0,
         };
         s.attach(resp);
         s
@@ -92,6 +95,7 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
     fn attach(&mut self, resp: Response) {
         self.body = Some(Box::pin(resp.inner.bytes_stream()));
         self.buf.clear();
+        self.on_response = 0;
     }
 
     /// The first response's `Caitlyn-Request-Id`.
@@ -141,7 +145,9 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
                 end => {
                     let cause = end.err();
                     let clean = cause.is_none();
-                    if clean && (self.spec.final_of.is_none() || self.final_.is_some()) {
+                    // A response that ends cleanly without any event means the answer had already finished: the
+                    // stream ends, without an error and without reconnecting (PROTOCOL.md 5.6).
+                    if clean && (self.spec.final_of.is_none() || self.final_.is_some() || self.on_response == 0) {
                         self.close();
                         return None;
                     }
@@ -157,6 +163,7 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
                     continue;
                 }
             };
+            self.on_response += 1;
             if let Some(id) = &id {
                 if !self.seen.insert(id.clone()) {
                     continue;

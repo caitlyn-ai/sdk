@@ -15,6 +15,11 @@ export interface SseSpec {
 }
 
 type Body = AsyncIterable<Uint8Array>;
+/** What opening (or resuming) a stream returns: the command output, with its event body and response metadata. */
+export interface SseOpened {
+  readonly events: unknown;
+  readonly $metadata?: { readonly requestId?: string };
+}
 
 export class SseStream<E extends { type: string }, F = never> implements AsyncIterable<E> {
   private finalValue?: F;
@@ -22,11 +27,13 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
   private readonly seen = new Set<string>();
   lastEventId?: string;
   reconnects = 0;
+  /** The Caitlyn-Request-Id of the response that opened the stream; set once iteration has started. */
+  requestId?: string;
 
   constructor(
     private readonly spec: SseSpec,
-    private readonly open: () => Promise<Body>,
-    private readonly resume: ((lastEventId: string | undefined) => Promise<Body>) | undefined,
+    private readonly open: () => Promise<SseOpened>,
+    private readonly resume: ((lastEventId: string | undefined) => Promise<SseOpened>) | undefined,
     private readonly signal?: AbortSignal,
     private readonly maxReconnects = 3,
   ) {}
@@ -38,11 +45,15 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
   async *[Symbol.asyncIterator](): AsyncGenerator<E> {
     if (this.consumed) throw new Error('SseStream can only be iterated once');
     this.consumed = true;
-    let body = await this.open();
+    const opened = await this.open();
+    this.requestId = opened.$metadata?.requestId;
+    let body = opened.events as Body;
     for (;;) {
       let ended = false;
+      let onResponse = 0; // SSE events (known or not) this response has carried
       try {
         for await (const msg of parseSse(body)) {
+          onResponse++;
           if (msg.id) {
             if (this.seen.has(msg.id)) continue;
             this.seen.add(msg.id);
@@ -59,8 +70,9 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
             return;
           }
         }
-        // A clean end of stream. Without a final event declared, that is the end; with one, a proxy cut us off.
-        if (!this.spec.final) return;
+        // A clean end of stream. Without a final event declared, that is the end; with one, a proxy cut us off,
+        // unless the response carried no event at all: then the answer had already finished (PROTOCOL.md 5.6).
+        if (!this.spec.final || onResponse === 0) return;
       } catch (err) {
         if (this.signal?.aborted) throw this.aborted(); // Node surfaces a mid-body abort as Error('aborted')
         if (ended || (err as Error)?.name === 'AbortError' || err === undefined || (err as { $fault?: unknown }).$fault || err instanceof SyntaxError) throw err;
@@ -69,7 +81,7 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
       if (this.signal?.aborted) throw this.aborted();
       if (!this.resume || ++this.reconnects > this.maxReconnects)
         throw this.spec.toError({ status: 0, code: 'STREAM_LOST', title: 'The stream dropped and could not be resumed' });
-      body = await this.resume(this.lastEventId);
+      body = (await this.resume(this.lastEventId)).events as Body;
     }
   }
 

@@ -166,7 +166,7 @@ func (c *Client) Do(ctx context.Context, op *Operation, req *Request, opts []Cal
 		}
 	}
 
-	ctx, span := c.tracer.Start(ctx, "caitlyn "+op.Name, trace.WithSpanKind(trace.SpanKindClient),
+	ctx, span := c.tracer.Start(ctx, "caitlyn.call", trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(attribute.String("rpc.system", "caitlyn"), attribute.String("rpc.method", op.Name)))
 	defer span.End()
 
@@ -196,8 +196,7 @@ func (c *Client) Do(ctx context.Context, op *Operation, req *Request, opts []Cal
 			if errors.As(err, &nr) {
 				err = newConnectionError(op.Name, nr.err)
 			}
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
+			recordFailure(span, err)
 			return nil, err
 		}
 		t := time.NewTimer(delay)
@@ -205,7 +204,7 @@ func (c *Client) Do(ctx context.Context, op *Operation, req *Request, opts []Cal
 		case <-t.C:
 		case <-ctx.Done():
 			t.Stop()
-			span.SetStatus(codes.Error, ctx.Err().Error())
+			recordFailure(span, ctx.Err())
 			return nil, ctx.Err()
 		}
 		attempt++
@@ -215,11 +214,11 @@ func (c *Client) Do(ctx context.Context, op *Operation, req *Request, opts []Cal
 func (e *APIError) apiError() *APIError { return e }
 
 func (c *Client) attempt(ctx context.Context, op *Operation, req *Request, cs *callSettings, idemKey string, attempt int) (*Response, error) {
-	ctx, span := c.tracer.Start(ctx, op.Method, trace.WithSpanKind(trace.SpanKindClient),
-		trace.WithAttributes(attribute.Int("http.request.resend_count", attempt), attribute.String("http.request.method", op.Method)))
+	u := c.s.endpoint + req.Path
+	ctx, span := c.tracer.Start(ctx, "caitlyn.attempt", trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(append(httpAttributes(op.Method, u), attribute.Int("http.request.resend_count", attempt))...))
 	defer span.End()
 
-	u := c.s.endpoint + req.Path
 	if len(req.Query) > 0 {
 		u += "?" + req.Query.Encode()
 	}
@@ -264,12 +263,19 @@ func (c *Client) attempt(ctx context.Context, op *Operation, req *Request, cs *c
 	resp, err := c.s.httpClient.Do(hr)
 	if err != nil {
 		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		return nil, &errNoResponse{err: err}
 	}
 	span.SetAttributes(attribute.Int("http.response.status_code", resp.StatusCode))
+	if rid := resp.Header.Get("Caitlyn-Request-Id"); rid != "" {
+		span.SetAttributes(attribute.String("caitlyn.request_id", rid))
+	}
+	if v := resp.Header.Get("Caitlyn-Api-Version"); v != "" {
+		span.SetAttributes(attribute.String("caitlyn.server.api_version", v))
+	}
 	c.noteServerVersion(resp.Header.Get("Caitlyn-Api-Version"))
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return &Response{Response: resp, op: op.Name}, nil

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -21,6 +22,8 @@ import (
 	"time"
 
 	"github.com/caitlyn-ai/caitlyn-go"
+	"github.com/caitlyn-ai/caitlyn-go/core"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -225,6 +228,38 @@ var protocol = map[string]func(t *testing.T, m mock){
 	},
 
 	// ------------------------------------------------------------------ SSE
+	"sse.resume-finished": func(t *testing.T, m mock) {
+		c := client(t, m)
+		first, err := collect(send(t, c, context.Background(), "c-done"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resumed, err := c.Conversations.Resume(context.Background(), "c-done", &caitlyn.ResumeConversationStreamInput{LastEventID: caitlyn.Ptr(first[len(first)-1].EventID())})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resumed.Close()
+		if evs, err := collect(resumed); err != nil || len(evs) != 0 {
+			t.Fatalf("events %d err %v", len(evs), err)
+		}
+		if gets := m.matching(t, func(r logged) bool { return r.Method == "GET" && strings.HasPrefix(r.Path, "/v3/") }); len(gets) != 1 {
+			t.Fatalf("resume requests %d", len(gets))
+		}
+	},
+	"sse.request-id-and-type": func(t *testing.T, m mock) {
+		stream := send(t, client(t, m), context.Background(), "c-ids")
+		evs, err := collect(stream)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reqs := m.api(t)
+		if stream.RequestID() != reqs[len(reqs)-1].RequestID {
+			t.Fatalf("request id %q", stream.RequestID())
+		}
+		if evs[0].EventType() != "message.started" || evs[len(evs)-1].EventType() != "message.completed" {
+			t.Fatalf("event types %q %q", evs[0].EventType(), evs[len(evs)-1].EventType())
+		}
+	},
 	"sse.typed-events": func(t *testing.T, m mock) {
 		stream := send(t, client(t, m), context.Background(), "c-1")
 		text := ""
@@ -427,6 +462,23 @@ var protocol = map[string]func(t *testing.T, m mock){
 		}
 	},
 
+	"errors.unmodelled-status": func(t *testing.T, m mock) {
+		m.faults(t, status("CreateUpload", map[string]any{"status": 404}, map[string]any{"status": 405, "body": ""}))
+		c := client(t, m)
+		reserve := func() error {
+			_, err := c.Uploads.Reserve(context.Background(), &caitlyn.CreateUploadInput{FileName: "a.txt", ContentType: "text/plain", ByteSize: 1, SHA256: "x"})
+			return err
+		}
+		var nf *caitlyn.NotFoundError
+		if err := reserve(); !errors.As(err, &nf) || nf.Status != 404 || nf.Code != "HTTP_404" {
+			t.Fatalf("404: %T %v", err, err)
+		}
+		err := reserve()
+		var ae *caitlyn.Error
+		if errors.As(err, &nf) || !errors.As(err, &ae) || ae.Status != 405 || ae.Code != "HTTP_405" || core.ErrorType(err) != "CaitlynError" {
+			t.Fatalf("405: %T %v", err, err)
+		}
+	},
 	"errors.raw-body-limit": func(t *testing.T, m mock) {
 		page := "<!DOCTYPE html>" + strings.Repeat("x", 20480-15)
 		straddle := strings.Repeat("a", 8191) + strings.Repeat("€", 10)
@@ -621,6 +673,105 @@ var protocol = map[string]func(t *testing.T, m mock){
 			t.Fatal("a result built in code has metadata")
 		}
 	},
+	"telemetry.attributes": func(t *testing.T, m mock) {
+		exporter := tracetest.NewInMemoryExporter()
+		c := client(t, m, caitlyn.WithTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))))
+		m.faults(t, status("GetAgentVersion", fault(503, 0)))
+		if _, err := c.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "nope"}); err == nil {
+			t.Fatal("no error")
+		}
+		if _, err := listAll(context.Background(), c, &caitlyn.ListDocumentsInput{KnowledgeBaseID: kb, Limit: caitlyn.Ptr(int32(100))}); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(t.TempDir(), "hello.txt")
+		os.WriteFile(path, []byte("hello"), 0o600)
+		f, _ := caitlyn.FileFromPath(path)
+		if _, err := c.Uploads.Create(context.Background(), f); err != nil {
+			t.Fatal(err)
+		}
+		spans := exporter.GetSpans()
+		attrs := func(s tracetest.SpanStub) map[string]any {
+			out := map[string]any{}
+			for _, a := range s.Attributes {
+				out[string(a.Key)] = a.Value.AsInterface()
+			}
+			return out
+		}
+		children := func(p tracetest.SpanStub) []tracetest.SpanStub {
+			var out []tracetest.SpanStub
+			for _, s := range spans {
+				if s.Parent.SpanID() == p.SpanContext.SpanID() {
+					out = append(out, s)
+				}
+			}
+			return out
+		}
+		find := func(name, method string) tracetest.SpanStub {
+			for _, s := range spans {
+				if s.Name == name && (method == "" || attrs(s)["rpc.method"] == method) {
+					return s
+				}
+			}
+			t.Fatalf("no %s %s span", name, method)
+			return tracetest.SpanStub{}
+		}
+		for _, s := range spans {
+			if s.Name != "caitlyn.call" && s.Name != "caitlyn.attempt" && s.Name != "caitlyn.upload" {
+				t.Fatalf("span %q", s.Name)
+			}
+			if _, ok := attrs(s)["caitlyn.operation"]; ok {
+				t.Fatalf("caitlyn.operation on %s", s.Name)
+			}
+		}
+		var sent []logged
+		for _, r := range m.api(t) {
+			if r.Path == "/v3/agents/"+agent+"/versions/nope" {
+				sent = append(sent, r)
+			}
+		}
+		call := find("caitlyn.call", "GetAgentVersion")
+		a := attrs(call)
+		if a["rpc.system"] != "caitlyn" || a["error.type"] != "NotFoundError" || a["caitlyn.error.code"] != "NOT_FOUND" ||
+			a["caitlyn.request_id"] != sent[len(sent)-1].RequestID || call.Status.Code != codes.Error {
+			t.Fatalf("call span %v status %v", a, call.Status)
+		}
+		exception := false
+		for _, e := range call.Events {
+			exception = exception || e.Name == "exception"
+		}
+		if !exception {
+			t.Fatal("no exception event")
+		}
+		attempts := children(call)
+		if len(attempts) != 2 {
+			t.Fatalf("attempts %d", len(attempts))
+		}
+		for i, s := range attempts {
+			a := attrs(s)
+			want := map[string]any{
+				"http.request.method": "GET", "server.address": "127.0.0.1", "url.full": m.base + "/v3/agents/" + agent + "/versions/nope",
+				"http.request.resend_count": int64(i), "http.response.status_code": int64([]int{503, 404}[i]),
+				"caitlyn.request_id": sent[i].RequestID, "caitlyn.server.api_version": "5.120.0",
+			}
+			for k, v := range want {
+				if a[k] != v {
+					t.Fatalf("attempt %d %s = %v, want %v", i, k, a[k], v)
+				}
+			}
+			if s.Name != "caitlyn.attempt" || s.Status.Code != codes.Error {
+				t.Fatalf("attempt %d %s status %v", i, s.Name, s.Status)
+			}
+		}
+		list := children(find("caitlyn.call", "ListDocuments"))
+		if len(list) != 1 || attrs(list[0])["url.full"] != m.base+"/v3/knowledge-bases/"+kb+"/documents" || list[0].Status.Code == codes.Error {
+			t.Fatalf("list attempts %v", list)
+		}
+		up := attrs(find("caitlyn.upload", ""))
+		if up["http.request.method"] != "PUT" || up["server.address"] != "127.0.0.1" || up["http.response.status_code"] != int64(200) ||
+			!regexp.MustCompile(`^http://127\.0\.0\.1:\d+/__s3/[^?]+$`).MatchString(fmt.Sprint(up["url.full"])) {
+			t.Fatalf("upload span %v", up)
+		}
+	},
 	"telemetry.spans": func(t *testing.T, m mock) {
 		exporter := tracetest.NewInMemoryExporter()
 		tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
@@ -629,7 +780,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 		spans := exporter.GetSpans()
 		var call *tracetest.SpanStub
 		for i := range spans {
-			if spans[i].Name == "caitlyn GetAgentVersion" {
+			if spans[i].Name == "caitlyn.call" {
 				call = &spans[i]
 			}
 		}

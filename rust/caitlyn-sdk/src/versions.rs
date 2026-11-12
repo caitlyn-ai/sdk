@@ -30,10 +30,8 @@ pub struct GetAgentVersionInput {
     pub version: String,
 }
 
-const ERRORS_GET_AGENT_VERSION: &[u16] = &[500, 403, 503, 429, 401, 400, 404];
-
 fn errors_get_agent_version(e: rt::Error) -> Error {
-    Error::from_core(e, ERRORS_GET_AGENT_VERSION)
+    Error::from(e)
 }
 
 static OP_GET_AGENT_VERSION: rt::Operation = rt::Operation {
@@ -88,7 +86,8 @@ impl VersionsClient {
     ///
     /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
     /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]
-    /// (400), [`Error::NotFound`] (404); any other status is [`Error::Api`].
+    /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
+    /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
     /// Since Caitlyn 5.115.0.
     pub fn get(&self, input: GetAgentVersionInput) -> rt::Call<AgentVersion, Error> {
@@ -138,10 +137,8 @@ pub struct UpdateDraftVersionInput {
     pub clear: Option<Vec<ClearableDraftField>>,
 }
 
-const ERRORS_UPDATE_DRAFT_VERSION: &[u16] = &[500, 403, 503, 429, 401, 400, 404, 412, 428];
-
 fn errors_update_draft_version(e: rt::Error) -> Error {
-    Error::from_core(e, ERRORS_UPDATE_DRAFT_VERSION)
+    Error::from(e)
 }
 
 static OP_UPDATE_DRAFT_VERSION: rt::Operation = rt::Operation {
@@ -188,7 +185,8 @@ impl VersionsClient {
     /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
     /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]
     /// (400), [`Error::NotFound`] (404), [`Error::PreconditionFailed`] (412),
-    /// [`Error::PreconditionRequired`] (428); any other status is [`Error::Api`].
+    /// [`Error::PreconditionRequired`] (428); another status the API models has its own variant too
+    /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
     /// Since Caitlyn 5.115.0.
     pub fn update_draft(&self, agent_id: impl Into<String>, input: UpdateDraftVersionInput) -> rt::Call<AgentVersion, Error> {

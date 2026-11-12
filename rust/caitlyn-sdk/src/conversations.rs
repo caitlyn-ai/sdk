@@ -25,10 +25,8 @@ pub struct ResumeConversationStreamInput {
     pub last_event_id: Option<String>,
 }
 
-const ERRORS_RESUME_CONVERSATION_STREAM: &[u16] = &[500, 403, 503, 429, 401, 400, 404];
-
 fn errors_resume_conversation_stream(e: rt::Error) -> Error {
-    Error::from_core(e, ERRORS_RESUME_CONVERSATION_STREAM)
+    Error::from(e)
 }
 
 static OP_RESUME_CONVERSATION_STREAM: rt::Operation = rt::Operation {
@@ -77,7 +75,8 @@ impl ConversationsClient {
     ///
     /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
     /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]
-    /// (400), [`Error::NotFound`] (404); any other status is [`Error::Api`].
+    /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
+    /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
     /// Since Caitlyn 5.115.0.
     pub fn resume(
@@ -121,10 +120,8 @@ pub struct SendMessageInput {
     pub context: Option<Vec<ContextItem>>,
 }
 
-const ERRORS_SEND_MESSAGE: &[u16] = &[500, 403, 503, 429, 401, 400, 409, 404, 413];
-
 fn errors_send_message(e: rt::Error) -> Error {
-    Error::from_core(e, ERRORS_SEND_MESSAGE)
+    Error::from(e)
 }
 
 static OP_SEND_MESSAGE: rt::Operation = rt::Operation {
@@ -161,8 +158,9 @@ impl ConversationsClient {
     ///
     /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
     /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]
-    /// (400), [`Error::Conflict`] (409), [`Error::NotFound`] (404), [`Error::PayloadTooLarge`] (413); any
-    /// other status is [`Error::Api`].
+    /// (400), [`Error::Conflict`] (409), [`Error::NotFound`] (404), [`Error::PayloadTooLarge`] (413);
+    /// another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other
+    /// status is [`Error::Api`].
     ///
     /// Since Caitlyn 5.115.0.
     pub fn send(&self, conversation_id: impl Into<String>, input: SendMessageInput) -> rt::Call<ConversationEventStream, Error> {

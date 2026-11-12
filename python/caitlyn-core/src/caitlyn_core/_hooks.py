@@ -41,28 +41,22 @@ class Interceptor:
 
 
 class Telemetry:
-    """One span per call (``caitlyn <Operation>``) and one child span per HTTP attempt, with
-    ``traceparent`` injected from the attempt's span."""
+    """The spans every SDK emits (PROTOCOL.md 13): ``caitlyn.call`` per call, a ``caitlyn.attempt`` child per HTTP
+    attempt with ``traceparent`` injected from it, and ``caitlyn.upload`` for an upload's bytes."""
 
     def __init__(self, tracer_provider: TracerProvider | None, version: str) -> None:
         provider = tracer_provider or trace.get_tracer_provider()
         self._tracer = provider.get_tracer("caitlyn-sdk-python", version)
 
     def start_call(self, spec: OperationSpec) -> Span:
-        return self._tracer.start_span(
-            f"caitlyn {spec.name}", kind=SpanKind.CLIENT, attributes={"caitlyn.operation": spec.name, "rpc.system": "caitlyn"}
-        )
+        return self._tracer.start_span("caitlyn.call", kind=SpanKind.CLIENT, attributes={"rpc.system": "caitlyn", "rpc.method": spec.name})
 
     def start_attempt(self, call: Span, request: httpx.Request, attempt: int) -> Span:
         span = self._tracer.start_span(
-            f"HTTP {request.method}",
+            "caitlyn.attempt",
             context=trace.set_span_in_context(call),
             kind=SpanKind.CLIENT,
-            attributes={
-                "http.request.method": request.method,
-                "url.full": str(request.url.copy_with(query=None)),
-                "http.request.resend_count": attempt,
-            },
+            attributes={**http_attributes(request.method, request.url), "http.request.resend_count": attempt},
         )
         carrier: dict[str, str] = {}
         propagate.inject(carrier, context=trace.set_span_in_context(span))
@@ -79,6 +73,9 @@ class Telemetry:
             if request_id:
                 span.set_attribute("caitlyn.request_id", request_id)
                 call.set_attribute("caitlyn.request_id", request_id)
+            api_version = response.headers.get("Caitlyn-Api-Version")
+            if api_version:
+                span.set_attribute("caitlyn.server.api_version", api_version)
             if response.status_code >= 400:
                 span.set_status(Status(StatusCode.ERROR))
         if error is not None:
@@ -90,9 +87,28 @@ class Telemetry:
     @staticmethod
     def end_call(span: Span, error: BaseException | None) -> None:
         if error is not None:
-            span.set_status(Status(StatusCode.ERROR))
-            span.set_attribute("error.type", type(error).__name__)
-            code = getattr(error, "code", None)
-            if isinstance(code, str):
-                span.set_attribute("caitlyn.error.code", code)
+            record_failure(span, error)
         span.end()
+
+    def start_upload(self, method: str, url: str) -> Span:
+        return self._tracer.start_span("caitlyn.upload", kind=SpanKind.CLIENT, attributes=http_attributes(method, httpx.URL(url)))
+
+
+def http_attributes(method: str, url: httpx.URL) -> dict[str, str]:
+    """``http.request.method``, ``server.address`` and ``url.full``. The URL loses its query, fragment and user
+    information, which can carry secrets (a presigned URL's signature)."""
+    return {
+        "http.request.method": method,
+        "server.address": url.host,
+        "url.full": str(url.copy_with(query=None, fragment=None, userinfo=b"")),
+    }
+
+
+def record_failure(span: Span, error: BaseException) -> None:
+    """Status, ``error.type`` (the error's class name), ``caitlyn.error.code`` and an exception event."""
+    span.record_exception(error)
+    span.set_status(Status(StatusCode.ERROR, str(error)))
+    span.set_attribute("error.type", type(error).__name__)
+    code = getattr(error, "code", None)
+    if isinstance(code, str):
+        span.set_attribute("caitlyn.error.code", code)

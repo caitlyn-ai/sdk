@@ -1667,6 +1667,43 @@ impl ConversationEvent {
             ConversationEvent::MessageCompleted(v) => v.event_id.as_deref(),
         }
     }
+
+    /// The event's SSE `event:` name, for example `text.delta`.
+    pub fn event_type(&self) -> &'static str {
+        match self {
+            ConversationEvent::MessageStarted(_) => "message.started",
+            ConversationEvent::PhaseChanged(_) => "phase.changed",
+            ConversationEvent::ProgressUpdated(_) => "progress.updated",
+            ConversationEvent::TextDelta(_) => "text.delta",
+            ConversationEvent::CitationAdded(_) => "citation.added",
+            ConversationEvent::ToolStarted(_) => "tool.started",
+            ConversationEvent::ToolFinished(_) => "tool.finished",
+            ConversationEvent::InputRequested(_) => "input.requested",
+            ConversationEvent::MessageCompleted(_) => "message.completed",
+        }
+    }
+}
+
+/// Serialises as the event's JSON object with `type`, its SSE event name, added.
+impl Serialize for ConversationEvent {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let mut v = match self {
+            ConversationEvent::MessageStarted(e) => serde_json::to_value(e),
+            ConversationEvent::PhaseChanged(e) => serde_json::to_value(e),
+            ConversationEvent::ProgressUpdated(e) => serde_json::to_value(e),
+            ConversationEvent::TextDelta(e) => serde_json::to_value(e),
+            ConversationEvent::CitationAdded(e) => serde_json::to_value(e),
+            ConversationEvent::ToolStarted(e) => serde_json::to_value(e),
+            ConversationEvent::ToolFinished(e) => serde_json::to_value(e),
+            ConversationEvent::InputRequested(e) => serde_json::to_value(e),
+            ConversationEvent::MessageCompleted(e) => serde_json::to_value(e),
+        }
+        .map_err(serde::ser::Error::custom)?;
+        if let serde_json::Value::Object(o) = &mut v {
+            o.insert("type".to_owned(), serde_json::Value::from(self.event_type()));
+        }
+        v.serialize(s)
+    }
 }
 
 /// Decodes one SSE event of the ConversationEvent union.

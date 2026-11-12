@@ -13,6 +13,7 @@ await build({
     'auth.test': path.join(root, 'test/auth.test.ts'),
     'waiter.test': path.join(root, 'test/waiter.test.ts'),
     'browser-guard.test': path.join(root, 'test/browser-guard.test.ts'),
+    'request-handler.test': path.join(root, 'test/request-handler.test.ts'),
   },
   outdir: path.join(root, 'dist'),
   outExtension: { '.js': '.mjs' },

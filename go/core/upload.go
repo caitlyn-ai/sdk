@@ -11,6 +11,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // UploadFile is a file to upload with a presigned URL (PROTOCOL.md 10, Uploads).
@@ -39,12 +42,19 @@ func (f *UploadFile) SHA256() string {
 	return base64.StdEncoding.EncodeToString(sum[:])
 }
 
-// PutPresigned sends the bytes to a presigned URL with exactly the headers the reservation requires.
-// No SDK header or credential is sent there.
-func (c *Client) PutPresigned(ctx context.Context, method, url string, headers map[string]string, data []byte) error {
+// PutPresigned sends the bytes to a presigned URL with exactly the headers the reservation requires, in a
+// caitlyn.upload span (PROTOCOL.md 13). No SDK header or credential is sent there.
+func (c *Client) PutPresigned(ctx context.Context, method, url string, headers map[string]string, data []byte) (err error) {
 	if method == "" {
 		method = http.MethodPut
 	}
+	ctx, span := c.tracer.Start(ctx, "caitlyn.upload", trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(httpAttributes(method, url)...))
+	defer func() {
+		if err != nil {
+			recordFailure(span, err)
+		}
+		span.End()
+	}()
 	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(data))
 	if err != nil {
 		return sdkError("UPLOAD_PUT_FAILED", "The upload URL could not be used", err)
@@ -60,6 +70,7 @@ func (c *Client) PutPresigned(ctx context.Context, method, url string, headers m
 		return sdkError("UPLOAD_PUT_FAILED", "The bytes could not be sent", err)
 	}
 	defer resp.Body.Close()
+	span.SetAttributes(attribute.Int("http.response.status_code", resp.StatusCode))
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return sdkError("UPLOAD_PUT_FAILED", "The upload URL refused the bytes", fmt.Errorf("HTTP %d", resp.StatusCode))
