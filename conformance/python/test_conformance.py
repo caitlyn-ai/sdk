@@ -323,6 +323,19 @@ async def test_text_502(mock: Mock, case_id: str) -> None:
     assert len(mock.api()) == 1
 
 
+# A problem body whose status disagrees with the HTTP status (PROTOCOL.md 6.3).
+MISMATCHED_409 = '{"type":"https://build.caitlyn.ai/errors/CONFLICT","title":"Conflict","status":400,"code":"CONFLICT","requestId":"01MISMATCHEDSTATUS0000000"}'
+
+
+@case("errors.status-from-http")
+async def test_status_from_http(mock: Mock, case_id: str) -> None:
+    mock.faults(status={"CreateUpload": [{"status": 409, "contentType": "application/problem+json", "body": MISMATCHED_409}]})
+    reserve = client(mock).uploads.reserve(file_name="a.txt", content_type="text/plain", byte_size=1, sha256="x")
+    err = await expect_error(reserve)
+    assert isinstance(err, ConflictError)
+    assert (err.status, err.code, err.request_id) == (409, "CONFLICT", "01MISMATCHEDSTATUS0000000")
+
+
 @case("errors.field-errors")
 async def test_field_errors(mock: Mock, case_id: str) -> None:
     c = client(mock)

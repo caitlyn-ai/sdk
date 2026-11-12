@@ -61,6 +61,9 @@ func draft(t *testing.T, c *caitlyn.Client) *caitlyn.AgentVersion {
 // An error page from something in front of the API, not a problem body (PROTOCOL.md 6.1).
 const html404 = `<!DOCTYPE html><html><head><title>404: This page could not be found</title></head><body><h1>404</h1></body></html>`
 
+// A problem body whose status disagrees with the HTTP status (PROTOCOL.md 6.3).
+const mismatched409 = `{"type":"https://build.caitlyn.ai/errors/CONFLICT","title":"Conflict","status":400,"code":"CONFLICT","requestId":"01MISMATCHEDSTATUS0000000"}`
+
 func apiError(t *testing.T, err error) *caitlyn.Error {
 	t.Helper()
 	var e *caitlyn.Error
@@ -376,6 +379,14 @@ var protocol = map[string]func(t *testing.T, m mock){
 		_, err := client(t, m).Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
 		e, ok := err.(*caitlyn.Error)
 		if !ok || e.Status != 502 || e.Code != "HTTP_502" || e.RawBody != "Bad Gateway" || len(m.api(t)) != 1 {
+			t.Fatalf("got %T %+v", err, err)
+		}
+	},
+	"errors.status-from-http": func(t *testing.T, m mock) {
+		m.faults(t, status("CreateUpload", map[string]any{"status": 409, "contentType": "application/problem+json", "body": mismatched409}))
+		_, err := client(t, m).Uploads.Reserve(context.Background(), &caitlyn.CreateUploadInput{FileName: "a.txt", ContentType: "text/plain", ByteSize: 1, SHA256: "x"})
+		var conflict *caitlyn.ConflictError
+		if !errors.As(err, &conflict) || conflict.Status != 409 || conflict.Code != "CONFLICT" || conflict.RequestID != "01MISMATCHEDSTATUS0000000" {
 			t.Fatalf("got %T %+v", err, err)
 		}
 	},
