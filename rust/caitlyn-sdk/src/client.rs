@@ -99,6 +99,13 @@ impl ClientBuilder {
         ClientBuilder(self.0.max_retry_delay(d))
     }
 
+    /// The size of the client's retry budget, in tokens (default 500). A retry costs 5, or 10 after an attempt that
+    /// got no response; a call that succeeds gives back 1, or its last retry's cost. When the budget cannot pay
+    /// for a retry, the call fails at once with its error. 0 turns retries off.
+    pub fn retry_budget(self, tokens: u32) -> Self {
+        ClientBuilder(self.0.retry_budget(tokens))
+    }
+
     /// Adds `app/<id>` to the user agent.
     pub fn app_id(self, id: impl Into<String>) -> Self {
         ClientBuilder(self.0.app_id(id))

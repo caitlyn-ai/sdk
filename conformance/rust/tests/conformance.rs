@@ -323,6 +323,75 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             ensure!(t0.elapsed() >= Duration::from_secs(7), "waited {:?}, want ≥ 7 s", t0.elapsed());
             Ok(())
         }),
+        "retry.budget-drains" => Box::pin(async move {
+            let with_budget = |tokens: u32| {
+                Client::builder(WORKSPACE, Auth::token(PAT))
+                    .endpoint(&m.base)
+                    .retry_budget(tokens)
+                    .build()
+                    .expect("client")
+            };
+            let c = with_budget(10);
+            m.faults(status("GetAgentVersion", &[(503, 0), (503, 0), (503, 0), (503, 0)])).await;
+            let r = draft(&c).await;
+            let n = m.api().await.len();
+            ensure!(
+                matches!(r, Err(Error::ServiceUnavailable(_))) && n == 3,
+                "first call: {:?} after {n} requests",
+                r.err()
+            );
+            let t0 = Instant::now();
+            let r = draft(&c).await;
+            let n = m.api().await.len();
+            ensure!(
+                matches!(r, Err(Error::ServiceUnavailable(_))) && n == 4 && t0.elapsed() < Duration::from_secs(1),
+                "second call: {:?} after {n} requests, {:?}",
+                r.err(),
+                t0.elapsed()
+            );
+            // A retry after no response costs 10: a budget of 9 pays for a 503's retry but not this one.
+            m.reset().await;
+            m.faults(json!({"status": {"GetAgentVersion": [{"close": true}]}})).await;
+            let r = draft(&with_budget(9)).await;
+            let n = m.api().await.len();
+            ensure!(
+                matches!(r, Err(Error::Connection(_))) && n == 1,
+                "no response: {:?} after {n} requests",
+                r.err()
+            );
+            Ok(())
+        }),
+        "retry.budget-refund" => Box::pin(async move {
+            let c = Client::builder(WORKSPACE, Auth::token(PAT))
+                .endpoint(&m.base)
+                .retry_budget(5)
+                .build()
+                .map_err(s)?;
+            m.faults(status("GetAgentVersion", &[(503, 0)])).await;
+            draft(&c).await.map_err(s)?; // retried once, then refunded
+            m.faults(status("GetAgentVersion", &[(503, 0)])).await;
+            let v = draft(&c).await.map_err(s)?;
+            let n = m.api().await.len();
+            ensure!(v.name == "draft" && n == 4, "requests {n}");
+            Ok(())
+        }),
+        "retry.budget-first-attempt" => Box::pin(async move {
+            let c = Client::builder(WORKSPACE, Auth::token(PAT))
+                .endpoint(&m.base)
+                .retry_budget(0)
+                .build()
+                .map_err(s)?;
+            draft(&c).await.map_err(s)?;
+            m.faults(status("GetAgentVersion", &[(503, 0)])).await;
+            let r = draft(&c).await;
+            let n = m.api().await.len();
+            ensure!(
+                matches!(r, Err(Error::ServiceUnavailable(_))) && n == 2,
+                "{:?} after {n} requests",
+                r.err()
+            );
+            Ok(())
+        }),
         "retry.idempotency-key-kept" => Box::pin(async move {
             m.faults(status("CreateUpload", &[(503, 0), (429, 0)])).await;
             let f = UploadFile::from_path(temp_file("hello.txt", b"hello")).map_err(s)?;

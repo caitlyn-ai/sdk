@@ -29,7 +29,7 @@ from ._protocol import (
     read_result,
     with_idempotency_token,
 )
-from ._retry import RetryPolicy, error_retry_delay, transport_retry_delay
+from ._retry import NO_RESPONSE_RETRY_COST, RETRY_COST, RetryBudget, RetryPolicy, error_retry_delay, transport_retry_delay
 from ._spec import OperationSpec
 from ._sse import SseDecoder, SseMessage
 from .auth import AsyncAuthSession, Auth, SyncAuthSession, workspace_host
@@ -73,6 +73,7 @@ class ClientConfig:
         max_attempts: int | None,
         max_retry_delay: float | None,
         retry: RetryPolicy | None,
+        retry_budget: int | None = None,
         timeout: float | httpx.Timeout,
         tracer_provider: TracerProvider | None,
         interceptors: Sequence[Interceptor],
@@ -90,6 +91,8 @@ class ClientConfig:
             policy = dataclasses.replace(policy, max_attempts=max_attempts)
         if max_retry_delay is not None:
             policy = dataclasses.replace(policy, max_retry_delay=max_retry_delay)
+        if retry_budget is not None:
+            policy = dataclasses.replace(policy, retry_budget=retry_budget)
         return cls(
             endpoint=endpoint.rstrip("/"),
             auth=auth,
@@ -139,6 +142,8 @@ class _CoreBase:
     def __init__(self, config: ClientConfig) -> None:
         self.config = config
         self.telemetry = Telemetry(config.tracer_provider, config.sdk_version)
+        self.retry_budget = RetryBudget(config.retry.retry_budget)
+        """The retry tokens this client's calls share (PROTOCOL.md 6.4.6)."""
         self.server_api_version: str | None = None
         """The Caitlyn-Api-Version the server last reported; @since checks compare against it."""
         self._headers = config.headers()
@@ -214,6 +219,7 @@ class SyncClientCore(_CoreBase):
         """Send with retries. The response is open (body unread) for streaming operations."""
         call = self._begin(spec, params)
         policy = self.config.retry
+        retry_cost: int | None = None  # the cost of this call's last retry (PROTOCOL.md 6.4.6)
         try:
             while True:
                 request, span = self._request_for(self._http, call, _accept(spec))
@@ -223,8 +229,9 @@ class SyncClientCore(_CoreBase):
                     connection = self._connection_error(spec, e)
                     self._after_attempt(call, span, request, None, e, connection)
                     delay = transport_retry_delay(policy, spec.retry_safe, call.context.attempt, e)
-                    if delay is None:
+                    if delay is None or not self.retry_budget.acquire(NO_RESPONSE_RETRY_COST):
                         raise connection from e
+                    retry_cost = NO_RESPONSE_RETRY_COST
                     time.sleep(delay)
                     call.context.attempt += 1
                     continue
@@ -242,11 +249,13 @@ class SyncClientCore(_CoreBase):
                 error = None if response.is_success else read_error(spec, response)
                 self._after_attempt(call, span, request, response, None, error)
                 if error is None:
+                    self.retry_budget.release(retry_cost)
                     return response, call
                 response.close()
                 delay = error_retry_delay(policy, spec.retry_safe, call.context.attempt, error)
-                if delay is None:
+                if delay is None or not self.retry_budget.acquire(RETRY_COST):
                     raise error
+                retry_cost = RETRY_COST
                 time.sleep(delay)
                 call.context.attempt += 1
         except BaseException as e:
@@ -303,6 +312,7 @@ class AsyncClientCore(_CoreBase):
     async def send(self, spec: OperationSpec, params: Mapping[str, object]) -> tuple[httpx.Response, _Call]:
         call = self._begin(spec, params)
         policy = self.config.retry
+        retry_cost: int | None = None  # the cost of this call's last retry (PROTOCOL.md 6.4.6)
         try:
             while True:
                 request, span = self._request_for(self._http, call, _accept(spec))
@@ -312,8 +322,9 @@ class AsyncClientCore(_CoreBase):
                     connection = self._connection_error(spec, e)
                     self._after_attempt(call, span, request, None, e, connection)
                     delay = transport_retry_delay(policy, spec.retry_safe, call.context.attempt, e)
-                    if delay is None:
+                    if delay is None or not self.retry_budget.acquire(NO_RESPONSE_RETRY_COST):
                         raise connection from e
+                    retry_cost = NO_RESPONSE_RETRY_COST
                     await asyncio.sleep(delay)
                     call.context.attempt += 1
                     continue
@@ -332,10 +343,12 @@ class AsyncClientCore(_CoreBase):
                 error = None if response.is_success else read_error(spec, response)
                 self._after_attempt(call, span, request, response, None, error)
                 if error is None:
+                    self.retry_budget.release(retry_cost)
                     return response, call
                 delay = error_retry_delay(policy, spec.retry_safe, call.context.attempt, error)
-                if delay is None:
+                if delay is None or not self.retry_budget.acquire(RETRY_COST):
                     raise error
+                retry_cost = RETRY_COST
                 await asyncio.sleep(delay)
                 call.context.attempt += 1
         except BaseException as e:

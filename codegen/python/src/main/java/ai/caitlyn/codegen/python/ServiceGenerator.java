@@ -605,6 +605,8 @@ final class ServiceGenerator {
                 + "    endpoint: overrides the URL built from `workspace` (a proxy, a local app). Tokens are still for `workspace`.\n"
                 + "    max_attempts: attempts per call, including the first (default 3).\n"
                 + "    max_retry_delay: the longest Retry-After to wait for, in seconds (default 60); above it the call fails at once.\n"
+                + "    retry_budget: the retry tokens this client's calls share (default 500; a retry costs 5, or 10 after no response;\n"
+                + "        a success gives back 1, or its last retry's cost). When it is spent, calls fail without retrying. 0 turns retries off.\n"
                 + "    retry: the full retry policy.\n"
                 + "    tracer_provider: OpenTelemetry tracer provider (default: the global one).\n"
                 + "    interceptors: hooks run around every call and attempt.\n"
@@ -626,6 +628,7 @@ final class ServiceGenerator {
         w.write("endpoint: str | None = None,");
         w.write("max_attempts: int | None = None,");
         w.write("max_retry_delay: float | None = None,");
+        w.write("retry_budget: int | None = None,");
         w.write("retry: RetryPolicy | None = None,");
         w.write("timeout: float | httpx.Timeout = 60.0,");
         w.write("tracer_provider: TracerProvider | None = None,");
@@ -644,6 +647,7 @@ final class ServiceGenerator {
         w.write("sdk_model=SDK_MODEL,");
         w.write("max_attempts=max_attempts,");
         w.write("max_retry_delay=max_retry_delay,");
+        w.write("retry_budget=retry_budget,");
         w.write("retry=retry,");
         w.write("timeout=timeout,");
         w.write("tracer_provider=tracer_provider,");

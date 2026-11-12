@@ -6,13 +6,50 @@
 // - Delay: Retry-After (seconds or HTTP-date), honoured in full up to maxRetryDelayMs (default 60 s);
 //   above that, fail at once with the typed error. Without Retry-After: full-jitter exponential,
 //   base 0.5 s, cap 8 s.
-// The retry middleware itself sleeps for the token's delay.
+// - A retry budget per client (rule 6): AWS's "standard" retry quota. A retry costs 5 tokens, or 10 after a
+//   failure with no response; a call that succeeds gives back its last retry's cost, or 1. When the budget cannot
+//   pay, the call fails at once with its error. The first attempt is never blocked.
+// The retry middleware itself sleeps for the token's delay. Both builds' retry middleware (@smithy/core's for Node,
+// browser/retry.ts for browsers, once that lands) call refreshRetryTokenForRetry and recordSuccess.
 import type { Provider, RetryErrorInfo, RetryStrategyV2, RetryToken } from '@smithy/types';
 
 export const NO_RETRY = Symbol.for('caitlyn.noRetry');
 
+/** The size of a client's retry budget, in tokens (PROTOCOL.md 6.4.6). */
+export const DEFAULT_RETRY_BUDGET = 500;
+const RETRY_COST = 5;
+const NO_RESPONSE_RETRY_COST = 10;
+const NO_RETRY_REFUND = 1;
+
+/** The retry tokens one client's calls share (PROTOCOL.md 6.4.6). */
+export class RetryBudget {
+  private tokens: number;
+
+  constructor(readonly size = DEFAULT_RETRY_BUDGET) {
+    this.size = Math.max(0, Math.floor(size));
+    this.tokens = this.size;
+  }
+
+  get available(): number {
+    return this.tokens;
+  }
+
+  /** Takes `cost` tokens for a retry, or returns false, taking nothing, when the budget cannot pay. */
+  acquire(cost: number): boolean {
+    if (this.tokens < cost) return false;
+    this.tokens -= cost;
+    return true;
+  }
+
+  /** A call succeeded: give back its last retry's cost, or 1 when it did not retry. */
+  release(lastRetryCost: number): void {
+    this.tokens = Math.min(this.size, this.tokens + (lastRetryCost || NO_RETRY_REFUND));
+  }
+}
+
 class Token implements RetryToken {
-  constructor(private readonly count: number, private readonly delay: number) {}
+  /** `cost` is what this call's last retry took from the budget; 0 before any retry. */
+  constructor(private readonly count: number, private readonly delay: number, readonly cost = 0) {}
   getRetryCount() {
     return this.count;
   }
@@ -25,8 +62,11 @@ export class CaitlynRetryStrategy implements RetryStrategyV2 {
   readonly mode = 'standard';
   private readonly maxAttempts: Provider<number>;
 
-  constructor(maxAttempts: number | Provider<number> = 3, private readonly maxRetryDelayMs = 60_000) {
+  readonly budget: RetryBudget;
+
+  constructor(maxAttempts: number | Provider<number> = 3, private readonly maxRetryDelayMs = 60_000, retryBudget = DEFAULT_RETRY_BUDGET) {
     this.maxAttempts = typeof maxAttempts === 'number' ? async () => maxAttempts : maxAttempts;
+    this.budget = new RetryBudget(retryBudget);
   }
 
   async acquireInitialRetryToken(): Promise<RetryToken> {
@@ -47,8 +87,12 @@ export class CaitlynRetryStrategy implements RetryStrategyV2 {
     } else {
       delay = Math.random() * Math.min(8_000, 500 * 2 ** count);
     }
-    return new Token(count + 1, delay);
+    const cost = noResponse ? NO_RESPONSE_RETRY_COST : RETRY_COST;
+    if (!this.budget.acquire(cost)) throw new Error('retry: the retry budget is spent');
+    return new Token(count + 1, delay, cost);
   }
 
-  recordSuccess(): void {}
+  recordSuccess(token: RetryToken): void {
+    this.budget.release(token instanceof Token ? token.cost : 0);
+  }
 }

@@ -134,6 +134,9 @@ const draft = await getAgentVersion(client, { agentId: 'GHT7YRWXPL', version: 'd
 - **Retries:** 429 and 503, and connection failures, are retried up to `maxAttempts` (default 3), only for
   reads, idempotent operations and creates with their idempotency key. `Retry-After` is honoured up to
   `maxRetryDelayMs` (default 60 seconds).
+- **Retry budget:** each client holds 500 retry tokens (`retryBudget`). A retry costs 5, or 10 after a failure
+  with no response, and a call that succeeds gives some back, so a failing server sees fewer retries: when the
+  budget is spent, calls fail at once with their error. The first attempt always goes.
 - **Unknown fields** the server added after this SDK was built are kept on each result's `raw`.
 - **Older servers:** calling an operation or member the server is too old for fails before sending, with `NotSupportedByServer`.
 

@@ -142,6 +142,15 @@ Errors the SDK raises itself use the same class and fields, with `status: 0` and
 3. Retried: modelled `@retryable` errors (429, 503), and failures with no response (connection refused or reset, DNS, a timeout before the response headers). Not retried: everything else, including other 5xx and failures after response bytes arrived.
 4. Delay: `Retry-After`, honoured in full up to `maxRetryDelay` (client option: TypeScript `maxRetryDelayMs`, default 60 s). Above that, fail at once with the typed error. Without `Retry-After`: full-jitter exponential, `random(0, min(8 s, 0.5 s × 2^retry))`.
 5. Cancellation interrupts the wait.
+6. **Retry budget.** Each client holds a budget of retry tokens, shared by all its calls, so that a failing or overloaded server does not get every call multiplied by its retries:
+   - The budget starts full, at its size: 500 tokens by default (client option: TypeScript `retryBudget`, Python `retry_budget`, Go `WithRetryBudget`, Rust `retry_budget`). A size of 0 turns retries off.
+   - A retry costs 5 tokens, or 10 when the attempt it repeats got no response (a refused or reset connection, a timeout). The cost is taken when the retry is decided, before the wait.
+   - When the budget holds less than the cost, the call fails at once with the error the attempt got, without waiting.
+   - A call that succeeds returns tokens, up to the size: the cost of its last retry when it retried, and 1 when it did not. A call that fails returns nothing.
+   - The first attempt of a call is never blocked; the budget only decides retries. Section 12.4's one sign-in retry after a 401 is not a retry here and costs nothing.
+
+   The numbers are the AWS SDKs' "standard" retry quota: 500 tokens, 5 for a retry, 10 for a retry after a timeout, 1 back for a success. With the default 3 attempts, a client can spend its whole budget on 50 calls that each fail twice; a healthy client earns tokens back with every success, so isolated failures never exhaust it.
+7. **No client-side rate limiting.** The SDKs do not measure their own send rate or slow themselves down (the AWS SDKs' "adaptive" mode). The server says when to slow down, with 429 and `Retry-After`, which rule 4 honours.
 
 ### 6.5 Connection errors
 
@@ -188,6 +197,7 @@ If an `@idempotencyToken` member is unset, the SDK generates a UUID version 4 on
 Every suite runs against the mock server and covers, at least:
 
 - retries honour `Retry-After` in full;
+- the retry budget: repeated 503s drain it and then calls fail without retrying, a success refunds it, and the first attempt always goes (section 6.4.6);
 - a `Retry-After` above `maxRetryDelay` fails at once;
 - an operation that is not retry-safe (`SendMessage`) is sent once on a 503;
 - the idempotency key is kept across retries;

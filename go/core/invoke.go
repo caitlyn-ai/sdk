@@ -172,12 +172,14 @@ func (c *Client) Do(ctx context.Context, op *Operation, req *Request, opts []Cal
 	// attempt counts toward the retries of section 6.4; sent counts every request, including the one sign-in
 	// retry after a 401 (section 12.4), which counts nothing against them.
 	signedInAgain := false
+	lastRetryCost := 0 // the cost of this call's last retry (PROTOCOL.md 6.4.6)
 	for attempt, sent := 0, 0; ; sent++ {
 		resp, err := c.attempt(ctx, op, req, &cs, idemKey, sent)
 		if resp != nil {
 			span.SetAttributes(attribute.String("caitlyn.request_id", resp.Header.Get("Caitlyn-Request-Id")))
 		}
 		if err == nil {
+			c.budget.release(lastRetryCost)
 			return resp, nil
 		}
 		var ae interface{ apiError() *APIError }
@@ -190,6 +192,17 @@ func (c *Client) Do(ctx context.Context, op *Operation, req *Request, opts []Cal
 			continue
 		}
 		delay, retry := c.retryDelay(ctx, op, err, attempt)
+		if retry {
+			cost := retryCost
+			var nr *errNoResponse
+			if errors.As(err, &nr) {
+				cost = noResponseRetryCost
+			}
+			// The budget is spent: fail at once with this attempt's error, without waiting.
+			if retry = c.budget.acquire(cost); retry {
+				lastRetryCost = cost
+			}
+		}
 		if !retry {
 			var nr *errNoResponse
 			if errors.As(err, &nr) {

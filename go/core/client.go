@@ -44,6 +44,7 @@ type settings struct {
 	tracerProvider trace.TracerProvider
 	propagator     propagation.TextMapPropagator
 	appID          string
+	retryBudget    int
 }
 
 // Option configures a client.
@@ -63,6 +64,11 @@ func WithMaxAttempts(n int) Option { return func(s *settings) { s.maxAttempts = 
 // WithMaxRetryDelay sets the longest Retry-After the client waits for (default 60 s). A longer
 // Retry-After fails the call at once with the typed error.
 func WithMaxRetryDelay(d time.Duration) Option { return func(s *settings) { s.maxRetryDelay = d } }
+
+// WithRetryBudget sets the size of the client's retry budget, in tokens (default 500). A retry costs 5, or 10 after
+// an attempt that got no response; a call that succeeds gives back 1, or its last retry's cost. When the budget
+// cannot pay for a retry, the call fails at once with its error. 0 turns retries off (PROTOCOL.md 6.4.6).
+func WithRetryBudget(tokens int) Option { return func(s *settings) { s.retryBudget = tokens } }
 
 // WithTracerProvider sets the OpenTelemetry tracer provider (default: the global one, a no-op unless set).
 func WithTracerProvider(tp trace.TracerProvider) Option {
@@ -86,6 +92,8 @@ type Client struct {
 	userAgent string
 	tracer    trace.Tracer
 
+	budget *retryBudget
+
 	mu            sync.Mutex
 	serverVersion string
 }
@@ -104,7 +112,7 @@ func (c *Client) Auth() *AuthSession { return c.auth }
 
 // NewClient returns a runtime client for workspace (for example "your-company.getcaitlyn.ai").
 func NewClient(sdk SDKInfo, workspace string, auth Auth, opts ...Option) (*Client, error) {
-	s := settings{maxAttempts: 3, maxRetryDelay: 60 * time.Second}
+	s := settings{maxAttempts: 3, maxRetryDelay: 60 * time.Second, retryBudget: DefaultRetryBudget}
 	for _, o := range opts {
 		o(&s)
 	}
@@ -129,7 +137,7 @@ func NewClient(sdk SDKInfo, workspace string, auth Auth, opts ...Option) (*Clien
 	if s.propagator == nil {
 		s.propagator = otel.GetTextMapPropagator()
 	}
-	c := &Client{s: s, sdk: sdk}
+	c := &Client{s: s, sdk: sdk, budget: newRetryBudget(s.retryBudget)}
 	c.userAgent = userAgent(sdk.Version, s.appID)
 	c.auth = newAuthSession(auth, s.endpoint, workspace, s.httpClient, c.userAgent)
 	c.tracer = s.tracerProvider.Tracer("github.com/caitlyn-ai/caitlyn-go", trace.WithInstrumentationVersion(sdk.Version))
