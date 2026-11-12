@@ -3,7 +3,7 @@
 // through the global propagator. Uses only @opentelemetry/api, so it is a no-op until the integrator configures
 // a provider.
 import type { Pluggable, HandlerExecutionContext, FinalizeHandler, FinalizeHandlerArguments } from '@smithy/types';
-import { HttpRequest, HttpResponse } from '@smithy/core/protocols';
+import { HttpRequest, HttpResponse } from '@smithy/core/transport';
 import { context, propagation, trace, SpanKind, SpanStatusCode, type TracerProvider, type Span, type Tracer } from '@opentelemetry/api';
 import { NO_RESPONSE } from './plugin.js';
 

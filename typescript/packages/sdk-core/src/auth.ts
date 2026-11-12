@@ -9,7 +9,7 @@
 //   workloadIdentity   a JWT from another trusted issuer (GitLab CI id_tokens), exchanged (RFC 8693)
 //   session            the browser session cookie; Origin on every write (the Caitlyn app, local recording)
 import type { Pluggable, FinalizeRequestMiddleware, InitializeMiddleware, TokenIdentity } from '@smithy/types';
-import { HttpRequest } from '@smithy/core/protocols';
+import { HttpRequest } from '@smithy/core/transport';
 import type { AwsCredentialSource, AwsCredentials } from './aws.js';
 import { CaitlynAuthError, isBrowser } from './auth-base.js';
 import { guardBrowser, serverToken, type SignIn } from './auth-server.js';

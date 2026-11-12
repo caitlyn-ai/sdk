@@ -1,10 +1,10 @@
 // Bundles the TypeScript conformance harness (conformance/typescript) and the runtime tests (test/) against the
-// SDK in this workspace, and the harness once more against the browser build (conformance-browser.test.mjs: the
-// same sources compiled the way scripts/build-packages.mjs compiles dist-browser), for a quick run in Node before
-// the run in real browsers (conformance/typescript/browser).
+// SDK in this workspace, compiled the way scripts/build-packages.mjs compiles it (the generated code on sdk-core's
+// runtime), and the harness once more against the browser build (conformance-browser.test.mjs), for a quick run in
+// Node before the run in real browsers (scripts/conformance-browser.mjs).
 // Type checking is `npm run typecheck`; this only bundles.
 import { build } from 'esbuild';
-import { browserFromSource } from './browser-plugins.mjs';
+import { browserFromSource, runtimeFromSource } from './browser-plugins.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -38,6 +38,7 @@ await build({
     'request-handler.test': path.join(root, 'test/request-handler.test.ts'),
   },
   alias: sources,
+  plugins: [runtimeFromSource],
 });
 await build({
   ...common,

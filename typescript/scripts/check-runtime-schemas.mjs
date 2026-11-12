@@ -1,13 +1,13 @@
-// Refuses a model that uses a Smithy feature the browser build's runtime (packages/sdk-core/src/browser) does not
-// implement, so the browser build can never quietly behave differently from the Node build. It reads the generated
-// static schemas (packages/sdk/src/schemas/schemas_0.ts) and fails on:
+// Refuses a model that uses a Smithy feature sdk-core's runtime (packages/sdk-core/src/protocol.ts and runtime/) does
+// not implement, so the SDK can never quietly mishandle it. It reads the generated static schemas
+// (packages/sdk/src/schemas/schemas_0.ts) and fails on:
 //   - an AWS event stream (a streaming union member): Caitlyn streams are server-sent events, a streaming blob;
-//   - a big integer or big decimal: their JSON needs @smithy/core's precise number parsing;
+//   - a blob that is not streamed, a big integer or a big decimal;
+//   - a timestamp that is not RFC 3339 date-time (the model's DateTime is @timestampFormat("date-time"));
 //   - a string with a media type (JSON in a string, or base64 in a header);
-//   - a list of timestamps bound to a header (HTTP dates contain commas);
 //   - a host prefix (@endpoint) or a @hostLabel member.
-// Teach the browser runtime the feature, run the browser conformance suite, then allow it here.
-// Usage: node scripts/check-browser-schemas.mjs (or import checkBrowserSchemas from scripts/build-packages.mjs).
+// Teach the runtime the feature, run the conformance suites, then allow it here.
+// Usage: node scripts/check-runtime-schemas.mjs (or import checkRuntimeSchemas from scripts/build-packages.mjs).
 import { build } from 'esbuild';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -18,7 +18,7 @@ const BITS = ['httpLabel', 'idempotent', 'idempotencyToken', 'sensitive', 'httpP
 const traitsOf = (t) => (t && typeof t === 'object' ? t : Object.fromEntries(BITS.filter((_, i) => ((Number(t) >> i) & 1) === 1).map((b) => [b, 1])));
 const deref = (r) => (typeof r === 'function' ? r() : r);
 
-export async function checkBrowserSchemas(schemasFile) {
+export async function checkRuntimeSchemas(schemasFile) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'caitlyn-schemas-'));
   const out = path.join(dir, 'schemas.mjs');
   await build({ entryPoints: [schemasFile], bundle: true, format: 'esm', platform: 'node', outfile: out, logLevel: 'error' });
@@ -41,8 +41,9 @@ export async function checkBrowserSchemas(schemasFile) {
     if (traits.hostLabel) problems.push(`${where}: @hostLabel`);
     if (typeof type === 'number') {
       if (type === 17 || type === 19) problems.push(`${where}: a big integer or big decimal`);
+      if (type === 21) problems.push(`${where}: a blob that is not streamed`);
+      if (type === 4 || type === 6 || type === 7) problems.push(`${where}: a timestamp that is not @timestampFormat("date-time")`);
       if (type === 0 && traits.mediaType) problems.push(`${where}: a string with media type ${traits.mediaType}`);
-      if (type >= 64 && type < 128 && traits.httpHeader && (type & 63) >= 4 && (type & 63) <= 7) problems.push(`${where}: a list of timestamps in a header`);
       if (type >= 64 && type <= 255) visit(type & 63, `${where}[]`);
       return;
     }
@@ -55,8 +56,6 @@ export async function checkBrowserSchemas(schemasFile) {
       visit(type[4], `${name} input`);
       visit(type[5], `${name} output`);
     } else if (kind === 1) {
-      const item = deref(type[4]);
-      if (traits.httpHeader && (item === 4 || item === 5 || item === 6 || item === 7)) problems.push(`${where}: a list of timestamps in a header`);
       visit(type[4], `${name}[]`);
     } else if (kind === 2) {
       visit(type[5], `${name}{}`);
@@ -72,12 +71,12 @@ export async function checkBrowserSchemas(schemasFile) {
   };
   for (const [exported, value] of Object.entries(schemas)) if (Array.isArray(value)) visit(value, exported);
   if (problems.length) {
-    throw new Error(`The browser build's runtime does not implement what this model uses:\n  ${problems.join('\n  ')}\nSee scripts/check-browser-schemas.mjs.`);
+    throw new Error(`The SDK runtime (sdk-core) does not implement what this model uses:\n  ${problems.join('\n  ')}\nSee scripts/check-runtime-schemas.mjs.`);
   }
   return seen.size;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const n = await checkBrowserSchemas(path.resolve(import.meta.dirname, '../packages/sdk/src/schemas/schemas_0.ts'));
-  console.log(`browser schemas ok (${n} shapes)`);
+  const n = await checkRuntimeSchemas(path.resolve(import.meta.dirname, '../packages/sdk/src/schemas/schemas_0.ts'));
+  console.log(`runtime schemas ok (${n} shapes)`);
 }

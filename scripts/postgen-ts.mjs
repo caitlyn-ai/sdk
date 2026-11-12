@@ -78,6 +78,15 @@ const published = {
 fs.writeFileSync(pkgUrl, JSON.stringify(published, null, 4) + '\n');
 console.log('postgen-ts: wrote the npm description of packages/sdk/package.json');
 
+// The generated endpoint resolver runs smithy-typescript's rules engine over a one-rule decision diagram. The client
+// never calls it: its endpoint provider is sdk-core's caitlynEndpointProvider (https://<workspace>/api or the
+// `endpoint` override), so the two files are removed, and nothing may import them.
+for (const file of ['endpoint/endpointResolver.ts', 'endpoint/bdd.ts']) fs.rmSync(new URL(file, dir));
+for (const file of fs.readdirSync(dir, { recursive: true }).filter((f) => f.endsWith('.ts'))) {
+  if (/from "\.\.?\/(endpoint\/)?(endpointResolver|bdd)"/.test(fs.readFileSync(new URL(file, dir), 'utf8'))) throw new Error(`postgen-ts: ${file} imports the removed endpoint resolver`);
+}
+console.log('postgen-ts: removed the rules-engine endpoint resolver (endpoint/endpointResolver.ts, endpoint/bdd.ts)');
+
 // The generated error classes reset their prototype with a reference to themselves
 // (Object.setPrototypeOf(this, NotFoundError.prototype)). A bundler then has to rename the class (`var
 // NotFoundError = class _NotFoundError`), and constructor.name becomes "_NotFoundError". new.target.prototype does

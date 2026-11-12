@@ -8,7 +8,10 @@
 //      application's unminified browser bundle, err.name in a minified one;
 //   5. bundles realistic imports for a browser, as an application bundler would, and checks each against its budget;
 //   6. checks which build each export condition gives a bundler: the browser build for `browser` and for the explicit
-//      `@caitlyn-ai/sdk/browser` under any conditions, the edge build for `worker` (and the other edge runtimes).
+//      `@caitlyn-ai/sdk/browser` under any conditions, the edge build for `worker` (and the other edge runtimes);
+//      that no bundle has any of the Smithy code sdk-core's runtime replaces (AWS retry strategies, event streams,
+//      checksums, the endpoint rules engine, the restJson protocol and codec, the date and number parsers); and that
+//      Node loads none of the retry, event-stream or checksum modules.
 // Run after scripts/build-packages.mjs. Writes build/package/report.json.
 import { build } from 'esbuild';
 import { execFileSync } from 'node:child_process';
@@ -21,17 +24,17 @@ import { gzipSync } from 'node:zlib';
 // loads up front, the entry chunk plus the chunks it imports statically, gzipped. Code behind a dynamic import is
 // reported as lazy and is not counted: in the browser build that is only @smithy/core's AWS event-stream support,
 // which @smithy/core/protocols (imported by the fetch handler) loads on demand and the SDK never asks for. Budgets are in bytes; set from the
-// sizes measured on 13 November 2026, with the browser build (dist-browser), plus a margin, so growth is a decision
-// rather than an accident. Before the browser build (0.1.1, the edge build's code) they were 43 126, 43 207, 44 230
-// and 44 902 bytes.
+// sizes measured on 13 November 2026, with the browser build (dist-browser) on sdk-core's own runtime, plus a margin,
+// so growth is a decision rather than an accident. In 0.1.1, on the Smithy runtime, they were 43 126, 43 207,
+// 44 230 and 44 902 bytes.
 const ENTRIES = {
   'client + one operation': {
-    budget: 27_500,
+    budget: 24_500,
     code: `import { createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk';
 export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
   },
   'client + one operation + oauth sign-in': {
-    budget: 27_500,
+    budget: 24_500,
     code: `import { createAuth, createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk';
 const options = { workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'oauth', clientId: 'app', redirectUri: location.origin + '/callback' } };
 const auth = createAuth(options);
@@ -41,20 +44,20 @@ export const finish = (p) => auth.handleCallback(p);
 export const run = () => getAgentVersion(client, { agentId: 'A', version: 'draft' });`,
   },
   'client + streaming chat': {
-    budget: 28_700,
+    budget: 25_700,
     code: `import { createCaitlynClient, sendMessage } from '@caitlyn-ai/sdk';
 const client = createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'session' } });
 export const ask = async (id, message, onText) => { for await (const e of sendMessage(client, id, { message })) if (e.type === 'text.delta') onText(e.delta); };`,
   },
   'Caitlyn class (every operation)': {
-    budget: 29_300, // grows with every operation the model gains: raise it with the model change that needs it
+    budget: 26_300, // grows with every operation the model gains: raise it with the model change that needs it
     code: `import { Caitlyn } from '@caitlyn-ai/sdk';
 export const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 't' } });`,
   },
   // A web worker bundled by webpack gets the edge build from '@caitlyn-ai/sdk' (the `worker` condition comes first),
   // and the browser build when it imports '@caitlyn-ai/sdk/browser'.
   'client + one operation, @caitlyn-ai/sdk/browser in a web worker': {
-    budget: 27_500,
+    budget: 24_500,
     conditions: ['worker'],
     code: `import { createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk/browser';
 export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
@@ -168,13 +171,32 @@ const builds = {
   'edge-light (Vercel Edge)': { platform: 'browser', conditions: ['edge-light'], want: 'dist-edge' },
   'node': { platform: 'node', want: 'dist-es' },
 };
+// What sdk-core's runtime replaces: none of it may be in a bundle.
+const REPLACED = /@smithy\/core\/dist-[a-z]+\/(index\.js|legacy-root-exports\/|submodules\/(retry|event-streams|checksum|endpoints|protocols|serde|cbor|config)\/)|@smithy\/fetch-http-handler/;
 for (const [name, { want, ...options }] of Object.entries(builds)) {
   const r = await build({ entryPoints: [conditionsFile], bundle: true, format: 'esm', write: false, metafile: true, logLevel: 'error', absWorkingDir: work, outdir: path.join(work, 'conditions-out'), ...options });
+  // A Node bundle is the exception: @smithy/node-http-handler imports @smithy/core/protocols, whose HttpProtocol
+  // brings AWS event-stream support with it. Nothing calls it, and unbundled Node never loads it (checked below).
+  const replaced = want === 'dist-es' ? [] : Object.keys(r.metafile.inputs).filter((k) => REPLACED.test(k));
+  if (replaced.length) throw new Error(`${name}: the bundle has Smithy code the runtime replaces: ${replaced.join(', ')}`);
   const sdkInput = Object.keys(r.metafile.inputs).find((k) => k.includes('@caitlyn-ai/sdk/dist-'));
   if (!sdkInput?.includes(`/${want}/`)) throw new Error(`${name}: a bundler gets ${sdkInput}, not ${want}`);
   if (want === 'dist-browser' && Object.keys(r.metafile.inputs).some((k) => k.includes('@caitlyn-ai/sdk-core/dist-es'))) throw new Error(`${name}: the browser build loads sdk-core's Node build`);
 }
-console.log(`export conditions ok (${Object.keys(builds).join('; ')})`);
+console.log(`export conditions ok (${Object.keys(builds).join('; ')}), and no browser or edge bundle has the Smithy code the runtime replaces`);
+
+// In Node, @smithy/node-http-handler loads @smithy/core's protocols and serde modules (and serde the endpoints and
+// config ones), which nothing calls; the retry, event-stream and checksum modules must not load at all.
+fs.writeFileSync(path.join(work, 'loaded.mjs'), `import { registerHooks, createRequire } from 'node:module';
+const seen = new Set();
+registerHooks({ load(url, ctx, next) { seen.add(url); return next(url, ctx); } });
+const { Caitlyn } = await import('@caitlyn-ai/sdk');
+await new Caitlyn({ workspace: 'w', auth: { mode: 'token', token: 't' } }).versions.get({ agentId: 'A', version: 'draft' }, { signal: AbortSignal.abort() }).catch(() => undefined);
+createRequire(import.meta.url)('@caitlyn-ai/sdk');
+const bad = [...seen].filter((u) => /@smithy\\/core\\/dist-[a-z]+\\/submodules\\/(retry|event-streams|checksum|cbor)\\//.test(u));
+if (bad.length) { console.error(bad.join('\\n')); process.exit(1); }`);
+run('node', ['loaded.mjs']);
+console.log('Node loads no retry, event-stream or checksum module of @smithy/core (ESM and CommonJS)');
 fs.writeFileSync(path.join(work, 'report.json'), JSON.stringify({ sizes }, null, 2));
 const over = Object.entries(sizes).filter(([, s]) => s.gzip > s.budget);
 if (over.length) throw new Error(`over the size budget: ${over.map(([n, s]) => `${n} ${s.gzip} B > ${s.budget} B`).join(', ')}`);
