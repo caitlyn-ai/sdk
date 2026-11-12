@@ -8,7 +8,7 @@ import { context, propagation, trace, SpanKind, SpanStatusCode, type TracerProvi
 type Ctx = HandlerExecutionContext & { __caitlynSpan?: Span; __attempt?: number };
 
 export function getCaitlynTelemetryPlugin(provider?: TracerProvider): Pluggable<any, any> {
-  const tracer = (provider ?? trace.getTracerProvider()).getTracer('@caitlyn-ai/sdk', '0.0.1');
+  const tracer = (provider ?? trace.getTracerProvider()).getTracer('@caitlyn-ai/sdk', '0.0.2');
   return {
     applyToStack(stack) {
       // One client span per logical call.

@@ -124,16 +124,21 @@ project access token with `write_repository` and `api`.
 
 The SDKs send `Caitlyn-Sdk-Model`, the highest `@since` in the model they were generated from, and refuse,
 before sending, an operation or member newer than the server's `Caitlyn-Api-Version` (PROTOCOL.md section 9).
-Package versions are `0.0.1` everywhere until lane R2 decides the release scheme.
+The npm packages are at `0.0.2`; the Python, Go and Rust packages are at `0.0.1` until the release scheme is decided.
 
 ## Releasing to npm
 
-`@caitlyn-ai/sdk-core` and `@caitlyn-ai/sdk` are published from a GitHub mirror of this repository, by
+`@caitlyn-ai/sdk-core` and `@caitlyn-ai/sdk` are released from a GitHub mirror of this repository by
 `.github/workflows/release-npm.yml`, with npm provenance. npm trusted publishing accepts OpenID Connect tokens
 from GitHub Actions (and GitLab.com), not from this GitLab, so the mirror is what lets a release carry
 provenance and need no stored npm token. GitLab stays the source: the mirror only receives `main` and tags.
 
-None of this exists yet. Setting it up needs Sam (the GitHub organisation and the npm scope are his):
+The workflow never publishes directly. It **stages** each version (`npm stage publish`), and a maintainer
+approves it on npmjs.com with two-factor authentication, which is the release's one approval
+(https://docs.npmjs.com/staged-publishing). Version 0.0.1 of both packages was published by hand from Sam's
+account; every version after it goes through the workflow.
+
+What is set up (by Sam: the GitHub organisation and the npm scope are his):
 
 1. **The mirror repository: `github.com/caitlyn-ai/sdk`** (created by Sam). Actions enabled; nobody pushes
    to it except the mirror.
@@ -151,19 +156,30 @@ None of this exists yet. Setting it up needs Sam (the GitHub organisation and th
    - **The token expires.** Fine-grained tokens have an expiry date. Note it, and replace the token in the
      mirror's settings before then: once it expires the mirror stops (GitLab shows the error on the mirror),
      and a release tag pushed after that never reaches GitHub.
-3. **The `npm` environment.** In the GitHub repository, Settings → Environments → `npm`, with Sam as required
-   reviewer and deployment limited to `v*` tags. The workflow's publish job waits there for approval.
+3. **The `npm` environment.** In the GitHub repository, Settings → Environments → `npm`, with deployment
+   limited to `v*` tags and **no required reviewer**. The environment stays because the trusted publishers are
+   bound to its name; a reviewer there would only add a second approval before the one on npmjs.com.
 4. **Trusted publishers on npm.** For each of `@caitlyn-ai/sdk-core` and `@caitlyn-ai/sdk`: Settings →
    Trusted publishing → GitHub Actions, organisation `caitlyn-ai`, repository `sdk`, workflow
-   `release-npm.yml`, environment `npm`. Then set "Require two-factor authentication and disallow tokens" so the
-   workflow is the only way to publish. If npm still allows trusted publishers only on packages that already
-   exist, the first version is published once by hand from Sam's account (`npm publish --access public` in
-   each package after `npm run build`), and every version after it by the workflow.
+   `release-npm.yml`, environment `npm`, allowing **`npm stage publish` only**: direct `npm publish` is off, as
+   npm recommends. Set publishing access to "Require two-factor authentication and disallow tokens", so the
+   workflow can only stage, and only a maintainer with two-factor authentication can make a version public.
+   Staged publishing needs npm 11.15.0 or later; the workflow pins its npm version.
 
-To release: set the version in `typescript/packages/sdk-core/package.json` (generation copies it to the SDK),
-regenerate, merge, then tag `v<version>` on `main` in GitLab. The tag reaches the mirror, the workflow tests,
-builds and checks the packages, and after approval publishes `sdk-core` then `sdk`. The GitLab job
-`release:npm` is a placeholder that says where releases run.
+To release:
+
+1. Set the version in `typescript/packages/sdk-core/package.json`. `make generate` copies it to the SDK's
+   `package.json`, its dependency on `sdk-core` and the `User-Agent` version, and fails if the tracer version
+   in `typescript/packages/sdk-core/src/telemetry.ts` differs. Run `npm install --package-lock-only` in
+   `typescript/` so the lock file has the new version, then merge.
+2. Tag `v<version>` on `main` in GitLab. The protected tag reaches the mirror.
+3. On GitHub, the `release-npm` run for the tag tests, builds and checks the packages, then stages `sdk-core`
+   and then `sdk`.
+4. On npmjs.com, account settings → Staged Packages: check both versions (name, version, dist-tag `latest`,
+   publisher), then approve them, `sdk-core` with or before `sdk`, since the SDK depends on that exact
+   `sdk-core` version. A batch approves both with one two-factor challenge.
+
+The GitLab job `release:npm` is a placeholder that says where releases run.
 
 ## Commit messages
 
