@@ -16,8 +16,20 @@
   "exports": {
     ".": {
       "types": "./dist-types/index.d.ts",
+      "workerd": "./dist-es/index.mjs",
+      "worker": "./dist-es/index.mjs",
+      "deno": "./dist-es/index.mjs",
+      "edge-light": "./dist-es/index.mjs",
+      "browser": "./dist-browser/index.mjs",
       "import": "./dist-es/index.mjs",
       "require": "./dist-cjs/index.cjs"
+    },
+    "./browser": {
+      "types": "./dist-types/index.d.ts",
+      "default": "./dist-browser/index.mjs"
+    },
+    "./smithy": {
+      "default": "./dist-browser/smithy.mjs"
     },
     "./package.json": "./package.json"
   },
@@ -35,6 +47,7 @@
   },
   "dependencies": {
     "@smithy/core": "^3.39.0",
+    "@smithy/fetch-http-handler": "^5.8.0",
     "@smithy/types": "^4.20.0",
     "@opentelemetry/api": "^1.9.0"
   }

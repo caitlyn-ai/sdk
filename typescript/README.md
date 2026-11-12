@@ -77,8 +77,7 @@ import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 new Caitlyn({ workspace, auth: { mode: 'awsIam', region: 'ap-southeast-2', credentials: fromNodeProviderChain() } });
 ```
 
-Code the browser never needs stays out of its bundle: the request signer loads only when a client signs in
-with `awsIam`.
+The browser build leaves this mode, and its request signer, out altogether (see "Runtimes").
 
 Outbound identity federation must be turned on in the AWS account, and the workspace must have an API client
 that trusts the account's issuer and the role.
@@ -105,6 +104,14 @@ Caitlyn app itself. Creating a client with `clientCredentials`, `oauth` with a `
 visible to everyone who loads it, and the other two sign in server workloads. `token` mode works but warns once
 per client, because a long-lived token in a page is exposed; it is for local testing, and
 `allowBrowserToken: true` on the mode silences the warning.
+
+A bundler building for the browser gets the SDK's browser build without any change to your imports (see
+"Runtimes"). It has only what a page can use, so `clientCredentials`, `awsIam` and `workloadIdentity` are not in it
+at all; it refuses them with the same `not_allowed_in_browser` error, in a page or in a web worker.
+
+The server must allow your page's origin (CORS), and let the page read the `Caitlyn-Request-Id`,
+`Caitlyn-Api-Version`, `ETag`, `Location` and `Retry-After` response headers: without them, `requestId`, `etag`
+and `Retry-After` waits are missing in a browser.
 
 ## Calls
 
@@ -186,11 +193,25 @@ section 13), and passes `traceparent` on, with whatever tracer provider your app
 
 ## Runtimes
 
-| Runtime | Entry | HTTP |
-| --- | --- | --- |
-| Node and Bun, ECMAScript modules | `dist-es` | Node's `http`/`https` |
-| Node, CommonJS | `dist-cjs` | Node's `http`/`https` |
-| Browsers, Deno, Cloudflare Workers, Vercel Edge (the `browser`, `worker`, `workerd`, `deno` and `edge-light` export conditions) | `dist-browser` | `fetch` |
+| Runtime | Export condition | Build | HTTP |
+| --- | --- | --- | --- |
+| Node and Bun, ECMAScript modules | `import` | `dist-es` | Node's `http`/`https` |
+| Node, CommonJS | `require` | `dist-cjs` | Node's `http`/`https` |
+| Deno, Cloudflare Workers, Vercel Edge, and web workers bundled with the `worker` condition (webpack) | `deno`, `workerd`, `worker`, `edge-light` | `dist-edge` | `fetch` |
+| Browser pages (Vite, webpack, esbuild and Rollup building for the browser) | `browser` | `dist-browser` | `fetch` |
+
+The browser build is about 27 KB gzipped for a client and one operation, against about 43 KB for the same code
+with the full Smithy runtime. It makes the same requests and behaves the same way: the TypeScript conformance suite
+runs against it in headless Chromium, Firefox and WebKit. It keeps the small parts of the Smithy runtime (the
+client, its middleware stack, the fetch handler) and replaces the protocol, its JSON codec, endpoints and retries
+with smaller ones of its own, and it leaves out the sign-in modes a browser may not use.
+
+Bundlers pick it with the `browser` condition. Where a bundler does not set it, or sets `worker` first (webpack
+building a web worker, which then gets the edge build), import the browser build by name:
+
+```ts
+import { Caitlyn } from '@caitlyn-ai/sdk/browser';
+```
 
 ## Licence
 

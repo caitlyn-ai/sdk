@@ -13,6 +13,7 @@
 //   GET  /__mock/example            the primed case's result: {"id", "served", "mismatches": [...]}
 //   GET  /__mock/auth               sign-in counters (auth.mjs, which also serves /oauth/* and the STS
 //                                   stand-in at /__sts/; fault key `auth`)
+// With MOCK_CORS=1, cross-origin requests from a browser page are allowed (see CORS below).
 //
 // An example case checks the request against the one the case expects (method, path, query,
 // headers, JSON body) and answers with the case's response. A request that does not match is
@@ -576,9 +577,28 @@ async function updateDraft(req, res, rid, [agentId], url, body) {
 
 const LOGGED_HEADERS = ['authorization', 'cookie', 'origin', 'idempotency-key', 'if-match', 'last-event-id', 'accept', 'content-type', 'user-agent', 'traceparent', 'caitlyn-sdk-model', 'caitlyn-api-version'];
 
+// MOCK_CORS=1 (the browser conformance run, whose page is on another origin): every response allows the page's
+// origin and exposes the headers the SDK reads, and CORS preflights are answered here, not logged, and never
+// consume a fault. The headers listed are what a browser needs from the real server too.
+const CORS = process.env.MOCK_CORS === '1';
+const EXPOSED = 'Caitlyn-Request-Id, Caitlyn-Api-Version, ETag, Location, Retry-After, Idempotent-Replayed';
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const rid = requestId();
+  if (CORS && req.headers.origin) {
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
+    res.setHeader('Vary', 'Origin');
+    if (req.method === 'OPTIONS' && req.headers['access-control-request-method']) {
+      res.writeHead(204, {
+        'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, PATCH, DELETE',
+        'Access-Control-Allow-Headers': req.headers['access-control-request-headers'] ?? '',
+        'Access-Control-Max-Age': '600',
+      });
+      return res.end();
+    }
+    res.setHeader('Access-Control-Expose-Headers', EXPOSED);
+  }
   try {
     if (url.pathname === '/__mock/reset' && req.method === 'POST') {
       reset();

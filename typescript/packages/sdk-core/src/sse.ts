@@ -6,13 +6,31 @@ export interface SseMessage {
   data: string;
 }
 
-export async function* parseSse(body: AsyncIterable<Uint8Array | string>): AsyncGenerator<SseMessage> {
+/**
+ * A response body as an async iterable of chunks. A Node stream and a fetch body in most browsers are one already;
+ * a fetch body in a browser without ReadableStream async iteration (Safari) is read with its reader.
+ */
+async function* chunks(body: AsyncIterable<Uint8Array | string> | ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array | string> {
+  if (typeof (body as AsyncIterable<unknown>)[Symbol.asyncIterator] === 'function') return yield* body as AsyncIterable<Uint8Array | string>;
+  const reader = (body as ReadableStream<Uint8Array>).getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      yield value;
+    }
+  } finally {
+    reader.cancel().catch(() => undefined);
+  }
+}
+
+export async function* parseSse(body: AsyncIterable<Uint8Array | string> | ReadableStream<Uint8Array>): AsyncGenerator<SseMessage> {
   const decoder = new TextDecoder();
   let buffer = '';
   let id: string | undefined;
   let event = '';
   let data: string[] = [];
-  for await (const chunk of body) {
+  for await (const chunk of chunks(body)) {
     buffer += typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true });
     let nl: number;
     while ((nl = buffer.search(/\r\n|\r|\n/)) >= 0) {

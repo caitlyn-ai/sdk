@@ -11,6 +11,10 @@
 import type { Pluggable, FinalizeRequestMiddleware, InitializeMiddleware, TokenIdentity } from '@smithy/types';
 import { HttpRequest } from '@smithy/core/protocols';
 import type { AwsCredentialSource, AwsCredentials } from './aws.js';
+import { CaitlynAuthError, isBrowser } from './auth-base.js';
+import { guardBrowser, serverToken, type SignIn } from './auth-server.js';
+
+export { CaitlynAuthError, isBrowser };
 
 /** Tokens the `oauth` mode keeps. `expiresAt` is milliseconds since the epoch. */
 export interface OAuthTokens {
@@ -73,22 +77,6 @@ export type AuthOptions =
       origin?: string;
     };
 
-/** A sign-in failure: the token endpoint's OAuth error, or a failure to get the identity it exchanges. */
-export class CaitlynAuthError extends Error {
-  override readonly name = 'CaitlynAuthError';
-  constructor(
-    message: string,
-    /** The OAuth error code (`invalid_client`, `invalid_grant`…), or `sign_in_required`. */
-    readonly code: string,
-    readonly status?: number,
-    readonly requestId?: string,
-  ) {
-    super(message);
-  }
-}
-
-const TOKEN_EXCHANGE = 'urn:ietf:params:oauth:grant-type:token-exchange';
-const JWT_TYPE = 'urn:ietf:params:oauth:token-type:jwt';
 const REFRESH_EARLY_MS = 60_000;
 const SESSION_PLACEHOLDER = 'session';
 
@@ -104,39 +92,6 @@ export const workspaceAudience = (workspace: string) => `https://${workspaceHost
 
 /** A workspace given as a hostname or a URL, as its bare hostname. */
 export const workspaceHost = (workspace: string) => workspace.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-
-/**
- * Whether this is a browser page: a `window` and a `document`. Node, Deno and Bun have no `document`, and web,
- * service and shared workers have neither. A test environment that simulates a DOM (jsdom) counts as a browser.
- */
-export const isBrowser = (): boolean => {
-  const g = globalThis as { window?: unknown; document?: unknown };
-  return typeof g.window !== 'undefined' && typeof g.document !== 'undefined';
-};
-
-const IN_BROWSER = 'not_allowed_in_browser';
-
-/**
- * In a browser, refuses the modes whose credential everyone who loads the page could read, or that only work on a
- * server, and warns about a long-lived token (PROTOCOL.md section 12.6). Throws when the client is created.
- */
-function guardBrowser(o: AuthOptions): void {
-  if (!isBrowser()) return;
-  if (o.mode === 'clientCredentials' || (o.mode === 'oauth' && o.clientSecret)) {
-    throw new CaitlynAuthError(
-      `${o.mode === 'oauth' ? 'oauth with a clientSecret' : 'clientCredentials'} cannot be used in a browser: a client secret in a browser is visible to everyone who loads the page. Use oauth without a clientSecret (authorisation code with PKCE), or sign in on your server.`,
-      IN_BROWSER,
-    );
-  }
-  if (o.mode === 'awsIam' || o.mode === 'workloadIdentity') {
-    throw new CaitlynAuthError(`${o.mode} cannot be used in a browser: it signs in a server workload with that workload's own identity. Use oauth in a browser.`, IN_BROWSER);
-  }
-  if (o.mode === 'token' && !o.allowBrowserToken) {
-    console.warn(
-      'Caitlyn: a long-lived token in a browser is exposed to anyone who can run script on the page. token mode in a browser is for local testing; use oauth instead. Set auth.allowBrowserToken: true to silence this warning.',
-    );
-  }
-}
 
 /** What `client.auth` offers: the current token, and the `oauth` mode's sign-in steps. */
 export class AuthSession {
@@ -279,14 +234,6 @@ export class AuthSession {
     const o = this.options;
     let t: OAuthTokens;
     switch (o.mode) {
-      case 'clientCredentials':
-        t = await this.requestToken({
-          grant_type: 'client_credentials',
-          ...this.clientParams(),
-          resource: this.resource,
-          ...(o.scopes?.length ? { scope: o.scopes.join(' ') } : {}),
-        });
-        break;
       case 'oauth': {
         const stored = await this.loadTokens();
         const held = this.cached?.token ?? this.refused;
@@ -306,41 +253,20 @@ export class AuthSession {
         }
         break;
       }
-      case 'awsIam': {
-        const region = o.region ?? env().AWS_REGION ?? env().AWS_DEFAULT_REGION;
-        if (!region) throw new CaitlynAuthError('awsIam: set region, or AWS_REGION, for the regional STS endpoint', 'invalid_request');
-        // Loaded only in this mode, so a browser bundle that never signs in with AWS does not carry the signer.
-        const { defaultAwsCredentials, getWebIdentityToken } = await import('./aws.js');
-        let subject: string;
-        try {
-          // Inside the try, so missing credentials are a sign-in error like an STS refusal.
-          const credentials = o.credentials ? await (typeof o.credentials === 'function' ? o.credentials() : o.credentials) : await defaultAwsCredentials(this.fetchFn);
-          subject = (await getWebIdentityToken({ region, audience: o.audience ?? this.resource, credentials, signingAlgorithm: o.signingAlgorithm, durationSeconds: o.durationSeconds, stsEndpoint: o.stsEndpoint, fetch: this.fetchFn })).token;
-        } catch (err) {
-          throw new CaitlynAuthError((err as Error).message, (err as { code?: string }).code ?? 'aws_identity_failed', (err as { status?: number }).status);
-        }
-        t = await this.exchange(subject);
-        break;
-      }
-      case 'workloadIdentity':
-        t = await this.exchange(await o.token());
-        break;
       default:
-        throw new CaitlynAuthError(`No token to fetch in ${o.mode} mode`, 'invalid_request');
+        t = await serverToken(o, this.signIn);
     }
     this.cached = { token: t.accessToken, refreshAt: refreshAt(t) };
     return t.accessToken;
   }
 
-  private exchange(subjectToken: string) {
-    return this.requestToken({
-      grant_type: TOKEN_EXCHANGE,
-      subject_token: subjectToken,
-      subject_token_type: JWT_TYPE,
-      requested_token_type: 'urn:ietf:params:oauth:token-type:access_token',
-      resource: this.resource,
-    });
-  }
+  /** What the server-only modes (auth-server.ts) sign in with. */
+  private readonly signIn: SignIn = {
+    request: (params) => this.requestToken(params),
+    resource: () => this.resource,
+    clientParams: () => this.clientParams(),
+    fetch: (...a) => this.fetchFn(...a),
+  };
 
   private async requestToken(params: Record<string, string>): Promise<OAuthTokens> {
     const res = await this.fetchFn(this.tokenEndpoint, {
@@ -362,10 +288,6 @@ export class AuthSession {
     };
   }
 }
-
-type Env = Record<string, string | undefined>;
-const env = (): Env => (globalThis as { process?: { env?: Env } }).process?.env ?? {};
-
 
 /**
  * The generated client's `token` identity provider. It reports the token as already near expiry, so Smithy's

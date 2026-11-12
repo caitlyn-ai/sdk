@@ -27,6 +27,9 @@ import type {
   StaticErrorSchema,
 } from '@smithy/types';
 import { markNoResponse } from './plugin.js';
+import { isJsonObject, rawBodyOf } from './raw-body.js';
+
+export { RAW_BODY_LIMIT, rawBodyOf } from './raw-body.js';
 
 /** The body, read whole. A connection that fails while it is read is a connection failure, never retried. */
 async function readBody(body: unknown, context: Parameters<typeof collectBody>[1]): Promise<Uint8Array> {
@@ -176,28 +179,6 @@ export class CaitlynRestJsonProtocol extends HttpBindingProtocol {
       else if (body[key] !== undefined) fields[name] = reader.readObject(member, body[key]);
     }
     throw decorateServiceException(Object.assign(exception, errorMetadata, { $fault: ns.getMergedTraits().error, message }, fields), body);
-  }
-}
-
-/** The most of an error body kept as `rawBody` (PROTOCOL.md 6.3). */
-export const RAW_BODY_LIMIT = 8192;
-
-/** An error body as text: whole up to 8 KiB, else its first 8 KiB, cut back to a character boundary. */
-export function rawBodyOf(bytes: Uint8Array): { rawBody: string; rawBodyTruncated: boolean } {
-  if (bytes.byteLength <= RAW_BODY_LIMIT) return { rawBody: new TextDecoder().decode(bytes), rawBodyTruncated: false };
-  let end = RAW_BODY_LIMIT;
-  while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end--; // never split a UTF-8 sequence
-  return { rawBody: new TextDecoder().decode(bytes.subarray(0, end)), rawBodyTruncated: true };
-}
-
-/** Whether a response body parses as a JSON object, the only body problem details can be read from. */
-function isJsonObject(bytes: Uint8Array): boolean {
-  if (bytes.byteLength === 0) return false;
-  try {
-    const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
-  } catch {
-    return false;
   }
 }
 
