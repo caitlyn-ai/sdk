@@ -21,7 +21,7 @@ from ._retry import RetryPolicy
 from ._spec import Member, OperationSpec
 from ._uploads import UploadFile, read_upload
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "AsyncAuthSession",

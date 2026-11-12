@@ -18,7 +18,7 @@ export const getRuntimeConfig = (config: CaitlynClientConfig) => {
     apiVersion: "3.0.0",
     base64Decoder: config?.base64Decoder ?? fromBase64,
     base64Encoder: config?.base64Encoder ?? toBase64,
-    caitlynSdkVersion: config?.caitlynSdkVersion ?? "0.2.0",
+    caitlynSdkVersion: config?.caitlynSdkVersion ?? "0.3.0",
     disableHostPrefix: config?.disableHostPrefix ?? false,
     endpointProvider: config?.endpointProvider ?? caitlynEndpointProvider,
     extensions: config?.extensions ?? [],

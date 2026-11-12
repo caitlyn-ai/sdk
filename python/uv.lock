@@ -33,7 +33,7 @@ wheels = [
 
 [[package]]
 name = "caitlyn"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "caitlyn" }
 dependencies = [
     { name = "caitlyn-core" },
@@ -52,7 +52,7 @@ requires-dist = [
 
 [[package]]
 name = "caitlyn-core"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "caitlyn-core" }
 dependencies = [
     { name = "httpx" },
