@@ -25,6 +25,8 @@ make generate
 
 `scripts/generate.sh` does, in order:
 
+0. `scripts/version.mjs stamp`: writes the version in `VERSION` into the hand-written files that carry it and into
+   the generator settings (see "Versions" below).
 1. `scripts/prepare-model.mjs`: checks `model/model.json` against the lock file and writes
    `build/model/model.json`, without the app's lint-rule metadata (those rules run in the app's model build)
    and with any `@since("next")` stamped as the lock's `stampNext`.
@@ -34,6 +36,8 @@ make generate
 4. `smithy build` in `codegen/`: runs the four generators (`codegen/smithy-build.json`).
 5. Copies the output into `typescript/packages/sdk`, `python/caitlyn`, `go/` and `rust/caitlyn-sdk`, then tidies
    it (`scripts/postgen-ts.mjs`, `gofmt`, `rustfmt`).
+6. `scripts/version.mjs check`: fails if any file that names the SDK version, generated or hand-written, names
+   another one.
 
 The generators share their model-reading rules through `codegen/model-support`: how operations become client
 methods (PROTOCOL.md section 10), how outputs are named, which SSE union member is the failure event, which
@@ -124,7 +128,20 @@ project access token with `write_repository` and `api`.
 
 The SDKs send `Caitlyn-Sdk-Model`, the highest `@since` in the model they were generated from, and refuse,
 before sending, an operation or member newer than the server's `Caitlyn-Api-Version` (PROTOCOL.md section 9).
-The npm packages are at `0.0.2`; the Python, Go and Rust packages are at `0.0.1` until the release scheme is decided.
+
+All four SDKs share one version, the one in the top-level `VERSION` file. `make generate` stamps it everywhere it
+appears (`scripts/version.mjs` lists each place):
+
+- TypeScript: both `package.json` files, the SDK's dependency on `sdk-core`, `typescript/package-lock.json`, the
+  `User-Agent` and the OpenTelemetry tracer version;
+- Python: both `pyproject.toml` files, the `caitlyn-core==` pin, both `__version__` values (the `User-Agent` and the
+  tracer version) and `python/uv.lock`;
+- Go: `SDKVersion` (the `User-Agent` and the tracer's instrumentation version). Go module versions are git tags;
+- Rust: both crates, the generated crate's dependency on `caitlyn-sdk-core`, `SDK_VERSION` (the `User-Agent`) and
+  both `Cargo.lock` files.
+
+Generation fails when any of them disagrees with `VERSION`, and the `generate` CI job fails when the committed
+files differ from what generation writes. Each conformance harness checks its `User-Agent` against `VERSION`.
 
 ## Releasing to npm
 
@@ -168,10 +185,8 @@ What is set up (by Sam: the GitHub organisation and the npm scope are his):
 
 To release:
 
-1. Set the version in `typescript/packages/sdk-core/package.json`. `make generate` copies it to the SDK's
-   `package.json`, its dependency on `sdk-core` and the `User-Agent` version, and fails if the tracer version
-   in `typescript/packages/sdk-core/src/telemetry.ts` differs. Run `npm install --package-lock-only` in
-   `typescript/` so the lock file has the new version, then merge.
+1. Set the version in `VERSION`, run `make generate` (it stamps every SDK, the lock files included; see
+   "Versions"), commit the result and merge.
 2. Tag `v<version>` on `main` in GitLab. The protected tag reaches the mirror.
 3. On GitHub, the `release-npm` run for the tag tests, builds and checks the packages, then stages `sdk-core`
    and then `sdk`.

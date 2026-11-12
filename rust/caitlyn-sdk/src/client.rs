@@ -16,7 +16,7 @@ pub struct Client {
 
 impl Client {
     /// A client for `workspace` (for example `your-company.getcaitlyn.ai`), signed in with `auth` (for
-    /// example `Auth::token("pat_…")`). Nothing is read from the environment.
+    /// example `Auth::token("cait-pat-…")`). Nothing is read from the environment.
     pub fn new(workspace: impl Into<String>, auth: impl Into<rt::Auth>) -> Result<Self, Error> {
         Self::builder(workspace, auth).build()
     }

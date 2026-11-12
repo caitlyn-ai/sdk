@@ -9,7 +9,7 @@ use tracing::field::Empty;
 use tracing::Instrument;
 
 use crate::auth::{Auth, AuthSession, Credential};
-use crate::error::{header, problem_from_response, Error, NotSupportedByServer, TransportError};
+use crate::error::{header, problem_from_response, ConnectionError, Error, NotSupportedByServer};
 use crate::request::{CallOptions, Operation, Request, Response};
 use crate::telemetry::Propagator;
 
@@ -302,7 +302,7 @@ impl Client {
                     }
                     None => {
                         let e = match err {
-                            AttemptError::NoResponse(source) => Error::Transport(TransportError { source }),
+                            AttemptError::NoResponse(source) => Error::Connection(ConnectionError::new(op.name, source)),
                             AttemptError::Other(e) => e,
                         };
                         span.record("otel.status_code", "ERROR");
@@ -379,6 +379,7 @@ impl Client {
             return Ok(Response {
                 inner: resp,
                 cancel: opts.cancel.clone(),
+                operation: op.name,
             });
         }
         let headers = resp.headers().clone();
@@ -442,7 +443,7 @@ fn error_type(e: &Error) -> String {
         Error::NotSupportedByServer(_) => "NOT_SUPPORTED_BY_SERVER".into(),
         Error::Input(_) => "INPUT".into(),
         Error::Auth(a) => a.code.clone(),
-        Error::Transport(_) => "TRANSPORT".into(),
+        Error::Connection(_) => crate::error::CONNECTION_ERROR.into(),
         Error::Cancelled => "CANCELLED".into(),
     }
 }

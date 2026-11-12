@@ -9,9 +9,10 @@ final class SdkCoreDependency implements Dependency {
     static final String PACKAGE = "@caitlyn-ai/sdk-core";
     /**
      * The runtime is released with the SDK, at the same version. In the repository's npm workspace
-     * (typescript/package.json) this resolves to typescript/packages/sdk-core.
+     * (typescript/package.json) this resolves to typescript/packages/sdk-core. A placeholder: scripts/postgen-ts.mjs
+     * rewrites the generated package.json with the version in VERSION, as scripts/version.mjs stamps it.
      */
-    static final String VERSION = "0.0.1";
+    static final String VERSION = "0.0.0";
     static final SdkCoreDependency INSTANCE = new SdkCoreDependency();
 
     @Override

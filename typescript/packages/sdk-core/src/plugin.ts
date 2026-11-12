@@ -12,6 +12,50 @@ import { NO_RETRY } from './retry.js';
 
 export const CAITLYN_SDK_USER_AGENT_PREFIX = 'caitlyn-sdk-ts';
 
+/** Marks a failure that got no HTTP response, or whose connection failed while the body was read (PROTOCOL.md 6.5). */
+export const NO_RESPONSE = Symbol.for('caitlyn.noResponse');
+
+/** Marks `err` as a connection failure, unless it is a cancellation. Returns it, for `throw markNoResponse(err)`. */
+export function markNoResponse(err: unknown): unknown {
+  if (err && typeof err === 'object' && (err as Error).name !== 'AbortError') Object.defineProperty(err, NO_RESPONSE, { value: true, configurable: true });
+  return err;
+}
+
+/**
+ * Connection errors (PROTOCOL.md 6.5): a call that got no HTTP response, or whose connection failed while the
+ * body was read, fails with `toError(operation, cause)`, the generated `CaitlynConnectionError`, once the retries
+ * are spent. Token requests are not marked: their failures stay sign-in errors.
+ */
+export function getCaitlynConnectionErrorPlugin(toError: (operation: string, cause: unknown) => Error): Pluggable<any, any> {
+  // Closest to the HTTP handler: whatever it throws got no response.
+  const mark: DeserializeMiddleware<any, any> = (next) => async (args) => {
+    try {
+      return await next(args);
+    } catch (err) {
+      const e = err as { $response?: unknown; $metadata?: { httpStatusCode?: number } };
+      if (!HttpResponse.isInstance(e?.$response) && e?.$metadata?.httpStatusCode === undefined) markNoResponse(err);
+      throw err;
+    }
+  };
+  // Outside the retries, inside the call span: the span records the connection error.
+  const wrap: InitializeMiddleware<any, any> = (next, context) => async (args) => {
+    try {
+      return await next(args);
+    } catch (err) {
+      if (err && typeof err === 'object' && (err as { [NO_RESPONSE]?: boolean })[NO_RESPONSE]) {
+        throw toError(context.commandName?.replace(/Command$/, '') ?? 'call', err);
+      }
+      throw err;
+    }
+  };
+  return {
+    applyToStack(stack) {
+      stack.add(mark, { step: 'deserialize', name: 'caitlynNoResponse', priority: 'low', override: true });
+      stack.add(wrap, { step: 'initialize', name: 'caitlynConnectionError', priority: 'normal', override: true });
+    },
+  };
+}
+
 export class NotSupportedByServer extends Error {
   constructor(readonly operation: string, readonly requires: string, readonly server: string) {
     super(`NotSupportedByServer(${operation}, requires ${requires}, server is ${server})`);

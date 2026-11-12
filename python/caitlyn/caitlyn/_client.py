@@ -858,7 +858,7 @@ class Caitlyn:
         tracer_provider: OpenTelemetry tracer provider (default: the global one).
         interceptors: hooks run around every call and attempt.
         app_id: your application's name, sent in the user agent as `app/<app_id>`.
-        http_client: your own httpx client (its base URL must be the endpoint).
+        http_client: your own httpx client, for its transport, proxy or TLS settings. Requests go to the workspace or `endpoint`; its `base_url` is not used.
     """
 
     auth: SyncAuthSession
@@ -940,7 +940,7 @@ class AsyncCaitlyn:
         tracer_provider: OpenTelemetry tracer provider (default: the global one).
         interceptors: hooks run around every call and attempt.
         app_id: your application's name, sent in the user agent as `app/<app_id>`.
-        http_client: your own httpx client (its base URL must be the endpoint).
+        http_client: your own httpx client, for its transport, proxy or TLS settings. Requests go to the workspace or `endpoint`; its `base_url` is not used.
     """
 
     auth: AsyncAuthSession

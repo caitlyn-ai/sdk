@@ -10,7 +10,7 @@ import (
 )
 
 // APIError is an RFC 9457 problem returned by Caitlyn, or raised by the SDK itself (Status 0, with the
-// codes STREAM_LOST, NO_FINAL_EVENT or UPLOAD_PUT_FAILED). Generated typed errors (NotFoundError and so on)
+// codes STREAM_LOST, NO_FINAL_EVENT, UPLOAD_PUT_FAILED or, inside a *ConnectionError, CONNECTION_ERROR). Generated typed errors (NotFoundError and so on)
 // embed it, so errors.As works with either the typed error or *APIError.
 type APIError struct {
 	// Status is the HTTP status (body status, else the response's), or 0 for errors the SDK raises itself.
@@ -29,10 +29,12 @@ type APIError struct {
 	Errors []FieldError
 	// Cause is the underlying failure for errors the SDK raises itself.
 	Cause error
-	// RawBody is the response body as received (up to 1 MiB), as text: the only view of a body that is not
+	// RawBody is the response body as received, as text, at most its first 8 KiB: the only view of a body that is not
 	// problem details, such as a proxy's or a web framework's own error page. Empty for an empty body and for
 	// errors the SDK raises itself.
 	RawBody string
+	// RawBodyTruncated is true when the body was longer than 8 KiB and RawBody holds only its first 8 KiB.
+	RawBodyTruncated bool
 
 	raw Raw
 }
@@ -71,6 +73,34 @@ func (e *APIError) Unwrap() error { return e.Cause }
 
 // Raw returns the problem body as received, unknown fields included (nil if the body was not JSON).
 func (e *APIError) Raw() map[string]any { return e.raw.Map() }
+
+// ConnectionError is returned when no HTTP response arrived (the connection was refused or reset, DNS or TLS
+// failed, or a timeout passed before the headers), or when the connection failed while the body was read, once
+// the retries are spent (PROTOCOL.md 6.5). It embeds *APIError with Status 0 and Code CONNECTION_ERROR, so
+// errors.As finds either type; the network error is its Cause, and errors.Is and errors.As reach it too.
+type ConnectionError struct{ *APIError }
+
+// Unwrap returns the embedded *APIError, whose Unwrap returns the network error.
+func (e *ConnectionError) Unwrap() error { return e.APIError }
+
+func newConnectionError(operation string, cause error) *ConnectionError {
+	return &ConnectionError{&APIError{Code: "CONNECTION_ERROR", Title: operation + ": no response", Cause: cause}}
+}
+
+// RawBodyLimit is the most of an error body kept in RawBody (PROTOCOL.md 6.3).
+const RawBodyLimit = 8192
+
+// rawBodyOf is an error body as text: whole up to 8 KiB, else its first 8 KiB cut back to a character boundary.
+func rawBodyOf(b []byte) (string, bool) {
+	if len(b) <= RawBodyLimit {
+		return strings.ToValidUTF8(string(b), "\uFFFD"), false
+	}
+	end := RawBodyLimit
+	for end > 0 && b[end]&0xC0 == 0x80 { // never split a UTF-8 sequence
+		end--
+	}
+	return strings.ToValidUTF8(string(b[:end]), "\uFFFD"), true
+}
 
 // FieldError is one problem with one request member (Pointer, a JSON Pointer into the body) or query
 // parameter (Parameter).

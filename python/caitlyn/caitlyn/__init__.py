@@ -22,6 +22,7 @@ from caitlyn_core import (
     Interceptor,
     NotSupportedByServer,
     Paginator,
+    ResponseMetadata,
     RetryPolicy,
     StreamLostError,
 )
@@ -130,6 +131,7 @@ __all__ = [
     "PreconditionRequiredError",
     "ProgressStatus",
     "ProgressUpdatedEvent",
+    "ResponseMetadata",
     "RetryPolicy",
     "SDK_MODEL",
     "ServiceUnavailableError",

@@ -10,6 +10,7 @@ import dataclasses
 import json
 import os
 import re
+import socket
 import time
 import urllib.parse
 import uuid
@@ -25,6 +26,7 @@ import httpx
 import pytest
 from caitlyn import (
     AsyncCaitlyn,
+    CaitlynConnectionError,
     CaitlynError,
     ConflictError,
     NotFoundError,
@@ -43,6 +45,8 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
+SDK_VERSION: str = (ROOT / "VERSION").read_text().strip()
+"""The version in VERSION, which every SDK sends in its user agent."""
 SDK_MODEL: str = json.loads((ROOT / "model" / "model.lock.json").read_text())["stampNext"]
 EXAMPLES: list[dict[str, Any]] = json.loads((ROOT / "conformance" / "cases" / "examples.json").read_text())["cases"]
 T = TypeVar("T")
@@ -349,6 +353,50 @@ async def test_field_errors(mock: Mock, case_id: str) -> None:
     assert json.loads(patch["body"]) == {"identity": "x", "clear": ["identity"]}
 
 
+# errors.raw-body-limit: a 20 KiB HTML page (ASCII), and a page whose 8 KiB cut would fall inside a three-byte "€".
+PAGE_20K = "<!DOCTYPE html>" + "x" * (20480 - 15)
+PAGE_STRADDLE = "a" * 8191 + "€" * 10
+
+
+@case("errors.raw-body-limit")
+async def test_raw_body_limit(mock: Mock, case_id: str) -> None:
+    mock.faults(status={"GetAgentVersion": [{"status": 404, "contentType": "text/html", "body": b} for b in (PAGE_20K, PAGE_STRADDLE)]})
+    c = client(mock)
+    page = await expect_error(c.versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    assert isinstance(page, NotFoundError)
+    assert len(page.raw_body.encode()) == 8192
+    assert page.raw_body == PAGE_20K[:8192]
+    assert page.raw_body_truncated is True
+    straddle = await expect_error(c.versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    assert (straddle.raw_body, straddle.raw_body_truncated) == ("a" * 8191, True)
+    problem = await expect_error(c.versions.get(agent_id="GHT7YRWXPL", version="nope"))
+    assert isinstance(problem, NotFoundError)
+    assert json.loads(problem.raw_body)["code"] == "NOT_FOUND"
+    assert problem.raw_body_truncated is False
+
+
+def refused_endpoint() -> str:
+    """An endpoint nothing listens on: a port the system handed out, then closed."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    return f"http://127.0.0.1:{port}"
+
+
+@case("errors.connection")
+async def test_connection_error(mock: Mock, case_id: str) -> None:
+    mock.faults(status={"GetAgentVersion": [{"close": True}]})
+    closed = await expect_error(client(mock, max_attempts=1).versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    refused_client = AsyncCaitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=refused_endpoint(), max_attempts=1)
+    refused = await expect_error(refused_client.versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    for err in (closed, refused):
+        assert isinstance(err, CaitlynConnectionError), repr(err)
+        assert (err.status, err.code, err.request_id, err.raw_body, err.raw_body_truncated) == (0, "CONNECTION_ERROR", None, "", False)
+        assert isinstance(err.__cause__, httpx.TransportError), repr(err.__cause__)
+        assert "GetAgentVersion" in str(err)
+    assert isinstance(refused.__cause__, httpx.ConnectError)
+
+
 # ------------------------------------------------------------------ cancellation
 
 
@@ -419,7 +467,7 @@ async def test_wire_headers(mock: Mock, case_id: str) -> None:
     for r in sent:
         aws = [h for h in r["headerNames"] if h.startswith(("x-amz", "amz-sdk", "x-amzn"))]
         assert aws == [], f"AWS headers sent: {aws}"
-        assert re.fullmatch(r"caitlyn-sdk-python/0\.0\.1 lang/python#3\.\d+ md/[a-z]+#3\.\d+\.\d+", r["headers"]["user-agent"])
+        assert re.fullmatch(rf"caitlyn-sdk-python/{re.escape(SDK_VERSION)} lang/python#3\.\d+ md/[a-z]+#3\.\d+\.\d+", r["headers"]["user-agent"])
         assert r["headers"]["caitlyn-sdk-model"] == SDK_MODEL
         assert "caitlyn-api-version" not in r["headers"]  # a response header only
         assert r["headers"]["authorization"] == "Bearer pat_test"
@@ -468,6 +516,18 @@ async def test_request_id(mock: Mock, case_id: str) -> None:
     assert v.api_version == "5.120.0"
 
 
+@case("headers.response-metadata")
+async def test_response_metadata(mock: Mock, case_id: str) -> None:
+    v = await client(mock).versions.get(agent_id="GHT7YRWXPL", version="draft")
+    metadata = v.response_metadata
+    assert metadata is not None
+    assert metadata.http_status_code == 200
+    assert metadata.request_id == mock.api()[-1]["requestId"]
+    assert metadata.etag == v.etag == '"draft-1"'
+    assert "response_metadata" not in v.to_wire()
+    assert AgentVersion.model_validate(v.to_wire()).response_metadata is None  # built in code: no response
+
+
 @case("telemetry.spans")
 async def test_telemetry(mock: Mock, case_id: str) -> None:
     exporter = InMemorySpanExporter()
@@ -488,8 +548,21 @@ async def test_telemetry(mock: Mock, case_id: str) -> None:
 async def test_endpoint(mock: Mock, case_id: str) -> None:
     assert workspace_endpoint("your-company.getcaitlyn.ai") == "https://your-company.getcaitlyn.ai/api"
     c = AsyncCaitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"))
-    assert str(c._core._http.base_url) == "https://your-company.getcaitlyn.ai/api/"  # pyright: ignore[reportPrivateUsage]
+    assert c._core.config.endpoint == "https://your-company.getcaitlyn.ai/api"  # pyright: ignore[reportPrivateUsage]
     await c.aclose()
+
+
+async def test_own_http_client_uses_the_endpoint(mock: Mock) -> None:
+    """A caller's own httpx client, with no base_url or a different one, still sends to the client's endpoint."""
+    for own in (httpx.AsyncClient(), httpx.AsyncClient(base_url="http://127.0.0.1:9")):
+        async with own:
+            v = await client(mock, http_client=own).versions.get(agent_id="GHT7YRWXPL", version="draft")
+            assert v.name == "draft"
+    sync_own = httpx.Client()
+    with sync_own:
+        c = caitlyn.Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base, http_client=sync_own)
+        assert c.versions.get(agent_id="GHT7YRWXPL", version="draft").name == "draft"
+    assert [r["path"] for r in mock.api()] == ["/v3/agents/GHT7YRWXPL/versions/draft"] * 3
 
 
 # ------------------------------------------------------------------ sign-in (PROTOCOL.md section 12)

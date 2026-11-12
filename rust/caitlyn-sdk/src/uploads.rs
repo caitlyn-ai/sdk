@@ -60,10 +60,12 @@ async fn read_create_upload(resp: rt::Response) -> Result<Upload, rt::Error> {
     let api_version = resp.header("caitlyn-api-version");
     let request_id = resp.header("caitlyn-request-id");
     let location = resp.header("location");
+    let metadata = resp.metadata();
     let mut out: Upload = resp.json().await?;
     out.api_version = api_version;
     out.request_id = request_id;
     out.location = location;
+    out.response_metadata = metadata;
     Ok(out)
 }
 

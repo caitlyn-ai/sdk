@@ -231,6 +231,8 @@ type AgentVersion struct {
 	// The version's configuration.
 	Configuration AgentConfiguration `json:"configuration"`
 
+	metadata core.ResponseMetadata
+
 	raw core.Raw
 }
 
@@ -249,6 +251,10 @@ func (v *AgentVersion) Raw() map[string]any { return v.raw.Map() }
 
 // RawJSON returns that object's bytes as received.
 func (v *AgentVersion) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// (the zero value for a result built in code).
+func (v *AgentVersion) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
 // ContextItem: One item of structured context, for example the page or record the person is looking
 // at.
@@ -479,6 +485,8 @@ type CreateDocumentResult struct {
 	// The Operation that tracks ingestion.
 	Operation Operation `json:"operation"`
 
+	metadata core.ResponseMetadata
+
 	raw core.Raw
 }
 
@@ -498,6 +506,10 @@ func (v *CreateDocumentResult) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *CreateDocumentResult) RawJSON() json.RawMessage { return v.raw.JSON() }
 
+// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// (the zero value for a result built in code).
+func (v *CreateDocumentResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
 // ListDocumentsPage: Headers every v3 response carries. Every operation output uses this mixin.
 //
 // Header-bound members are filled from the response headers; Raw holds the body as received.
@@ -513,6 +525,8 @@ type ListDocumentsPage struct {
 	Items []Document `json:"items"`
 	// The cursor for the next page. Absent on the last page.
 	NextCursor *string `json:"nextCursor,omitempty"`
+
+	metadata core.ResponseMetadata
 
 	raw core.Raw
 }
@@ -532,6 +546,10 @@ func (v *ListDocumentsPage) Raw() map[string]any { return v.raw.Map() }
 
 // RawJSON returns that object's bytes as received.
 func (v *ListDocumentsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ListDocumentsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
 // UploadStatus: Where an upload is in its lifecycle. Open: new values may be added. `consumed` and
 // `expired`
@@ -584,6 +602,8 @@ type Upload struct {
 	// Where the upload is in its lifecycle.
 	Status UploadStatus `json:"status"`
 
+	metadata core.ResponseMetadata
+
 	raw core.Raw
 }
 
@@ -602,6 +622,10 @@ func (v *Upload) Raw() map[string]any { return v.raw.Map() }
 
 // RawJSON returns that object's bytes as received.
 func (v *Upload) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// (the zero value for a result built in code).
+func (v *Upload) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
 // Citation is a passage the answer cites.
 type Citation struct {

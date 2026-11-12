@@ -6,7 +6,8 @@ use caitlyn_sdk_core as rt;
 /// operation's modelled errors (PROTOCOL.md 6.2); any other status, and errors the SDK raises itself
 /// (`STREAM_LOST`, `NO_FINAL_EVENT`, `UPLOAD_PUT_FAILED`, with status 0), are [`Error::Api`]. Every
 /// problem variant carries an [`ApiError`](rt::ApiError) with `status`, `code` and `request_id`;
-/// [`Error::api`] reads it whichever variant it is.
+/// [`Error::api`] reads it whichever variant it is. A call that got no response is
+/// [`Error::Connection`], with status 0 and code `CONNECTION_ERROR` (PROTOCOL.md 6.5).
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Error {
@@ -59,8 +60,9 @@ pub enum Error {
     Input(rt::InputError),
     /// Signing in failed.
     Auth(rt::AuthError),
-    /// No response arrived, after any retries.
-    Transport(rt::TransportError),
+    /// No response arrived, or the connection failed while the body was read, after any retries: status 0,
+    /// code `CONNECTION_ERROR`, and the network error as its source.
+    Connection(rt::ConnectionError),
     /// The call's cancellation token fired.
     Cancelled,
 }
@@ -86,14 +88,20 @@ impl Error {
         }
     }
 
-    /// The HTTP status of a problem (0 for one the SDK raised).
+    /// The HTTP status of a problem; 0 for a connection error or a problem the SDK raised.
     pub fn status(&self) -> Option<u16> {
-        self.api().map(|e| e.status)
+        match self {
+            Error::Connection(e) => Some(e.status()),
+            other => other.api().map(|e| e.status),
+        }
     }
 
-    /// The stable product code of a problem, for example `NOT_FOUND`.
+    /// The stable product code of a problem, for example `NOT_FOUND`, or `CONNECTION_ERROR`.
     pub fn code(&self) -> Option<&str> {
-        self.api().map(|e| e.code.as_str())
+        match self {
+            Error::Connection(e) => Some(e.code()),
+            other => other.api().map(|e| e.code.as_str()),
+        }
     }
 
     /// The request's identifier; quote it to support.
@@ -142,7 +150,7 @@ impl Error {
             rt::Error::NotSupportedByServer(e) => Error::NotSupportedByServer(e),
             rt::Error::Input(e) => Error::Input(e),
             rt::Error::Auth(e) => Error::Auth(e),
-            rt::Error::Transport(e) => Error::Transport(e),
+            rt::Error::Connection(e) => Error::Connection(e),
             _ => Error::Cancelled,
         }
     }
@@ -160,7 +168,7 @@ impl std::fmt::Display for Error {
             Error::NotSupportedByServer(e) => e.fmt(f),
             Error::Input(e) => e.fmt(f),
             Error::Auth(e) => e.fmt(f),
-            Error::Transport(e) => e.fmt(f),
+            Error::Connection(e) => e.fmt(f),
             Error::Cancelled => f.write_str("caitlyn: the call was cancelled"),
             other => other.api().expect("a problem variant").fmt(f),
         }
@@ -170,7 +178,7 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::Transport(e) => Some(e),
+            Error::Connection(e) => Some(e),
             other => other.api().and_then(|e| e.source.as_deref()).map(|s| s as _),
         }
     }

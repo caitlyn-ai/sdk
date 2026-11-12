@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from caitlyn_core import CaitlynModel, OpenEnum
+from caitlyn_core import CaitlynModel, CaitlynResult, OpenEnum
 from pydantic import JsonValue
 
 class FieldError(CaitlynModel):
@@ -99,7 +99,7 @@ class VersionSource(OpenEnum):
     """Created from an imported agent file."""
 
 
-class AgentVersion(CaitlynModel):
+class AgentVersion(CaitlynResult):
     """The result: Gets one version of an agent, with its full configuration and its ETag.
 
     `version` is `draft`, `production` or the name of a pinned or published version. Production is
@@ -260,7 +260,7 @@ class Operation(CaitlynModel):
     """When the work was requested."""
 
 
-class CreateDocumentResult(CaitlynModel):
+class CreateDocumentResult(CaitlynResult):
     """The result: Creates a document from an upload; ingestion continues after the response.
 
     Returns 202 with the document in its initial state and the Operation that tracks ingestion, and
@@ -285,7 +285,7 @@ class CreateDocumentResult(CaitlynModel):
     """The Operation that tracks ingestion, as `/api/v3/operations/{operationId}`. From the `Location` response header."""
 
 
-class ListDocumentsPage(CaitlynModel):
+class ListDocumentsPage(CaitlynResult):
     """One page of results. Lists the documents in a knowledge base, one page at a time.
 
     Documents are returned in a stable order that does not change between pages. Filters combine
@@ -325,7 +325,7 @@ class UploadStatus(OpenEnum):
     """Not used before `expiresAt`. Final."""
 
 
-class Upload(CaitlynModel):
+class Upload(CaitlynResult):
     """The result: Reserves a short-lived slot for a file's bytes and returns a presigned URL bound to their
     checksum.
 

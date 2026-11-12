@@ -22,7 +22,7 @@ before it expires, one request at a time however many calls are waiting.
 ```ts
 import { Caitlyn } from '@caitlyn-ai/sdk';
 
-// A script using a personal access token
+// A script using a personal access token (it starts cait-pat-)
 const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! } });
 ```
 
@@ -136,8 +136,12 @@ Every API error is a `CaitlynError` subclass, one per status (`ValidationError`,
 `ConflictError`, `PreconditionFailedError`, `TooManyRequestsError`…), carrying the problem details: `status`,
 `code`, `title`, `detail`, `requestId` (quote it to Caitlyn support) and, on a 400, `errors`, one entry per
 field. An error page from something in front of the API (an HTML 404, a proxy's 502) is the same class for its
-status, with `code` `HTTP_<status>` and the page in `rawBody`. Sign-in failures are `CaitlynAuthError`, with
-the OAuth error code.
+status, with `code` `HTTP_<status>` and the page in `rawBody`. A call that got no response (a refused or reset
+connection, a DNS or TLS failure) is `CaitlynConnectionError`, a `CaitlynError` with `status` 0, `code`
+`CONNECTION_ERROR` and the network error as its `cause`. Sign-in failures are `CaitlynAuthError`, with the OAuth
+error code.
+
+A result's `$metadata` has the response's `httpStatusCode` and `requestId`.
 
 ```ts
 try {

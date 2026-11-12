@@ -21,7 +21,7 @@ type (
 	WaiterOption = core.WaiterOption
 	// Auth adds credentials to each request.
 	Auth = core.Auth
-	// Token is a static bearer token: caitlyn.Token("pat_…").
+	// Token is a static bearer token: caitlyn.Token("cait-pat-…").
 	Token = core.Token
 	// TokenFunc returns a bearer token for each request, for tokens refreshed elsewhere.
 	TokenFunc = core.TokenFunc
@@ -54,6 +54,11 @@ type (
 	// Error is an RFC 9457 problem from Caitlyn, or an error the SDK raises itself (Status 0). Every typed
 	// error (NotFoundError…) embeds it.
 	Error = core.APIError
+	// ConnectionError is returned when no HTTP response arrived, or the connection failed while the body was read
+	// (Status 0, Code CONNECTION_ERROR). It embeds *Error; the network error is its Cause.
+	ConnectionError = core.ConnectionError
+	// ResponseMetadata is a result's HTTP status, request id and ETag: result.ResponseMetadata().
+	ResponseMetadata = core.ResponseMetadata
 	// NotSupportedByServerError is returned, before anything is sent, when an operation or a member you set is
 	// newer than the server.
 	NotSupportedByServerError = core.NotSupportedByServerError

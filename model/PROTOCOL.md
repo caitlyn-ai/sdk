@@ -68,6 +68,18 @@ SDKs MUST NOT read AWS configuration: no `AWS_*` environment variable, no `~/.aw
 - Streaming outputs (SSE, blobs) have no `raw`. A body that is not JSON has no `raw`.
 - Unknown enum values are kept as the raw string (TypeScript: the string itself; Python: an "unknown" enum member carrying the string). They never raise.
 
+### 4.2 Response metadata
+
+Every output of a single call (not a stream, and not the items of a list) carries its response's metadata, in a typed form:
+
+| Field | Source | TypeScript | Python | Go | Rust |
+| ----- | ------ | ---------- | ------ | -- | ---- |
+| HTTP status | The response's status | `$metadata.httpStatusCode` | `response_metadata.http_status_code` | `ResponseMetadata().HTTPStatusCode` | `response_metadata.http_status_code` |
+| Request id | `Caitlyn-Request-Id` | `$metadata.requestId` | `response_metadata.request_id` | `ResponseMetadata().RequestID` | `response_metadata.request_id` |
+| ETag | `ETag`, when the response has one | the modelled `etag` member (Smithy's `ResponseMetadata` has no ETag field) | `response_metadata.etag` | `ResponseMetadata().ETag` | `response_metadata.etag` |
+
+An absent header is `undefined`, `None`, `""` or `None`. The metadata is never serialised with the output, and an output built in code has none (Python `None`; Go and Rust the zero value). The modelled `requestId` and `etag` members stay where the model binds them.
+
 ## 5. Server-sent events (`@sseEvents`)
 
 1. The response is `text/event-stream`. Each SSE `event:` name is the `@jsonName` of a member of the `events` union (or the member name); `data:` is that member's JSON body; `id:` is exposed as `eventId`. Comment lines and `retry:` are ignored.
@@ -116,9 +128,10 @@ Error responses are RFC 9457 problem details, `application/problem+json`:
 | `title`, `detail`, `type` | Body.                                                   |
 | `requestId`               | Body `requestId`, else the `Caitlyn-Request-Id` header; empty when neither has one. |
 | `retryAfterSeconds`       | `Retry-After`, on 429 and 503.                          |
-| `rawBody`                 | The response body as received, as text (invalid UTF-8 replaced; an SDK may keep only the first 1 MiB). Empty for an empty body and for errors the SDK raises itself. TypeScript `rawBody`, Python and Rust `raw_body`, Go `RawBody`. |
+| `rawBody`                 | The response body as received, as text (invalid UTF-8 replaced), **at most 8 KiB**: a longer body keeps its first 8,192 bytes, cut back to the start of a UTF-8 character so none is split. Empty for an empty body and for errors the SDK raises itself. TypeScript `rawBody`, Python and Rust `raw_body`, Go `RawBody`. |
+| `rawBodyTruncated`        | `true` when the body was longer than 8 KiB and `rawBody` holds only its start; otherwise `false`. TypeScript `rawBodyTruncated`, Python and Rust `raw_body_truncated`, Go `RawBodyTruncated`. |
 
-Errors the SDK raises itself use the same class and fields, with `status: 0` and these codes: `STREAM_LOST`, `NO_FINAL_EVENT`, `UPLOAD_PUT_FAILED`. `NotSupportedByServer` (section 9) is a separate class, because nothing was sent.
+Errors the SDK raises itself use the same class and fields, with `status: 0` and these codes: `STREAM_LOST`, `NO_FINAL_EVENT`, `UPLOAD_PUT_FAILED`, `CONNECTION_ERROR` (section 6.5). `NotSupportedByServer` (section 9) is a separate class, because nothing was sent.
 
 ### 6.4 Retries
 
@@ -127,6 +140,19 @@ Errors the SDK raises itself use the same class and fields, with `status: 0` and
 3. Retried: modelled `@retryable` errors (429, 503), and failures with no response (connection refused or reset, DNS, a timeout before the response headers). Not retried: everything else, including other 5xx and failures after response bytes arrived.
 4. Delay: `Retry-After`, honoured in full up to `maxRetryDelay` (client option: TypeScript `maxRetryDelayMs`, default 60 s). Above that, fail at once with the typed error. Without `Retry-After`: full-jitter exponential, `random(0, min(8 s, 0.5 s × 2^retry))`.
 5. Cancellation interrupts the wait.
+
+### 6.5 Connection errors
+
+A call that gets no HTTP response (the connection is refused or reset, DNS fails, TLS fails, or a timeout passes before the response headers), or whose connection fails while the response body is being read, fails with the language's connection error once section 6.4's retries are spent:
+
+| Language | Type | Is also | The cause |
+| -------- | ---- | ------- | --------- |
+| TypeScript | `CaitlynConnectionError` | a `CaitlynError` (`instanceof`) | `cause` |
+| Python | `CaitlynConnectionError` | a `CaitlynError` | `__cause__` (`raise … from`) |
+| Go | `*ConnectionError` | an `*Error` (`errors.As` finds either) | `Unwrap()` and `Cause` |
+| Rust | `Error::Connection(ConnectionError)` | `status()` and `code()` read it like a problem | `source()` |
+
+It carries `status` 0 and `code` `CONNECTION_ERROR`, with `requestId` and `rawBody` empty and `rawBodyTruncated` false; the message names the operation and the cause. The retry rules are section 6.4's: a retry-safe operation is retried when nothing arrived, and a failure after response bytes arrived is never retried. Cancellation (section 5.8) is never a connection error, and a failed token request is a sign-in error (section 12.5), not this one.
 
 ## 7. Idempotency
 
@@ -173,6 +199,9 @@ Every suite runs against the mock server and covers, at least:
 - `clear` sends only the clear list;
 - `@since` fails before sending;
 - `Caitlyn-Request-Id` on outputs;
+- the response metadata of a successful call: its HTTP status and request id (section 4.2);
+- a connection closed before any response, and a refused connection, are the connection error (section 6.5);
+- `rawBody` keeps at most 8 KiB, cut on a character boundary, with `rawBodyTruncated` (section 6.3);
 - wire headers: section 3.1, with no AWS headers;
 - a hostile `AWS_*` environment changes nothing;
 - telemetry: one span per call and one per attempt;

@@ -16,7 +16,7 @@ crates.io release is still to be set up (`release:crates` in `.gitlab-ci.yml` is
 ```rust
 use caitlyn_sdk::{Auth, Client, GetAgentVersionInput, SendMessageInput, UpdateDraftVersionInput};
 
-let client = Client::new("your-company.getcaitlyn.ai", Auth::token("pat_…"))?;
+let client = Client::new("your-company.getcaitlyn.ai", Auth::token("cait-pat-…"))?;
 
 // One call: options go on the call, then .await it.
 let draft = client.versions().get(GetAgentVersionInput { agent_id: "GHT7YRWXPL".into(), version: "draft".into() }).await?;
@@ -34,7 +34,11 @@ let docs = client.documents().list(caitlyn_sdk::ListDocumentsInput { knowledge_b
 ```
 
 Errors are `caitlyn_sdk::Error`, one variant per modelled error (`Error::NotFound`, `Error::PreconditionFailed`…)
-chosen by HTTP status, each carrying an `ApiError` with `status`, `code` and `request_id`.
+chosen by HTTP status, each carrying an `ApiError` with `status`, `code` and `request_id`. A call that got no
+response (a refused or reset connection, a DNS or TLS failure) is `Error::Connection`, with status 0, code
+`CONNECTION_ERROR` and the network error as its `source()`.
+
+A result carries the response it was read from in `response_metadata`: `http_status_code`, `request_id` and `etag`.
 
 ### The workspace and the endpoint
 
@@ -46,7 +50,7 @@ requests go (a proxy, a local app); the audience stays the workspace's.
 
 | Mode | Build it with |
 | --- | --- |
-| Personal access token or API key | `Auth::token("pat_…")` |
+| Personal access token or API key | `Auth::token("cait-pat-…")` |
 | Client credentials | `Auth::client_credentials(id, secret).scopes(["agents:read"])` |
 | Authorisation code with PKCE | `Auth::oauth(client_id).redirect_uri(…).token_store(store)`, then `client.auth().authorization_url(…)` and `client.auth().handle_callback(…)` |
 | AWS IAM (STS `GetWebIdentityToken`, then token exchange) | `Auth::aws_iam().region("ap-southeast-2")` (credentials from the environment or the container endpoint, or `.credentials(provider)`) |

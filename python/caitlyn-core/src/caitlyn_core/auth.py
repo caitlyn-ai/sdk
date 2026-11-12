@@ -2,7 +2,7 @@
 thing: a short-lived Caitlyn bearer token from the workspace's token endpoint (``{endpoint}/oauth/token``),
 kept until a minute before it expires and renewed by one request however many calls are waiting.
 
-    Token              a personal access token, sent as it is
+    Token              a personal access token (cait-pat-…), sent as it is
     ClientCredentials  a client ID and secret exchanged for a token; asked again before it expires
     OAuth              authorisation code with PKCE, then refresh tokens; a token store keeps them
     AwsIam             STS GetWebIdentityToken with the caller's AWS credentials, exchanged (RFC 8693)
@@ -96,7 +96,7 @@ class Auth:
 
 @dataclass(frozen=True, slots=True)
 class Token(Auth):
-    """A personal access token, sent as ``Authorization: Bearer <token>`` and never renewed."""
+    """A personal access token (it starts ``cait-pat-``), sent as ``Authorization: Bearer <token>`` and never renewed."""
 
     token: str = field(repr=False)
 

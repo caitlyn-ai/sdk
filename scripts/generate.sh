@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 # Regenerates every SDK from the committed model snapshot. Runs in the toolchain image: locally through
 # `make generate` (scripts/docker.sh), in CI directly.
+#   0. the version in VERSION, stamped into the hand-written files and the generator settings (scripts/version.mjs);
 #   1. build/model/model.json from model/model.json (scripts/prepare-model.mjs);
 #   2. compile the generators and publish them to codegen/build/repo;
 #   3. `smithy build` in codegen/, which runs the four generators (codegen/smithy-build.json);
 #   4. copy the output into typescript/packages/sdk, python/caitlyn, go/ and rust/caitlyn-sdk, and tidy it;
-#   5. conformance/cases/examples.json from the model's @examples (scripts/gen-example-cases.mjs).
+#   5. conformance/cases/examples.json from the model's @examples (scripts/gen-example-cases.mjs);
+#   6. a check that every file naming the SDK version names the one in VERSION (scripts/version.mjs).
 # Generated code is committed: a model change shows up as a reviewable diff.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
+node scripts/version.mjs stamp
 node scripts/prepare-model.mjs
 node scripts/gen-example-cases.mjs
 
@@ -50,4 +53,5 @@ rm -rf rust/caitlyn-sdk
 cp -R "$out/rust/caitlyn-rust-client-codegen" rust/caitlyn-sdk
 rustfmt --edition 2021 --config-path rust/rustfmt.toml rust/caitlyn-sdk/src/lib.rs
 
+node scripts/version.mjs check
 echo "Generated from $(node -p "require('./model/model.lock.json').version ?? 'an unpublished model'")."

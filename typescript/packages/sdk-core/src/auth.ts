@@ -2,7 +2,7 @@
 // the workspace's OAuth token endpoint ({endpoint}/oauth/token), cached until a minute before it expires and
 // refreshed by one request at a time (design doc, "Authentication"; proposal 6.11).
 //
-//   token              a personal access token, sent as it is
+//   token              a personal access token (cait-pat-…), sent as it is
 //   clientCredentials  client ID and secret exchanged for a token; re-requested before expiry
 //   oauth              authorisation code with PKCE, then refresh tokens; a token store keeps them
 //   awsIam             STS GetWebIdentityToken with the caller's AWS credentials, exchanged (RFC 8693)

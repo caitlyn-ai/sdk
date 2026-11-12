@@ -3,7 +3,7 @@
 package caitlyn
 
 // SDKVersion is this SDK's version.
-const SDKVersion = "0.0.1"
+const SDKVersion = "0.0.2"
 
 // ModelVersion is the Caitlyn release the SDK was generated from (the highest @since in the model), sent as Caitlyn-Sdk-Model.
 const ModelVersion = "5.115.0"

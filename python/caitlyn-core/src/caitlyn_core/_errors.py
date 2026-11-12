@@ -33,6 +33,7 @@ class CaitlynError(Exception):
         errors: Sequence[Mapping[str, Any]] = (),
         raw: Mapping[str, Any] | None = None,
         raw_body: str = "",
+        raw_body_truncated: bool = False,
     ) -> None:
         super().__init__(message)
         self.status = status
@@ -49,11 +50,16 @@ class CaitlynError(Exception):
         """The problem body as received, unknown fields included; empty when the body is not a JSON object."""
         self.raw_body = raw_body
         """The response body as received, as text: the only view of a body that is not problem details (a
-        proxy's or a web framework's own error page). Empty for an empty body and for errors the SDK raises."""
+        proxy's or a web framework's own error page). At most its first 8 KiB; empty for an empty body and for
+        errors the SDK raises."""
+        self.raw_body_truncated = raw_body_truncated
+        """True when the body was longer than 8 KiB and ``raw_body`` holds only its first 8 KiB."""
 
 
 class CaitlynConnectionError(CaitlynError):
-    """The request did not get an HTTP response (connection refused, reset, timed out)."""
+    """No HTTP response arrived (the connection was refused or reset, DNS or TLS failed, or it timed out
+    before the headers), or the connection failed while the body was read (PROTOCOL.md 6.5). ``status`` is 0
+    and ``code`` is ``CONNECTION_ERROR``; the httpx error is the ``__cause__``. Raised after the retries."""
 
 
 class StreamLostError(CaitlynError):

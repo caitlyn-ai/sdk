@@ -8,7 +8,7 @@
 //! # async fn run() -> Result<(), caitlyn_sdk::Error> {
 //! use caitlyn_sdk::{Auth, Client};
 //!
-//! let client = Client::new("your-company.getcaitlyn.ai", Auth::token("pat_…"))?;
+//! let client = Client::new("your-company.getcaitlyn.ai", Auth::token("cait-pat-…"))?;
 //! let out = client.documents().create(caitlyn_sdk::CreateDocumentInput {
 //!     ..Default::default()
 //! }).await?;
@@ -36,8 +36,8 @@ pub use versions::*;
 
 pub use caitlyn_sdk_core::{
     ApiError, Auth, AuthError, AuthSession, AuthorizationUrl, AwsCredentialProvider, AwsCredentials, Call, CallOptions, Callback,
-    CancellationToken, FieldError, InputError, Items, MemoryTokenStore, NotSupportedByServer, OAuthTokens, Pages, Propagator, Raw,
-    SigningAlgorithm, Stream, TokenStore, TransportError, UploadFile,
+    CancellationToken, ConnectionError, FieldError, InputError, Items, MemoryTokenStore, NotSupportedByServer, OAuthTokens, Pages,
+    Propagator, Raw, ResponseMetadata, SigningAlgorithm, Stream, TokenStore, UploadFile,
 };
 
 /// The sign-in modes' option types.
@@ -47,7 +47,7 @@ pub mod auth {
 }
 
 /// This SDK's version.
-pub const SDK_VERSION: &str = "0.0.1";
+pub const SDK_VERSION: &str = "0.0.2";
 
 /// The Caitlyn release the SDK was generated from (the highest `@since` in the model), sent as `Caitlyn-Sdk-Model`.
 pub const MODEL_VERSION: &str = "5.115.0";
