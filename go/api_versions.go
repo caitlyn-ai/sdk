@@ -66,6 +66,7 @@ func readGetAgentVersion(resp *core.Response) (*AgentVersion, error) {
 	out.APIVersion = resp.HeaderPtr("Caitlyn-Api-Version")
 	out.RequestID = resp.HeaderPtr("Caitlyn-Request-Id")
 	out.ETag = resp.HeaderValue("ETag")
+	out.metadata = resp.Metadata()
 	return out, nil
 }
 
@@ -170,6 +171,7 @@ func readUpdateDraftVersion(resp *core.Response) (*AgentVersion, error) {
 	out.APIVersion = resp.HeaderPtr("Caitlyn-Api-Version")
 	out.RequestID = resp.HeaderPtr("Caitlyn-Request-Id")
 	out.ETag = resp.HeaderValue("ETag")
+	out.metadata = resp.Metadata()
 	return out, nil
 }
 

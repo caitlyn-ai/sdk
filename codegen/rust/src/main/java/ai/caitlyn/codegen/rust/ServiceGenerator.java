@@ -41,7 +41,7 @@ import software.amazon.smithy.model.traits.TitleTrait;
  */
 final class ServiceGenerator {
     private static final ShapeId WAITABLE = ShapeId.from("smithy.waiters#waitable");
-    private static final Set<String> RESERVED_VARIANTS = Set.of("Api", "NotSupportedByServer", "Input", "Auth", "Transport", "Cancelled");
+    private static final Set<String> RESERVED_VARIANTS = Set.of("Api", "NotSupportedByServer", "Input", "Auth", "Connection", "Cancelled");
 
     private final RustContext ctx;
     private final Model model;
@@ -359,8 +359,10 @@ final class ServiceGenerator {
             w.l("    let " + field + " = resp.header(" + Names.str(b.getLocationName().toLowerCase(java.util.Locale.ROOT)) + ");\n");
             headers.append("    out.").append(field).append(" = ").append(field).append(m.isRequired() ? ".unwrap_or_default()" : "").append(";\n");
         }
+        w.l("    let metadata = resp.metadata();\n");
         w.l(body ? "    let mut out: " + result + " = resp.json().await?;\n" : "    drop(resp);\n    let mut out = " + result + "::default();\n");
         w.l(headers.toString());
+        w.l("    out.response_metadata = metadata;\n");
         w.l("    Ok(out)\n}\n\n");
     }
 
@@ -598,7 +600,8 @@ final class ServiceGenerator {
             w.l(Names.doc("Everything a call can fail with. A problem response is the variant for its HTTP status, among the operation's "
                     + "modelled errors (PROTOCOL.md 6.2); any other status, and errors the SDK raises itself (`STREAM_LOST`, "
                     + "`NO_FINAL_EVENT`, `UPLOAD_PUT_FAILED`, with status 0), are [`Error::Api`]. Every problem variant carries an "
-                    + "[`ApiError`](rt::ApiError) with `status`, `code` and `request_id`; [`Error::api`] reads it whichever variant it is.", ""));
+                    + "[`ApiError`](rt::ApiError) with `status`, `code` and `request_id`; [`Error::api`] reads it whichever variant it is. "
+                    + "A call that got no response is [`Error::Connection`], with status 0 and code `CONNECTION_ERROR` (PROTOCOL.md 6.5).", ""));
             w.l("#[derive(Debug)]\n#[non_exhaustive]\npub enum Error {\n");
             for (StructureShape e : errorsByStatus.values()) {
                 int status = e.expectTrait(HttpErrorTrait.class).getCode();
@@ -610,7 +613,8 @@ final class ServiceGenerator {
                     + "    /// An operation, or a member you set, is newer than the server. Nothing was sent.\n    NotSupportedByServer(rt::NotSupportedByServer),\n"
                     + "    /// A required input is missing. Nothing was sent.\n    Input(rt::InputError),\n"
                     + "    /// Signing in failed.\n    Auth(rt::AuthError),\n"
-                    + "    /// No response arrived, after any retries.\n    Transport(rt::TransportError),\n"
+                    + "    /// No response arrived, or the connection failed while the body was read, after any retries: status 0,\n"
+                    + "    /// code `CONNECTION_ERROR`, and the network error as its source.\n    Connection(rt::ConnectionError),\n"
                     + "    /// The call's cancellation token fired.\n    Cancelled,\n}\n\n");
             StringBuilder api = new StringBuilder();
             StringBuilder shape = new StringBuilder();
@@ -624,10 +628,12 @@ final class ServiceGenerator {
             w.l("impl Error {\n");
             w.l("    /// The problem details, for every problem variant.\n    pub fn api(&self) -> Option<&rt::ApiError> {\n        match self {\n"
                     + api + "            Error::Api(e) => Some(e),\n            _ => None,\n        }\n    }\n\n");
-            w.l("    /// The HTTP status of a problem (0 for one the SDK raised).\n    pub fn status(&self) -> Option<u16> {\n"
-                    + "        self.api().map(|e| e.status)\n    }\n\n");
-            w.l("    /// The stable product code of a problem, for example `NOT_FOUND`.\n    pub fn code(&self) -> Option<&str> {\n"
-                    + "        self.api().map(|e| e.code.as_str())\n    }\n\n");
+            w.l("    /// The HTTP status of a problem; 0 for a connection error or a problem the SDK raised.\n"
+                    + "    pub fn status(&self) -> Option<u16> {\n        match self {\n            Error::Connection(e) => Some(e.status()),\n"
+                    + "            other => other.api().map(|e| e.status),\n        }\n    }\n\n");
+            w.l("    /// The stable product code of a problem, for example `NOT_FOUND`, or `CONNECTION_ERROR`.\n"
+                    + "    pub fn code(&self) -> Option<&str> {\n        match self {\n            Error::Connection(e) => Some(e.code()),\n"
+                    + "            other => other.api().map(|e| e.code.as_str()),\n        }\n    }\n\n");
             w.l("    /// The request's identifier; quote it to support.\n    pub fn request_id(&self) -> Option<&str> {\n"
                     + "        self.api().and_then(|e| e.request_id.as_deref())\n    }\n\n");
             w.l("    /// The model's name for the error shape, for example `NotFoundError`.\n    pub fn shape(&self) -> Option<&'static str> {\n"
@@ -638,17 +644,17 @@ final class ServiceGenerator {
                     + "                _ => Error::Api(a),\n            },\n            rt::Error::Api(a) => Error::Api(a),\n"
                     + "            rt::Error::NotSupportedByServer(e) => Error::NotSupportedByServer(e),\n"
                     + "            rt::Error::Input(e) => Error::Input(e),\n            rt::Error::Auth(e) => Error::Auth(e),\n"
-                    + "            rt::Error::Transport(e) => Error::Transport(e),\n            _ => Error::Cancelled,\n        }\n    }\n}\n\n");
+                    + "            rt::Error::Connection(e) => Error::Connection(e),\n            _ => Error::Cancelled,\n        }\n    }\n}\n\n");
             List<String> all = new ArrayList<>();
             errorsByStatus.keySet().forEach(s -> all.add(String.valueOf(s)));
             w.l("impl From<rt::Error> for Error {\n    fn from(e: rt::Error) -> Self {\n        Error::from_core(e, &[" + String.join(", ", all) + "])\n    }\n}\n\n");
             w.l("impl std::fmt::Display for Error {\n    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n"
                     + "        match self {\n            Error::NotSupportedByServer(e) => e.fmt(f),\n            Error::Input(e) => e.fmt(f),\n"
-                    + "            Error::Auth(e) => e.fmt(f),\n            Error::Transport(e) => e.fmt(f),\n"
+                    + "            Error::Auth(e) => e.fmt(f),\n            Error::Connection(e) => e.fmt(f),\n"
                     + "            Error::Cancelled => f.write_str(\"caitlyn: the call was cancelled\"),\n"
                     + "            other => other.api().expect(\"a problem variant\").fmt(f),\n        }\n    }\n}\n\n");
             w.l("impl std::error::Error for Error {\n    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {\n        match self {\n"
-                    + "            Error::Transport(e) => Some(e),\n            other => other.api().and_then(|e| e.source.as_deref()).map(|s| s as _),\n"
+                    + "            Error::Connection(e) => Some(e),\n            other => other.api().and_then(|e| e.source.as_deref()).map(|s| s as _),\n"
                     + "        }\n    }\n}\n");
         });
     }
@@ -669,7 +675,7 @@ final class ServiceGenerator {
             w.l("#[derive(Clone, Debug)]\npub struct Client {\n    pub(crate) core: rt::Client,\n}\n\n");
             w.l("impl Client {\n");
             w.l(Names.doc("A client for `workspace` (for example `your-company.getcaitlyn.ai`), signed in with `auth` (for example "
-                    + "`Auth::token(\"pat_…\")`). Nothing is read from the environment.", "    "));
+                    + "`Auth::token(\"cait-pat-…\")`). Nothing is read from the environment.", "    "));
             w.l("    pub fn new(workspace: impl Into<String>, auth: impl Into<rt::Auth>) -> Result<Self, Error> {\n        Self::builder(workspace, auth).build()\n    }\n\n");
             w.l("    /// A builder, to set the endpoint, the HTTP client, retries, the app ID or telemetry.\n");
             w.l("    pub fn builder(workspace: impl Into<String>, auth: impl Into<rt::Auth>) -> ClientBuilder {\n"
@@ -718,7 +724,7 @@ final class ServiceGenerator {
                 + "hand-written runtime `" + s.coreCrate() + "`. Async on tokio, TLS through rustls, telemetry through `tracing`; it "
                 + "reads no AWS configuration.\n\n"
                 + "```no_run\n# async fn run() -> Result<(), caitlyn_sdk::Error> {\nuse caitlyn_sdk::{Auth, Client};\n\n"
-                + "let client = Client::new(\"your-company.getcaitlyn.ai\", Auth::token(\"pat_…\"))?;\n"
+                + "let client = Client::new(\"your-company.getcaitlyn.ai\", Auth::token(\"cait-pat-…\"))?;\n"
                 + exampleCall()
                 + "# Ok(())\n# }\n```"));
         out.append("#![forbid(unsafe_code)]\n\n");
@@ -732,8 +738,8 @@ final class ServiceGenerator {
             out.append("pub use ").append(ns).append("::*;\n");
         }
         out.append("\npub use caitlyn_sdk_core::{\n    ApiError, Auth, AuthError, AuthSession, AuthorizationUrl, AwsCredentialProvider, AwsCredentials, Call, CallOptions,\n"
-                + "    Callback, CancellationToken, FieldError, InputError, Items, MemoryTokenStore, NotSupportedByServer, OAuthTokens, Pages,\n"
-                + "    Propagator, Raw, SigningAlgorithm, Stream, TokenStore, TransportError, UploadFile,\n};\n\n");
+                + "    Callback, CancellationToken, ConnectionError, FieldError, InputError, Items, MemoryTokenStore, NotSupportedByServer,\n"
+                + "    OAuthTokens, Pages, Propagator, Raw, ResponseMetadata, SigningAlgorithm, Stream, TokenStore, UploadFile,\n};\n\n");
         out.append("/// The sign-in modes' option types.\npub mod auth {\n    pub use caitlyn_sdk_core::auth::*;\n    pub use caitlyn_sdk_core::aws::ProviderFn;\n}\n\n");
         out.append("/// This SDK's version.\npub const SDK_VERSION: &str = ").append(Names.str(s.version())).append(";\n\n");
         out.append("/// The Caitlyn release the SDK was generated from (the highest `@since` in the model), sent as `Caitlyn-Sdk-Model`.\n");

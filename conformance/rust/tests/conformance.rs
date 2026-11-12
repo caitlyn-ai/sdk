@@ -204,6 +204,19 @@ async fn last_patch(m: &Mock) -> (Value, Value) {
     (p, body)
 }
 
+/// An endpoint nothing listens on: a port the system handed out, then closed.
+fn refused_endpoint() -> String {
+    let l = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let addr = l.local_addr().expect("address");
+    drop(l);
+    format!("http://{addr}")
+}
+
+/// The version in VERSION, which every SDK sends in its user agent.
+fn sdk_version() -> String {
+    std::fs::read_to_string(root().join("VERSION")).expect("VERSION").trim().to_owned()
+}
+
 fn sdk_model() -> String {
     read_json("model/model.lock.json")["stampNext"]
         .as_str()
@@ -688,6 +701,83 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             ensure!(body == json!({"identity": "x", "clear": ["identity"]}), "body {body}");
             Ok(())
         }),
+        "errors.raw-body-limit" => Box::pin(async move {
+            let page = format!("<!DOCTYPE html>{}", "x".repeat(20480 - 15));
+            let straddle = format!("{}{}", "a".repeat(8191), "€".repeat(10));
+            let html = |body: &str| json!({"status": 404, "contentType": "text/html", "body": body});
+            m.faults(json!({"status": {"GetAgentVersion": [html(&page), html(&straddle)]}}))
+                .await;
+            let c = client(m);
+            let get = |version: &'static str| {
+                let c = c.clone();
+                async move {
+                    match c
+                        .versions()
+                        .get(GetAgentVersionInput {
+                            agent_id: AGENT.into(),
+                            version: version.into(),
+                        })
+                        .await
+                    {
+                        Err(Error::NotFound(e)) => Ok(e),
+                        other => Err(format!("got {:?}", other.err())),
+                    }
+                }
+            };
+            let e = get("draft").await?;
+            ensure!(
+                e.raw_body.len() == 8192 && e.raw_body == page[..8192] && e.raw_body_truncated,
+                "page: {} bytes, truncated {}",
+                e.raw_body.len(),
+                e.raw_body_truncated
+            );
+            let e = get("draft").await?;
+            ensure!(
+                e.raw_body == "a".repeat(8191) && e.raw_body_truncated,
+                "straddle: {} bytes, truncated {}",
+                e.raw_body.len(),
+                e.raw_body_truncated
+            );
+            let e = get("nope").await?;
+            let body: Value = serde_json::from_str(&e.raw_body).map_err(s)?;
+            ensure!(
+                body["code"] == "NOT_FOUND" && !e.raw_body_truncated,
+                "problem: {} truncated {}",
+                e.raw_body,
+                e.raw_body_truncated
+            );
+            Ok(())
+        }),
+        "errors.connection" => Box::pin(async move {
+            m.faults(json!({"status": {"GetAgentVersion": [{"close": true}]}})).await;
+            let once = |endpoint: &str| {
+                Client::builder(WORKSPACE, Auth::token(PAT))
+                    .endpoint(endpoint)
+                    .max_attempts(1)
+                    .build()
+                    .expect("client")
+            };
+            let closed = draft(&once(&m.base)).await;
+            let refused = draft(&once(&refused_endpoint())).await;
+            for r in [&closed, &refused] {
+                let Err(e @ Error::Connection(c)) = r else {
+                    return Err(format!("not a connection error: {:?}", r.as_ref().err()));
+                };
+                ensure!(
+                    e.status() == Some(0) && e.code() == Some("CONNECTION_ERROR") && e.request_id().is_none(),
+                    "status {:?} code {:?} request id {:?}",
+                    e.status(),
+                    e.code(),
+                    e.request_id()
+                );
+                ensure!(c.operation == "GetAgentVersion" && e.to_string().contains("GetAgentVersion"), "{e}");
+                ensure!(std::error::Error::source(e).is_some(), "no cause on {e}");
+            }
+            let Err(Error::Connection(c)) = &refused else { unreachable!() };
+            ensure!(c.source.is_connect(), "the cause of a refused connection is {:?}", c.source);
+            ensure!(m.api().await.len() == 1, "requests={}", m.api().await.len());
+            Ok(())
+        }),
 
         // ------------------------------------------------------------------ cancellation
         "cancel.stream" => Box::pin(async move {
@@ -808,7 +898,11 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             draft(&client(m)).await.map_err(s)?;
             let sent = m.api().await;
             ensure!(sent.len() == 2, "requests={}", sent.len());
-            let ua = regex_lite::Regex::new(r"^caitlyn-sdk-rust/0\.0\.1 lang/rust#1\.\d+\.\d+ md/rustc os/[a-z]+$").unwrap();
+            let ua = regex_lite::Regex::new(&format!(
+                r"^caitlyn-sdk-rust/{} lang/rust#1\.\d+\.\d+ md/rustc os/[a-z]+$",
+                regex_lite::escape(&sdk_version())
+            ))
+            .unwrap();
             let model = sdk_model();
             for r in &sent {
                 for h in r["headerNames"].as_array().into_iter().flatten().filter_map(Value::as_str) {
@@ -900,6 +994,27 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 "request id {:?} api version {:?}",
                 v.request_id,
                 v.api_version
+            );
+            Ok(())
+        }),
+        "headers.response-metadata" => Box::pin(async move {
+            let v = draft(&client(m)).await.map_err(s)?;
+            let reqs = m.api().await;
+            let md = &v.response_metadata;
+            ensure!(
+                md.http_status_code == 200
+                    && md.request_id.as_deref() == Some(str_at(reqs.last().unwrap(), "requestId"))
+                    && md.etag.as_deref() == Some("\"draft-1\"")
+                    && md.etag.as_deref() == Some(v.etag.as_str()),
+                "metadata {md:?}"
+            );
+            ensure!(
+                AgentVersion::default().response_metadata.http_status_code == 0,
+                "a value built in code has metadata"
+            );
+            ensure!(
+                serde_json::to_value(&v).map_err(s)?.get("responseMetadata").is_none(),
+                "metadata serialised"
             );
             Ok(())
         }),

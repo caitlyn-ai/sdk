@@ -366,6 +366,10 @@ pub struct AgentVersion {
     /// The version's configuration.
     #[serde(rename = "configuration")]
     pub configuration: AgentConfiguration,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -817,6 +821,10 @@ pub struct CreateDocumentResult {
     /// The Operation that tracks ingestion.
     #[serde(rename = "operation")]
     pub operation: Operation,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -859,6 +867,10 @@ pub struct ListDocumentsPage {
     /// The cursor for the next page. Absent on the last page.
     #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -997,6 +1009,10 @@ pub struct Upload {
     /// Where the upload is in its lifecycle.
     #[serde(rename = "status")]
     pub status: UploadStatus,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]

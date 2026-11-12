@@ -118,8 +118,10 @@ final class CaitlynPythonCodegen implements DirectedCodegen<GenerationContext, P
         boolean result = facts.resultNames.containsKey(shape.getId());
         String className = ctx.symbolProvider().toSymbol(shape).getName();
         ctx.writerDelegator().useShapeWriter(shape, w -> {
-            w.importFrom("caitlyn_core", "CaitlynModel");
-            w.write("class $L(CaitlynModel):", className);
+            // A call's result also carries the response it was read from (PROTOCOL.md 4.2).
+            String base = result ? "CaitlynResult" : "CaitlynModel";
+            w.importFrom("caitlyn_core", base);
+            w.write("class $L($L):", className, base);
             w.indent();
             Optional<String> own = facts.inheritedDocs.contains(shape.getId()) ? Optional.empty() : docs(shape);
             String doc = own.orElse(result ? facts.resultDocs.getOrDefault(shape.getId(), "The result of the call.") : "");

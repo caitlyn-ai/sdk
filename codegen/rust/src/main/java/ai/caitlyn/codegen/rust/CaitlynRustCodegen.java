@@ -111,6 +111,7 @@ final class CaitlynRustCodegen implements DirectedCodegen<RustContext, RustSetti
         }
         String name = ctx.symbolProvider().toSymbol(shape).getName();
         boolean event = facts.sseMemberOf.containsKey(shape.getId());
+        boolean result = facts.resultNames.containsKey(shape.getId());
         ctx.writerDelegator().useFileWriter("src/types.rs", "", w -> {
             w.l(Names.doc(doc(shape), ""));
             if (facts.resultNames.containsKey(shape.getId())) {
@@ -121,7 +122,7 @@ final class CaitlynRustCodegen implements DirectedCodegen<RustContext, RustSetti
             for (MemberShape m : shape.getAllMembers().values()) {
                 checkDefault(m);
                 String field = Names.snake(m.getMemberName());
-                if (field.equals("raw") || field.equals("event_id")) {
+                if (field.equals("raw") || field.equals("event_id") || field.equals("response_metadata")) {
                     throw new CodegenException(m.getId() + ": a member named " + field + " clashes with the generated field");
                 }
                 w.l(Names.doc(memberDoc(ctx, m), "    "));
@@ -135,6 +136,10 @@ final class CaitlynRustCodegen implements DirectedCodegen<RustContext, RustSetti
             }
             if (event) {
                 w.l("    /// The event's SSE `id:`.\n    #[serde(skip)]\n    pub event_id: Option<String>,\n");
+            }
+            if (result) {
+                w.l("    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).\n"
+                        + "    /// The default on values you build yourself.\n    #[serde(skip)]\n    pub response_metadata: rt::ResponseMetadata,\n");
             }
             w.l("    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values\n"
                     + "    /// you build yourself.\n    #[serde(skip)]\n    pub raw: rt::Raw,\n}\n\n");

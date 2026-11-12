@@ -62,7 +62,7 @@ impl fmt::Debug for Auth {
 }
 
 impl Auth {
-    /// A personal access token (`pat_…`) or API key.
+    /// A personal access token (`cait-pat-…`) or API key.
     pub fn token(token: impl Into<String>) -> Self {
         Auth::Token(token.into())
     }

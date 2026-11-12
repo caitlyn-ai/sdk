@@ -115,7 +115,7 @@ func NewClient(sdk SDKInfo, workspace string, auth Auth, opts ...Option) (*Clien
 		s.endpoint = WorkspaceEndpoint(workspace)
 	}
 	if auth == nil {
-		return nil, errors.New("caitlyn: auth is required (for example caitlyn.Token(\"pat_…\"))")
+		return nil, errors.New("caitlyn: auth is required (for example caitlyn.Token(\"cait-pat-…\"))")
 	}
 	if s.httpClient == nil {
 		s.httpClient = &http.Client{}

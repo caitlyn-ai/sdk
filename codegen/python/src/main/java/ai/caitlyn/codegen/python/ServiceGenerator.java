@@ -608,7 +608,7 @@ final class ServiceGenerator {
                 + "    tracer_provider: OpenTelemetry tracer provider (default: the global one).\n"
                 + "    interceptors: hooks run around every call and attempt.\n"
                 + "    app_id: your application's name, sent in the user agent as `app/<app_id>`.\n"
-                + "    http_client: your own httpx client (its base URL must be the endpoint).";
+                + "    http_client: your own httpx client, for its transport, proxy or TLS settings. Requests go to the workspace or `endpoint`; its `base_url` is not used.";
         w.write("$D\n", doc);
         w.write("auth: $L", async ? "AsyncAuthSession" : "SyncAuthSession");
         w.write("$D", "The client's sign-in: the `OAuth` mode's `authorization_url`, `handle_callback` and `sign_out`, and the current token.");
@@ -743,7 +743,7 @@ final class ServiceGenerator {
                 names.add(n);
             }
             for (String n : List.of("AsyncEventStream", "AsyncPaginator", "CaitlynAuthError", "CaitlynConnectionError", "CaitlynError", "CallContext", "EventStream",
-                    "Interceptor", "NotSupportedByServer", "Paginator", "RetryPolicy", "StreamLostError")) {
+                    "Interceptor", "NotSupportedByServer", "Paginator", "ResponseMetadata", "RetryPolicy", "StreamLostError")) {
                 w.importFrom(CORE, n);
                 names.add(n);
             }
@@ -791,7 +791,7 @@ final class ServiceGenerator {
                 description = "Python SDK for the %s (v3)."
                 requires-python = ">=3.12"
                 dependencies = [
-                  "caitlyn-core==0.0.1",
+                  "caitlyn-core==%s",
                   "httpx>=0.28,<0.29",
                   "pydantic>=2.11,<3",
                   "opentelemetry-api>=1.38,<2",
@@ -806,7 +806,7 @@ final class ServiceGenerator {
 
                 [tool.hatch.build.targets.wheel]
                 packages = ["%s"]
-                """.formatted(settings.distribution(), settings.version(), title, settings.packageName());
+                """.formatted(settings.distribution(), settings.version(), title, settings.version(), settings.packageName());
         ctx.fileManifest().writeFile("pyproject.toml", text);
     }
 

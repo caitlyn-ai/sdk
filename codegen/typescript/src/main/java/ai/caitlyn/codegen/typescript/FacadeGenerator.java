@@ -51,6 +51,7 @@ import software.amazon.smithy.typescript.codegen.TypeScriptCodegenContext;
  *   <li>{@code events.ts}: types for every {@code @sseEvents} union, which smithy-typescript never generates
  *       because no operation reaches the union.</li>
  *   <li>{@code client.ts}: {@code createCaitlynClient(options)} and the namespaced {@code Caitlyn} object.</li>
+ *   <li>{@code connection.ts}: {@code CaitlynConnectionError}, the error for a call that got no HTTP response.</li>
  *   <li>{@code index.ts}: the public entry. It exports model shapes (Input and Output types, structures,
  *       enums, errors) but no Command classes or CommandInput/CommandOutput types.</li>
  * </ul>
@@ -99,6 +100,7 @@ final class FacadeGenerator {
         context.fileManifest().writeFile("src/sdk/events.ts", events());
         context.fileManifest().writeFile("src/sdk/operations.ts", operationsFile(methods));
         context.fileManifest().writeFile("src/sdk/client.ts", clientFile(methods));
+        context.fileManifest().writeFile("src/sdk/connection.ts", connectionFile());
         context.fileManifest().writeFile("src/sdk/index.ts", indexFile());
     }
 
@@ -419,7 +421,8 @@ final class FacadeGenerator {
         }
         StringBuilder out = new StringBuilder(HEADER)
             .append("import { CaitlynClient } from \"../CaitlynClient\";\n")
-            .append("import { clientConfig, createAuth, getCaitlynAuthPlugin, getCaitlynTelemetryPlugin, type AuthSession, type CaitlynOptions } from \"@caitlyn-ai/sdk-core\";\n")
+            .append("import { clientConfig, createAuth, getCaitlynAuthPlugin, getCaitlynConnectionErrorPlugin, getCaitlynTelemetryPlugin, type AuthSession, type CaitlynOptions } from \"@caitlyn-ai/sdk-core\";\n")
+            .append("import { CaitlynConnectionError } from \"./connection\";\n")
             .append("import * as ops from \"./operations\";\n\n")
             .append("type Rest<F> = F extends (client: CaitlynClient, ...rest: infer R) => unknown ? R : never;\n\n")
             .append("/** Creates the client the standalone operation functions take as their first argument. */\n")
@@ -427,6 +430,7 @@ final class FacadeGenerator {
             .append("  const client = new CaitlynClient(clientConfig(options, auth));\n")
             .append("  client.middlewareStack.use(getCaitlynAuthPlugin(auth));\n")
             .append("  if (options.telemetry?.enabled !== false) client.middlewareStack.use(getCaitlynTelemetryPlugin(options.telemetry?.tracerProvider));\n")
+            .append("  client.middlewareStack.use(getCaitlynConnectionErrorPlugin((operation, cause) => new CaitlynConnectionError(operation, cause)));\n")
             .append("  return client;\n}\n\n")
             .append("/** Every operation, grouped by namespace. Import the standalone functions instead for the smallest bundle. */\n")
             .append("export class ").append(service.getId().getName()).append(" {\n")
@@ -455,7 +459,35 @@ final class FacadeGenerator {
             + "export * from \"../models/enums\";\n"
             + "export * from \"../models/errors\";\n"
             + "export { CaitlynServiceException as CaitlynError } from \"../models/CaitlynServiceException\";\n"
+            + "export { CaitlynConnectionError } from \"./connection\";\n"
             + "export { NotSupportedByServer, SseStream, CaitlynAuthError, WaiterError, createAuth, workspaceAudience, type AuthOptions, type AuthSession, type AwsCredentials, type OAuthTokens, type TokenStore, type CaitlynOptions, type CallOptions, type CaitlynErrorFields, type WaiterOptions, type WithRaw } from \"@caitlyn-ai/sdk-core\";\n";
+    }
+
+    /** The connection error (PROTOCOL.md 6.5): a CaitlynError, so it extends the generated base exception. */
+    private String connectionFile() {
+        return HEADER
+            + "import { CaitlynServiceException } from \"../models/CaitlynServiceException\";\n\n"
+            + "/**\n"
+            + " * No HTTP response arrived (the connection was refused or reset, DNS or TLS failed, or it timed out before\n"
+            + " * the headers), or the connection failed while the body was read; raised once the retries are spent\n"
+            + " * (PROTOCOL.md 6.5). It is a `CaitlynError` with `status` 0 and `code` `CONNECTION_ERROR`; `cause` is the\n"
+            + " * network error.\n"
+            + " */\n"
+            + "export class CaitlynConnectionError extends CaitlynServiceException {\n"
+            + "  readonly status = 0;\n"
+            + "  readonly code = \"CONNECTION_ERROR\";\n"
+            + "  readonly title: string;\n"
+            + "  readonly requestId: string | undefined = undefined;\n"
+            + "  readonly rawBody = \"\";\n"
+            + "  readonly rawBodyTruncated = false;\n\n"
+            + "  constructor(operation: string, cause: unknown) {\n"
+            + "    const reason = cause instanceof Error ? cause.message : String(cause);\n"
+            + "    super({ name: \"CaitlynConnectionError\", $fault: \"client\", $metadata: {}, message: `${operation}: no response: ${reason}` });\n"
+            + "    Object.setPrototypeOf(this, CaitlynConnectionError.prototype);\n"
+            + "    this.title = `${operation}: no response`;\n"
+            + "    this.cause = cause;\n"
+            + "  }\n"
+            + "}\n";
     }
 
     private static final String HEADER = "// Generated by ai.caitlyn:caitlyn-typescript-codegen from the Smithy model. Do not edit.\n";

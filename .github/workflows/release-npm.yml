@@ -37,9 +37,10 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
       # Staged publishing needs npm 11.15.0 or later (trusted publishing alone needs 11.5.1).
       - run: npm install -g npm@11.21.1
-      - name: Check the tag matches both packages
+      - name: Check the tag matches VERSION and both packages
         run: |
           version="${GITHUB_REF_NAME#v}"
+          [ "$(cat ../VERSION)" = "$version" ] || { echo "VERSION is $(cat ../VERSION), the tag is $GITHUB_REF_NAME" >&2; exit 1; }
           for p in packages/sdk-core packages/sdk; do
             actual="$(node -p "require('./$p/package.json').version")"
             [ "$actual" = "$version" ] || { echo "$p is $actual, the tag is $GITHUB_REF_NAME" >&2; exit 1; }

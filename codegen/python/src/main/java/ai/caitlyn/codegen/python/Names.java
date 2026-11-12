@@ -14,7 +14,7 @@ final class Names {
     /** Attributes of pydantic.BaseModel and CaitlynModel that a field must not shadow. */
     private static final Set<String> MODEL_RESERVED = Set.of(
             "raw", "to_wire", "from_wire", "copy", "dict", "json", "schema", "construct", "validate",
-            "parse_obj", "parse_raw", "fields", "model_config", "model_fields", "event_id");
+            "parse_obj", "parse_raw", "fields", "model_config", "model_fields", "event_id", "response_metadata");
 
     private Names() {}
 

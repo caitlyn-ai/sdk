@@ -108,6 +108,7 @@ final class CaitlynGoCodegen implements DirectedCodegen<GoContext, GoSettings, G
         }
         String name = ctx.symbolProvider().toSymbol(shape).getName();
         List<ShapeId> unions = facts.sseMemberOf.getOrDefault(shape.getId(), List.of());
+        boolean result = facts.resultNames.containsKey(shape.getId());
         ctx.writerDelegator().useFileWriter("types.go", "", w -> {
             w.imp("encoding/json").imp(ctx.settings().coreModule());
             w.l(Names.doc(name, doc(shape), false, ""));
@@ -120,6 +121,9 @@ final class CaitlynGoCodegen implements DirectedCodegen<GoContext, GoSettings, G
                 String field = Names.exported(m.getMemberName());
                 if (field.equals("Raw") || field.equals("RawJSON")) {
                     throw new CodegenException(m.getId() + ": a member named raw clashes with Raw()");
+                }
+                if (result && field.equals("ResponseMetadata")) {
+                    throw new CodegenException(m.getId() + ": a member named responseMetadata clashes with ResponseMetadata()");
                 }
                 String text = m.getMemberTrait(ctx.model(), DocumentationTrait.class).map(DocumentationTrait::getValue).orElse("");
                 if (!text.isEmpty()) {
@@ -138,6 +142,9 @@ final class CaitlynGoCodegen implements DirectedCodegen<GoContext, GoSettings, G
             if (!unions.isEmpty()) {
                 w.l("\n\teventID string\n");
             }
+            if (result) {
+                w.l("\n\tmetadata core.ResponseMetadata\n");
+            }
             w.l("\n\traw core.Raw\n}\n\n");
             w.l("// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.\n");
             w.l("func (v *" + name + ") UnmarshalJSON(b []byte) error {\n\ttype plain " + name + "\n"
@@ -147,6 +154,11 @@ final class CaitlynGoCodegen implements DirectedCodegen<GoContext, GoSettings, G
             w.l("func (v *" + name + ") Raw() map[string]any { return v.raw.Map() }\n\n");
             w.l("// RawJSON returns that object's bytes as received.\n");
             w.l("func (v *" + name + ") RawJSON() json.RawMessage { return v.raw.JSON() }\n\n");
+            if (result) {
+                w.l("// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from\n"
+                        + "// (the zero value for a result built in code).\n");
+                w.l("func (v *" + name + ") ResponseMetadata() core.ResponseMetadata { return v.metadata }\n\n");
+            }
             if (!unions.isEmpty()) {
                 w.l("// EventID returns the event's SSE id.\n");
                 w.l("func (v *" + name + ") EventID() string { return v.eventID }\n\n");

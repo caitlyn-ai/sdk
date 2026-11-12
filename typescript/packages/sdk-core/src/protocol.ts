@@ -6,6 +6,7 @@
 //   a shape name. No X-Amzn-Errortype.
 // - Unknown response fields are kept: every non-streaming output carries `raw`, the parsed JSON body.
 // - $metadata.requestId comes from Caitlyn-Request-Id.
+// - A connection that fails while the body is read is marked as a connection failure (PROTOCOL.md 6.5).
 import {
   HttpBindingProtocol,
   HttpInterceptingShapeDeserializer,
@@ -25,6 +26,16 @@ import type {
   SerdeFunctions,
   StaticErrorSchema,
 } from '@smithy/types';
+import { markNoResponse } from './plugin.js';
+
+/** The body, read whole. A connection that fails while it is read is a connection failure, never retried. */
+async function readBody(body: unknown, context: Parameters<typeof collectBody>[1]): Promise<Uint8Array> {
+  try {
+    return await collectBody(body, context);
+  } catch (err) {
+    throw markNoResponse(err);
+  }
+}
 
 /** An output with the parsed response body, including fields this SDK version does not model. */
 export type WithRaw<T> = T & { readonly raw?: Record<string, unknown> };
@@ -90,7 +101,7 @@ export class CaitlynRestJsonProtocol extends HttpBindingProtocol {
     if (response.statusCode >= 300) {
       // A body that is not a JSON object (a proxy's or a web framework's own error page, or no body) is still
       // the typed error for its status, never a parse error (PROTOCOL.md 6.1).
-      const bytes = await collectBody(response.body, context);
+      const bytes = await readBody(response.body, context);
       response.body = bytes;
       if (!isJsonObject(bytes)) {
         await this.handleError(operationSchema, context, response, {}, this.deserializeMetadata(response));
@@ -98,7 +109,7 @@ export class CaitlynRestJsonProtocol extends HttpBindingProtocol {
       return super.deserializeResponse(operationSchema, context, response);
     }
     if (streaming) return super.deserializeResponse(operationSchema, context, response);
-    const bytes = await collectBody(response.body, context);
+    const bytes = await readBody(response.body, context);
     response.body = bytes;
     const output = await super.deserializeResponse<Output>(operationSchema, context, response);
     if (bytes.byteLength > 0) {
@@ -127,7 +138,7 @@ export class CaitlynRestJsonProtocol extends HttpBindingProtocol {
     const registry = this.compositeErrorRegistry;
     registry.copyFrom(TypeRegistry.for(this.options.defaultNamespace));
     const errorMetadata = { $metadata: metadata, $fault: response.statusCode < 500 ? 'client' : 'server' };
-    const rawBody = response.body instanceof Uint8Array ? new TextDecoder().decode(response.body) : '';
+    const { rawBody, rawBodyTruncated } = rawBodyOf(response.body instanceof Uint8Array ? response.body : new Uint8Array());
     const body: Record<string, unknown> = {
       ...dataObject,
       // Always the HTTP status: a body's `status` can be wrong (a proxy, a faulty handler), and the class is
@@ -136,6 +147,7 @@ export class CaitlynRestJsonProtocol extends HttpBindingProtocol {
       code: typeof dataObject.code === 'string' && dataObject.code ? dataObject.code : `HTTP_${response.statusCode}`,
       requestId: dataObject.requestId ?? response.headers['caitlyn-request-id'],
       rawBody,
+      rawBodyTruncated,
     };
     const message = (body.detail ?? body.title ?? `HTTP ${response.statusCode}`) as string;
 
@@ -165,6 +177,17 @@ export class CaitlynRestJsonProtocol extends HttpBindingProtocol {
     }
     throw decorateServiceException(Object.assign(exception, errorMetadata, { $fault: ns.getMergedTraits().error, message }, fields), body);
   }
+}
+
+/** The most of an error body kept as `rawBody` (PROTOCOL.md 6.3). */
+export const RAW_BODY_LIMIT = 8192;
+
+/** An error body as text: whole up to 8 KiB, else its first 8 KiB, cut back to a character boundary. */
+export function rawBodyOf(bytes: Uint8Array): { rawBody: string; rawBodyTruncated: boolean } {
+  if (bytes.byteLength <= RAW_BODY_LIMIT) return { rawBody: new TextDecoder().decode(bytes), rawBodyTruncated: false };
+  let end = RAW_BODY_LIMIT;
+  while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end--; // never split a UTF-8 sequence
+  return { rawBody: new TextDecoder().decode(bytes.subarray(0, end)), rawBodyTruncated: true };
 }
 
 /** Whether a response body parses as a JSON object, the only body problem details can be read from. */

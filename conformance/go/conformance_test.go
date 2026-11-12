@@ -9,11 +9,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -55,6 +58,18 @@ func draft(t *testing.T, c *caitlyn.Client) *caitlyn.AgentVersion {
 		t.Fatal(err)
 	}
 	return v
+}
+
+// refusedEndpoint is an endpoint nothing listens on: a port the system handed out, then closed.
+func refusedEndpoint(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().String()
+	l.Close()
+	return "http://" + addr
 }
 
 // apiError returns err as *caitlyn.Error, failing the test otherwise.
@@ -115,6 +130,15 @@ func lastPatch(t *testing.T, m mock) (logged, map[string]any) {
 	json.Unmarshal([]byte(ps[len(ps)-1].Body), &body)
 	return ps[len(ps)-1], body
 }
+
+// sdkVersion is the version in VERSION, which every SDK sends in its user agent.
+var sdkVersion = func() string {
+	b, err := os.ReadFile(filepath.Join("..", "..", "VERSION"))
+	if err != nil {
+		panic(err)
+	}
+	return strings.TrimSpace(string(b))
+}()
 
 var sdkModel = func() string {
 	b, err := os.ReadFile(filepath.Join("..", "..", "model", "model.lock.json"))
@@ -403,6 +427,63 @@ var protocol = map[string]func(t *testing.T, m mock){
 		}
 	},
 
+	"errors.raw-body-limit": func(t *testing.T, m mock) {
+		page := "<!DOCTYPE html>" + strings.Repeat("x", 20480-15)
+		straddle := strings.Repeat("a", 8191) + strings.Repeat("€", 10)
+		html := func(body string) map[string]any {
+			return map[string]any{"status": 404, "contentType": "text/html", "body": body}
+		}
+		m.faults(t, status("GetAgentVersion", html(page), html(straddle)))
+		c := client(t, m)
+		get := func(version string) *caitlyn.NotFoundError {
+			t.Helper()
+			_, err := c.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: version})
+			var nf *caitlyn.NotFoundError
+			if !errors.As(err, &nf) {
+				t.Fatalf("got %T %v", err, err)
+			}
+			return nf
+		}
+		if e := get("draft"); len(e.RawBody) != 8192 || e.RawBody != page[:8192] || !e.RawBodyTruncated {
+			t.Fatalf("page: %d bytes, truncated %v", len(e.RawBody), e.RawBodyTruncated)
+		}
+		if e := get("draft"); e.RawBody != strings.Repeat("a", 8191) || !e.RawBodyTruncated {
+			t.Fatalf("straddle: %d bytes, truncated %v", len(e.RawBody), e.RawBodyTruncated)
+		}
+		e := get("nope")
+		var body map[string]any
+		if json.Unmarshal([]byte(e.RawBody), &body) != nil || body["code"] != "NOT_FOUND" || e.RawBodyTruncated {
+			t.Fatalf("problem: %q truncated %v", e.RawBody, e.RawBodyTruncated)
+		}
+	},
+	"errors.connection": func(t *testing.T, m mock) {
+		m.faults(t, status("GetAgentVersion", map[string]any{"close": true}))
+		// A transport of its own: net/http resends a GET once by itself when a reused keep-alive connection closes.
+		own := caitlyn.WithHTTPClient(&http.Client{Transport: &http.Transport{}})
+		_, closed := client(t, m, caitlyn.WithMaxAttempts(1), own).Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+		_, refused := client(t, m, caitlyn.WithMaxAttempts(1), caitlyn.WithEndpoint(refusedEndpoint(t))).Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+		for _, err := range []error{closed, refused} {
+			var ce *caitlyn.ConnectionError
+			var ae *caitlyn.Error
+			if !errors.As(err, &ce) || !errors.As(err, &ae) {
+				t.Fatalf("not a connection error: %T %v", err, err)
+			}
+			if ce.Status != 0 || ce.Code != "CONNECTION_ERROR" || ce.RequestID != "" || ce.RawBody != "" || ce.RawBodyTruncated || ce.Cause == nil {
+				t.Fatalf("connection error %+v", ce.APIError)
+			}
+			if !strings.Contains(err.Error(), "GetAgentVersion") {
+				t.Fatalf("message %q", err.Error())
+			}
+		}
+		var op *net.OpError
+		if !errors.As(refused, &op) || !errors.Is(refused, syscall.ECONNREFUSED) {
+			t.Fatalf("the cause of a refused connection is %v", errors.Unwrap(errors.Unwrap(refused)))
+		}
+		if n := len(m.api(t)); n != 1 {
+			t.Fatalf("requests=%d", n)
+		}
+	},
+
 	// ------------------------------------------------------------------ cancellation
 	"cancel.stream": func(t *testing.T, m mock) {
 		m.faults(t, map[string]any{"streamDelayMs": 150})
@@ -471,7 +552,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 		if len(sent) != 2 {
 			t.Fatalf("requests=%d", len(sent))
 		}
-		ua := regexp.MustCompile(`^caitlyn-sdk-go/0\.0\.1 lang/go#1\.\d+(\.\d+)? md/gc os/[a-z]+$`)
+		ua := regexp.MustCompile(`^caitlyn-sdk-go/` + regexp.QuoteMeta(sdkVersion) + ` lang/go#1\.\d+(\.\d+)? md/gc os/[a-z]+$`)
 		for _, r := range sent {
 			for _, h := range r.HeaderNames {
 				if strings.HasPrefix(h, "x-amz") || strings.HasPrefix(h, "amz-sdk") || strings.HasPrefix(h, "x-amzn") {
@@ -527,6 +608,17 @@ var protocol = map[string]func(t *testing.T, m mock){
 		reqs := m.api(t)
 		if v.RequestID == nil || *v.RequestID != reqs[len(reqs)-1].RequestID || v.APIVersion == nil || *v.APIVersion != "5.120.0" {
 			t.Fatalf("request id %v api version %v", v.RequestID, v.APIVersion)
+		}
+	},
+	"headers.response-metadata": func(t *testing.T, m mock) {
+		v := draft(t, client(t, m))
+		reqs := m.api(t)
+		md := v.ResponseMetadata()
+		if md.HTTPStatusCode != 200 || md.RequestID != reqs[len(reqs)-1].RequestID || md.ETag != `"draft-1"` || md.ETag != v.ETag {
+			t.Fatalf("metadata %+v", md)
+		}
+		if (&caitlyn.AgentVersion{}).ResponseMetadata() != (caitlyn.ResponseMetadata{}) {
+			t.Fatal("a result built in code has metadata")
 		}
 	},
 	"telemetry.spans": func(t *testing.T, m mock) {

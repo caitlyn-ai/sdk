@@ -3,6 +3,7 @@ unknown fields kept, and open enums."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, ClassVar, Self, cast
 
@@ -87,6 +88,33 @@ class CaitlynModel(BaseModel):
                 if extra is not None and key in extra:
                     return extra[key]
                 raise
+
+
+@dataclass(frozen=True, slots=True)
+class ResponseMetadata:
+    """The response a call's result was read from (PROTOCOL.md 4.2)."""
+
+    http_status_code: int
+    """The HTTP status, for example 200 or 201."""
+    request_id: str | None = None
+    """The ``Caitlyn-Request-Id`` header; quote it to support."""
+    etag: str | None = None
+    """The ``ETag`` header, when the response has one."""
+
+
+class CaitlynResult(CaitlynModel):
+    """Base for the result of a call: a model that also carries the response it was read from."""
+
+    _response_metadata: ResponseMetadata | None = PrivateAttr(default=None)
+
+    @property
+    def response_metadata(self) -> ResponseMetadata | None:
+        """The HTTP status, request id and ETag of the response this result was read from; ``None`` for a
+        result built in code. Not part of the model's fields, so never serialised."""
+        return self._response_metadata
+
+    def _set_response_metadata(self, metadata: ResponseMetadata) -> None:
+        self._response_metadata = metadata
 
 
 class CaitlynEvent(CaitlynModel):

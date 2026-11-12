@@ -31,7 +31,8 @@ const EXAMPLES = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '../c
 const DEFAULT_FAULTS = {
   // Per operation, a queue of status faults served before the real response: [{status: 429, retryAfter: 1}].
   // A fault with `body` (a string) or `contentType` is served as that raw body instead of a problem, with no
-  // Caitlyn-Request-Id or Caitlyn-Api-Version, as a proxy or a web framework's own error page would be.
+  // Caitlyn-Request-Id or Caitlyn-Api-Version, as a proxy or a web framework's own error page would be. A fault
+  // with `close: true` closes the connection without any response, as a failed TLS handshake or a reset would.
   status: {},
   // Close the SSE connection (without a final event) after this many events on the first stream only.
   dropAfterEvents: null,
@@ -185,6 +186,10 @@ function statusFault(op, res, rid) {
   const queue = faults.status[op];
   if (!queue || queue.length === 0) return false;
   const f = queue.shift();
+  if (f.close) {
+    res.socket.destroy();
+    return true;
+  }
   const extra = f.retryAfter != null ? { 'Retry-After': String(f.retryAfter) } : {};
   if (f.body !== undefined || f.contentType !== undefined) {
     res.writeHead(f.status, { ...(f.contentType ? { 'Content-Type': f.contentType } : {}), ...extra });

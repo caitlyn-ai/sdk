@@ -22,7 +22,7 @@
         "typescript-client-codegen": {
           "service": "ai.caitlyn.v3#Caitlyn",
           "package": "@caitlyn-ai/sdk",
-          "packageVersion": "0.0.1",
+          "packageVersion": "0.0.2",
           "packageJson": {"license": "UNLICENSED", "private": true},
           "protocol": "ai.caitlyn.protocols#restJson",
           "requiredMemberMode": "strict"
@@ -35,7 +35,7 @@
           "service": "ai.caitlyn.v3#Caitlyn",
           "package": "caitlyn",
           "distribution": "caitlyn",
-          "version": "0.0.1"
+          "version": "0.0.2"
         }
       }
     },
@@ -45,7 +45,7 @@
           "service": "ai.caitlyn.v3#Caitlyn",
           "module": "github.com/caitlyn-ai/caitlyn-go",
           "package": "caitlyn",
-          "version": "0.0.1",
+          "version": "0.0.2",
           "coreModule": "github.com/caitlyn-ai/caitlyn-go/core"
         }
       }
@@ -55,9 +55,9 @@
         "caitlyn-rust-client-codegen": {
           "service": "ai.caitlyn.v3#Caitlyn",
           "crate": "caitlyn-sdk",
-          "version": "0.0.1",
+          "version": "0.0.2",
           "coreCrate": "caitlyn-sdk-core",
-          "coreVersion": "0.0.1",
+          "coreVersion": "0.0.2",
           "corePath": "../caitlyn-sdk-core",
           "repository": "https://github.com/caitlyn-ai/sdk"
         }

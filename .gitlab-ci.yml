@@ -89,7 +89,10 @@ generate:
   script:
     - scripts/generate.sh
     - |
-      if ! git diff --exit-code --stat -- typescript/packages/sdk python/caitlyn go rust/caitlyn-sdk conformance/cases; then
+      # The generated code, and the hand-written files scripts/version.mjs stamps with the version in VERSION.
+      if ! git diff --exit-code --stat -- typescript/packages/sdk python/caitlyn go rust/caitlyn-sdk conformance/cases \
+          typescript/packages/sdk-core typescript/package-lock.json python/caitlyn-core python/uv.lock rust/Cargo.toml \
+          rust/Cargo.lock conformance/rust/Cargo.lock codegen/smithy-build.json; then
         echo "The committed generated code differs from a fresh generation. Run make generate and commit the result."
         exit 1
       fi

@@ -16,7 +16,7 @@ import httpx
 from pydantic import BaseModel
 
 from ._errors import CaitlynError, NotSupportedByServer
-from ._models import CaitlynModel
+from ._models import CaitlynModel, CaitlynResult, ResponseMetadata
 from ._retry import parse_retry_after
 from ._spec import OperationSpec
 
@@ -84,8 +84,10 @@ def _version(v: str) -> tuple[int, ...]:
 
 
 def build_request(
-    http: httpx.Client | httpx.AsyncClient, spec: OperationSpec, params: Mapping[str, object], headers: Mapping[str, str]
+    http: httpx.Client | httpx.AsyncClient, endpoint: str, spec: OperationSpec, params: Mapping[str, object], headers: Mapping[str, str]
 ) -> httpx.Request:
+    """The request for one attempt. The URL is absolute (``endpoint`` plus the operation's path), so the
+    client's endpoint applies whatever ``http``'s own ``base_url`` is."""
     path = spec.uri
     query: list[tuple[str, str | int | float | bool | None]] = []
     out_headers: dict[str, str] = dict(headers)
@@ -128,7 +130,7 @@ def build_request(
     elif has_body_members:
         content = json.dumps(body, separators=(",", ":")).encode()
         out_headers.setdefault("Content-Type", "application/json")
-    return http.build_request(spec.method, path, params=httpx.QueryParams(query) if query else None, headers=out_headers, content=content)
+    return http.build_request(spec.method, endpoint + path, params=httpx.QueryParams(query) if query else None, headers=out_headers, content=content)
 
 
 def parse_json_object(content: bytes) -> dict[str, Any]:
@@ -150,6 +152,10 @@ def read_result[M: CaitlynModel](spec: OperationSpec, response: httpx.Response, 
             data[wire] = value
     model = result.from_wire(data)
     model._set_raw(body)  # pyright: ignore[reportPrivateUsage]
+    if isinstance(model, CaitlynResult):
+        model._set_response_metadata(  # pyright: ignore[reportPrivateUsage]
+            ResponseMetadata(response.status_code, response.headers.get(REQUEST_ID_HEADER), response.headers.get("ETag"))
+        )
     return model
 
 
@@ -161,8 +167,23 @@ def read_error(spec: OperationSpec, response: httpx.Response) -> CaitlynError:
         parse_json_object(response.content),
         response.headers,
     )
-    err.raw_body = response.content.decode("utf-8", errors="replace")
+    err.raw_body, err.raw_body_truncated = raw_body_of(response.content)
     return err
+
+
+RAW_BODY_LIMIT = 8192
+"""The most of an error body kept as ``raw_body`` (PROTOCOL.md 6.3)."""
+
+
+def raw_body_of(content: bytes) -> tuple[str, bool]:
+    """An error body as text: whole up to 8 KiB, else its first 8 KiB cut back to a character boundary, and
+    whether it was cut."""
+    if len(content) <= RAW_BODY_LIMIT:
+        return content.decode("utf-8", errors="replace"), False
+    end = RAW_BODY_LIMIT
+    while end > 0 and content[end] & 0xC0 == 0x80:  # never split a UTF-8 sequence
+        end -= 1
+    return content[:end].decode("utf-8", errors="replace"), True
 
 
 def error_from_problem(

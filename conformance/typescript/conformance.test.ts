@@ -5,10 +5,12 @@ import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import {
   Caitlyn,
+  CaitlynConnectionError,
   CaitlynError,
   ConflictError,
   NotFoundError,
@@ -30,7 +32,7 @@ import { MOCK_AWS, MOCK_CLIENT, MOCK_OAUTH_CLIENT, MOCK_PAT, MOCK_SESSION_COOKIE
 
 const ROOT = process.env.CAITLYN_REPO_ROOT ?? path.resolve(import.meta.dirname, '../..');
 const EXAMPLES: ExampleCase[] = JSON.parse(fs.readFileSync(path.join(ROOT, 'conformance/cases/examples.json'), 'utf8')).cases;
-const SDK_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'typescript/packages/sdk-core/package.json'), 'utf8')).version as string;
+const SDK_VERSION = fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim(); // every SDK sends it in its user agent
 const SDK_MODEL = JSON.parse(fs.readFileSync(path.join(ROOT, 'model/model.lock.json'), 'utf8')).stampNext as string;
 const PORT = 4100 + Math.floor(Math.random() * 500);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -285,6 +287,50 @@ test('[errors.field-errors] a 400 VALIDATION_FAILED for a field both set and cle
   assert.equal(err.errors?.[0]?.code, 'VALIDATION_FAILED');
 });
 
+// errors.raw-body-limit: a 20 KiB HTML page (ASCII), and a page whose 8 KiB cut would fall inside a three-byte "€".
+const PAGE_20K = '<!DOCTYPE html>' + 'x'.repeat(20480 - 15);
+const PAGE_STRADDLE = 'a'.repeat(8191) + '€'.repeat(10);
+
+test('[errors.raw-body-limit] rawBody keeps at most 8 KiB, cut on a character boundary, and says when it was cut', async () => {
+  await faults({ status: { GetAgentVersion: [PAGE_20K, PAGE_STRADDLE].map((body) => ({ status: 404, contentType: 'text/html', body })) } });
+  const c = client();
+  const get = (version: string) => expectError(c.versions.get({ agentId: 'GHT7YRWXPL', version }));
+  const page = await get('draft');
+  assert.ok((page as unknown) instanceof NotFoundError);
+  assert.equal(Buffer.byteLength(page.rawBody!), 8192);
+  assert.equal(page.rawBody, PAGE_20K.slice(0, 8192));
+  assert.equal(page.rawBodyTruncated, true);
+  const straddle = await get('draft');
+  assert.equal(straddle.rawBody, 'a'.repeat(8191));
+  assert.equal(straddle.rawBodyTruncated, true);
+  const problem = await get('nope');
+  assert.ok((problem as unknown) instanceof NotFoundError);
+  assert.equal(JSON.parse(problem.rawBody!).code, 'NOT_FOUND');
+  assert.equal(problem.rawBodyTruncated, false);
+});
+
+/** An endpoint nothing listens on: a port the system handed out, then closed. */
+async function refusedEndpoint(): Promise<string> {
+  const s = net.createServer();
+  await new Promise<void>((resolve) => s.listen(0, '127.0.0.1', resolve));
+  const { port } = s.address() as net.AddressInfo;
+  await new Promise<void>((resolve) => s.close(() => resolve()));
+  return `http://127.0.0.1:${port}`;
+}
+
+test('[errors.connection] a connection closed before any response, and a refused connection, are the connection error', async () => {
+  await faults({ status: { GetAgentVersion: [{ close: true }] } });
+  const closed = await expectError(client({ maxAttempts: 1 }).versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }));
+  const refused = await expectError(client({ maxAttempts: 1, endpoint: await refusedEndpoint() }).versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }));
+  for (const err of [closed, refused]) {
+    assert.ok(err instanceof CaitlynConnectionError, `${err.constructor.name}: ${err.message}`);
+    assert.deepEqual([err.status, err.code, err.requestId, err.rawBody, err.rawBodyTruncated], [0, 'CONNECTION_ERROR', undefined, '', false]);
+    assert.ok(err.cause instanceof Error, 'the network error is the cause');
+    assert.match(err.message, /^GetAgentVersion: no response: /);
+  }
+  assert.equal((await api()).length, 1); // the closed connection was asked once; the refused one never arrived
+});
+
 // An error page from something in front of the API, not a problem body (PROTOCOL.md 6.1).
 const HTML_404 = '<!DOCTYPE html><html><head><title>404: This page could not be found</title></head><body><h1>404</h1></body></html>';
 
@@ -450,8 +496,16 @@ test('[since.fails-before-sending] an operation newer than the server fails befo
 test('[headers.request-id] Caitlyn-Request-Id and Caitlyn-Api-Version are on successful outputs', async () => {
   const v = await client().versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
   assert.equal(v.requestId, (await api()).at(-1).requestId);
-  assert.equal((v as unknown as { $metadata: { requestId?: string } }).$metadata.requestId, v.requestId);
+  assert.equal(v.$metadata.requestId, v.requestId);
   assert.equal(v.apiVersion, '5.120.0');
+});
+
+test("[headers.response-metadata] a successful call's response metadata gives its HTTP status and request id", async () => {
+  const v = await client().versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+  const metadata = v.$metadata; // typed on every single-call output (MetadataBearer)
+  assert.equal(metadata.httpStatusCode, 200);
+  assert.equal(metadata.requestId, (await api()).at(-1).requestId);
+  assert.equal(v.etag, '"draft-1"'); // the ETag is the modelled member (PROTOCOL.md 4.2)
 });
 
 test('[telemetry.spans] one span per call, one child span per attempt, traceparent sent', async () => {

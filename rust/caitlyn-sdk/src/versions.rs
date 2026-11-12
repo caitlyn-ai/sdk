@@ -70,10 +70,12 @@ async fn read_get_agent_version(resp: rt::Response) -> Result<AgentVersion, rt::
     let api_version = resp.header("caitlyn-api-version");
     let request_id = resp.header("caitlyn-request-id");
     let etag = resp.header("etag");
+    let metadata = resp.metadata();
     let mut out: AgentVersion = resp.json().await?;
     out.api_version = api_version;
     out.request_id = request_id;
     out.etag = etag.unwrap_or_default();
+    out.response_metadata = metadata;
     Ok(out)
 }
 
@@ -166,10 +168,12 @@ async fn read_update_draft_version(resp: rt::Response) -> Result<AgentVersion, r
     let api_version = resp.header("caitlyn-api-version");
     let request_id = resp.header("caitlyn-request-id");
     let etag = resp.header("etag");
+    let metadata = resp.metadata();
     let mut out: AgentVersion = resp.json().await?;
     out.api_version = api_version;
     out.request_id = request_id;
     out.etag = etag.unwrap_or_default();
+    out.response_metadata = metadata;
     Ok(out)
 }
 

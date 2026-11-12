@@ -24,10 +24,10 @@ mod upload;
 pub use auth::{Auth, AuthSession, AuthorizationUrl, Callback, MemoryTokenStore, OAuthTokens, TokenStore};
 pub use aws::{AwsCredentialProvider, AwsCredentials, SigningAlgorithm};
 pub use client::{compare_versions, workspace_audience, workspace_endpoint, workspace_host, Client, ClientBuilder, SdkInfo};
-pub use error::{ApiError, AuthError, Error, FieldError, InputError, NotSupportedByServer, TransportError};
+pub use error::{ApiError, AuthError, ConnectionError, Error, FieldError, InputError, NotSupportedByServer, CONNECTION_ERROR};
 pub use paginate::{Items, Pages};
 pub use raw::Raw;
-pub use request::{path_label, BoxFuture, Call, CallOptions, Operation, Request, Response};
+pub use request::{path_label, BoxFuture, Call, CallOptions, Operation, Request, Response, ResponseMetadata};
 /// The HTTP client the runtime uses, for `ClientBuilder::http_client`.
 pub use reqwest;
 pub use stream::{Decoded, Stream, StreamSpec};

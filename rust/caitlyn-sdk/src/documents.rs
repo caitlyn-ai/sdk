@@ -65,10 +65,12 @@ async fn read_create_document(resp: rt::Response) -> Result<CreateDocumentResult
     let api_version = resp.header("caitlyn-api-version");
     let request_id = resp.header("caitlyn-request-id");
     let location = resp.header("location");
+    let metadata = resp.metadata();
     let mut out: CreateDocumentResult = resp.json().await?;
     out.api_version = api_version;
     out.request_id = request_id;
     out.location = location;
+    out.response_metadata = metadata;
     Ok(out)
 }
 
@@ -186,9 +188,11 @@ fn build_list_documents(input: &ListDocumentsInput) -> Result<rt::Request, rt::E
 async fn read_list_documents(resp: rt::Response) -> Result<ListDocumentsPage, rt::Error> {
     let api_version = resp.header("caitlyn-api-version");
     let request_id = resp.header("caitlyn-request-id");
+    let metadata = resp.metadata();
     let mut out: ListDocumentsPage = resp.json().await?;
     out.api_version = api_version;
     out.request_id = request_id;
+    out.response_metadata = metadata;
     Ok(out)
 }
 

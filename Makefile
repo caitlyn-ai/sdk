@@ -10,8 +10,12 @@ help: ## List the targets
 generate: ## Regenerate all four SDKs and the example cases from model/model.json
 	@$(RUN) scripts/generate.sh
 
+# Hand-written files scripts/version.mjs stamps with the version in VERSION.
+VERSIONED := typescript/packages/sdk-core typescript/package-lock.json python/caitlyn-core python/uv.lock rust/Cargo.toml \
+  rust/Cargo.lock conformance/rust/Cargo.lock codegen/smithy-build.json
+
 check-generated: generate ## Fail if the committed generated code differs from a fresh generation
-	@git diff --exit-code --stat -- typescript/packages/sdk python/caitlyn go rust/caitlyn-sdk conformance/cases \
+	@git diff --exit-code --stat -- typescript/packages/sdk python/caitlyn go rust/caitlyn-sdk conformance/cases $(VERSIONED) \
 	  || { echo "Generated code is out of date: run make generate and commit the result."; exit 1; }
 
 typescript: ## TypeScript: install, type-check, conformance

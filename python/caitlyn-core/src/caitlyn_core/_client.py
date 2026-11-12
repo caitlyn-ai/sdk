@@ -156,7 +156,7 @@ class _CoreBase:
 
     def _request_for(self, http: httpx.Client | httpx.AsyncClient, call: _Call, accept: str | None) -> tuple[httpx.Request, Span]:
         headers = self._headers if accept is None else {**self._headers, "Accept": accept}
-        request = build_request(http, call.context.operation, call.context.params, headers)
+        request = build_request(http, self.config.endpoint, call.context.operation, call.context.params, headers)
         span = self.telemetry.start_attempt(call.span, request, call.context.attempt)
         for hook in self.config.interceptors:
             hook.before_attempt(call.context, request)
@@ -173,6 +173,8 @@ class _CoreBase:
 
     @staticmethod
     def _connection_error(spec: OperationSpec, error: httpx.TransportError) -> CaitlynConnectionError:
+        """PROTOCOL.md 6.5: no response, or the connection failed while the body was read. Raised ``from`` the
+        httpx error, which stays the ``__cause__``."""
         return CaitlynConnectionError(f"{spec.name}: {type(error).__name__}: {error}", status=0, code="CONNECTION_ERROR", title=str(error))
 
 
@@ -186,7 +188,8 @@ def _accept(spec: OperationSpec) -> str | None:
 class SyncClientCore(_CoreBase):
     def __init__(self, config: ClientConfig, http_client: httpx.Client | None = None) -> None:
         super().__init__(config)
-        self._http = http_client or httpx.Client(base_url=config.endpoint, timeout=config.timeout)
+        # Requests carry absolute URLs (build_request), so a caller's own client needs no base_url.
+        self._http = http_client or httpx.Client(timeout=config.timeout)
         self._owns_http = http_client is None
         a = config.auth
         self.auth = SyncAuthSession(a if isinstance(a, Auth) else None, config.endpoint, config.workspace, self._http)
@@ -264,7 +267,8 @@ class SyncClientCore(_CoreBase):
 class AsyncClientCore(_CoreBase):
     def __init__(self, config: ClientConfig, http_client: httpx.AsyncClient | None = None) -> None:
         super().__init__(config)
-        self._http = http_client or httpx.AsyncClient(base_url=config.endpoint, timeout=config.timeout)
+        # Requests carry absolute URLs (build_request), so a caller's own client needs no base_url.
+        self._http = http_client or httpx.AsyncClient(timeout=config.timeout)
         self._owns_http = http_client is None
         a = config.auth
         self.auth = AsyncAuthSession(a if isinstance(a, Auth) else None, config.endpoint, config.workspace, self._http)

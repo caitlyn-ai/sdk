@@ -71,6 +71,7 @@ func readCreateUpload(resp *core.Response) (*Upload, error) {
 	out.APIVersion = resp.HeaderPtr("Caitlyn-Api-Version")
 	out.RequestID = resp.HeaderPtr("Caitlyn-Request-Id")
 	out.Location = resp.HeaderPtr("Location")
+	out.metadata = resp.Metadata()
 	return out, nil
 }
 

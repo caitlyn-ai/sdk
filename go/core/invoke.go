@@ -92,14 +92,32 @@ func WithIdempotencyKey(key string) CallOption {
 // Response is a successful (2xx) response.
 type Response struct {
 	*http.Response
+	op string
 }
 
-// DecodeJSON reads the body into v and closes it. An empty body leaves v as it is.
+// ResponseMetadata is the response a call's result was read from (PROTOCOL.md 4.2). Generated results return it
+// from ResponseMetadata().
+type ResponseMetadata struct {
+	// HTTPStatusCode is the HTTP status, for example 200 or 201.
+	HTTPStatusCode int
+	// RequestID is the Caitlyn-Request-Id header; quote it to support.
+	RequestID string
+	// ETag is the ETag header, or "" when the response has none.
+	ETag string
+}
+
+// Metadata returns the response's status, request id and ETag.
+func (r *Response) Metadata() ResponseMetadata {
+	return ResponseMetadata{HTTPStatusCode: r.StatusCode, RequestID: r.Header.Get("Caitlyn-Request-Id"), ETag: r.Header.Get("ETag")}
+}
+
+// DecodeJSON reads the body into v and closes it. An empty body leaves v as it is. A connection that fails while
+// the body is read is a *ConnectionError (PROTOCOL.md 6.5).
 func (r *Response) DecodeJSON(v any) error {
 	defer r.Body.Close()
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
-		return fmt.Errorf("caitlyn: read response: %w", err)
+		return newConnectionError(r.op, err)
 	}
 	if len(bytes.TrimSpace(b)) == 0 {
 		return nil
@@ -174,6 +192,10 @@ func (c *Client) Do(ctx context.Context, op *Operation, req *Request, opts []Cal
 		}
 		delay, retry := c.retryDelay(ctx, op, err, attempt)
 		if !retry {
+			var nr *errNoResponse
+			if errors.As(err, &nr) {
+				err = newConnectionError(op.Name, nr.err)
+			}
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return nil, err
@@ -250,12 +272,12 @@ func (c *Client) attempt(ctx context.Context, op *Operation, req *Request, cs *c
 	span.SetAttributes(attribute.Int("http.response.status_code", resp.StatusCode))
 	c.noteServerVersion(resp.Header.Get("Caitlyn-Api-Version"))
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return &Response{Response: resp}, nil
+		return &Response{Response: resp, op: op.Name}, nil
 	}
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	resp.Body.Close()
 	ae := problemFromBody(resp.StatusCode, resp.Header, b)
-	ae.RawBody = strings.ToValidUTF8(string(b), "\uFFFD")
+	ae.RawBody, ae.RawBodyTruncated = rawBodyOf(b)
 	if ae.Status != resp.StatusCode {
 		ae.Status = resp.StatusCode // the class is chosen by the HTTP status (PROTOCOL.md 6.2)
 	}

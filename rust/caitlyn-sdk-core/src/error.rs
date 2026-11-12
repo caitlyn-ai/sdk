@@ -15,14 +15,15 @@ pub enum Error {
     /// An RFC 9457 problem from Caitlyn, or one the SDK raised itself (`status` 0: `STREAM_LOST`,
     /// `NO_FINAL_EVENT`, `UPLOAD_PUT_FAILED`).
     Api(Box<ApiError>),
+    /// No response arrived (the connection was refused or reset, DNS or TLS failed, or a timeout passed before the
+    /// headers), or the connection failed while the body was read, after any retries (PROTOCOL.md 6.5).
+    Connection(ConnectionError),
     /// An operation, or a member the caller set, is newer than the server. Nothing was sent.
     NotSupportedByServer(NotSupportedByServer),
     /// A required input is missing. Nothing was sent.
     Input(InputError),
     /// Signing in failed: the token endpoint refused, or the identity it exchanges could not be had.
     Auth(AuthError),
-    /// No response arrived (connection refused or reset, DNS, a timeout before the headers), after any retries.
-    Transport(TransportError),
     /// The call's cancellation token fired.
     Cancelled,
 }
@@ -32,6 +33,24 @@ impl Error {
     pub fn api(&self) -> Option<&ApiError> {
         match self {
             Error::Api(e) => Some(e),
+            _ => None,
+        }
+    }
+
+    /// The HTTP status of a problem, and 0 for a connection error or a problem the SDK raised itself.
+    pub fn status(&self) -> Option<u16> {
+        match self {
+            Error::Api(e) => Some(e.status),
+            Error::Connection(_) => Some(0),
+            _ => None,
+        }
+    }
+
+    /// The stable code of a problem (`NOT_FOUND`), or `CONNECTION_ERROR`.
+    pub fn code(&self) -> Option<&str> {
+        match self {
+            Error::Api(e) => Some(&e.code),
+            Error::Connection(_) => Some(CONNECTION_ERROR),
             _ => None,
         }
     }
@@ -63,7 +82,7 @@ impl fmt::Display for Error {
             Error::NotSupportedByServer(e) => e.fmt(f),
             Error::Input(e) => e.fmt(f),
             Error::Auth(e) => e.fmt(f),
-            Error::Transport(e) => e.fmt(f),
+            Error::Connection(e) => e.fmt(f),
             Error::Cancelled => f.write_str("caitlyn: the call was cancelled"),
         }
     }
@@ -73,7 +92,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Api(e) => e.source.as_deref().map(|s| s as _),
-            Error::Transport(e) => Some(&e.source),
+            Error::Connection(e) => Some(&e.source),
             _ => None,
         }
     }
@@ -105,10 +124,12 @@ pub struct ApiError {
     pub errors: Vec<FieldError>,
     /// The problem body as received, unknown fields included; `None` when the body is not JSON.
     pub raw: Option<Value>,
-    /// The response body as received (up to 1 MiB), as text: the only view of a body that is not problem
+    /// The response body as received, as text, at most its first 8 KiB: the only view of a body that is not problem
     /// details, such as a proxy's or a web framework's own error page. Empty for an empty body and for errors
     /// the SDK raises itself.
     pub raw_body: String,
+    /// True when the body was longer than 8 KiB and `raw_body` holds only its first 8 KiB.
+    pub raw_body_truncated: bool,
     /// What caused an SDK-raised error, where there is one.
     pub source: Option<Box<dyn std::error::Error + Send + Sync>>,
 }
@@ -173,7 +194,7 @@ struct Problem {
 pub(crate) fn problem_from_response(status: u16, headers: &HeaderMap, body: &[u8]) -> ApiError {
     let mut e = problem_from_body(status, body);
     e.status = status;
-    e.raw_body = String::from_utf8_lossy(body).into_owned();
+    (e.raw_body, e.raw_body_truncated) = raw_body_of(body);
     if e.request_id.is_none() {
         e.request_id = header(headers, "caitlyn-request-id");
     }
@@ -184,6 +205,21 @@ pub(crate) fn problem_from_response(status: u16, headers: &HeaderMap, body: &[u8
         e.retry_after_seconds = header(headers, "retry-after").and_then(|v| parse_retry_after(&v));
     }
     e
+}
+
+/// The most of an error body kept as `raw_body` (PROTOCOL.md 6.3).
+pub const RAW_BODY_LIMIT: usize = 8192;
+
+/// An error body as text: whole up to 8 KiB, else its first 8 KiB cut back to a character boundary.
+pub(crate) fn raw_body_of(body: &[u8]) -> (String, bool) {
+    if body.len() <= RAW_BODY_LIMIT {
+        return (String::from_utf8_lossy(body).into_owned(), false);
+    }
+    let mut end = RAW_BODY_LIMIT;
+    while end > 0 && body[end] & 0xC0 == 0x80 {
+        end -= 1; // never split a UTF-8 sequence
+    }
+    (String::from_utf8_lossy(&body[..end]).into_owned(), true)
 }
 
 /// Builds the problem carried by an SSE failure event: its status comes from the body.
@@ -298,19 +334,50 @@ impl fmt::Display for AuthError {
 
 impl std::error::Error for AuthError {}
 
-/// No response arrived.
+/// The code of a [`ConnectionError`].
+pub const CONNECTION_ERROR: &str = "CONNECTION_ERROR";
+
+/// No response arrived, or the connection failed while the body was read (PROTOCOL.md 6.5). Its status is 0 and
+/// its code `CONNECTION_ERROR`; [`std::error::Error::source`] is the network error.
 #[derive(Debug)]
-pub struct TransportError {
+#[non_exhaustive]
+pub struct ConnectionError {
+    /// The operation that was being called.
+    pub operation: String,
+    /// The network error.
     pub source: reqwest::Error,
 }
 
-impl fmt::Display for TransportError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "caitlyn: no response: {}", self.source)
+impl ConnectionError {
+    pub(crate) fn new(operation: &str, source: reqwest::Error) -> Self {
+        ConnectionError {
+            operation: operation.to_owned(),
+            source,
+        }
+    }
+
+    /// Always 0: no HTTP status arrived.
+    pub fn status(&self) -> u16 {
+        0
+    }
+
+    /// Always `CONNECTION_ERROR`.
+    pub fn code(&self) -> &'static str {
+        CONNECTION_ERROR
     }
 }
 
-impl std::error::Error for TransportError {}
+impl fmt::Display for ConnectionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "caitlyn: {CONNECTION_ERROR}: {}: no response: {}", self.operation, self.source)
+    }
+}
+
+impl std::error::Error for ConnectionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
 
 #[cfg(test)]
 mod tests {

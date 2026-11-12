@@ -68,6 +68,8 @@ export interface CaitlynErrorFields {
   requestId?: string;
   retryAfterSeconds?: number;
   errors?: CaitlynFieldError[];
-  /** The response body as received, as text: the only view of a body that is not problem details (PROTOCOL.md 6.3). */
+  /** The response body as received, as text, at most its first 8 KiB: the only view of a body that is not problem details (PROTOCOL.md 6.3). */
   rawBody?: string;
+  /** True when the body was longer than 8 KiB and `rawBody` holds only its first 8 KiB. */
+  rawBodyTruncated?: boolean;
 }

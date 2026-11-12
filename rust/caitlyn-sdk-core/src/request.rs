@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
-use crate::error::{header, Error};
+use crate::error::{header, ConnectionError, Error};
 
 /// A boxed, sendable future: what generated calls return.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -199,9 +199,38 @@ impl<T, Er> IntoFuture for Call<T, Er> {
 pub struct Response {
     pub(crate) inner: reqwest::Response,
     pub(crate) cancel: Option<CancellationToken>,
+    pub(crate) operation: &'static str,
+}
+
+/// The response a call's result was read from (PROTOCOL.md 4.2): generated results carry it as
+/// `response_metadata`. It is metadata: two values compare equal whatever it holds.
+#[derive(Clone, Debug, Default)]
+#[non_exhaustive]
+pub struct ResponseMetadata {
+    /// The HTTP status, for example 200 or 201; 0 on a result built in code.
+    pub http_status_code: u16,
+    /// The `Caitlyn-Request-Id` header; quote it to support.
+    pub request_id: Option<String>,
+    /// The `ETag` header, when the response has one.
+    pub etag: Option<String>,
+}
+
+impl PartialEq for ResponseMetadata {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 impl Response {
+    /// The response's status, request id and ETag.
+    pub fn metadata(&self) -> ResponseMetadata {
+        ResponseMetadata {
+            http_status_code: self.inner.status().as_u16(),
+            request_id: self.header("caitlyn-request-id"),
+            etag: self.header("etag"),
+        }
+    }
+
     pub fn headers(&self) -> &HeaderMap {
         self.inner.headers()
     }
@@ -213,11 +242,12 @@ impl Response {
 
     /// Reads the body as JSON. An empty body gives `T::default()`.
     pub async fn json<T: DeserializeOwned + Default>(self) -> Result<T, Error> {
+        let operation = self.operation;
         let bytes = self
             .inner
             .bytes()
             .await
-            .map_err(|e| Error::sdk("READ_FAILED", "The response could not be read", Some(Box::new(e))))?;
+            .map_err(|e| Error::Connection(ConnectionError::new(operation, e)))?;
         if bytes.iter().all(u8::is_ascii_whitespace) {
             return Ok(T::default());
         }
