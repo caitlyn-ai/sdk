@@ -75,7 +75,7 @@ class ConversationsResource:
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
-            CaitlynError: any other error response, after retries.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
             The event stream: `with` it, iterate it, then `final_message()`. Unknown event types are skipped; a dropped connection is resumed with Last-Event-ID.
@@ -118,7 +118,7 @@ class ConversationsResource:
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
-            CaitlynError: any other error response, after retries.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
             The event stream: `with` it, iterate it, then `final_message()`. Unknown event types are skipped; a dropped connection is resumed with Last-Event-ID.
@@ -173,7 +173,7 @@ class DocumentsResource:
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
-            CaitlynError: any other error response, after retries.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
         """
         return self._core.request(
             _operations.CREATE_DOCUMENT,
@@ -219,7 +219,7 @@ class DocumentsResource:
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
-            CaitlynError: any other error response, after retries.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
             A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
@@ -316,7 +316,7 @@ class UploadsResource:
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
-            CaitlynError: any other error response, after retries.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
         """
         return self._core.request(
             _operations.CREATE_UPLOAD,
@@ -377,7 +377,7 @@ class VersionsResource:
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
-            CaitlynError: any other error response, after retries.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
         """
         return self._core.request(
             _operations.GET_AGENT_VERSION,
@@ -432,7 +432,7 @@ class VersionsResource:
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
-            CaitlynError: any other error response, after retries.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
         """
         return self._core.request(
             _operations.UPDATE_DRAFT_VERSION,
@@ -472,7 +472,7 @@ class AsyncConversationsResource:
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
-            CaitlynError: any other error response, after retries.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
             The event stream: `with` it, iterate it, then `final_message()`. Unknown event types are skipped; a dropped connection is resumed with Last-Event-ID.
@@ -515,7 +515,7 @@ class AsyncConversationsResource:
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
-            CaitlynError: any other error response, after retries.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
             The event stream: `with` it, iterate it, then `final_message()`. Unknown event types are skipped; a dropped connection is resumed with Last-Event-ID.
@@ -570,7 +570,7 @@ class AsyncDocumentsResource:
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
-            CaitlynError: any other error response, after retries.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
         """
         return await self._core.request(
             _operations.CREATE_DOCUMENT,
@@ -616,7 +616,7 @@ class AsyncDocumentsResource:
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
-            CaitlynError: any other error response, after retries.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
             A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
@@ -713,7 +713,7 @@ class AsyncUploadsResource:
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
-            CaitlynError: any other error response, after retries.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
         """
         return await self._core.request(
             _operations.CREATE_UPLOAD,
@@ -774,7 +774,7 @@ class AsyncVersionsResource:
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
-            CaitlynError: any other error response, after retries.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
         """
         return await self._core.request(
             _operations.GET_AGENT_VERSION,
@@ -829,7 +829,7 @@ class AsyncVersionsResource:
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
-            CaitlynError: any other error response, after retries.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
         """
         return await self._core.request(
             _operations.UPDATE_DRAFT_VERSION,

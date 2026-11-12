@@ -160,7 +160,7 @@ export class CaitlynRestJsonProtocol extends HttpBindingProtocol {
     if (!schema) {
       const base = registry.getBaseException();
       const Ctor = (base && registry.getErrorCtor(base)) || Error;
-      const name = body.code as string;
+      const name = 'CaitlynError'; // the class's name, as every SDK reports it; the code stays in `code`
       throw decorateServiceException(Object.assign(new (Ctor as any)({ name, message }), errorMetadata), body);
     }
 

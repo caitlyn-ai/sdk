@@ -20,6 +20,8 @@ pub struct SdkInfo {
     pub version: &'static str,
     /// The highest `@since` in the model, sent as `Caitlyn-Sdk-Model`.
     pub model_version: &'static str,
+    /// Every error shape in the model, by HTTP status: the class name telemetry reports as `error.type`.
+    pub error_shapes: &'static [(u16, &'static str)],
 }
 
 /// A workspace given as a hostname or a URL, as its bare hostname: `https://acme.getcaitlyn.ai/` gives
@@ -248,27 +250,35 @@ impl Client {
             .idempotency_header
             .map(|_| opts.idempotency_key.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string()));
 
+        // PROTOCOL.md 13: one caitlyn.call span, one caitlyn.attempt child per HTTP attempt.
         let span = tracing::info_span!(
             "caitlyn.call",
-            otel.name = %format!("caitlyn {}", op.name),
+            otel.name = "caitlyn.call",
             otel.kind = "client",
             otel.status_code = Empty,
             rpc.system = "caitlyn",
             rpc.method = op.name,
             caitlyn.request_id = Empty,
             error.type = Empty,
+            caitlyn.error.code = Empty,
         );
+        let (server_address, url_full) = crate::telemetry::http_target(&format!("{}{}", self.inner.endpoint, req.path));
         async {
             let mut attempt: u32 = 0;
             let mut signed_in_again = false;
             loop {
                 let attempt_span = tracing::info_span!(
                     "caitlyn.attempt",
-                    otel.name = op.method,
+                    otel.name = "caitlyn.attempt",
                     otel.kind = "client",
+                    otel.status_code = Empty,
                     http.request.method = op.method,
+                    server.address = server_address.as_str(),
+                    url.full = url_full.as_str(),
                     http.request.resend_count = attempt,
                     http.response.status_code = Empty,
+                    caitlyn.request_id = Empty,
+                    caitlyn.server.api_version = Empty,
                 );
                 let result = self
                     .attempt(op, &req, opts, idempotency_key.as_deref())
@@ -305,8 +315,7 @@ impl Client {
                             AttemptError::NoResponse(source) => Error::Connection(ConnectionError::new(op.name, source)),
                             AttemptError::Other(e) => e,
                         };
-                        span.record("otel.status_code", "ERROR");
-                        span.record("error.type", error_type(&e).as_str());
+                        crate::telemetry::record_failure(&span, &e, self.inner.sdk.error_shapes);
                         return Err(e);
                     }
                 }
@@ -371,9 +380,22 @@ impl Client {
         if let Some(b) = &req.body {
             rb = rb.body(b.clone());
         }
-        let resp = rb.send().await.map_err(AttemptError::NoResponse)?;
+        let attempt_span = tracing::Span::current();
+        let resp = rb.send().await.map_err(|e| {
+            attempt_span.record("otel.status_code", "ERROR");
+            AttemptError::NoResponse(e)
+        })?;
         let status = resp.status().as_u16();
-        tracing::Span::current().record("http.response.status_code", status);
+        attempt_span.record("http.response.status_code", status);
+        if let Some(id) = header(resp.headers(), "caitlyn-request-id") {
+            attempt_span.record("caitlyn.request_id", id.as_str());
+        }
+        if let Some(v) = header(resp.headers(), "caitlyn-api-version") {
+            attempt_span.record("caitlyn.server.api_version", v.as_str());
+        }
+        if status >= 400 {
+            attempt_span.record("otel.status_code", "ERROR");
+        }
         self.note_server_version(resp.headers());
         if resp.status().is_success() {
             return Ok(Response {
@@ -434,17 +456,6 @@ impl Client {
 fn append(headers: &mut HeaderMap, name: &str, value: &str) {
     if let (Ok(n), Ok(v)) = (HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value)) {
         headers.append(n, v);
-    }
-}
-
-fn error_type(e: &Error) -> String {
-    match e {
-        Error::Api(a) => a.code.clone(),
-        Error::NotSupportedByServer(_) => "NOT_SUPPORTED_BY_SERVER".into(),
-        Error::Input(_) => "INPUT".into(),
-        Error::Auth(a) => a.code.clone(),
-        Error::Connection(_) => crate::error::CONNECTION_ERROR.into(),
-        Error::Cancelled => "CANCELLED".into(),
     }
 }
 

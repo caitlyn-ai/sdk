@@ -43,6 +43,8 @@ type Stream[E any, F any] struct {
 	err        error
 	requestID  string
 	apiVersion string
+	// onResponse counts the SSE events (known or not) the current response has carried.
+	onResponse int
 }
 
 // OpenStream wraps a 2xx text/event-stream response.
@@ -57,6 +59,7 @@ func OpenStream[E any, F any](ctx context.Context, resp *Response, spec StreamSp
 func (s *Stream[E, F]) attach(resp *Response) {
 	s.resp = resp
 	s.r = bufio.NewReaderSize(resp.Body, 64<<10)
+	s.onResponse = 0
 }
 
 // RequestID is the Caitlyn-Request-Id of the response that opened the stream.
@@ -134,7 +137,9 @@ func (s *Stream[E, F]) next() (E, error) {
 				return zero, s.fail(cerr)
 			}
 			clean := errors.Is(err, io.EOF)
-			if clean && (s.spec.Final == nil || s.final != nil) {
+			// A response that ends cleanly without any event means the answer had already finished: the stream
+			// ends, without an error and without reconnecting (PROTOCOL.md 5.6).
+			if clean && (s.spec.Final == nil || s.final != nil || s.onResponse == 0) {
 				s.Close()
 				return zero, io.EOF
 			}
@@ -149,6 +154,7 @@ func (s *Stream[E, F]) next() (E, error) {
 			}
 			continue
 		}
+		s.onResponse++
 		if id != "" {
 			if _, dup := s.seen[id]; dup {
 				continue

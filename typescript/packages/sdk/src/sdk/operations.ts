@@ -39,7 +39,7 @@ const toError = (problem: Record<string, unknown>): Error => {
   const Typed = ERROR_CLASSES[status];
   const error = Typed
     ? new Typed({ $fault: fault, $metadata: {}, message })
-    : new CaitlynServiceException({ name: String(problem.code ?? "Error"), $fault: fault, $metadata: {}, message });
+    : new CaitlynServiceException({ name: "CaitlynError", $fault: fault, $metadata: {}, message });
   return Object.assign(error, problem, { message });
 };
 
@@ -99,7 +99,7 @@ export function resumeConversationStream(client: CaitlynClient, conversationId: 
   const { signal, ...rest } = options;
   return new SseStream<ConversationEvent, Message>(
     { known: ConversationEventNames, final: { event: "message.completed", member: "message" }, errorEvent: "message.failed", toError },
-    async () => (await client.send(new ResumeConversationStreamCommand({ ...input, conversationId, ...rest }), { abortSignal: signal })).events as unknown as AsyncIterable<Uint8Array>,
+    () => client.send(new ResumeConversationStreamCommand({ ...input, conversationId, ...rest }), { abortSignal: signal }),
     undefined,
     signal,
   );
@@ -115,9 +115,9 @@ export function sendMessage(client: CaitlynClient, conversationId: string, input
   const { signal, ...rest } = options;
   return new SseStream<ConversationEvent, Message>(
     { known: ConversationEventNames, final: { event: "message.completed", member: "message" }, errorEvent: "message.failed", toError },
-    async () => (await client.send(new SendMessageCommand({ ...input, conversationId, ...rest }), { abortSignal: signal })).events as unknown as AsyncIterable<Uint8Array>,
-    async (lastEventId) =>
-      (await client.send(new ResumeConversationStreamCommand({ conversationId, lastEventId: lastEventId }), { abortSignal: signal })).events as unknown as AsyncIterable<Uint8Array>,
+    () => client.send(new SendMessageCommand({ ...input, conversationId, ...rest }), { abortSignal: signal }),
+    (lastEventId) =>
+      client.send(new ResumeConversationStreamCommand({ conversationId, lastEventId: lastEventId }), { abortSignal: signal }),
     signal,
   );
 }
@@ -136,7 +136,8 @@ export function updateDraftVersion(client: CaitlynClient, agentId: string, input
 /** Computes the SHA-256, reserves the upload slot and sends the bytes to it. */
 export function createUploadFromFile(client: CaitlynClient, input: { file: Blob; fileName: string } & Omit<CreateUploadInput, "fileName" | "contentType" | "byteSize" | "sha256" | "idempotencyKey">, options: CallOptions & { idempotencyKey?: string } = {}) {
   const { file, fileName, ...rest } = input;
-  return uploadFile(file, fileName, (meta) => createUpload(client, { ...rest, ...meta }, options), toError, options.signal);
+  return uploadFile(file, fileName, (meta) => createUpload(client, { ...rest, ...meta }, options), toError, options.signal,
+    (client.config as { caitlynTracer?: Parameters<typeof uploadFile>[5] }).caitlynTracer);
 }
 
 /** Uploads the file, then calls createDocument with the upload. */

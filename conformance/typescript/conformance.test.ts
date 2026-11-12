@@ -26,7 +26,7 @@ import {
 } from '@caitlyn-ai/sdk';
 import * as commands from '@caitlyn-ai/sdk/commands';
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
-import { propagation } from '@opentelemetry/api';
+import { propagation, SpanStatusCode } from '@opentelemetry/api';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
 import { MOCK_AWS, MOCK_CLIENT, MOCK_OAUTH_CLIENT, MOCK_PAT, MOCK_SESSION_COOKIE, mockOidcToken } from '../mock-server/auth.mjs';
 
@@ -145,6 +145,22 @@ test('[pagination.to-last-page] a list runs to the last page, following nextCurs
 });
 
 // ---------------------------------------------------------------- SSE
+
+test('[sse.resume-finished] resuming an answer that has already finished ends at once, with no events and no error', async () => {
+  const c = client();
+  const first: { eventId?: string }[] = await collect(c.conversations.send('c-done', { message: 'hi' }));
+  const resumed = c.conversations.resume('c-done', { lastEventId: first.at(-1)!.eventId });
+  assert.deepEqual(await collect(resumed), []);
+  assert.equal((await api()).filter((r) => r.method === 'GET').length, 1, 'one resume request, no reconnects');
+});
+
+test('[sse.request-id-and-type] a stream exposes its request id, and every event its SSE event name', async () => {
+  const stream = client().conversations.send('c-ids', { message: 'hi' });
+  const events = await collect(stream);
+  assert.equal(stream.requestId, (await api()).at(-1).requestId);
+  assert.equal(events[0]!.type, 'message.started');
+  assert.equal(events.at(-1)!.type, 'message.completed');
+});
 
 test('[sse.typed-events] typed events, keep-alive comments ignored, finalMessage() returns the final member', async () => {
   const stream = client().conversations.send('c-1', { message: 'How many days of annual leave do staff get?' });
@@ -329,6 +345,18 @@ test('[errors.connection] a connection closed before any response, and a refused
     assert.match(err.message, /^GetAgentVersion: no response: /);
   }
   assert.equal((await api()).length, 1); // the closed connection was asked once; the refused one never arrived
+});
+
+test("[errors.unmodelled-status] a status the operation does not list is still that status's class", async () => {
+  await faults({ status: { CreateUpload: [{ status: 404 }, { status: 405, body: '' }] } });
+  const c = client();
+  const reserve = () => expectError(c.uploads.reserve({ fileName: 'a.txt', contentType: 'text/plain', byteSize: 1, sha256: 'x' }));
+  const notFound = await reserve();
+  assert.ok((notFound as unknown) instanceof NotFoundError, notFound.name);
+  assert.deepEqual([notFound.name, notFound.status, notFound.code], ['NotFoundError', 404, 'HTTP_404']);
+  const other = await reserve();
+  assert.ok(!((other as unknown) instanceof NotFoundError));
+  assert.deepEqual([other.name, other.status, other.code], ['CaitlynError', 405, 'HTTP_405']);
 });
 
 // An error page from something in front of the API, not a problem body (PROTOCOL.md 6.1).
@@ -516,7 +544,7 @@ test('[telemetry.spans] one span per call, one child span per attempt, tracepare
     await faults({ status: { GetAgentVersion: [{ status: 503, retryAfter: 0 }] } });
     await client({ telemetry: { tracerProvider: provider } }).versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
     const spans = exporter.getFinishedSpans();
-    const call = spans.find((s) => s.name === 'caitlyn GetAgentVersion');
+    const call = spans.find((s) => s.name === 'caitlyn.call');
     assert.ok(call, `spans: ${spans.map((s) => s.name).join(', ')}`);
     const attempts = spans.filter((s) => s.parentSpanContext?.spanId === call.spanContext().spanId);
     assert.deepEqual(attempts.map((s) => s.attributes['http.request.resend_count']), [0, 1]);
@@ -526,6 +554,51 @@ test('[telemetry.spans] one span per call, one child span per attempt, tracepare
   } finally {
     propagation.disable();
   }
+});
+
+test('[telemetry.attributes] the shared span names and attributes, on a failed call, a list and an upload', async () => {
+  const exporter = new InMemorySpanExporter();
+  const provider = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] });
+  const c = client({ telemetry: { tracerProvider: provider } });
+  await faults({ status: { GetAgentVersion: [{ status: 503, retryAfter: 0 }] } });
+  await expectError(c.versions.get({ agentId: 'GHT7YRWXPL', version: 'nope' }));
+  for await (const _ of c.documents.list({ knowledgeBaseId: 'KB4T7YQ2WL', limit: 100 })) void _;
+  await c.uploads.create({ file: new Blob(['hello'], { type: 'text/plain' }), fileName: 'hello.txt' });
+  const spans = exporter.getFinishedSpans();
+  const sent = (await api()).filter((r) => r.path === '/v3/agents/GHT7YRWXPL/versions/nope');
+  const children = (s: (typeof spans)[number]) => spans.filter((x) => x.parentSpanContext?.spanId === s.spanContext().spanId);
+  assert.ok(spans.every((s) => ['caitlyn.call', 'caitlyn.attempt', 'caitlyn.upload'].includes(s.name)), spans.map((s) => s.name).join(', '));
+  assert.ok(spans.every((s) => !('caitlyn.operation' in s.attributes)));
+
+  const call = spans.find((s) => s.name === 'caitlyn.call' && s.attributes['rpc.method'] === 'GetAgentVersion')!;
+  assert.equal(call.attributes['rpc.system'], 'caitlyn');
+  assert.equal(call.attributes['error.type'], 'NotFoundError');
+  assert.equal(call.attributes['caitlyn.error.code'], 'NOT_FOUND');
+  assert.equal(call.attributes['caitlyn.request_id'], sent.at(-1).requestId);
+  assert.equal(call.status.code, SpanStatusCode.ERROR);
+  assert.ok(call.events.some((e) => e.name === 'exception'), 'exception event');
+  const attempts = children(call);
+  assert.deepEqual(attempts.map((s) => s.name), ['caitlyn.attempt', 'caitlyn.attempt']);
+  assert.deepEqual(attempts.map((s) => s.attributes['http.request.resend_count']), [0, 1]);
+  assert.deepEqual(attempts.map((s) => s.attributes['http.response.status_code']), [503, 404]);
+  assert.deepEqual(attempts.map((s) => s.attributes['caitlyn.request_id']), sent.map((r) => r.requestId));
+  for (const a of attempts) {
+    assert.equal(a.attributes['http.request.method'], 'GET');
+    assert.equal(a.attributes['server.address'], '127.0.0.1');
+    assert.equal(a.attributes['url.full'], `${BASE}/v3/agents/GHT7YRWXPL/versions/nope`);
+    assert.equal(a.attributes['caitlyn.server.api_version'], '5.120.0');
+    assert.equal(a.status.code, SpanStatusCode.ERROR);
+  }
+
+  const list = spans.find((s) => s.name === 'caitlyn.call' && s.attributes['rpc.method'] === 'ListDocuments')!;
+  assert.deepEqual(children(list).map((s) => s.attributes['url.full']), [`${BASE}/v3/knowledge-bases/KB4T7YQ2WL/documents`]);
+  assert.notEqual(children(list)[0]!.status.code, SpanStatusCode.ERROR);
+
+  const upload = spans.find((s) => s.name === 'caitlyn.upload')!;
+  assert.equal(upload.attributes['http.request.method'], 'PUT');
+  assert.equal(upload.attributes['server.address'], '127.0.0.1');
+  assert.match(String(upload.attributes['url.full']), /^http:\/\/127\.0\.0\.1:\d+\/__s3\/[^?]+$/);
+  assert.equal(upload.attributes['http.response.status_code'], 200);
 });
 
 test('[endpoint.workspace] a workspace hostname resolves to https://<workspace>/api', async () => {

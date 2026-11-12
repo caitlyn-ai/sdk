@@ -35,10 +35,8 @@ pub struct CreateDocumentInput {
     pub name: Option<String>,
 }
 
-const ERRORS_CREATE_DOCUMENT: &[u16] = &[500, 403, 503, 429, 401, 400, 409, 404, 422];
-
 fn errors_create_document(e: rt::Error) -> Error {
-    Error::from_core(e, ERRORS_CREATE_DOCUMENT)
+    Error::from(e)
 }
 
 static OP_CREATE_DOCUMENT: rt::Operation = rt::Operation {
@@ -85,7 +83,8 @@ impl DocumentsClient {
     /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
     /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]
     /// (400), [`Error::Conflict`] (409), [`Error::NotFound`] (404), [`Error::UnprocessableContent`] (422);
-    /// any other status is [`Error::Api`].
+    /// another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other
+    /// status is [`Error::Api`].
     ///
     /// Since Caitlyn 5.115.0.
     pub fn create(&self, input: CreateDocumentInput) -> rt::Call<CreateDocumentResult, Error> {
@@ -142,10 +141,8 @@ pub struct ListDocumentsInput {
     pub name_prefix: Option<String>,
 }
 
-const ERRORS_LIST_DOCUMENTS: &[u16] = &[500, 403, 503, 429, 401, 400, 404];
-
 fn errors_list_documents(e: rt::Error) -> Error {
-    Error::from_core(e, ERRORS_LIST_DOCUMENTS)
+    Error::from(e)
 }
 
 static OP_LIST_DOCUMENTS: rt::Operation = rt::Operation {
@@ -209,7 +206,8 @@ impl DocumentsClient {
     ///
     /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
     /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]
-    /// (400), [`Error::NotFound`] (404); any other status is [`Error::Api`].
+    /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
+    /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
     /// Since Caitlyn 5.115.0.
     pub fn list(&self, input: ListDocumentsInput) -> rt::Items<ListDocumentsPage, Document, Error> {

@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use tracing::Instrument;
 
 use base64::Engine as _;
 use sha2::{Digest, Sha256};
@@ -81,15 +82,30 @@ impl Client {
         let fail = |title: &str, e: Option<Box<dyn std::error::Error + Send + Sync>>| Error::sdk("UPLOAD_PUT_FAILED", title, e);
         let method = http::Method::from_bytes(if method.is_empty() { b"PUT" } else { method.as_bytes() })
             .map_err(|e| fail("The upload method is not valid", Some(Box::new(e))))?;
+        let (server_address, url_full) = crate::telemetry::http_target(url);
+        let span = tracing::info_span!(
+            "caitlyn.upload",
+            otel.name = "caitlyn.upload",
+            otel.kind = "client",
+            otel.status_code = tracing::field::Empty,
+            http.request.method = method.as_str(),
+            server.address = server_address.as_str(),
+            url.full = url_full.as_str(),
+            http.response.status_code = tracing::field::Empty,
+            error.type = tracing::field::Empty,
+            caitlyn.error.code = tracing::field::Empty,
+        );
         let mut req = self.http().request(method, url).body(data);
         for (k, v) in headers {
             req = req.header(k, v);
         }
+        let record = span.clone();
         let send = async {
             let resp = req
                 .send()
                 .await
                 .map_err(|e| fail("The bytes could not be sent", Some(Box::new(e))))?;
+            record.record("http.response.status_code", resp.status().as_u16());
             if !resp.status().is_success() {
                 return Err(fail(
                     "The upload URL refused the bytes",
@@ -98,10 +114,14 @@ impl Client {
             }
             Ok(())
         };
-        tokio::select! {
+        let r = tokio::select! {
             biased;
             _ = opts.cancelled() => Err(Error::Cancelled),
-            r = send => r,
+            r = send.instrument(span.clone()) => r,
+        };
+        if let Err(e) = &r {
+            crate::telemetry::record_failure(&span, e, &[]);
         }
+        r
     }
 }

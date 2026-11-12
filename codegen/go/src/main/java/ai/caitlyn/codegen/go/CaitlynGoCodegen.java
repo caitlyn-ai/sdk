@@ -162,6 +162,16 @@ final class CaitlynGoCodegen implements DirectedCodegen<GoContext, GoSettings, G
             if (!unions.isEmpty()) {
                 w.l("// EventID returns the event's SSE id.\n");
                 w.l("func (v *" + name + ") EventID() string { return v.eventID }\n\n");
+                java.util.Set<String> names = new java.util.TreeSet<>();
+                for (ShapeId u : unions) {
+                    ctx.model().expectShape(u, UnionShape.class).getAllMembers().values().stream()
+                            .filter(m -> m.getTarget().equals(shape.getId())).forEach(m -> names.add(ModelFacts.wireName(m)));
+                }
+                if (names.size() != 1) {
+                    throw new CodegenException(shape.getId() + ": an event structure needs one SSE event name, not " + names);
+                }
+                w.l("// EventType returns the event's SSE event name, " + Names.str(names.iterator().next()) + ".\n");
+                w.l("func (*" + name + ") EventType() string { return " + Names.str(names.iterator().next()) + " }\n\n");
                 for (ShapeId u : unions) {
                     w.l("func (*" + name + ") is" + Names.exported(u.getName()) + "() {}\n\n");
                 }
@@ -279,7 +289,8 @@ final class CaitlynGoCodegen implements DirectedCodegen<GoContext, GoSettings, G
             w.l(Names.comment(name + " is one of" + String.join(", ", types) + ". Switch on its type; event names this "
                     + "SDK does not know are skipped, and an error event ends the stream with a typed error.", ""));
             w.l("//\n//\tswitch e := ev.(type) {\n//\tcase " + types.get(0) + ":\n//\t\t…\n//\t}\n");
-            w.l("type " + name + " interface {\n\t// EventID returns the event's SSE id.\n\tEventID() string\n\tis" + name + "()\n}\n\n");
+            w.l("type " + name + " interface {\n\t// EventID returns the event's SSE id.\n\tEventID() string\n"
+                    + "\t// EventType returns the event's SSE event name, for example \"text.delta\".\n\tEventType() string\n\tis" + name + "()\n}\n\n");
             w.l("// decode" + name + " decodes one SSE event; ok is false for an event name this SDK does not know.\n");
             w.l("func decode" + name + "(errorFor core.ErrorFor) func(name, id string, data []byte) (" + name + ", bool, error) {\n");
             w.l("\treturn func(name, id string, data []byte) (" + name + ", bool, error) {\n\t\tswitch name {\n");

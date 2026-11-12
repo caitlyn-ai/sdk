@@ -688,6 +688,9 @@ func (v *CitationAdded) RawJSON() json.RawMessage { return v.raw.JSON() }
 // EventID returns the event's SSE id.
 func (v *CitationAdded) EventID() string { return v.eventID }
 
+// EventType returns the event's SSE event name, "citation.added".
+func (*CitationAdded) EventType() string { return "citation.added" }
+
 func (*CitationAdded) isConversationEvent() {}
 
 // InputRequested is the data of `input.requested`.
@@ -718,6 +721,9 @@ func (v *InputRequested) RawJSON() json.RawMessage { return v.raw.JSON() }
 
 // EventID returns the event's SSE id.
 func (v *InputRequested) EventID() string { return v.eventID }
+
+// EventType returns the event's SSE event name, "input.requested".
+func (*InputRequested) EventType() string { return "input.requested" }
 
 func (*InputRequested) isConversationEvent() {}
 
@@ -804,6 +810,9 @@ func (v *MessageCompleted) RawJSON() json.RawMessage { return v.raw.JSON() }
 // EventID returns the event's SSE id.
 func (v *MessageCompleted) EventID() string { return v.eventID }
 
+// EventType returns the event's SSE event name, "message.completed".
+func (*MessageCompleted) EventType() string { return "message.completed" }
+
 func (*MessageCompleted) isConversationEvent() {}
 
 // MessageStarted is the data of `message.started`.
@@ -839,6 +848,9 @@ func (v *MessageStarted) RawJSON() json.RawMessage { return v.raw.JSON() }
 // EventID returns the event's SSE id.
 func (v *MessageStarted) EventID() string { return v.eventID }
 
+// EventType returns the event's SSE event name, "message.started".
+func (*MessageStarted) EventType() string { return "message.started" }
+
 func (*MessageStarted) isConversationEvent() {}
 
 // PhaseChanged is the data of `phase.changed`.
@@ -871,6 +883,9 @@ func (v *PhaseChanged) RawJSON() json.RawMessage { return v.raw.JSON() }
 
 // EventID returns the event's SSE id.
 func (v *PhaseChanged) EventID() string { return v.eventID }
+
+// EventType returns the event's SSE event name, "phase.changed".
+func (*PhaseChanged) EventType() string { return "phase.changed" }
 
 func (*PhaseChanged) isConversationEvent() {}
 
@@ -933,6 +948,9 @@ func (v *ProgressUpdated) RawJSON() json.RawMessage { return v.raw.JSON() }
 // EventID returns the event's SSE id.
 func (v *ProgressUpdated) EventID() string { return v.eventID }
 
+// EventType returns the event's SSE event name, "progress.updated".
+func (*ProgressUpdated) EventType() string { return "progress.updated" }
+
 func (*ProgressUpdated) isConversationEvent() {}
 
 // TextDelta is the data of `text.delta`.
@@ -963,6 +981,9 @@ func (v *TextDelta) RawJSON() json.RawMessage { return v.raw.JSON() }
 
 // EventID returns the event's SSE id.
 func (v *TextDelta) EventID() string { return v.eventID }
+
+// EventType returns the event's SSE event name, "text.delta".
+func (*TextDelta) EventType() string { return "text.delta" }
 
 func (*TextDelta) isConversationEvent() {}
 
@@ -1023,6 +1044,9 @@ func (v *ToolFinished) RawJSON() json.RawMessage { return v.raw.JSON() }
 // EventID returns the event's SSE id.
 func (v *ToolFinished) EventID() string { return v.eventID }
 
+// EventType returns the event's SSE event name, "tool.finished".
+func (*ToolFinished) EventType() string { return "tool.finished" }
+
 func (*ToolFinished) isConversationEvent() {}
 
 // ToolStarted is the data of `tool.started`.
@@ -1058,6 +1082,9 @@ func (v *ToolStarted) RawJSON() json.RawMessage { return v.raw.JSON() }
 // EventID returns the event's SSE id.
 func (v *ToolStarted) EventID() string { return v.eventID }
 
+// EventType returns the event's SSE event name, "tool.started".
+func (*ToolStarted) EventType() string { return "tool.started" }
+
 func (*ToolStarted) isConversationEvent() {}
 
 // ConversationEvent: The events on a conversation's answer stream. The SSE `event:` name is each
@@ -1076,6 +1103,8 @@ func (*ToolStarted) isConversationEvent() {}
 type ConversationEvent interface {
 	// EventID returns the event's SSE id.
 	EventID() string
+	// EventType returns the event's SSE event name, for example "text.delta".
+	EventType() string
 	isConversationEvent()
 }
 

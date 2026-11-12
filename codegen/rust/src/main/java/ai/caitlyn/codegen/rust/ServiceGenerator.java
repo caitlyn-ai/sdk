@@ -136,7 +136,7 @@ final class ServiceGenerator {
         for (StructureShape e : OperationIndex.of(model).getErrors(service, op.op)) {
             parts.add("[`Error::" + variant(e) + "`] (" + e.expectTrait(HttpErrorTrait.class).getCode() + ")");
         }
-        return parts.isEmpty() ? "" : "Errors: " + String.join(", ", parts) + "; any other status is [`Error::Api`].";
+        return parts.isEmpty() ? "" : "Errors: " + String.join(", ", parts) + "; another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].";
     }
 
     private String methodDoc(OperationInfo op, String extra) {
@@ -192,15 +192,12 @@ final class ServiceGenerator {
         w.l("}\n\n");
     }
 
-    /** The statuses of the operation's modelled errors, then a function mapping runtime errors to them. */
+    /**
+     * Maps runtime errors to the typed variants. The variant is the one for the HTTP status whether or not the
+     * operation models it (PROTOCOL.md 6.2), so every operation uses the service-wide mapping.
+     */
     private void errorTable(RustWriter w, OperationInfo op) {
-        List<String> statuses = new ArrayList<>();
-        for (StructureShape e : OperationIndex.of(model).getErrors(service, op.op)) {
-            statuses.add(String.valueOf(e.expectTrait(HttpErrorTrait.class).getCode()));
-        }
-        String c = "ERRORS_" + Names.constant(op.name);
-        w.l("const " + c + ": &[u16] = &[" + String.join(", ", statuses) + "];\n\n");
-        w.l("fn errors_" + fnName(op) + "(e: rt::Error) -> Error {\n    Error::from_core(e, " + c + ")\n}\n\n");
+        w.l("fn errors_" + fnName(op) + "(e: rt::Error) -> Error {\n    Error::from(e)\n}\n\n");
     }
 
     private void descriptor(RustWriter w, OperationInfo op) {
@@ -597,8 +594,8 @@ final class ServiceGenerator {
     private void errors() {
         ctx.writerDelegator().useFileWriter("src/error.rs", "", w -> {
             w.l("use caitlyn_sdk_core as rt;\n\n");
-            w.l(Names.doc("Everything a call can fail with. A problem response is the variant for its HTTP status, among the operation's "
-                    + "modelled errors (PROTOCOL.md 6.2); any other status, and errors the SDK raises itself (`STREAM_LOST`, "
+            w.l(Names.doc("Everything a call can fail with. A problem response is the variant for its HTTP status, whether or not the "
+                    + "operation lists that error (PROTOCOL.md 6.2); any other status, and errors the SDK raises itself (`STREAM_LOST`, "
                     + "`NO_FINAL_EVENT`, `UPLOAD_PUT_FAILED`, with status 0), are [`Error::Api`]. Every problem variant carries an "
                     + "[`ApiError`](rt::ApiError) with `status`, `code` and `request_id`; [`Error::api`] reads it whichever variant it is. "
                     + "A call that got no response is [`Error::Connection`], with status 0 and code `CONNECTION_ERROR` (PROTOCOL.md 6.5).", ""));
@@ -648,6 +645,10 @@ final class ServiceGenerator {
             List<String> all = new ArrayList<>();
             errorsByStatus.keySet().forEach(s -> all.add(String.valueOf(s)));
             w.l("impl From<rt::Error> for Error {\n    fn from(e: rt::Error) -> Self {\n        Error::from_core(e, &[" + String.join(", ", all) + "])\n    }\n}\n\n");
+            StringBuilder shapes = new StringBuilder();
+            errorsByStatus.forEach((st, e) -> shapes.append("    (").append(st).append(", ").append(Names.str(e.getId().getName())).append("),\n"));
+            w.l("/// Every error shape in the model, by HTTP status: the class name telemetry reports as `error.type`.\n"
+                    + "pub(crate) const ERROR_SHAPES: &[(u16, &str)] = &[\n" + shapes + "];\n\n");
             w.l("impl std::fmt::Display for Error {\n    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n"
                     + "        match self {\n            Error::NotSupportedByServer(e) => e.fmt(f),\n            Error::Input(e) => e.fmt(f),\n"
                     + "            Error::Auth(e) => e.fmt(f),\n            Error::Connection(e) => e.fmt(f),\n"
@@ -679,7 +680,7 @@ final class ServiceGenerator {
             w.l("    pub fn new(workspace: impl Into<String>, auth: impl Into<rt::Auth>) -> Result<Self, Error> {\n        Self::builder(workspace, auth).build()\n    }\n\n");
             w.l("    /// A builder, to set the endpoint, the HTTP client, retries, the app ID or telemetry.\n");
             w.l("    pub fn builder(workspace: impl Into<String>, auth: impl Into<rt::Auth>) -> ClientBuilder {\n"
-                    + "        ClientBuilder(rt::ClientBuilder::new(\n            rt::SdkInfo { version: crate::SDK_VERSION, model_version: crate::MODEL_VERSION },\n"
+                    + "        ClientBuilder(rt::ClientBuilder::new(\n            rt::SdkInfo { version: crate::SDK_VERSION, model_version: crate::MODEL_VERSION, error_shapes: crate::error::ERROR_SHAPES },\n"
                     + "            workspace,\n            auth.into(),\n        ))\n    }\n\n");
             w.l("    /// The workspace hostname.\n    pub fn workspace(&self) -> &str {\n        self.core.workspace()\n    }\n\n");
             w.l("    /// The base URL requests are sent to: `https://<workspace>/api`, or the `endpoint` override.\n"

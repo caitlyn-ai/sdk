@@ -159,10 +159,29 @@ try {
 failure state throws `WaiterError`. They are generated from the model's `@waitable` traits, so they appear as
 operations gain them.
 
+## Your own HTTP handler
+
+`requestHandler` gives this client its own HTTP handler, for a private certificate authority, a proxy or
+keep-alive settings, without changing the process-wide default:
+
+```ts
+import https from 'node:https';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
+
+const caitlyn = new Caitlyn({
+  workspace: 'your-company.getcaitlyn.ai',
+  auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! },
+  requestHandler: new NodeHttpHandler({ httpsAgent: new https.Agent({ ca: fs.readFileSync('ca.pem') }) }),
+});
+```
+
+Sign-in requests go through the `fetch` option, which takes your own `fetch` the same way.
+
 ## Telemetry
 
-The client creates OpenTelemetry spans for each call and each HTTP attempt, and passes `traceparent` on, with
-whatever tracer provider your application has registered. With none registered it costs nothing. Pass
+The client creates OpenTelemetry spans for each call (`caitlyn.call`), each HTTP attempt (`caitlyn.attempt`) and
+an upload's bytes (`caitlyn.upload`), with the names and attributes every Caitlyn SDK uses (`model/PROTOCOL.md`
+section 13), and passes `traceparent` on, with whatever tracer provider your application has registered. With none registered it costs nothing. Pass
 `telemetry: {tracerProvider}` to use another provider, or `telemetry: {enabled: false}` to switch it off.
 
 ## Runtimes

@@ -132,7 +132,7 @@ final class ServiceGenerator {
         for (StructureShape e : OperationIndex.of(model).getErrors(service, op.op)) {
             parts.add("*" + ctx.symbolProvider().toSymbol(e).getName() + " (" + e.expectTrait(HttpErrorTrait.class).getCode() + ")");
         }
-        return parts.isEmpty() ? "" : "Errors: " + String.join(", ", parts) + "; any other status is an *Error.";
+        return parts.isEmpty() ? "" : "Errors: " + String.join(", ", parts) + "; another status the API models has its own type too (*NotFoundError for 404), and any other status is an *Error.";
     }
 
     private String methodDoc(OperationInfo op, String methodName, String extra) {
@@ -184,7 +184,7 @@ final class ServiceGenerator {
 
     private void errorTable(GoWriter w, OperationInfo op) {
         w.l("func errors" + op.name + "(status int, e *core.APIError) error {\n\tswitch status {\n");
-        for (StructureShape e : OperationIndex.of(model).getErrors(service, op.op)) {
+        for (StructureShape e : serviceErrors()) {
             w.l("\tcase " + e.expectTrait(HttpErrorTrait.class).getCode() + ":\n\t\treturn &"
                     + ctx.symbolProvider().toSymbol(e).getName() + "{e}\n");
         }
@@ -766,4 +766,18 @@ final class ServiceGenerator {
             throw new CodegenException(e);
         }
     }
+
+    /**
+     * Every error shape in the service, by status. The class of an error response is the one for its HTTP status
+     * whether or not the operation models it (PROTOCOL.md 6.2); the operation's own list is documentation.
+     */
+    private List<StructureShape> serviceErrors() {
+        return new software.amazon.smithy.model.neighbor.Walker(model).walkShapes(service).stream()
+                .filter(s -> s.isStructureShape() && s.hasTrait(software.amazon.smithy.model.traits.ErrorTrait.class)
+                        && s.hasTrait(HttpErrorTrait.class))
+                .map(s -> (StructureShape) s)
+                .sorted(java.util.Comparator.comparingInt((StructureShape s) -> s.expectTrait(HttpErrorTrait.class).getCode()))
+                .toList();
+    }
+
 }

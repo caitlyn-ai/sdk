@@ -238,7 +238,10 @@ fn temp_file(name: &str, data: &[u8]) -> PathBuf {
 struct SpanRec {
     id: u64,
     parent: Option<u64>,
+    name: &'static str,
     fields: BTreeMap<String, String>,
+    /// The fields of each event recorded inside the span (an `exception` event, say).
+    events: Vec<BTreeMap<String, String>>,
 }
 
 #[derive(Clone, Default)]
@@ -260,10 +263,20 @@ impl<S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'
         let mut rec = SpanRec {
             id: id.into_u64(),
             parent: ctx.span(id).and_then(|s| s.parent()).map(|p| p.id().into_u64()),
+            name: attrs.metadata().name(),
             ..Default::default()
         };
         attrs.record(&mut Fields(&mut rec.fields));
         self.0.lock().unwrap().push(rec);
+    }
+    fn on_event(&self, event: &tracing::Event<'_>, ctx: tracing_subscriber::layer::Context<'_, S>) {
+        let Some(span) = ctx.event_span(event) else { return };
+        let mut fields = BTreeMap::new();
+        event.record(&mut Fields(&mut fields));
+        let mut spans = self.0.lock().unwrap();
+        if let Some(rec) = spans.iter_mut().find(|r| r.id == span.id().into_u64()) {
+            rec.events.push(fields);
+        }
     }
     fn on_record(&self, id: &tracing::span::Id, values: &tracing::span::Record<'_>, _: tracing_subscriber::layer::Context<'_, S>) {
         let mut spans = self.0.lock().unwrap();
@@ -367,6 +380,45 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
         }),
 
         // ------------------------------------------------------------------ SSE
+        "sse.resume-finished" => Box::pin(async move {
+            let c = client(m);
+            let mut first = send(&c, "c-done").await.map_err(s)?;
+            let (evs, err) = collect(&mut first).await;
+            ensure!(err.is_none(), "first stream: {err:?}");
+            let last = evs.last().and_then(|e| e.event_id()).ok_or("no last event id")?.to_owned();
+            let mut resumed = c
+                .conversations()
+                .resume("c-done", ResumeConversationStreamInput { last_event_id: Some(last) })
+                .await
+                .map_err(s)?;
+            let (evs, err) = collect(&mut resumed).await;
+            ensure!(evs.is_empty() && err.is_none(), "resumed: {} events, error {err:?}", evs.len());
+            let gets = m.api().await.iter().filter(|r| str_at(r, "method") == "GET").count();
+            ensure!(gets == 1, "resume requests {gets}");
+            Ok(())
+        }),
+        "sse.request-id-and-type" => Box::pin(async move {
+            let mut stream = send(&client(m), "c-ids").await.map_err(s)?;
+            let (evs, err) = collect(&mut stream).await;
+            ensure!(err.is_none(), "{err:?}");
+            let reqs = m.api().await;
+            ensure!(
+                stream.request_id() == Some(str_at(reqs.last().unwrap(), "requestId")),
+                "request id {:?}",
+                stream.request_id()
+            );
+            ensure!(
+                evs[0].event_type() == "message.started" && evs.last().unwrap().event_type() == "message.completed",
+                "event types {:?}",
+                evs.iter().map(|e| e.event_type()).collect::<Vec<_>>()
+            );
+            let json = serde_json::to_value(evs.last().unwrap()).map_err(s)?;
+            ensure!(
+                json["type"] == "message.completed" && json["message"]["text"] == ANSWER,
+                "serialised {json}"
+            );
+            Ok(())
+        }),
         "sse.typed-events" => Box::pin(async move {
             let mut stream = send(&client(m), "c-1").await.map_err(s)?;
             let (mut text, mut names) = (String::new(), Vec::new());
@@ -701,6 +753,30 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             ensure!(body == json!({"identity": "x", "clear": ["identity"]}), "body {body}");
             Ok(())
         }),
+        "errors.unmodelled-status" => Box::pin(async move {
+            m.faults(json!({"status": {"CreateUpload": [{"status": 404}, {"status": 405, "body": ""}]}}))
+                .await;
+            let c = client(m);
+            let reserve = || {
+                c.uploads().reserve(CreateUploadInput {
+                    file_name: "a.txt".into(),
+                    content_type: "text/plain".into(),
+                    byte_size: 1,
+                    sha256: "x".into(),
+                })
+            };
+            let r = reserve().await;
+            let Err(Error::NotFound(e)) = &r else {
+                return Err(format!("404: got {:?}", r.err()));
+            };
+            ensure!(e.status == 404 && e.code == "HTTP_404", "404: {e:?}");
+            let r = reserve().await;
+            let Err(Error::Api(e)) = &r else {
+                return Err(format!("405: got {:?}", r.err()));
+            };
+            ensure!(e.status == 405 && e.code == "HTTP_405", "405: {e:?}");
+            Ok(())
+        }),
         "errors.raw-body-limit" => Box::pin(async move {
             let page = format!("<!DOCTYPE html>{}", "x".repeat(20480 - 15));
             let straddle = format!("{}{}", "a".repeat(8191), "€".repeat(10));
@@ -1018,6 +1094,107 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             );
             Ok(())
         }),
+        "telemetry.attributes" => Box::pin(async move {
+            use tracing_subscriber::layer::SubscriberExt;
+            let capture = Capture::default();
+            let _guard = tracing::subscriber::set_default(tracing_subscriber::registry().with(capture.clone()));
+            let c = client(m);
+            m.faults(status("GetAgentVersion", &[(503, 0)])).await;
+            let r = c
+                .versions()
+                .get(GetAgentVersionInput {
+                    agent_id: AGENT.into(),
+                    version: "nope".into(),
+                })
+                .await;
+            ensure!(r.is_err(), "no error");
+            list_all(&c, KB, Some(100)).await.map_err(s)?;
+            let f = UploadFile::from_path(temp_file("hello.txt", b"hello")).map_err(s)?;
+            c.uploads().create(f).await.map_err(s)?;
+            let spans = capture.0.lock().unwrap().clone();
+            let field = |r: &SpanRec, k: &str| r.fields.get(k).cloned().unwrap_or_default();
+            let ours: Vec<&SpanRec> = spans.iter().filter(|r| r.name.starts_with("caitlyn.")).collect();
+            for r in &ours {
+                ensure!(
+                    ["caitlyn.call", "caitlyn.attempt", "caitlyn.upload"].contains(&r.name) && field(r, "otel.name") == r.name,
+                    "span {} named {}",
+                    r.name,
+                    field(r, "otel.name")
+                );
+                ensure!(!r.fields.contains_key("caitlyn.operation"), "caitlyn.operation on {}", r.name);
+            }
+            let children = |p: &SpanRec| {
+                ours.iter()
+                    .filter(|r| r.parent == Some(p.id))
+                    .map(|r| (*r).clone())
+                    .collect::<Vec<_>>()
+            };
+            let find = |name: &str, method: &str| {
+                ours.iter()
+                    .find(|r| r.name == name && (method.is_empty() || field(r, "rpc.method") == method))
+                    .map(|r| (*r).clone())
+                    .ok_or(format!("no {name} {method} span"))
+            };
+            let sent: Vec<Value> = m
+                .api()
+                .await
+                .into_iter()
+                .filter(|r| str_at(r, "path") == "/v3/agents/GHT7YRWXPL/versions/nope")
+                .collect();
+            let call = find("caitlyn.call", "GetAgentVersion")?;
+            ensure!(
+                field(&call, "rpc.system") == "caitlyn"
+                    && field(&call, "error.type") == "NotFoundError"
+                    && field(&call, "caitlyn.error.code") == "NOT_FOUND"
+                    && field(&call, "caitlyn.request_id") == str_at(sent.last().unwrap(), "requestId")
+                    && field(&call, "otel.status_code") == "ERROR",
+                "call span {:?}",
+                call.fields
+            );
+            ensure!(
+                call.events
+                    .iter()
+                    .any(|e| e.get("exception.type").map(String::as_str) == Some("NotFoundError")),
+                "no exception event: {:?}",
+                call.events
+            );
+            let attempts = children(&call);
+            ensure!(attempts.len() == 2, "attempts {}", attempts.len());
+            for (i, a) in attempts.iter().enumerate() {
+                let want = [
+                    ("http.request.method", "GET".to_owned()),
+                    ("server.address", "127.0.0.1".to_owned()),
+                    ("url.full", format!("{}/v3/agents/GHT7YRWXPL/versions/nope", m.base)),
+                    ("http.request.resend_count", i.to_string()),
+                    ("http.response.status_code", ["503", "404"][i].to_owned()),
+                    ("caitlyn.request_id", str_at(&sent[i], "requestId").to_owned()),
+                    ("caitlyn.server.api_version", "5.120.0".to_owned()),
+                    ("otel.status_code", "ERROR".to_owned()),
+                ];
+                for (k, v) in want {
+                    ensure!(field(a, k) == v, "attempt {i} {k} = {:?}, want {v:?}", field(a, k));
+                }
+            }
+            let list = children(&find("caitlyn.call", "ListDocuments")?);
+            ensure!(
+                list.len() == 1
+                    && field(&list[0], "url.full") == format!("{}/v3/knowledge-bases/{KB}/documents", m.base)
+                    && field(&list[0], "otel.status_code").is_empty(),
+                "list attempts {list:?}"
+            );
+            let up = find("caitlyn.upload", "")?;
+            let url = field(&up, "url.full");
+            ensure!(
+                field(&up, "http.request.method") == "PUT"
+                    && field(&up, "server.address") == "127.0.0.1"
+                    && field(&up, "http.response.status_code") == "200"
+                    && url.contains("/__s3/")
+                    && !url.contains('?'),
+                "upload span {:?}",
+                up.fields
+            );
+            Ok(())
+        }),
         "telemetry.spans" => Box::pin(async move {
             use tracing_subscriber::layer::SubscriberExt;
             let capture = Capture::default();
@@ -1040,7 +1217,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let spans = capture.0.lock().unwrap().clone();
             let call = spans
                 .iter()
-                .find(|r| r.fields.get("otel.name").map(String::as_str) == Some("caitlyn GetAgentVersion"))
+                .find(|r| r.fields.get("otel.name").map(String::as_str) == Some("caitlyn.call"))
                 .ok_or("no call span")?;
             let resends: Vec<_> = spans
                 .iter()

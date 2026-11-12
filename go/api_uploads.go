@@ -23,24 +23,30 @@ type CreateUploadInput struct {
 
 func errorsCreateUpload(status int, e *core.APIError) error {
 	switch status {
-	case 500:
-		return &InternalError{e}
-	case 403:
-		return &PermissionDeniedError{e}
-	case 503:
-		return &ServiceUnavailableError{e}
-	case 429:
-		return &TooManyRequestsError{e}
-	case 401:
-		return &UnauthenticatedError{e}
 	case 400:
 		return &ValidationError{e}
+	case 401:
+		return &UnauthenticatedError{e}
+	case 403:
+		return &PermissionDeniedError{e}
+	case 404:
+		return &NotFoundError{e}
 	case 409:
 		return &ConflictError{e}
+	case 412:
+		return &PreconditionFailedError{e}
 	case 413:
 		return &PayloadTooLargeError{e}
 	case 422:
 		return &UnprocessableContentError{e}
+	case 428:
+		return &PreconditionRequiredError{e}
+	case 429:
+		return &TooManyRequestsError{e}
+	case 500:
+		return &InternalError{e}
+	case 503:
+		return &ServiceUnavailableError{e}
 	}
 	return e
 }
@@ -84,7 +90,8 @@ func readCreateUpload(resp *core.Response) (*Upload, error) {
 //
 // Errors: *InternalError (500), *PermissionDeniedError (403), *ServiceUnavailableError (503),
 // *TooManyRequestsError (429), *UnauthenticatedError (401), *ValidationError (400), *ConflictError
-// (409), *PayloadTooLargeError (413), *UnprocessableContentError (422); any other status is an *Error.
+// (409), *PayloadTooLargeError (413), *UnprocessableContentError (422); another status the API models
+// has its own type too (*NotFoundError for 404), and any other status is an *Error.
 //
 // Since Caitlyn 5.115.0.
 func (c *UploadsClient) Reserve(ctx context.Context, in *CreateUploadInput, opts ...CallOption) (*Upload, error) {

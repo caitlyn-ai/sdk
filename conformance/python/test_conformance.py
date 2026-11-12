@@ -41,9 +41,10 @@ from caitlyn.auth import Auth, AwsCredentials, AwsIam, CaitlynAuthError, ClientC
 from caitlyn.models import AgentVersion
 from caitlyn_core import workspace_endpoint
 from conftest import ROOT, Mock
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import StatusCode
 
 SDK_VERSION: str = (ROOT / "VERSION").read_text().strip()
 """The version in VERSION, which every SDK sends in its user agent."""
@@ -145,6 +146,23 @@ async def test_pagination(mock: Mock, case_id: str) -> None:
 
 
 # ------------------------------------------------------------------ SSE
+
+
+@case("sse.resume-finished")
+async def test_sse_resume_finished(mock: Mock, case_id: str) -> None:
+    c = client(mock)
+    first = await collect(c.conversations.send("c-done", message="hi"))
+    async with c.conversations.resume("c-done", last_event_id=first[-1].event_id) as resumed:
+        assert await collect(resumed) == []
+    assert len([r for r in mock.api() if r["method"] == "GET"]) == 1  # one resume request, no reconnects
+
+
+@case("sse.request-id-and-type")
+async def test_sse_request_id_and_type(mock: Mock, case_id: str) -> None:
+    async with client(mock).conversations.send("c-ids", message="hi") as stream:
+        events = await collect(stream)
+        assert stream.request_id == mock.api()[-1]["requestId"]
+    assert (events[0].type, events[-1].type) == ("message.started", "message.completed")
 
 
 @case("sse.typed-events")
@@ -358,6 +376,18 @@ PAGE_20K = "<!DOCTYPE html>" + "x" * (20480 - 15)
 PAGE_STRADDLE = "a" * 8191 + "€" * 10
 
 
+@case("errors.unmodelled-status")
+async def test_unmodelled_status(mock: Mock, case_id: str) -> None:
+    mock.faults(status={"CreateUpload": [{"status": 404}, {"status": 405, "body": ""}]})
+    c = client(mock)
+    not_found = await expect_error(c.uploads.reserve(file_name="a.txt", content_type="text/plain", byte_size=1, sha256="x"))
+    assert type(not_found) is NotFoundError
+    assert (not_found.status, not_found.code) == (404, "HTTP_404")
+    other = await expect_error(c.uploads.reserve(file_name="a.txt", content_type="text/plain", byte_size=1, sha256="x"))
+    assert type(other) is CaitlynError
+    assert (other.status, other.code) == (405, "HTTP_405")
+
+
 @case("errors.raw-body-limit")
 async def test_raw_body_limit(mock: Mock, case_id: str) -> None:
     mock.faults(status={"GetAgentVersion": [{"status": 404, "contentType": "text/html", "body": b} for b in (PAGE_20K, PAGE_STRADDLE)]})
@@ -528,6 +558,59 @@ async def test_response_metadata(mock: Mock, case_id: str) -> None:
     assert AgentVersion.model_validate(v.to_wire()).response_metadata is None  # built in code: no response
 
 
+@case("telemetry.attributes")
+async def test_telemetry_attributes(mock: Mock, tmp_path: Path, case_id: str) -> None:
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    c = client(mock, tracer_provider=provider)
+    mock.faults(status={"GetAgentVersion": [{"status": 503, "retryAfter": 0}]})
+    await expect_error(c.versions.get(agent_id="GHT7YRWXPL", version="nope"))
+    await collect(c.documents.list(knowledge_base_id="KB4T7YQ2WL", limit=100))
+    f = tmp_path / "hello.txt"
+    f.write_text("hello")
+    await c.uploads.create(file=f)
+    spans = exporter.get_finished_spans()
+    sent = [r for r in mock.api() if r["path"] == "/v3/agents/GHT7YRWXPL/versions/nope"]
+
+    def attrs(s: ReadableSpan) -> dict[str, Any]:
+        return dict(s.attributes or {})
+
+    def children(parent: ReadableSpan) -> list[ReadableSpan]:
+        assert parent.context is not None
+        return [s for s in spans if s.parent and s.parent.span_id == parent.context.span_id]
+
+    assert {s.name for s in spans} <= {"caitlyn.call", "caitlyn.attempt", "caitlyn.upload"}, [s.name for s in spans]
+    assert all("caitlyn.operation" not in attrs(s) for s in spans)
+
+    call = next(s for s in spans if s.name == "caitlyn.call" and attrs(s).get("rpc.method") == "GetAgentVersion")
+    a = attrs(call)
+    assert (a["rpc.system"], a["error.type"], a["caitlyn.error.code"]) == ("caitlyn", "NotFoundError", "NOT_FOUND")
+    assert a["caitlyn.request_id"] == sent[-1]["requestId"]
+    assert call.status.status_code == StatusCode.ERROR
+    assert any(e.name == "exception" for e in call.events)
+    attempts = children(call)
+    assert [s.name for s in attempts] == ["caitlyn.attempt"] * 2
+    assert [attrs(s)["http.request.resend_count"] for s in attempts] == [0, 1]
+    assert [attrs(s)["http.response.status_code"] for s in attempts] == [503, 404]
+    assert [attrs(s)["caitlyn.request_id"] for s in attempts] == [r["requestId"] for r in sent]
+    for s in attempts:
+        a = attrs(s)
+        assert (a["http.request.method"], a["server.address"]) == ("GET", "127.0.0.1")
+        assert a["url.full"] == f"{mock.base}/v3/agents/GHT7YRWXPL/versions/nope"
+        assert a["caitlyn.server.api_version"] == "5.120.0"
+        assert s.status.status_code == StatusCode.ERROR
+
+    listed = next(s for s in spans if s.name == "caitlyn.call" and attrs(s).get("rpc.method") == "ListDocuments")
+    assert [attrs(s)["url.full"] for s in children(listed)] == [f"{mock.base}/v3/knowledge-bases/KB4T7YQ2WL/documents"]
+    assert children(listed)[0].status.status_code != StatusCode.ERROR
+
+    upload = next(s for s in spans if s.name == "caitlyn.upload")
+    a = attrs(upload)
+    assert (a["http.request.method"], a["server.address"], a["http.response.status_code"]) == ("PUT", "127.0.0.1", 200)
+    assert re.fullmatch(r"http://127\.0\.0\.1:\d+/__s3/[^?]+", str(a["url.full"])), a["url.full"]
+
+
 @case("telemetry.spans")
 async def test_telemetry(mock: Mock, case_id: str) -> None:
     exporter = InMemorySpanExporter()
@@ -536,7 +619,7 @@ async def test_telemetry(mock: Mock, case_id: str) -> None:
     mock.faults(status={"GetAgentVersion": [{"status": 503, "retryAfter": 0}]})
     await client(mock, tracer_provider=provider).versions.get(agent_id="GHT7YRWXPL", version="draft")
     spans = exporter.get_finished_spans()
-    call = next(s for s in spans if s.name == "caitlyn GetAgentVersion")
+    call = next(s for s in spans if s.name == "caitlyn.call")
     assert call.context is not None
     attempts = [s for s in spans if s.parent and s.parent.span_id == call.context.span_id]
     assert [(s.attributes or {})["http.request.resend_count"] for s in attempts] == [0, 1]

@@ -276,7 +276,25 @@ final class CaitlynRustCodegen implements DirectedCodegen<RustContext, RustSetti
                 String t = ctx.symbolProvider().toSymbol(ctx.model().expectShape(m.getTarget())).getName();
                 w.l("            " + name + "::" + t + "(v) => v.event_id.as_deref(),\n");
             }
+            w.l("        }\n    }\n\n");
+            w.l("    /// The event's SSE `event:` name, for example `text.delta`.\n    pub fn event_type(&self) -> &'static str {\n        match self {\n");
+            for (MemberShape m : events) {
+                String t = ctx.symbolProvider().toSymbol(ctx.model().expectShape(m.getTarget())).getName();
+                w.l("            " + name + "::" + t + "(_) => " + Names.str(ModelFacts.wireName(m)) + ",\n");
+            }
             w.l("        }\n    }\n}\n\n");
+            // Serialised as the event's own fields plus `type`, its SSE event name: the shape TypeScript gives events.
+            w.l("/// Serialises as the event's JSON object with `type`, its SSE event name, added.\n");
+            w.l("impl Serialize for " + name + " {\n    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {\n"
+                    + "        let mut v = match self {\n");
+            for (MemberShape m : events) {
+                String t = ctx.symbolProvider().toSymbol(ctx.model().expectShape(m.getTarget())).getName();
+                w.l("            " + name + "::" + t + "(e) => serde_json::to_value(e),\n");
+            }
+            w.l("        }\n        .map_err(serde::ser::Error::custom)?;\n"
+                    + "        if let serde_json::Value::Object(o) = &mut v {\n"
+                    + "            o.insert(\"type\".to_owned(), serde_json::Value::from(self.event_type()));\n        }\n"
+                    + "        v.serialize(s)\n    }\n}\n\n");
             w.l("/// Decodes one SSE event of the " + name + " union.\n");
             w.l("pub(crate) fn decode_" + Names.snake(shape.getId().getName()) + "(name: &str, id: Option<&str>, data: &[u8]) -> Result<rt::Decoded<"
                     + name + ">, serde_json::Error> {\n    Ok(match name {\n");

@@ -16,7 +16,7 @@ import httpx
 from opentelemetry.trace import Span, TracerProvider
 
 from ._errors import CaitlynConnectionError, CaitlynError, StreamLostError
-from ._hooks import CallContext, Interceptor, Telemetry
+from ._hooks import CallContext, Interceptor, Telemetry, record_failure
 from ._models import CaitlynEvent, CaitlynModel
 from ._protocol import (
     API_VERSION_HEADER,
@@ -257,8 +257,16 @@ class SyncClientCore(_CoreBase):
 
     def put_presigned(self, method: str, url: str, headers: Mapping[str, str], content: bytes) -> None:
         """Send bytes to a presigned URL: no Caitlyn auth or headers (the URL carries its own grant)."""
-        response = self._http.request(method, url, headers=dict(headers), content=content, auth=None)
-        _check_put(response)
+        span = self.telemetry.start_upload(method, url)
+        try:
+            response = self._http.request(method, url, headers=dict(headers), content=content, auth=None)
+            span.set_attribute("http.response.status_code", response.status_code)
+            _check_put(response)
+        except BaseException as e:
+            record_failure(span, e)
+            raise
+        finally:
+            span.end()
 
 
 # --------------------------------------------------------------------------- async
@@ -334,8 +342,16 @@ class AsyncClientCore(_CoreBase):
         return AsyncEventStream(self, spec, dict(params), decoder, resume)
 
     async def put_presigned(self, method: str, url: str, headers: Mapping[str, str], content: bytes) -> None:
-        response = await self._http.request(method, url, headers=dict(headers), content=content, auth=None)
-        _check_put(response)
+        span = self.telemetry.start_upload(method, url)
+        try:
+            response = await self._http.request(method, url, headers=dict(headers), content=content, auth=None)
+            span.set_attribute("http.response.status_code", response.status_code)
+            _check_put(response)
+        except BaseException as e:
+            record_failure(span, e)
+            raise
+        finally:
+            span.end()
 
 
 def _check_put(response: httpx.Response) -> None:
@@ -384,14 +400,18 @@ class _StreamState[E: CaitlynEvent, F]:
         self.done = False
         self.reconnects = 0
         self.request_id: str | None = None
+        self.events_on_response = 0
+        """SSE events (known or not) the current response has carried."""
 
     def opening(self) -> tuple[OperationSpec, Mapping[str, object]]:
+        self.events_on_response = 0
         if self.reconnects == 0 or self.resume is None:
             return self.spec, self.params
         self.sse = SseDecoder()
         return self.resume.operation, {**self.resume.params, self.resume.last_event_id_param: self.last_event_id}
 
     def accept(self, message: SseMessage) -> E | None:
+        self.events_on_response += 1
         if message.own_id and message.id is not None:
             if message.id in self.seen:
                 return None
@@ -417,8 +437,9 @@ class _StreamState[E: CaitlynEvent, F]:
         return self.resume is not None and self.reconnects < self.max_reconnects
 
     def ended_cleanly(self) -> bool:
-        """EOF counts as the end unless the stream has a final event that has not arrived yet."""
-        return self.final is not None or not self.can_resume()
+        """EOF counts as the end unless the stream has a final event that has not arrived yet. A response that
+        ended cleanly without any event is the end too: the answer had already finished (PROTOCOL.md 5.6)."""
+        return self.final is not None or self.events_on_response == 0 or not self.can_resume()
 
     def lost(self, cause: BaseException | None) -> StreamLostError:
         return StreamLostError(

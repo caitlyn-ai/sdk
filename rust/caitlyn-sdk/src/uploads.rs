@@ -33,10 +33,8 @@ pub struct CreateUploadInput {
     pub sha256: String,
 }
 
-const ERRORS_CREATE_UPLOAD: &[u16] = &[500, 403, 503, 429, 401, 400, 409, 413, 422];
-
 fn errors_create_upload(e: rt::Error) -> Error {
-    Error::from_core(e, ERRORS_CREATE_UPLOAD)
+    Error::from(e)
 }
 
 static OP_CREATE_UPLOAD: rt::Operation = rt::Operation {
@@ -80,7 +78,8 @@ impl UploadsClient {
     /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
     /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]
     /// (400), [`Error::Conflict`] (409), [`Error::PayloadTooLarge`] (413), [`Error::UnprocessableContent`]
-    /// (422); any other status is [`Error::Api`].
+    /// (422); another status the API models has its own variant too ([`Error::NotFound`] for 404), and any
+    /// other status is [`Error::Api`].
     ///
     /// Since Caitlyn 5.115.0.
     pub fn reserve(&self, input: CreateUploadInput) -> rt::Call<Upload, Error> {
