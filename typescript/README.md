@@ -97,6 +97,15 @@ publish:
 new Caitlyn({ workspace, auth: { mode: 'workloadIdentity', token: () => process.env.CAITLYN_ID_TOKEN! } });
 ```
 
+### In a browser
+
+In a browser page, use `oauth` without a `clientSecret` (authorisation code with PKCE), or `session` for the
+Caitlyn app itself. Creating a client with `clientCredentials`, `oauth` with a `clientSecret`, `awsIam` or
+`workloadIdentity` throws `CaitlynAuthError` with code `not_allowed_in_browser`: a client secret in a page is
+visible to everyone who loads it, and the other two sign in server workloads. `token` mode works but warns once
+per client, because a long-lived token in a page is exposed; it is for local testing, and
+`allowBrowserToken: true` on the mode silences the warning.
+
 ## Calls
 
 Every operation is a method on a namespace (`caitlyn.documents.list`) and also a standalone function that

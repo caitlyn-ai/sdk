@@ -245,4 +245,17 @@ A failed token request is a sign-in error (`CaitlynAuthError` in TypeScript and 
 | `status`    | The HTTP status.                                                                             |
 | `requestId` | The `Caitlyn-Request-Id` header.                                                             |
 
-A token response without `access_token` is a sign-in error too. Errors the SDK raises itself use the same class with these codes: `sign_in_required` (`oauth` with no tokens), `invalid_state` (the callback's state does not match), `invalid_request` (a missing redirect URI or region, or an `oauth` step on a client in another mode), and the STS code or `aws_identity_failed` (`awsIam`). A 401 from an operation is not a sign-in error: it is section 6.2's class for 401, after section 12.4's retry.
+A token response without `access_token` is a sign-in error too. Errors the SDK raises itself use the same class with these codes: `sign_in_required` (`oauth` with no tokens), `invalid_state` (the callback's state does not match), `invalid_request` (a missing redirect URI or region, or an `oauth` step on a client in another mode), the STS code or `aws_identity_failed` (`awsIam`), and, in the TypeScript SDK only, `not_allowed_in_browser` (section 12.6). A 401 from an operation is not a sign-in error: it is section 6.2's class for 401, after section 12.4's retry.
+
+### 12.6 In a browser (TypeScript only)
+
+The TypeScript SDK is the only one that runs in a browser page, so only it has this rule. A browser page is where `globalThis` has both a `window` and a `document`. Node, Deno and Bun have no `document`; web, service and shared workers have neither. A test environment that simulates a DOM, such as jsdom, counts as a browser.
+
+In a browser, creating a client (`new Caitlyn(…)`, `createCaitlynClient(…)` or `createAuth(…)`) checks the sign-in mode before anything is sent:
+
+| Mode | In a browser |
+| --- | --- |
+| `clientCredentials`, and `oauth` with a `clientSecret` | Refused: throws `CaitlynAuthError` with code `not_allowed_in_browser`. A client secret in a browser is visible to everyone who loads the page. The message points to `oauth` without a secret (authorisation code with PKCE), or signing in on a server. |
+| `awsIam`, `workloadIdentity` | Refused the same way: they sign in a server workload with its own identity. |
+| `token` | Allowed, with one `console.warn` per client: a long-lived token in a browser is exposed to anyone who can run script on the page, so the mode is for local testing, and `oauth` should be used instead. `allowBrowserToken: true` on the mode silences the warning. |
+| `session`, and `oauth` without a `clientSecret` | Unaffected. |
