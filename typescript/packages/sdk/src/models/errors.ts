@@ -67,7 +67,7 @@ export class InternalError extends __BaseException {
       $fault: "server",
       ...opts,
     });
-    Object.setPrototypeOf(this, InternalError.prototype);
+    Object.setPrototypeOf(this, new.target.prototype);
     this.type = opts.type;
     this.title = opts.title;
     this.status = opts.status;
@@ -142,7 +142,7 @@ export class NotFoundError extends __BaseException {
       $fault: "client",
       ...opts,
     });
-    Object.setPrototypeOf(this, NotFoundError.prototype);
+    Object.setPrototypeOf(this, new.target.prototype);
     this.type = opts.type;
     this.title = opts.title;
     this.status = opts.status;
@@ -218,7 +218,7 @@ export class PermissionDeniedError extends __BaseException {
       $fault: "client",
       ...opts,
     });
-    Object.setPrototypeOf(this, PermissionDeniedError.prototype);
+    Object.setPrototypeOf(this, new.target.prototype);
     this.type = opts.type;
     this.title = opts.title;
     this.status = opts.status;
@@ -292,7 +292,7 @@ export class PreconditionFailedError extends __BaseException {
       $fault: "client",
       ...opts,
     });
-    Object.setPrototypeOf(this, PreconditionFailedError.prototype);
+    Object.setPrototypeOf(this, new.target.prototype);
     this.type = opts.type;
     this.title = opts.title;
     this.status = opts.status;
@@ -366,7 +366,7 @@ export class PreconditionRequiredError extends __BaseException {
       $fault: "client",
       ...opts,
     });
-    Object.setPrototypeOf(this, PreconditionRequiredError.prototype);
+    Object.setPrototypeOf(this, new.target.prototype);
     this.type = opts.type;
     this.title = opts.title;
     this.status = opts.status;
@@ -448,7 +448,7 @@ export class ServiceUnavailableError extends __BaseException {
       $fault: "server",
       ...opts,
     });
-    Object.setPrototypeOf(this, ServiceUnavailableError.prototype);
+    Object.setPrototypeOf(this, new.target.prototype);
     this.type = opts.type;
     this.title = opts.title;
     this.status = opts.status;
@@ -532,7 +532,7 @@ export class TooManyRequestsError extends __BaseException {
       $fault: "client",
       ...opts,
     });
-    Object.setPrototypeOf(this, TooManyRequestsError.prototype);
+    Object.setPrototypeOf(this, new.target.prototype);
     this.type = opts.type;
     this.title = opts.title;
     this.status = opts.status;
@@ -607,7 +607,7 @@ export class UnauthenticatedError extends __BaseException {
       $fault: "client",
       ...opts,
     });
-    Object.setPrototypeOf(this, UnauthenticatedError.prototype);
+    Object.setPrototypeOf(this, new.target.prototype);
     this.type = opts.type;
     this.title = opts.title;
     this.status = opts.status;
@@ -682,7 +682,7 @@ export class ValidationError extends __BaseException {
       $fault: "client",
       ...opts,
     });
-    Object.setPrototypeOf(this, ValidationError.prototype);
+    Object.setPrototypeOf(this, new.target.prototype);
     this.type = opts.type;
     this.title = opts.title;
     this.status = opts.status;
@@ -757,7 +757,7 @@ export class ConflictError extends __BaseException {
       $fault: "client",
       ...opts,
     });
-    Object.setPrototypeOf(this, ConflictError.prototype);
+    Object.setPrototypeOf(this, new.target.prototype);
     this.type = opts.type;
     this.title = opts.title;
     this.status = opts.status;
@@ -831,7 +831,7 @@ export class PayloadTooLargeError extends __BaseException {
       $fault: "client",
       ...opts,
     });
-    Object.setPrototypeOf(this, PayloadTooLargeError.prototype);
+    Object.setPrototypeOf(this, new.target.prototype);
     this.type = opts.type;
     this.title = opts.title;
     this.status = opts.status;
@@ -905,7 +905,7 @@ export class UnprocessableContentError extends __BaseException {
       $fault: "client",
       ...opts,
     });
-    Object.setPrototypeOf(this, UnprocessableContentError.prototype);
+    Object.setPrototypeOf(this, new.target.prototype);
     this.type = opts.type;
     this.title = opts.title;
     this.status = opts.status;

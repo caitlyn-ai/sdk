@@ -42,8 +42,6 @@ const pkgUrl = new URL('../typescript/packages/sdk/package.json', import.meta.ur
 const pkg = JSON.parse(fs.readFileSync(pkgUrl, 'utf8'));
 const corePkg = JSON.parse(fs.readFileSync(new URL('../typescript/packages/sdk-core/package.json', import.meta.url), 'utf8'));
 const entry = (name) => ({
-  // In this repository the workspace resolves the TypeScript source (typescript/tsconfig.json customConditions).
-  'caitlyn-source': `./src/${name}.ts`,
   types: `./dist-types/${name}.d.ts`,
   browser: `./dist-browser/${name}.mjs`,
   worker: `./dist-browser/${name}.mjs`,
@@ -73,6 +71,20 @@ const published = {
 };
 fs.writeFileSync(pkgUrl, JSON.stringify(published, null, 4) + '\n');
 console.log('postgen-ts: wrote the npm description of packages/sdk/package.json');
+
+// The generated error classes reset their prototype with a reference to themselves
+// (Object.setPrototypeOf(this, NotFoundError.prototype)). A bundler then has to rename the class (`var
+// NotFoundError = class _NotFoundError`), and constructor.name becomes "_NotFoundError". new.target.prototype does
+// the same job without the self-reference, so the class keeps its name.
+for (const file of ['models/errors.ts', 'models/CaitlynServiceException.ts']) {
+  const url = new URL(file, dir);
+  const before = fs.readFileSync(url, 'utf8');
+  const selfReference = /Object\.setPrototypeOf\(this, (\w+)\.prototype\);/g;
+  const n = (before.match(selfReference) ?? []).length;
+  if (n === 0) throw new Error(`postgen-ts: no prototype self-reference in ${file}`);
+  fs.writeFileSync(url, before.replace(selfReference, 'Object.setPrototypeOf(this, new.target.prototype);'));
+  console.log(`postgen-ts: ${file}: ${n} prototype resets use new.target`);
+}
 
 // The version is set once, in packages/sdk-core/package.json. The generated User-Agent version
 // (caitlyn-sdk-ts/<version>) follows it, and the tracer version in sdk-core's telemetry must match it.

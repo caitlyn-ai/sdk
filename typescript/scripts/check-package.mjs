@@ -1,9 +1,12 @@
 // Checks the npm packages as a user receives them: packs @caitlyn-ai/sdk-core and @caitlyn-ai/sdk, installs the
 // tarballs in an empty project, then
 //   1. imports the SDK from Node as an ECMAScript module and from CommonJS;
-//   2. type-checks an ESM and a CommonJS file with module "nodenext", and one with moduleResolution "bundler";
+//   2. type-checks an ESM and a CommonJS file with module "nodenext", and one with moduleResolution "bundler", all
+//      with skipLibCheck false; then, in a second empty project with no @types/node, a browser-only file (lib dom);
 //   3. checks no @aws-sdk package was installed;
-//   4. bundles realistic imports for a browser, as an application bundler would, and checks each against its budget.
+//   4. checks error classes keep their names: constructor.name in the built ESM and CommonJS output and in an
+//      application's unminified browser bundle, err.name in a minified one;
+//   5. bundles realistic imports for a browser, as an application bundler would, and checks each against its budget.
 // Run after scripts/build-packages.mjs. Writes build/package/report.json.
 import { build } from 'esbuild';
 import { execFileSync } from 'node:child_process';
@@ -59,8 +62,10 @@ run('npm', ['install', '--no-audit', '--no-fund', '--silent', ...tarballs, `type
 fs.writeFileSync(path.join(work, 'esm.mjs'), `import { Caitlyn, NotFoundError, CaitlynError } from '@caitlyn-ai/sdk';
 const c = new Caitlyn({ workspace: 'example.getcaitlyn.ai', auth: { mode: 'token', token: 't' } });
 if (typeof c.documents.list !== 'function' || !(new NotFoundError({ $metadata: {}, message: 'x' }) instanceof CaitlynError)) process.exit(1);
+if (new NotFoundError({ $metadata: {}, message: 'x' }).constructor.name !== 'NotFoundError') { console.error('esm: NotFoundError is named', new NotFoundError({ $metadata: {}, message: 'x' }).constructor.name); process.exit(1); }
 console.log('esm ok');`);
-fs.writeFileSync(path.join(work, 'cjs.cjs'), `const { Caitlyn, createCaitlynClient } = require('@caitlyn-ai/sdk');
+fs.writeFileSync(path.join(work, 'cjs.cjs'), `const { Caitlyn, createCaitlynClient, ConflictError } = require('@caitlyn-ai/sdk');
+if (new ConflictError({ $metadata: {}, message: 'x' }).constructor.name !== 'ConflictError') process.exit(1);
 const c = new Caitlyn({ workspace: 'example.getcaitlyn.ai', auth: { mode: 'clientCredentials', clientId: 'a', clientSecret: 'b' } });
 if (typeof c.auth.token !== 'function' || typeof createCaitlynClient !== 'function') process.exit(1);
 console.log('cjs ok');`);
@@ -71,7 +76,12 @@ const typed = `import { Caitlyn, ValidationError, type ConversationEvent } from 
 const c = new Caitlyn({ workspace: 'w', auth: { mode: 'workloadIdentity', token: () => 'jwt' } });
 export async function f(): Promise<string | undefined> {
   for await (const e of c.conversations.send('C1', { message: 'hi' })) { const x: ConversationEvent = e; void x; }
-  try { await c.versions.get({ agentId: 'A', version: 'draft' }); } catch (e) { if (e instanceof ValidationError) return e.code; }
+  try {
+    const v = await c.versions.get({ agentId: 'A', version: 'draft' });
+    const status: number | undefined = v.$metadata.httpStatusCode; // a single call's output carries its response metadata
+    const requestId: string | undefined = v.$metadata.requestId;
+    void [status, requestId, v.raw];
+  } catch (e) { if (e instanceof ValidationError) return e.code; }
   return undefined;
 }
 `;
@@ -82,13 +92,36 @@ const tsc = path.join(work, 'node_modules/.bin/tsc');
 const tscBase = ['--noEmit', '--strict', '--skipLibCheck', 'false', '--target', 'es2022', '--types', 'node'];
 run(tsc, [...tscBase, '--module', 'nodenext', '--moduleResolution', 'nodenext', 'typed.mts', 'typed.cts']);
 run(tsc, [...tscBase, '--module', 'esnext', '--moduleResolution', 'bundler', '--lib', 'es2022,dom', 'bundler.ts']);
-console.log('types ok (nodenext ESM and CommonJS, bundler)');
+// A browser-only project: its own install with no @types/node, lib dom, skipLibCheck false.
+const browserDir = path.join(work, 'browser');
+fs.mkdirSync(browserDir);
+fs.writeFileSync(path.join(browserDir, 'package.json'), JSON.stringify({ name: 'caitlyn-browser-check', private: true, type: 'module' }));
+run('npm', ['install', '--no-audit', '--no-fund', '--silent', ...tarballs, `typescript@${JSON.parse(fs.readFileSync(path.join(root, 'node_modules/typescript/package.json'))).version}`], browserDir);
+if (fs.existsSync(path.join(browserDir, 'node_modules/@types/node'))) throw new Error('the browser check installed @types/node');
+fs.writeFileSync(path.join(browserDir, 'app.ts'), typed);
+fs.writeFileSync(path.join(browserDir, 'tsconfig.json'), JSON.stringify({ compilerOptions: { noEmit: true, strict: true, skipLibCheck: false, target: 'es2022', module: 'esnext', moduleResolution: 'bundler', lib: ['es2022', 'dom', 'dom.iterable'], types: [] }, files: ['app.ts'] }));
+run(path.join(browserDir, 'node_modules/.bin/tsc'), ['-p', 'tsconfig.json'], browserDir);
+console.log('types ok (nodenext ESM and CommonJS, bundler, and a browser-only project without @types/node)');
 
 // 3. No AWS runtime
 if (fs.existsSync(path.join(work, 'node_modules/@aws-sdk'))) throw new Error('an @aws-sdk package was installed');
 console.log('no @aws-sdk packages installed');
 
-// 4. Size
+// 4. Class names after an application bundles the browser build. Unminified, constructor.name is the class name;
+// minified, a minifier renames classes in any library, and err.name (an instance property) stays right.
+const namesFile = path.join(work, 'names.mjs');
+fs.writeFileSync(namesFile, `import { NotFoundError, ValidationError, CaitlynError } from '@caitlyn-ai/sdk';
+const errors = [NotFoundError, ValidationError, CaitlynError].map((C) => new C({ $metadata: {}, message: 'x' }));
+const check = (what, got, want) => { if (got.join() !== want) throw new Error(what + ': ' + got.join()); };
+check('err.name', errors.slice(0, 2).map((e) => e.name), 'NotFoundError,ValidationError'); // the generic error's name is its code
+if (process.env.EXPECT_CONSTRUCTOR_NAMES) check('constructor.name', errors.map((e) => e.constructor.name), 'NotFoundError,ValidationError,CaitlynServiceException');`);
+for (const minify of [false, true]) {
+  await build({ entryPoints: [namesFile], bundle: true, minify, format: 'esm', platform: 'browser', outfile: path.join(work, 'names-out.mjs'), logLevel: 'error', absWorkingDir: work });
+  execFileSync('node', ['names-out.mjs'], { cwd: work, stdio: 'inherit', env: { ...process.env, EXPECT_CONSTRUCTOR_NAMES: minify ? '' : '1' } });
+}
+console.log('error class names survive bundling (constructor.name unminified, err.name minified)');
+
+// 5. Size
 const sizes = {};
 for (const [name, { code, budget }] of Object.entries(ENTRIES)) {
   const file = path.join(work, `size-${Object.keys(sizes).length}.mjs`);

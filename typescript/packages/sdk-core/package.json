@@ -15,7 +15,6 @@
   "types": "./dist-types/index.d.ts",
   "exports": {
     ".": {
-      "caitlyn-source": "./src/index.ts",
       "types": "./dist-types/index.d.ts",
       "import": "./dist-es/index.mjs",
       "require": "./dist-cjs/index.cjs"

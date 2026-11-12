@@ -2,6 +2,7 @@
 import type { CaitlynClient } from "../CaitlynClient";
 import { CaitlynServiceException } from "../models/CaitlynServiceException";
 import { SseStream, uploadFile, type CallOptions, type WithRaw } from "@caitlyn-ai/sdk-core";
+import type { MetadataBearer as __MetadataBearer } from "@smithy/types";
 import { ConflictError, InternalError, NotFoundError, PayloadTooLargeError, PermissionDeniedError, PreconditionFailedError, PreconditionRequiredError, ServiceUnavailableError, TooManyRequestsError, UnauthenticatedError, UnprocessableContentError, ValidationError } from "../models/errors";
 import { CreateDocumentCommand } from "../commands/CreateDocumentCommand";
 import { CreateUploadCommand } from "../commands/CreateUploadCommand";
@@ -48,9 +49,9 @@ const toError = (problem: Record<string, unknown>): Error => {
  * `Location` names the Operation. Needs the files permission, read access to the knowledge base and
  * access to the folder; it does not need update access to the knowledge base, which is for the
  * knowledge base's own configuration. */
-export function createDocument(client: CaitlynClient, input: Omit<CreateDocumentInput, "idempotencyKey">, options: CallOptions & { idempotencyKey?: string } = {}): Promise<WithRaw<CreateDocumentOutput>> {
+export function createDocument(client: CaitlynClient, input: Omit<CreateDocumentInput, "idempotencyKey">, options: CallOptions & { idempotencyKey?: string } = {}): Promise<WithRaw<CreateDocumentOutput & __MetadataBearer>> {
   const { signal, ...rest } = options;
-  return client.send(new CreateDocumentCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<CreateDocumentOutput>>;
+  return client.send(new CreateDocumentCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<CreateDocumentOutput & __MetadataBearer>>;
 }
 
 /** Reserves a short-lived slot for a file's bytes and returns a presigned URL bound to their
@@ -59,9 +60,9 @@ export function createDocument(client: CaitlynClient, input: Omit<CreateDocument
  * Send the bytes with `uploadMethod` to `uploadUrl`, with every header in `requiredHeaders`,
  * before `expiresAt`; then pass the upload's `id` to the operation that uses it. The SDKs'
  * `uploads.create(file)` does all of this. */
-export function createUpload(client: CaitlynClient, input: Omit<CreateUploadInput, "idempotencyKey">, options: CallOptions & { idempotencyKey?: string } = {}): Promise<WithRaw<CreateUploadOutput>> {
+export function createUpload(client: CaitlynClient, input: Omit<CreateUploadInput, "idempotencyKey">, options: CallOptions & { idempotencyKey?: string } = {}): Promise<WithRaw<CreateUploadOutput & __MetadataBearer>> {
   const { signal, ...rest } = options;
-  return client.send(new CreateUploadCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<CreateUploadOutput>>;
+  return client.send(new CreateUploadCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<CreateUploadOutput & __MetadataBearer>>;
 }
 
 /** Gets one version of an agent, with its full configuration and its ETag.
@@ -69,9 +70,9 @@ export function createUpload(client: CaitlynClient, input: Omit<CreateUploadInpu
  * `version` is `draft`, `production` or the name of a pinned or published version. Production is
  * readable by everyone with access to the agent; the draft and pinned versions only by the people
  * and groups on the agent's version access grant, and anyone else gets 404. */
-export function getAgentVersion(client: CaitlynClient, input: GetAgentVersionInput, options: CallOptions = {}): Promise<WithRaw<GetAgentVersionOutput>> {
+export function getAgentVersion(client: CaitlynClient, input: GetAgentVersionInput, options: CallOptions = {}): Promise<WithRaw<GetAgentVersionOutput & __MetadataBearer>> {
   const { signal, ...rest } = options;
-  return client.send(new GetAgentVersionCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<GetAgentVersionOutput>>;
+  return client.send(new GetAgentVersionCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<GetAgentVersionOutput & __MetadataBearer>>;
 }
 
 /** Lists the documents in a knowledge base, one page at a time.
@@ -127,9 +128,9 @@ export function sendMessage(client: CaitlynClient, conversationId: string, input
  * To return a member to its default, name it in `clear`; naming a member that is not clearable, or
  * one the same request also sets, is refused with 400 `VALIDATION_FAILED`. Returns the whole draft
  * and its new ETag. */
-export function updateDraftVersion(client: CaitlynClient, agentId: string, input: Omit<UpdateDraftVersionInput, "ifMatch" | "agentId">, options: CallOptions & { ifMatch: string }): Promise<WithRaw<UpdateDraftVersionOutput>> {
+export function updateDraftVersion(client: CaitlynClient, agentId: string, input: Omit<UpdateDraftVersionInput, "ifMatch" | "agentId">, options: CallOptions & { ifMatch: string }): Promise<WithRaw<UpdateDraftVersionOutput & __MetadataBearer>> {
   const { signal, ...rest } = options;
-  return client.send(new UpdateDraftVersionCommand({ ...input, agentId, ...rest }), { abortSignal: signal }) as Promise<WithRaw<UpdateDraftVersionOutput>>;
+  return client.send(new UpdateDraftVersionCommand({ ...input, agentId, ...rest }), { abortSignal: signal }) as Promise<WithRaw<UpdateDraftVersionOutput & __MetadataBearer>>;
 }
 
 /** Computes the SHA-256, reserves the upload slot and sends the bytes to it. */
