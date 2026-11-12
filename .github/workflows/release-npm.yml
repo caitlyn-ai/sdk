@@ -5,11 +5,13 @@
 # Runs on the GitHub mirror of custom-d/caitlyn/sdk (github.com/caitlyn-ai/sdk), never on GitLab: npm trusted publishing accepts OpenID
 # Connect tokens from GitHub Actions (and GitLab.com), not from git.customd.com. The mirror receives main and the
 # release tags from GitLab; nobody commits to it. Setting up the mirror, the npm trusted publishers and the
-# `npm` environment is described in CONTRIBUTING.md, "Releasing to npm".
+# `npm` environment is described in CONTRIBUTING.md, "Releasing".
 #
-# A tag v<version> stages that version, which must match both packages' package.json. The job runs in the `npm`
-# environment because the trusted publishers are bound to that name; it has no required reviewer, since the one
-# approval is on npmjs.com.
+# semantic-release on GitLab's main creates the tag v<version> (.releaserc.yml); nobody tags by hand. The repository
+# stores no released version (VERSION is the 0.0.0 placeholder), so this job stamps the tag's version into every
+# SDK file that carries it (scripts/version.mjs release), checks them, then tests, builds and stages that version.
+# The job runs in the `npm` environment because the trusted publishers are bound to that name; it has no required
+# reviewer, since the one approval is on npmjs.com.
 name: release-npm
 
 on:
@@ -30,17 +32,24 @@ jobs:
       run:
         working-directory: typescript
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # v7 of both run on Node 24 (v4 ran on the deprecated Node 20).
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
+          # A release builds from a clean install, never from a dependency cache. (setup-node caches by itself when
+          # package.json names a packageManager.)
+          package-manager-cache: false
       # Staged publishing needs npm 11.15.0 or later (trusted publishing alone needs 11.5.1).
       - run: npm install -g npm@11.21.1
-      - name: Check the tag matches VERSION and both packages
+      # Writes the tag's version into VERSION and every file that carries it (the packages, the lock file, the
+      # User-Agent and tracer version), then fails unless every one of them names it.
+      - name: Stamp the version from the tag
+        run: node ../scripts/version.mjs release "${GITHUB_REF_NAME#v}"
+      - name: Check both packages carry the tag's version
         run: |
           version="${GITHUB_REF_NAME#v}"
-          [ "$(cat ../VERSION)" = "$version" ] || { echo "VERSION is $(cat ../VERSION), the tag is $GITHUB_REF_NAME" >&2; exit 1; }
           for p in packages/sdk-core packages/sdk; do
             actual="$(node -p "require('./$p/package.json').version")"
             [ "$actual" = "$version" ] || { echo "$p is $actual, the tag is $GITHUB_REF_NAME" >&2; exit 1; }

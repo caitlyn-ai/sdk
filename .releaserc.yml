@@ -1,0 +1,24 @@
+# semantic-release on main (the shared template custom-d/devops-platform/ci-templates/semantic-versioning runs it; see
+# .gitlab-ci.yml). From the conventional commits since the last v* tag it works out the next version, then creates
+# the vX.Y.Z tag and a GitLab release with notes. The push mirror takes the tag to GitHub, where
+# .github/workflows/release-npm.yml stamps that version into every SDK and stages the npm packages
+# (CONTRIBUTING.md, "Releasing").
+#
+# Only commits that change what the SDKs do release: feat, fix, perf and revert, and breaking changes. docs, ci,
+# chore, test, refactor, style and build commits never do. Nothing is committed back: the version lives only in the
+# tag, and the release build stamps it from there.
+plugins:
+  - - '@semantic-release/commit-analyzer'
+    - releaseRules:
+        # Before 1.0, a breaking change raises the minor version (0.x semantics); feat is minor and fix, perf and
+        # revert are patch, as the default rules say. Going to 1.0 is a deliberate decision: remove this rule then.
+        - breaking: true
+          release: minor
+  - '@semantic-release/release-notes-generator'
+  # VERSION.txt is the fetch-semantic-version job's artifact: the version the next release would have.
+  - - '@semantic-release/exec'
+    - verifyReleaseCmd: 'echo ${nextRelease.version} > VERSION.txt'
+  - '@semantic-release/gitlab'
+branches:
+  - main
+tagFormat: 'v${version}'
