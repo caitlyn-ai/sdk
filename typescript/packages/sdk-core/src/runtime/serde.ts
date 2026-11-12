@@ -1,4 +1,4 @@
-// The serde helpers the browser build needs, on the platform's own APIs (TextEncoder, atob, crypto), in place of
+// The serde helpers the runtime needs, on the platform's own APIs (TextEncoder, atob, crypto), in place of
 // @smithy/core/serde's. Each behaves as the @smithy/core function it replaces does for the values a Caitlyn
 // response or request can hold.
 const encoder = new TextEncoder();
@@ -56,22 +56,13 @@ export const streamCollector = (body: unknown) => collectBody(body);
 
 // ---------------------------------------------------------------------------------------------- timestamps
 
+// The model's one timestamp format is RFC 3339 date-time (PROTOCOL.md: "Timestamps"); its numbers are plain JSON.
 const RFC3339 = /^(\d{4})-(\d{2})-(\d{2})[tT](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(([-+]\d{2}:\d{2})|[zZ])$/;
-const IMF_FIXDATE = /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), (\d{2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4}) (\d{1,2}):(\d{2}):(\d{2})(?:\.(\d+))? GMT$/;
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function range(value: string, what: string, lo: number, hi: number): number {
   const n = Number(value);
   if (!(n >= lo && n <= hi)) throw new TypeError(`${what} must be between ${lo} and ${hi}, inclusive`);
   return n;
-}
-
-function utc(year: string, month: number, day: string, h: string, m: string, s: string, fraction: string | undefined): Date {
-  const y = Number(year);
-  const d = range(day, 'day', 1, 31);
-  if (d > new Date(Date.UTC(y, month, 0)).getUTCDate()) throw new TypeError(`Invalid day for ${MONTHS[month - 1]} in ${y}: ${d}`);
-  return new Date(Date.UTC(y, month - 1, d, range(h, 'hour', 0, 23), range(m, 'minute', 0, 59), range(s, 'seconds', 0, 60), fraction ? parseFloat(`0.${fraction}`) * 1000 : 0));
 }
 
 /** An RFC 3339 date-time with an offset or Z, strictly, as @smithy/core's parseRfc3339DateTimeWithOffset reads it. */
@@ -80,43 +71,18 @@ export function parseDateTime(value: unknown): Date | undefined {
   if (typeof value !== 'string') throw new TypeError('RFC-3339 date-times must be expressed as strings');
   const m = RFC3339.exec(value);
   if (!m) throw new TypeError('Invalid RFC-3339 date-time value');
-  const date = utc(m[1]!, range(m[2]!, 'month', 1, 12), m[3]!, m[4]!, m[5]!, m[6]!, m[7]);
+  const year = Number(m[1]);
+  const month = range(m[2]!, 'month', 1, 12);
+  const day = range(m[3]!, 'day', 1, 31);
+  if (day > new Date(Date.UTC(year, month, 0)).getUTCDate()) throw new TypeError(`Invalid day for month ${month} in ${year}: ${day}`);
+  const date = new Date(Date.UTC(year, month - 1, day, range(m[4]!, 'hour', 0, 23), range(m[5]!, 'minute', 0, 59), range(m[6]!, 'seconds', 0, 60), m[7] ? parseFloat(`0.${m[7]}`) * 1000 : 0));
   const offset = m[8]!;
   if (offset.toUpperCase() !== 'Z') date.setTime(date.getTime() - (offset[0] === '-' ? -1 : 1) * (Number(offset.slice(1, 3)) * 60 + Number(offset.slice(4, 6))) * 60_000);
   return date;
 }
 
-/** An RFC 7231 IMF-fixdate (`Sun, 06 Nov 1994 08:49:37 GMT`), the form HTTP headers use. */
-export function parseHttpDate(value: unknown): Date | undefined {
-  if (value == null) return undefined;
-  if (typeof value !== 'string') throw new TypeError('RFC-7231 date-times must be expressed as strings');
-  const m = IMF_FIXDATE.exec(value);
-  if (!m) throw new TypeError('Invalid RFC-7231 date-time value');
-  return utc(m[3]!, MONTHS.indexOf(m[2]!) + 1, m[1]!, m[4]!, m[5]!, m[6]!, m[7]);
-}
-
-export function parseEpochSeconds(value: unknown): Date | undefined {
-  if (value == null) return undefined;
-  const n = typeof value === 'number' ? value : typeof value === 'string' && /^-?\d*\.?\d+$/.test(value) ? parseFloat(value) : NaN;
-  if (!Number.isFinite(n)) throw new TypeError('Epoch timestamps must be valid finite numbers.');
-  return new Date(Math.round(n * 1000));
-}
-
-export const httpDate = (d: Date) =>
-  `${DAYS[d.getUTCDay()]}, ${String(d.getUTCDate()).padStart(2, '0')} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()} ${[d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()].map((n) => String(n).padStart(2, '0')).join(':')} GMT`;
-
-/** A timestamp in a format: 5 date-time, 6 http-date, 7 epoch-seconds. */
-export function writeTimestamp(d: Date, format: number): string | number {
-  if (format === 5) return d.toISOString().replace('.000Z', 'Z');
-  if (format === 6) return httpDate(d);
-  return d.getTime() / 1000;
-}
-
-export function readTimestamp(value: unknown, format: number): Date | undefined {
-  if (format === 5) return parseDateTime(value);
-  if (format === 6) return parseHttpDate(value);
-  return parseEpochSeconds(value);
-}
+/** A timestamp as RFC 3339 date-time, milliseconds dropped when zero (as smithy-typescript writes it). */
+export const writeDateTime = (d: Date) => d.toISOString().replace('.000Z', 'Z');
 
 // ---------------------------------------------------------------------------------------------- headers
 

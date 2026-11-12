@@ -200,11 +200,14 @@ section 13), and passes `traceparent` on, with whatever tracer provider your app
 | Deno, Cloudflare Workers, Vercel Edge, and web workers bundled with the `worker` condition (webpack) | `deno`, `workerd`, `worker`, `edge-light` | `dist-edge` | `fetch` |
 | Browser pages (Vite, webpack, esbuild and Rollup building for the browser) | `browser` | `dist-browser` | `fetch` |
 
-The browser build is about 27 KB gzipped for a client and one operation, against about 43 KB for the same code
-with the full Smithy runtime. It makes the same requests and behaves the same way: the TypeScript conformance suite
-runs against it in headless Chromium, Firefox and WebKit. It keeps the small parts of the Smithy runtime (the
-client, its middleware stack, the fetch handler) and replaces the protocol, its JSON codec, endpoints and retries
-with smaller ones of its own, and it leaves out the sign-in modes a browser may not use.
+Every build runs on the SDK's own small runtime (`@caitlyn-ai/sdk-core`): it keeps the small parts of the Smithy
+runtime (the client and its middleware stack) and implements the rest for what Caitlyn uses: the Caitlyn REST JSON
+protocol, retries as `model/PROTOCOL.md` section 6.4 describes them, the workspace endpoint, RFC 3339 timestamps and
+server-sent events. It has none of AWS's retry strategies, binary event streams, checksums or endpoint rules.
+
+The browser build is that runtime without the sign-in modes a page may not use: about 24 KB gzipped for a client and
+one operation, against about 43 KB in version 0.1. The TypeScript conformance suite runs against it in headless
+Chromium, Firefox and WebKit.
 
 Bundlers pick it with the `browser` condition. Where a bundler does not set it, or sets `worker` first (webpack
 building a web worker, which then gets the edge build), import the browser build by name:

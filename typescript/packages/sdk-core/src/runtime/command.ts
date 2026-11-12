@@ -1,6 +1,6 @@
-// The generated commands' base class and builder for the browser build: @smithy/core's makeBuilder and Command,
+// The generated commands' base class and builder: @smithy/core's makeBuilder and Command,
 // without the AWS event-stream detection and the sensitive-data log filters, which read every schema through
-// NormalizedSchema. A Caitlyn model has no AWS event streams (scripts/check-browser-schemas.mjs refuses one), and
+// NormalizedSchema. A Caitlyn model has no AWS event streams (scripts/check-runtime-schemas.mjs refuses one), and
 // the SDK registers no logging middleware, so neither does anything here.
 import { constructStack } from '@smithy/core/client';
 import type { MiddlewareStack, Pluggable } from '@smithy/types';

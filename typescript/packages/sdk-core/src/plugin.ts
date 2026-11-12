@@ -1,13 +1,11 @@
 // getCaitlynSdkPlugin: SDK identity on every request, with no AWS headers.
 // - User-Agent: caitlyn-sdk-ts/<version> lang/js md/<runtime>
 // - Caitlyn-Sdk-Model: the model version the SDK was generated from (highest @since)
-// - removes smithy-typescript's retry bookkeeping headers (amz-sdk-invocation-id, amz-sdk-request)
 // - reads Caitlyn-Api-Version from responses, and fails a call before sending when the operation, or a
 //   member the caller set, is newer than that server (@since; PROTOCOL.md rule 8)
-import { getOmitRetryHeadersPlugin } from '@smithy/core/retry';
-import { HttpRequest } from '@smithy/core/protocols';
+import { HttpRequest } from '@smithy/core/transport';
 import type { BuildMiddleware, DeserializeMiddleware, FinalizeRequestMiddleware, InitializeMiddleware, Pluggable } from '@smithy/types';
-import { HttpResponse } from '@smithy/core/protocols';
+import { HttpResponse } from '@smithy/core/transport';
 import { NO_RETRY } from './retry.js';
 
 export const CAITLYN_SDK_USER_AGENT_PREFIX = 'caitlyn-sdk-ts';
@@ -139,7 +137,6 @@ export function getCaitlynSdkPlugin(
       stack.add(serverVersion, { step: 'deserialize', name: 'caitlynServerVersion', priority: 'low', override: true });
       stack.add(identity, { step: 'build', name: 'caitlynSdkIdentity', priority: 'low', override: true });
       stack.addRelativeTo(retrySafety, { toMiddleware: 'retryMiddleware', relation: 'after', name: 'caitlynRetrySafety' });
-      getOmitRetryHeadersPlugin({}).applyToStack(stack);
     },
   };
 }

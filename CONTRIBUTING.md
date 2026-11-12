@@ -53,11 +53,12 @@ make go
 make rust
 ```
 
-The TypeScript SDK has a second build for browser pages, with a smaller runtime of its own
-(`typescript/packages/sdk-core/src/browser`), so its harness also runs against that build: in Node by `make typescript`
-(`npm run conformance:browser-build`), and in headless Chromium, Firefox and WebKit by the `typescript:browser` CI job
-(`cd typescript && npx playwright install && npm run conformance:browser` locally). A model that uses a Smithy
-feature the browser runtime does not implement fails the package build (`typescript/scripts/check-browser-schemas.mjs`).
+The TypeScript SDK runs on its own runtime (`typescript/packages/sdk-core`: `src/protocol.ts`, `src/retry.ts` and
+`src/runtime/`), not on the whole Smithy runtime, and has a second build for browser pages without the server-only
+sign-in modes. Its harness runs against both: in Node by `make typescript` (`npm run conformance` and
+`npm run conformance:browser-build`), and in headless Chromium, Firefox and WebKit by the `typescript:browser` CI job
+(`cd typescript && npx playwright install && npm run conformance:browser` locally). A model that uses a Smithy feature
+the runtime does not implement fails the package build (`typescript/scripts/check-runtime-schemas.mjs`).
 
 Each harness starts the mock server (`conformance/mock-server/server.mjs`, Node, no dependencies), resets it
 before each test and drives it through `/__mock/`:

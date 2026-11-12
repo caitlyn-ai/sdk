@@ -1,7 +1,7 @@
-// Endpoint configuration and middleware for the browser build, in place of @smithy/core/endpoints, whose
-// middleware carries the rules engine and Amazon S3's customisations. A Caitlyn client's endpoint provider
-// (caitlynEndpointProvider) needs only the `endpoint` built-in; the parameters are resolved as @smithy/core
-// resolves them, and a browser has no shared AWS configuration files to read endpoints from.
+// Endpoint configuration and middleware, in place of @smithy/core/endpoints, whose middleware carries the rules
+// engine and Amazon S3's customisations. A Caitlyn client's endpoint is https://<workspace>/api or the `endpoint`
+// override (caitlynEndpointProvider, ../endpoint.ts), so it needs only the `endpoint` built-in, resolved as
+// @smithy/core resolves it. Endpoints from AWS configuration (AWS_ENDPOINT_URL, ~/.aws/config) are never read.
 import { normalizeProvider, toEndpointV1 } from '@smithy/core/transport';
 import type { Pluggable } from '@smithy/types';
 

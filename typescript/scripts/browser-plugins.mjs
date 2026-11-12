@@ -1,11 +1,20 @@
-// The esbuild plugins that make the browser build (scripts/build-packages.mjs), shared with the browser
-// conformance run (scripts/build-conformance.mjs --browser), which compiles the same sources the same way.
+// The esbuild plugins behind the package builds (scripts/build-packages.mjs), shared with the conformance runs
+// (scripts/build-conformance.mjs and scripts/conformance-browser.mjs), which compile the same sources the same way.
+//
+// - The generated SDK's @smithy/* imports go to sdk-core's runtime (packages/sdk-core/src/runtime/smithy.ts), in
+//   every build; only the Node HTTP handler is imported as it is.
+// - The browser build of sdk-core leaves out the sign-in modes a browser may not use and the AWS signer
+//   (src/browser/auth-server.ts and src/browser/aws.ts in place of src/auth-server.ts and src/aws.ts).
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
 export const coreSrc = path.join(root, 'packages/sdk-core/src');
-const browserDir = path.join(coreSrc, 'browser');
-const packagesDir = path.join(root, 'packages');
+const sdkSrc = path.join(root, 'packages/sdk/src');
+const runtimeBarrel = path.join(coreSrc, 'runtime/smithy.ts');
+const isSdkSource = (dir) => dir === sdkSrc || dir.startsWith(`${sdkSrc}${path.sep}`);
+const SMITHY = /^@smithy\//;
+/** The generated SDK's imports that go to sdk-core's runtime: every @smithy/* package but the Node HTTP handler. */
+const toRuntime = (a) => isSdkSource(a.resolveDir) && a.path !== '@smithy/node-http-handler';
 
 /** The generated runtimeConfig for fetch: the edge and browser builds. */
 export const fetchRuntimeConfig = {
@@ -15,43 +24,39 @@ export const fetchRuntimeConfig = {
   },
 };
 
-/**
- * sdk-core's browser build: browser/protocol.ts, browser/auth-server.ts and browser/aws.ts in place of the Node
- * build's, and every @smithy/* import through browser/smithy.ts (which itself imports the real packages).
- */
+/** sdk-core's browser build: no server-only sign-in modes, no AWS signer. */
 export const coreBrowser = {
   name: 'sdk-core-browser',
   setup(b) {
-    b.onResolve({ filter: /^\.\/(protocol|auth-server|aws)\.js$/ }, (a) =>
-      a.resolveDir === coreSrc ? { path: path.join(browserDir, a.path.replace(/\.js$/, '.ts')) } : undefined,
+    b.onResolve({ filter: /^\.\/(auth-server|aws)\.js$/ }, (a) =>
+      a.resolveDir === coreSrc ? { path: path.join(coreSrc, 'browser', a.path.replace(/\.js$/, '.ts')) } : undefined,
     );
-    b.onResolve({ filter: /^@smithy\// }, (a) => (a.resolveDir === browserDir ? { path: a.path, external: true } : { path: path.join(browserDir, 'smithy.ts') }));
   },
 };
 
-/** The SDK's browser build: sdk-core's browser entries, and its Smithy runtime, as package imports. */
-export const sdkBrowser = {
-  name: 'sdk-browser',
+/** The SDK's builds: its @smithy/* imports from sdk-core's runtime, as a package import. */
+export const sdkRuntime = (browser = false) => ({
+  name: 'sdk-runtime',
   setup(b) {
-    b.onResolve({ filter: /^@smithy\// }, () => ({ path: '@caitlyn-ai/sdk-core/smithy', external: true }));
-    b.onResolve({ filter: /^@caitlyn-ai\/sdk-core$/ }, () => ({ path: '@caitlyn-ai/sdk-core/browser', external: true }));
+    b.onResolve({ filter: SMITHY }, (a) => (toRuntime(a) ? { path: browser ? '@caitlyn-ai/sdk-core/browser/smithy' : '@caitlyn-ai/sdk-core/smithy', external: true } : undefined));
+    if (browser) b.onResolve({ filter: /^@caitlyn-ai\/sdk-core$/ }, () => ({ path: '@caitlyn-ai/sdk-core/browser', external: true }));
+  },
+});
+
+/** The SDK compiled from source in one bundle, for the conformance runs: the generated code on sdk-core's runtime. */
+export const runtimeFromSource = {
+  name: 'runtime-from-source',
+  setup(b) {
+    b.onResolve({ filter: SMITHY }, (a) => (toRuntime(a) ? { path: runtimeBarrel } : undefined));
   },
 };
 
-/**
- * The browser build compiled from source in one bundle, for tests: the SDK's and sdk-core's sources with the
- * plugins above, and the real @smithy/* packages behind browser/smithy.ts.
- */
+/** As runtimeFromSource, for the browser build: fetch, and sdk-core's browser stand-ins. */
 export const browserFromSource = {
   name: 'browser-from-source',
   setup(b) {
-    b.onResolve({ filter: /^\.\/runtimeConfig$/ }, (a) => ({ path: path.join(a.resolveDir, 'runtimeConfig.browser.ts') }));
-    b.onResolve({ filter: /^\.\/(protocol|auth-server|aws)\.js$/ }, (a) =>
-      a.resolveDir === coreSrc ? { path: path.join(browserDir, a.path.replace(/\.js$/, '.ts')) } : undefined,
-    );
-    // Only the SDK's own imports: the Smithy packages' imports of each other stay as they are.
-    b.onResolve({ filter: /^@smithy\// }, (a) =>
-      a.resolveDir !== browserDir && a.resolveDir.startsWith(packagesDir) && !a.resolveDir.includes('node_modules') ? { path: path.join(browserDir, 'smithy.ts') } : undefined,
-    );
+    fetchRuntimeConfig.setup(b);
+    coreBrowser.setup(b);
+    runtimeFromSource.setup(b);
   },
 };

@@ -1,5 +1,5 @@
-// Reads smithy-typescript's static schemas (the tuples in the generated schemas_0.ts) for the browser build's
-// protocol, in place of @smithy/core's NormalizedSchema. It understands the same encoding:
+// Reads smithy-typescript's static schemas (the tuples in the generated schemas_0.ts) for the protocol
+// (../protocol.ts), in place of @smithy/core's NormalizedSchema. It understands the same encoding:
 //   a number                       a simple type: 0 string, 1 number, 2 boolean, 4-7 timestamp, 15 document,
 //                                  17 big integer, 19 big decimal, 21 blob, 42 streaming blob; 64|x a list of x,
 //                                  128|x a map of x
@@ -77,16 +77,4 @@ export function members(s: Shape): [string, Shape][] {
   if (!isStruct(s)) return [];
   const [, , , , names, types] = s.type as [number, string, string, unknown, string[], unknown[]];
   return names.map((name, i) => [name, shape(types[i])]);
-}
-
-/**
- * The timestamp format a member uses (5 date-time, 6 http-date, 7 epoch-seconds), as smithy-typescript decides
- * it with the Caitlyn protocol's settings (timestampFormat.useTrait, default date-time): the member's own format,
- * else http-date in a header, else date-time.
- */
-export function timestampFormat(s: Shape): number {
-  const c = code(s)!;
-  if (c >= 5 && c <= 7) return c;
-  if (typeof s.traits.httpPrefixHeaders === 'string' || s.traits.httpHeader) return 6;
-  return 5;
 }
