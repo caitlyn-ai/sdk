@@ -169,12 +169,13 @@ def error_from_problem(
     spec: OperationSpec, status: int, body: Mapping[str, Any], headers: Mapping[str, str] | None = None
 ) -> CaitlynError:
     headers = headers or {}
+    if not status:
+        # An SSE failure event has no HTTP status of its own, so its body's status chooses the class. A
+        # response's status is always the HTTP status, whatever the body says (PROTOCOL.md 6.3).
+        body_status = body.get("status")
+        if isinstance(body_status, int) and not isinstance(body_status, bool):
+            status = body_status
     cls = spec.errors.get(status, CaitlynError) if status else CaitlynError
-    body_status = body.get("status")
-    if isinstance(body_status, int) and not isinstance(body_status, bool):
-        status = body_status  # PROTOCOL.md 6.3: body status, else the HTTP status
-    if cls is CaitlynError:
-        cls = spec.errors.get(status, CaitlynError)
     code = str(body.get("code") or f"HTTP_{status}")
     title = str(body.get("title") or "")
     detail = body.get("detail")

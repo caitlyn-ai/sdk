@@ -111,7 +111,7 @@ Error responses are RFC 9457 problem details, `application/problem+json`:
 
 | Field                     | Source                                                  |
 | ------------------------- | ------------------------------------------------------- |
-| `status`                  | Body `status`, or the HTTP status.                      |
+| `status`                  | The HTTP status of the response, always. A `status` in the body is ignored for this field: a proxy or a faulty handler can put the wrong number there, and the HTTP status is what the client got. The class is chosen by the HTTP status too (section 6.2). A failure event on a stream (section 5.5) has no HTTP status of its own, so its body `status` is used. |
 | `code`                    | Body `code`, else `HTTP_<status>`.                      |
 | `title`, `detail`, `type` | Body.                                                   |
 | `requestId`               | Body `requestId`, else the `Caitlyn-Request-Id` header; empty when neither has one. |

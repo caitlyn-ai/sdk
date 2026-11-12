@@ -317,6 +317,18 @@ test('[errors.text-502] a text/plain 502 is the generic error, with status 502, 
   assert.equal((await api()).length, 1);
 });
 
+// A problem body whose status disagrees with the HTTP status (PROTOCOL.md 6.3).
+const MISMATCHED_409 = '{"type":"https://build.caitlyn.ai/errors/CONFLICT","title":"Conflict","status":400,"code":"CONFLICT","requestId":"01MISMATCHEDSTATUS0000000"}';
+
+test('[errors.status-from-http] an HTTP 409 whose problem body says status 400 is ConflictError, with status 409', async () => {
+  await faults({ status: { CreateUpload: [{ status: 409, contentType: 'application/problem+json', body: MISMATCHED_409 }] } });
+  const err = await expectError(client().uploads.reserve({ fileName: 'a.txt', contentType: 'text/plain', byteSize: 1, sha256: 'x' }));
+  assert.ok(err instanceof ConflictError, `got ${err.name}`);
+  assert.equal(err.status, 409);
+  assert.equal(err.code, 'CONFLICT');
+  assert.equal(err.requestId, '01MISMATCHEDSTATUS0000000');
+});
+
 // ---------------------------------------------------------------- cancellation
 
 test('[cancel.stream] cancelling a stream closes the connection and raises AbortError', async () => {

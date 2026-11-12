@@ -122,6 +122,9 @@ fn header<'a>(r: &'a Value, name: &str) -> Option<&'a str> {
 /// An error page from something in front of the API, not a problem body (PROTOCOL.md 6.1).
 const HTML_404: &str = "<!DOCTYPE html><html><head><title>404: This page could not be found</title></head><body><h1>404</h1></body></html>";
 
+/// A problem body whose status disagrees with the HTTP status (PROTOCOL.md 6.3).
+const MISMATCHED_409: &str = r#"{"type":"https://build.caitlyn.ai/errors/CONFLICT","title":"Conflict","status":400,"code":"CONFLICT","requestId":"01MISMATCHEDSTATUS0000000"}"#;
+
 fn status(op: &str, faults: &[(u16, u64)]) -> Value {
     json!({"status": {op: faults.iter().map(|(s, ra)| json!({"status": s, "retryAfter": ra})).collect::<Vec<_>>()}})
 }
@@ -633,6 +636,29 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             );
             Ok(())
         }),
+        "errors.status-from-http" => {
+            Box::pin(async move {
+                m.faults(json!({"status": {"CreateUpload": [{"status": 409, "contentType": "application/problem+json", "body": MISMATCHED_409}]}}))
+                .await;
+                let r = client(m)
+                    .uploads()
+                    .reserve(CreateUploadInput {
+                        file_name: "a.txt".into(),
+                        content_type: "text/plain".into(),
+                        byte_size: 1,
+                        sha256: "x".into(),
+                    })
+                    .await;
+                let Err(Error::Conflict(e)) = &r else {
+                    return Err(format!("got {:?}", r.err()));
+                };
+                ensure!(
+                    e.status == 409 && e.code == "CONFLICT" && e.request_id.as_deref() == Some("01MISMATCHEDSTATUS0000000"),
+                    "got {e:?}"
+                );
+                Ok(())
+            })
+        }
         "errors.field-errors" => Box::pin(async move {
             let c = client(m);
             let d = draft(&c).await.map_err(s)?;

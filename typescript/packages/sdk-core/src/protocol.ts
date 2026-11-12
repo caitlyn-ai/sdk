@@ -130,7 +130,9 @@ export class CaitlynRestJsonProtocol extends HttpBindingProtocol {
     const rawBody = response.body instanceof Uint8Array ? new TextDecoder().decode(response.body) : '';
     const body: Record<string, unknown> = {
       ...dataObject,
-      status: typeof dataObject.status === 'number' ? dataObject.status : response.statusCode,
+      // Always the HTTP status: a body's `status` can be wrong (a proxy, a faulty handler), and the class is
+      // chosen by the HTTP status too (PROTOCOL.md 6.3).
+      status: response.statusCode,
       code: typeof dataObject.code === 'string' && dataObject.code ? dataObject.code : `HTTP_${response.statusCode}`,
       requestId: dataObject.requestId ?? response.headers['caitlyn-request-id'],
       rawBody,
