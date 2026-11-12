@@ -3,12 +3,13 @@
 //   build/docs/pages.json         one entry per page: path, public URL, title and its metadata
 // Every Markdown page carries its knowledge-base metadata as front matter (scripts/docs-metadata.mjs), which
 // Markdown ingestion reads; the build fails on a value ingestion would skip.
-// Today the site is a holding page plus one Markdown reference page per operation, generated from the
-// model, so the publish and knowledge-base jobs have real input to work on.
+// Today the site is a holding page, one Markdown reference page per operation, generated from the model, and
+// the guides in docs/guides/, so the publish and knowledge-base jobs have real input to work on.
 // Usage: node scripts/docs-build.mjs   (reads build/model/model.json; run prepare-model first)
 import fs from 'node:fs';
 import path from 'node:path';
 import { OPTIONS, frontMatter, metadataProblems, sinceVersion } from './docs-metadata.mjs';
+import { readGuides } from './docs-guides.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const out = path.join(root, 'build/docs');
@@ -83,6 +84,16 @@ for (const { id, resource, lifecycle } of ops.sort((a, b) => a.id.localeCompare(
     metadata,
   });
 }
+// Hand-written guides (docs/guides/), checked against the examples their code comes from
+fs.mkdirSync(path.join(site, 'guides'), { recursive: true });
+for (const g of readGuides()) {
+  for (const p of g.problems) {
+    console.error(`docs/${g.slug}.md: ${p}`);
+    invalid++;
+  }
+  fs.writeFileSync(path.join(site, `${g.slug}.md`), g.markdown);
+  pages.push({ path: `${g.slug}.md`, url: `https://build.caitlyn.ai/${g.slug}/`, title: g.title, metadata: g.metadata });
+}
 if (invalid) {
   console.error(`docs-build: ${invalid} front-matter values ingestion would skip; fix them before publishing.`);
   process.exit(1);
@@ -93,4 +104,4 @@ fs.writeFileSync(
     '<body><h1>Caitlyn developer docs</h1><p>Coming soon.</p></body></html>\n',
 );
 fs.writeFileSync(path.join(out, 'pages.json'), JSON.stringify({ pages }, null, 2) + '\n');
-console.log(`docs-build: ${pages.length} reference pages in build/docs/site (skeleton; lane D2 builds the real site)`);
+console.log(`docs-build: ${pages.length} pages in build/docs/site (skeleton; lane D2 builds the real site)`);

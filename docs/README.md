@@ -2,9 +2,9 @@
 
 The public developer site, `build.caitlyn.ai`, is built from this repository: the API reference from the
 model, guides that pull their code from the tested examples, Markdown copies of every page and `llms.txt`.
-Lane D2 of the v3 implementation plan builds it with Astro Starlight; until then `make docs` runs a skeleton
-(`scripts/docs-build.mjs`) that writes a holding page and one Markdown reference page per operation, so the
-publishing jobs have real input.
+The real site will be built with Astro Starlight; until then `make docs` runs a skeleton
+(`scripts/docs-build.mjs`) that writes a holding page, one Markdown reference page per operation and the
+guides, so the publishing jobs have real input.
 
 | Output | What it is |
 | --- | --- |
@@ -13,7 +13,7 @@ publishing jobs have real input.
 
 ## Publishing
 
-The hosting is in `production-demo-infrastructure`, root `developer-docs/` (lane D1): an S3 bucket and
+The hosting is in `production-demo-infrastructure`, root `developer-docs/`: an S3 bucket and
 CloudFront distribution for the live site, and a preview bucket with one prefix per merge request. CI signs
 in to AWS with GitLab `id_tokens` (OIDC, audience `https://git.customd.com`); the roles trust only
 `project_path:custom-d/caitlyn/sdk`, so these jobs work only in that GitLab project.
@@ -26,8 +26,28 @@ in to AWS with GitLab `id_tokens` (OIDC, audience `https://git.customd.com`); th
 | `docs:publish` | `main` | `DOCS_PUBLISH_ROLE_ARN` | Uploads the live site and invalidates `DOCS_DISTRIBUTION_ID` |
 | `docs:knowledge-base` | `main`, after `docs:publish` | none yet | A dry run of `scripts/docs-kb-publish.mjs` (see below) |
 
-None of them runs until the CI variable `DOCS_ENABLED` is `true`, which should wait for lane D2's first
-real site: until then `build.caitlyn.ai` stays a 404, as D1 intends.
+None of them runs until the CI variable `DOCS_ENABLED` is `true`, which should wait for the first real
+site: until then `build.caitlyn.ai` stays a 404, as the hosting intends.
+
+## Guides
+
+Guides are hand-written pages in `docs/guides/`, one Markdown file each, named for the task in the
+imperative (`sign-in-from-a-browser.md`). Each starts with front matter (below), `pageType: guide`, then a
+`#` title.
+
+A guide's code comes from the examples in `examples/`, which CI type-checks against the SDK. Mark a region in
+the example with `// #region <name>` and `// #endregion`, and put a marker line before the guide's code block:
+
+````markdown
+<!-- example: examples/typescript/browser-sign-in-page.ts#sign-in -->
+```ts
+```
+````
+
+`node scripts/docs-guides.mjs --write` copies each region into its code block, and
+`node scripts/docs-guides.mjs` (run by `scripts/test-typescript.sh` in CI, and by the docs build) fails when a
+block differs from its region, a region is missing or the front matter is one ingestion would skip. So a guide
+whose code stops compiling, or drifts from the example, fails the pipeline.
 
 ## Into Ask Caitlyn
 
@@ -69,7 +89,7 @@ publisher check every page against these options first, and fail rather than pub
 only partly read.
 
 The publisher is a stub: it checks the front matter and, with `--dry-run`, prints what it would send. The
-real publisher (lane D4) needs v3 documents (lane S3) and the TypeScript SDK's `documents.upload` (lane K1).
+real publisher needs the v3 document operations on the server and the TypeScript SDK's `documents.upload`.
 It signs in with the docs publisher's machine client; its client ID and secret are the masked, protected CI
 variables `ASK_CAITLYN_CLIENT_ID` and `ASK_CAITLYN_CLIENT_SECRET`, set from the Caitlyn vault in 1Password.
-Lane D4 plans to replace them with `workloadIdentity` once workload sign-in (lane A3) exists.
+They are to be replaced with `workloadIdentity` once the server accepts workload sign-in.
