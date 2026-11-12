@@ -65,8 +65,8 @@ def workspace_host(workspace: str) -> str:
 
 
 def workspace_audience(workspace: str) -> str:
-    """The audience of a workspace's tokens: its resource URL, ``https://<workspace>/api/v3``."""
-    return f"https://{workspace_host(workspace)}/api/v3"
+    """The audience of a workspace's tokens: its resource URL, ``https://<workspace>/api``."""
+    return f"https://{workspace_host(workspace)}/api"
 
 
 class CaitlynAuthError(Exception):
@@ -109,7 +109,7 @@ class ClientCredentials(Auth):
     client_secret: str = field(repr=False)
     scopes: Sequence[str] = ()
     resource: str | None = None
-    """The token audience. Default: the workspace's, ``https://<workspace>/api/v3``."""
+    """The token audience. Default: the workspace's, ``https://<workspace>/api``."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,7 +142,7 @@ class OAuth(Auth):
     redirect_uri: str | None = None
     scopes: Sequence[str] = ()
     resource: str | None = None
-    """The token audience. Default: the workspace's, ``https://<workspace>/api/v3``."""
+    """The token audience. Default: the workspace's, ``https://<workspace>/api``."""
     token_store: TokenStore | None = None
     """Default: kept in memory for the life of the client."""
 
@@ -164,7 +164,7 @@ class AwsIam(Auth):
     duration_seconds: int = 300
     """The lifetime of the AWS-signed token, at most 300."""
     audience: str | None = None
-    """The audience of the AWS token. Default: the workspace's, ``https://<workspace>/api/v3``."""
+    """The audience of the AWS token. Default: the workspace's, ``https://<workspace>/api``."""
     sts_endpoint: str | None = None
     """Overrides ``https://sts.<region>.amazonaws.com/`` (FIPS or VPC endpoints, tests)."""
 
@@ -176,7 +176,7 @@ class WorkloadIdentity(Auth):
 
     token: Callable[[], str | Awaitable[str]]
     resource: str | None = None
-    """The token audience. Default: the workspace's, ``https://<workspace>/api/v3``."""
+    """The token audience. Default: the workspace's, ``https://<workspace>/api``."""
 
 
 @dataclass(frozen=True, slots=True)

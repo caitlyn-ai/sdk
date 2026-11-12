@@ -99,8 +99,8 @@ const b64url = (bytes: ArrayBuffer | Uint8Array) =>
   btoa(String.fromCharCode(...new Uint8Array(bytes as ArrayBuffer))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const randomString = (n = 32) => b64url(crypto.getRandomValues(new Uint8Array(n)));
 
-/** The audience of a workspace's tokens: its resource URL, https://<workspace>/api/v3. */
-export const workspaceAudience = (workspace: string) => `https://${workspaceHost(workspace)}/api/v3`;
+/** The audience of a workspace's tokens: its resource URL, https://<workspace>/api. */
+export const workspaceAudience = (workspace: string) => `https://${workspaceHost(workspace)}/api`;
 
 /** A workspace given as a hostname or a URL, as its bare hostname. */
 export const workspaceHost = (workspace: string) => workspace.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
@@ -147,7 +147,7 @@ export class AuthSession {
   private memoryTokens?: OAuthTokens;
   readonly tokenEndpoint: string;
   readonly authorizationEndpoint: string;
-  /** The workspace's resource URL, https://<workspace>/api/v3: the audience every token is bound to. */
+  /** The workspace's resource URL, https://<workspace>/api: the audience every token is bound to. */
   readonly resource: string;
   /** https://<workspace>: the default Origin for session writes. */
   readonly workspaceUrl: string;

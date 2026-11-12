@@ -35,7 +35,7 @@
     {"id": "headers.request-id", "section": "4", "title": "Caitlyn-Request-Id and Caitlyn-Api-Version are on successful outputs"},
     {"id": "telemetry.spans", "section": "11", "title": "One span per call, one child span per attempt, traceparent sent"},
     {"id": "endpoint.workspace", "section": "3", "title": "A workspace hostname resolves to https://<workspace>/api"},
-    {"id": "auth.workspace", "section": "12", "title": "A workspace given as a hostname or URL sets the token audience https://<workspace>/api/v3; an endpoint override moves the token request, not the audience"},
+    {"id": "auth.workspace", "section": "12", "title": "A workspace given as a hostname or URL sets the token audience https://<workspace>/api; an endpoint override moves the token request, not the audience"},
     {"id": "auth.token", "section": "12", "title": "A personal access token is sent as the bearer token, with no token request"},
     {"id": "auth.client-credentials", "section": "12", "title": "One token request serves concurrent calls, with the workspace resource and the scopes"},
     {"id": "auth.client-credentials-refused", "section": "12", "title": "A wrong client secret is a sign-in error with the OAuth code and status"},

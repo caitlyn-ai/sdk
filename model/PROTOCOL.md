@@ -188,7 +188,7 @@ How an SDK gets the credential it sends. The TypeScript runtime (`@caitlyn-ai/sd
 - The client is created for a **workspace**, given as a hostname (`your-company.getcaitlyn.ai`) or a URL (`https://your-company.getcaitlyn.ai/`). The SDK reduces it to the hostname.
 - The workspace sets two things:
   - the **endpoint**, `https://<workspace>/api`: operation paths (`/v3/…`) and the sign-in paths (`/oauth/token`, `/oauth/authorize`) are appended to it;
-  - the **token audience**, always `https://<workspace>/api/v3`: the `resource` parameter of every token request and authorisation URL, and the audience of the AWS identity token in `awsIam` mode.
+  - the **token audience**, always `https://<workspace>/api`: the `resource` parameter of every token request and authorisation URL, and the audience of the AWS identity token in `awsIam` mode. It is one audience for the workspace's whole REST API, v2 and v3 alike; there is no separate v3 audience. (The server also accepts `https://<workspace>/api/v3`, which SDK versions up to 0.0.2 request, as an alias.)
 - An `endpoint` client option (a proxy, a local app) replaces the base URL, so requests and the sign-in paths go there. It never changes the audience: a token is always for the workspace the client names.
 - A mode that offers a `resource` option (`clientCredentials`, `oauth`, `workloadIdentity` in TypeScript) uses it in place of the workspace audience. `awsIam` offers `audience` instead, which changes only the audience of the AWS identity token.
 

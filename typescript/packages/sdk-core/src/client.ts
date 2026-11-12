@@ -6,7 +6,7 @@ import { AuthSession, tokenIdentityProvider, workspaceHost, type AuthOptions } f
 export interface CaitlynOptions {
   /**
    * The workspace hostname, for example "your-company.getcaitlyn.ai". Like an AWS region, it decides where
-   * requests go (https://<workspace>/api) and the audience every token is bound to (https://<workspace>/api/v3).
+   * requests go (https://<workspace>/api) and the audience every token is bound to (https://<workspace>/api).
    */
   workspace: string;
   /** How the client signs in: token, clientCredentials, oauth, awsIam, workloadIdentity or session. */

@@ -35,9 +35,9 @@ pub fn workspace_endpoint(workspace: &str) -> String {
     format!("https://{}/api", workspace_host(workspace))
 }
 
-/// The audience every token for a workspace is bound to: `https://<workspace>/api/v3`.
+/// The audience every token for a workspace is bound to: `https://<workspace>/api`.
 pub fn workspace_audience(workspace: &str) -> String {
-    format!("https://{}/api/v3", workspace_host(workspace))
+    format!("https://{}/api", workspace_host(workspace))
 }
 
 /// Builds a [`Client`]. Like an AWS region, the workspace decides where requests go and which audience tokens
@@ -492,10 +492,7 @@ mod tests {
     fn workspace_decides_endpoint_and_audience() {
         assert_eq!(workspace_host("https://acme.getcaitlyn.ai/"), "acme.getcaitlyn.ai");
         assert_eq!(workspace_endpoint("acme.getcaitlyn.ai"), "https://acme.getcaitlyn.ai/api");
-        assert_eq!(
-            workspace_audience("https://acme.getcaitlyn.ai/x"),
-            "https://acme.getcaitlyn.ai/api/v3"
-        );
+        assert_eq!(workspace_audience("https://acme.getcaitlyn.ai/x"), "https://acme.getcaitlyn.ai/api");
     }
 
     #[test]
