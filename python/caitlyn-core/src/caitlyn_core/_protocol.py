@@ -155,12 +155,14 @@ def read_result[M: CaitlynModel](spec: OperationSpec, response: httpx.Response, 
 
 def read_error(spec: OperationSpec, response: httpx.Response) -> CaitlynError:
     """Problem details to the modelled error for this status, or to ``CaitlynError``."""
-    return error_from_problem(
+    err = error_from_problem(
         spec,
         response.status_code,
         parse_json_object(response.content),
         response.headers,
     )
+    err.raw_body = response.content.decode("utf-8", errors="replace")
+    return err
 
 
 def error_from_problem(

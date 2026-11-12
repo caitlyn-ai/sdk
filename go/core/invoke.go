@@ -255,6 +255,7 @@ func (c *Client) attempt(ctx context.Context, op *Operation, req *Request, cs *c
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	resp.Body.Close()
 	ae := problemFromBody(resp.StatusCode, resp.Header, b)
+	ae.RawBody = strings.ToValidUTF8(string(b), "\uFFFD")
 	if ae.Status != resp.StatusCode {
 		ae.Status = resp.StatusCode // the class is chosen by the HTTP status (PROTOCOL.md 6.2)
 	}

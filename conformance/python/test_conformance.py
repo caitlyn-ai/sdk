@@ -293,6 +293,36 @@ async def test_429_exhausted(mock: Mock, case_id: str) -> None:
     assert len(mock.api()) == 3
 
 
+# An error page from something in front of the API, not a problem body (PROTOCOL.md 6.1).
+HTML_404 = "<!DOCTYPE html><html><head><title>404: This page could not be found</title></head><body><h1>404</h1></body></html>"
+
+
+@case("errors.html-404")
+async def test_html_404(mock: Mock, case_id: str) -> None:
+    mock.faults(status={"ListDocuments": [{"status": 404, "contentType": "text/html; charset=utf-8", "body": HTML_404}]})
+    err = await expect_error(collect(client(mock).documents.list(knowledge_base_id="KB4T7YQ2WL")))
+    assert isinstance(err, NotFoundError)
+    assert (err.status, err.code, err.request_id) == (404, "HTTP_404", None)
+    assert err.raw_body == HTML_404
+
+
+@case("errors.empty-405")
+async def test_empty_405(mock: Mock, case_id: str) -> None:
+    mock.faults(status={"GetAgentVersion": [{"status": 405, "body": ""}]})
+    err = await expect_error(client(mock).versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    assert type(err) is CaitlynError
+    assert (err.status, err.code, err.request_id, err.raw_body) == (405, "HTTP_405", None, "")
+
+
+@case("errors.text-502")
+async def test_text_502(mock: Mock, case_id: str) -> None:
+    mock.faults(status={"GetAgentVersion": [{"status": 502, "contentType": "text/plain", "body": "Bad Gateway"}]})
+    err = await expect_error(client(mock).versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    assert type(err) is CaitlynError
+    assert (err.status, err.code, err.raw_body) == (502, "HTTP_502", "Bad Gateway")
+    assert len(mock.api()) == 1
+
+
 @case("errors.field-errors")
 async def test_field_errors(mock: Mock, case_id: str) -> None:
     c = client(mock)

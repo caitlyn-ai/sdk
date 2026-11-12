@@ -58,6 +58,9 @@ func draft(t *testing.T, c *caitlyn.Client) *caitlyn.AgentVersion {
 }
 
 // apiError returns err as *caitlyn.Error, failing the test otherwise.
+// An error page from something in front of the API, not a problem body (PROTOCOL.md 6.1).
+const html404 = `<!DOCTYPE html><html><head><title>404: This page could not be found</title></head><body><h1>404</h1></body></html>`
+
 func apiError(t *testing.T, err error) *caitlyn.Error {
 	t.Helper()
 	var e *caitlyn.Error
@@ -350,6 +353,30 @@ var protocol = map[string]func(t *testing.T, m mock){
 		_, err := client(t, m).Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
 		if e := apiError(t, err); e.Status != 429 || e.Code != "RATE_LIMITED" || e.RetryAfterSeconds == nil || *e.RetryAfterSeconds != 0 || len(m.api(t)) != 3 {
 			t.Fatalf("got %+v", e)
+		}
+	},
+	"errors.html-404": func(t *testing.T, m mock) {
+		m.faults(t, status("ListDocuments", map[string]any{"status": 404, "contentType": "text/html; charset=utf-8", "body": html404}))
+		_, err := listAll(context.Background(), client(t, m), &caitlyn.ListDocumentsInput{KnowledgeBaseID: kb})
+		var nf *caitlyn.NotFoundError
+		if !errors.As(err, &nf) || nf.Status != 404 || nf.Code != "HTTP_404" || nf.RequestID != "" || nf.RawBody != html404 {
+			t.Fatalf("got %T %+v", err, err)
+		}
+	},
+	"errors.empty-405": func(t *testing.T, m mock) {
+		m.faults(t, status("GetAgentVersion", map[string]any{"status": 405, "body": ""}))
+		_, err := client(t, m).Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+		e, ok := err.(*caitlyn.Error)
+		if !ok || e.Status != 405 || e.Code != "HTTP_405" || e.RequestID != "" || e.RawBody != "" {
+			t.Fatalf("got %T %+v", err, err)
+		}
+	},
+	"errors.text-502": func(t *testing.T, m mock) {
+		m.faults(t, status("GetAgentVersion", map[string]any{"status": 502, "contentType": "text/plain", "body": "Bad Gateway"}))
+		_, err := client(t, m).Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+		e, ok := err.(*caitlyn.Error)
+		if !ok || e.Status != 502 || e.Code != "HTTP_502" || e.RawBody != "Bad Gateway" || len(m.api(t)) != 1 {
+			t.Fatalf("got %T %+v", err, err)
 		}
 	},
 	"errors.field-errors": func(t *testing.T, m mock) {

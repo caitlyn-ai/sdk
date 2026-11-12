@@ -119,6 +119,9 @@ fn header<'a>(r: &'a Value, name: &str) -> Option<&'a str> {
     r["headers"].get(name).and_then(Value::as_str)
 }
 
+/// An error page from something in front of the API, not a problem body (PROTOCOL.md 6.1).
+const HTML_404: &str = "<!DOCTYPE html><html><head><title>404: This page could not be found</title></head><body><h1>404</h1></body></html>";
+
 fn status(op: &str, faults: &[(u16, u64)]) -> Value {
     json!({"status": {op: faults.iter().map(|(s, ra)| json!({"status": s, "retryAfter": ra})).collect::<Vec<_>>()}})
 }
@@ -586,6 +589,46 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let n = m.api().await.len();
             ensure!(
                 e.status == 429 && e.code == "RATE_LIMITED" && e.retry_after_seconds == Some(0) && n == 3,
+                "got {e:?}, {n} requests"
+            );
+            Ok(())
+        }),
+        "errors.html-404" => Box::pin(async move {
+            m.faults(json!({"status": {"ListDocuments": [{"status": 404, "contentType": "text/html; charset=utf-8", "body": HTML_404}]}}))
+                .await;
+            let r = list_all(&client(m), KB, None).await;
+            let Err(Error::NotFound(e)) = &r else {
+                return Err(format!("got {:?}", r.err()));
+            };
+            ensure!(
+                e.status == 404 && e.code == "HTTP_404" && e.request_id.is_none() && e.raw_body == HTML_404,
+                "got {e:?}"
+            );
+            Ok(())
+        }),
+        "errors.empty-405" => Box::pin(async move {
+            m.faults(json!({"status": {"GetAgentVersion": [{"status": 405, "body": ""}]}}))
+                .await;
+            let r = draft(&client(m)).await;
+            let Err(Error::Api(e)) = &r else {
+                return Err(format!("got {:?}", r.err()));
+            };
+            ensure!(
+                e.status == 405 && e.code == "HTTP_405" && e.request_id.is_none() && e.raw_body.is_empty(),
+                "got {e:?}"
+            );
+            Ok(())
+        }),
+        "errors.text-502" => Box::pin(async move {
+            m.faults(json!({"status": {"GetAgentVersion": [{"status": 502, "contentType": "text/plain", "body": "Bad Gateway"}]}}))
+                .await;
+            let r = draft(&client(m)).await;
+            let Err(Error::Api(e)) = &r else {
+                return Err(format!("got {:?}", r.err()));
+            };
+            let n = m.api().await.len();
+            ensure!(
+                e.status == 502 && e.code == "HTTP_502" && e.raw_body == "Bad Gateway" && n == 1,
                 "got {e:?}, {n} requests"
             );
             Ok(())

@@ -68,4 +68,6 @@ export interface CaitlynErrorFields {
   requestId?: string;
   retryAfterSeconds?: number;
   errors?: CaitlynFieldError[];
+  /** The response body as received, as text: the only view of a body that is not problem details (PROTOCOL.md 6.3). */
+  rawBody?: string;
 }

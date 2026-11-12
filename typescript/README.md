@@ -126,7 +126,9 @@ const draft = await getAgentVersion(client, { agentId: 'GHT7YRWXPL', version: 'd
 Every API error is a `CaitlynError` subclass, one per status (`ValidationError`, `NotFoundError`,
 `ConflictError`, `PreconditionFailedError`, `TooManyRequestsError`…), carrying the problem details: `status`,
 `code`, `title`, `detail`, `requestId` (quote it to Caitlyn support) and, on a 400, `errors`, one entry per
-field. Sign-in failures are `CaitlynAuthError`, with the OAuth error code.
+field. An error page from something in front of the API (an HTML 404, a proxy's 502) is the same class for its
+status, with `code` `HTTP_<status>` and the page in `rawBody`. Sign-in failures are `CaitlynAuthError`, with
+the OAuth error code.
 
 ```ts
 try {

@@ -284,6 +284,39 @@ test('[errors.field-errors] a 400 VALIDATION_FAILED for a field both set and cle
   assert.equal(err.errors?.[0]?.code, 'VALIDATION_FAILED');
 });
 
+// An error page from something in front of the API, not a problem body (PROTOCOL.md 6.1).
+const HTML_404 = '<!DOCTYPE html><html><head><title>404: This page could not be found</title></head><body><h1>404</h1></body></html>';
+
+test('[errors.html-404] an HTML 404 with no Caitlyn-Request-Id is the NotFoundError class, with code HTTP_404 and the body kept', async () => {
+  await faults({ status: { ListDocuments: [{ status: 404, contentType: 'text/html; charset=utf-8', body: HTML_404 }] } });
+  const err = await expectError(collect(client().documents.list({ knowledgeBaseId: 'KB4T7YQ2WL' })));
+  assert.ok(err instanceof NotFoundError, `got ${err.name}`);
+  assert.equal(err.status, 404);
+  assert.equal(err.code, 'HTTP_404');
+  assert.equal(err.requestId, undefined);
+  assert.equal((err as Err).rawBody, HTML_404);
+});
+
+test('[errors.empty-405] a 405 with an empty body is the generic error, with status 405 and code HTTP_405', async () => {
+  await faults({ status: { GetAgentVersion: [{ status: 405, body: '' }] } });
+  const err = await expectError(client().versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }));
+  assert.equal(err.constructor, CaitlynError);
+  assert.equal(err.status, 405);
+  assert.equal(err.code, 'HTTP_405');
+  assert.equal(err.requestId, undefined);
+  assert.equal(err.rawBody, '');
+});
+
+test('[errors.text-502] a text/plain 502 is the generic error, with status 502, code HTTP_502 and the text, sent once', async () => {
+  await faults({ status: { GetAgentVersion: [{ status: 502, contentType: 'text/plain', body: 'Bad Gateway' }] } });
+  const err = await expectError(client().versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }));
+  assert.equal(err.constructor, CaitlynError);
+  assert.equal(err.status, 502);
+  assert.equal(err.code, 'HTTP_502');
+  assert.equal(err.rawBody, 'Bad Gateway');
+  assert.equal((await api()).length, 1);
+});
+
 // ---------------------------------------------------------------- cancellation
 
 test('[cancel.stream] cancelling a stream closes the connection and raises AbortError', async () => {

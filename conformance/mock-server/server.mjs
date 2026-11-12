@@ -29,7 +29,9 @@ const API_VERSION_DEFAULT = '5.120.0';
 const EXAMPLES = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '../cases/examples.json'), 'utf8')).cases;
 
 const DEFAULT_FAULTS = {
-  // Per operation, a queue of status faults served before the real response: [{status: 429, retryAfter: 1}]
+  // Per operation, a queue of status faults served before the real response: [{status: 429, retryAfter: 1}].
+  // A fault with `body` (a string) or `contentType` is served as that raw body instead of a problem, with no
+  // Caitlyn-Request-Id or Caitlyn-Api-Version, as a proxy or a web framework's own error page would be.
   status: {},
   // Close the SSE connection (without a final event) after this many events on the first stream only.
   dropAfterEvents: null,
@@ -184,6 +186,11 @@ function statusFault(op, res, rid) {
   if (!queue || queue.length === 0) return false;
   const f = queue.shift();
   const extra = f.retryAfter != null ? { 'Retry-After': String(f.retryAfter) } : {};
+  if (f.body !== undefined || f.contentType !== undefined) {
+    res.writeHead(f.status, { ...(f.contentType ? { 'Content-Type': f.contentType } : {}), ...extra });
+    res.end(f.body ?? '');
+    return true;
+  }
   const code = f.status === 429 ? 'RATE_LIMITED' : f.status === 503 ? 'SERVICE_UNAVAILABLE' : f.status === 500 ? 'INTERNAL' : `HTTP_${f.status}`;
   problem(res, rid, f.status, code, 'Injected fault', { extra });
   return true;

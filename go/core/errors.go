@@ -29,6 +29,10 @@ type APIError struct {
 	Errors []FieldError
 	// Cause is the underlying failure for errors the SDK raises itself.
 	Cause error
+	// RawBody is the response body as received (up to 1 MiB), as text: the only view of a body that is not
+	// problem details, such as a proxy's or a web framework's own error page. Empty for an empty body and for
+	// errors the SDK raises itself.
+	RawBody string
 
 	raw Raw
 }
