@@ -299,15 +299,23 @@ docs:knowledge-base:
 # ---------------------------------------------------------------------------- releases
 
 # The template's jobs (custom-d/devops-platform/ci-templates/semantic-versioning). A release is cut only from a
-# main pipeline whose conformance passed; nothing is committed back, so there is no [skip ci] loop.
+# main pipeline whose conformance passed and whose fetch-semantic-version dry run succeeded; nothing is committed
+# back, so there is no [skip ci] loop.
 fetch-semantic-version:
   needs: []
   variables:
     SEMANTIC_RELEASE_PACKAGE: 'Caitlyn SDKs'
 
 release:
+  # `needs` replaces the template's stage ordering, under which release ran only after every earlier job,
+  # fetch-semantic-version included, had passed. So both are named: a failed job in `needs` (neither allows
+  # failure) skips the release. fetch-semantic-version's VERSION.txt comes along, as the stage order would have
+  # brought it. `optional` covers a pipeline where SEMVER_TEST_DISABLED leaves the dry run out.
   needs:
     - job: conformance
+    - job: fetch-semantic-version
+      artifacts: true
+      optional: true
   variables:
     SEMANTIC_RELEASE_PACKAGE: 'Caitlyn SDKs'
 
