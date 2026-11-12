@@ -1,6 +1,6 @@
 [project]
 name = "caitlyn-core"
-version = "0.0.2"
+version = "0.0.0"
 description = "Runtime core for Caitlyn's generated Python SDKs: transport, retries, errors, SSE, telemetry."
 requires-python = ">=3.12"
 dependencies = [

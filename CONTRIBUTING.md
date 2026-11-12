@@ -129,8 +129,9 @@ project access token with `write_repository` and `api`.
 The SDKs send `Caitlyn-Sdk-Model`, the highest `@since` in the model they were generated from, and refuse,
 before sending, an operation or member newer than the server's `Caitlyn-Api-Version` (PROTOCOL.md section 9).
 
-All four SDKs share one version, the one in the top-level `VERSION` file. `make generate` stamps it everywhere it
-appears (`scripts/version.mjs` lists each place):
+All four SDKs share one version, and the repository stores none: the release tag is the version. The top-level
+`VERSION` file holds `0.0.0`, the version of every build that is not a release, and is never edited by hand.
+`make generate` stamps `VERSION`'s version everywhere it appears (`scripts/version.mjs` lists each place):
 
 - TypeScript: both `package.json` files, the SDK's dependency on `sdk-core`, `typescript/package-lock.json`, the
   `User-Agent` and the OpenTelemetry tracer version;
@@ -143,7 +144,52 @@ appears (`scripts/version.mjs` lists each place):
 Generation fails when any of them disagrees with `VERSION`, and the `generate` CI job fails when the committed
 files differ from what generation writes. Each conformance harness checks its `User-Agent` against `VERSION`.
 
-## Releasing to npm
+A release build stamps the tag's version instead, with Node only and no generators:
+
+```bash
+node scripts/version.mjs release 0.1.0   # VERSION and every file above at 0.1.0, then checked
+```
+
+It writes the version in exactly the places generation does, so the result is what `make generate` at that version
+would commit. `.github/workflows/release-npm.yml` runs it on the tag's checkout; the PyPI, Go and crates.io
+releases are to run the same command before they build.
+
+## How a version is chosen
+
+semantic-release (`.releaserc.yml`, run by the `release` CI job from the shared
+`custom-d/devops-platform/ci-templates/semantic-versioning` template, as in the app repository) runs on every
+`main` pipeline whose conformance passed. From the conventional commits since the last `v*` tag it works out the
+next version, creates the tag `v<version>` and a GitLab release with notes, and commits nothing back:
+
+| Commit | Release |
+| --- | --- |
+| `feat` | minor (0.1.0 → 0.2.0) |
+| `fix`, `perf`, `revert` | patch (0.1.0 → 0.1.1) |
+| a breaking change (`feat!:`, or a `BREAKING CHANGE:` footer) | minor while the version is below 1.0; going to 1.0 is a decision, made by removing that rule in `.releaserc.yml` |
+| `docs`, `ci`, `chore`, `test`, `refactor`, `style`, `build` | none |
+
+So the commit type is what releases: a commit that changes what an SDK does is `feat` or `fix`, and one that
+changes only the pipeline, the docs or the tests is not. The `fetch-semantic-version` job shows on `main` what the
+next version would be (`VERSION.txt`).
+
+## Releasing
+
+**Never tag by hand.** Merge to `main`; when its commits call for a release, the `release` job tags it. Then:
+
+1. The `release` job (semantic-release) creates `v<version>` and the GitLab release.
+2. The push mirror takes the protected tag to `github.com/caitlyn-ai/sdk`.
+3. On GitHub, `release-npm` stamps the tag's version (`scripts/version.mjs release`), checks it, tests, builds and
+   checks the packages, then stages `sdk-core` and then `sdk`.
+4. On npmjs.com, account settings → Staged Packages: check both versions (name, version, dist-tag `latest`,
+   publisher), then approve them, `sdk-core` with or before `sdk`, since the SDK depends on that exact
+   `sdk-core` version. A batch approves both with one two-factor challenge.
+
+The `release` job pushes the tag with `GITLAB_TOKEN`, a CI variable (masked, protected) holding a project access
+token with the **Maintainer** role, because only Maintainers may create the protected `v*` tags, and the `api` and
+`write_repository` scopes. The token expires: replace it before then, or releases stop with "HTTP Basic: Access
+denied" (the template's README, https://git.customd.com/custom-d/devops-platform/ci-templates/semantic-versioning).
+
+### npm
 
 `@caitlyn-ai/sdk-core` and `@caitlyn-ai/sdk` are released from a GitHub mirror of this repository by
 `.github/workflows/release-npm.yml`, with npm provenance. npm trusted publishing accepts OpenID Connect tokens
@@ -183,20 +229,11 @@ What is set up (by Sam: the GitHub organisation and the npm scope are his):
    workflow can only stage, and only a maintainer with two-factor authentication can make a version public.
    Staged publishing needs npm 11.15.0 or later; the workflow pins its npm version.
 
-To release:
-
-1. Set the version in `VERSION`, run `make generate` (it stamps every SDK, the lock files included; see
-   "Versions"), commit the result and merge.
-2. Tag `v<version>` on `main` in GitLab. The protected tag reaches the mirror.
-3. On GitHub, the `release-npm` run for the tag tests, builds and checks the packages, then stages `sdk-core`
-   and then `sdk`.
-4. On npmjs.com, account settings → Staged Packages: check both versions (name, version, dist-tag `latest`,
-   publisher), then approve them, `sdk-core` with or before `sdk`, since the SDK depends on that exact
-   `sdk-core` version. A batch approves both with one two-factor challenge.
-
-The GitLab job `release:npm` is a placeholder that says where releases run.
+The steps of a release are under "Releasing" above. The GitLab job `release:npm` is a placeholder that says where
+npm releases run.
 
 ## Commit messages
 
 Conventional commits, in British English: `feat(codegen): …`, `fix(conformance): …`, `ci: …`,
-`docs: …`. A regenerate from a new model is `feat(model): regenerate the SDKs from model <version>`.
+`docs: …`. The type decides the release ("How a version is chosen"), so pick it for what the commit does to the
+SDKs: a merge request's squash commit or merge commit message is what semantic-release reads. A regenerate from a new model is `feat(model): regenerate the SDKs from model <version>`.

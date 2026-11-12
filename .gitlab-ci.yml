@@ -11,12 +11,24 @@
 #                          it pulls the model, regenerates, tests, and opens a merge request.
 #   docs:*                 Developer docs build, merge request previews, publishing to build.caitlyn.ai and to
 #                          the ask.caitlyn.ai knowledge base. Off until DOCS_ENABLED is "true" (docs/README.md).
-#   release:*              Placeholders for lane R2. Off until RELEASES_ENABLED is "true".
+#   fetch-semantic-version On main: the version the next release would have (VERSION.txt), from the shared
+#                          semantic-versioning template.
+#   release                On main, after conformance passes: semantic-release (.releaserc.yml) tags vX.Y.Z and
+#                          creates the GitLab release when the commits since the last tag call for one. The push
+#                          mirror takes the tag to GitHub, which stages the npm packages (CONTRIBUTING.md, "Releasing").
+#   release:*              Placeholders for the PyPI, Go, crates.io and Homebrew releases. Off until RELEASES_ENABLED
+#                          is "true".
 #
 # CI variables this file reads (set on the project, never in this file):
 #   DOCS_ENABLED, DOCS_PUBLISH_ROLE_ARN (protected), DOCS_PREVIEW_ROLE_ARN, DOCS_DISTRIBUTION_ID (protected),
 #   ASK_CAITLYN_CLIENT_ID and ASK_CAITLYN_CLIENT_SECRET (masked, protected), SDK_BOT_TOKEN (masked, protected),
-#   RELEASES_ENABLED.
+#   GITLAB_TOKEN (masked, protected: a project access token with the Maintainer role, which may create the
+#   protected v* tags, and the api and write_repository scopes; semantic-release uses it), RELEASES_ENABLED.
+
+include:
+  # fetch-semantic-version and release: semantic-release in the shared image, as the app repository runs it.
+  - project: 'custom-d/devops-platform/ci-templates/semantic-versioning'
+    file: 'semver.gitlab-ci.yml'
 
 workflow:
   rules:
@@ -284,7 +296,22 @@ docs:knowledge-base:
   rules:
     - if: $DOCS_ENABLED == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
-# ---------------------------------------------------------------------------- releases (lane R2)
+# ---------------------------------------------------------------------------- releases
+
+# The template's jobs (custom-d/devops-platform/ci-templates/semantic-versioning). A release is cut only from a
+# main pipeline whose conformance passed; nothing is committed back, so there is no [skip ci] loop.
+fetch-semantic-version:
+  needs: []
+  variables:
+    SEMANTIC_RELEASE_PACKAGE: 'Caitlyn SDKs'
+
+release:
+  needs:
+    - job: conformance
+  variables:
+    SEMANTIC_RELEASE_PACKAGE: 'Caitlyn SDKs'
+
+# ---------------------------------------------------------------------------- package releases
 
 # Placeholders. Package names on PyPI, the Go module path and the Homebrew tap can only be claimed by a first
 # publish, which is lane R2's: trusted publishing (npm, PyPI), Sigstore signatures, software bills of
@@ -301,7 +328,7 @@ docs:knowledge-base:
 
 # npm releases run on the GitHub mirror, not here: npm trusted publishing (with provenance) accepts OpenID
 # Connect tokens from GitHub Actions, not from this GitLab. See .github/workflows/release-npm.yml and
-# CONTRIBUTING.md, "Releasing to npm". This placeholder says so if someone runs it.
+# CONTRIBUTING.md, "Releasing". This placeholder says so if someone runs it.
 release:npm:
   extends: .release-placeholder
   variables:

@@ -1,12 +1,22 @@
-// The SDK version: one number, in the top-level VERSION file, for all four languages.
+// The SDK version, for all four languages. The repository stores no released version: VERSION holds 0.0.0, the
+// version of every build that is not a release, and a release build stamps the version of its tag
+// (semantic-release on main creates the tag; .releaserc.yml).
 //
-//   node scripts/version.mjs stamp   writes VERSION into every hand-written file that names it, and into the
-//                                     generator settings (codegen/smithy-build.json), before generation
-//   node scripts/version.mjs check   fails unless every file that names the version, generated ones included,
-//                                     names the one in VERSION
+//   node scripts/version.mjs stamp             writes VERSION into every hand-written file that names it, and
+//                                              into the generator settings (codegen/smithy-build.json)
+//   node scripts/version.mjs check [version]   fails unless every file that names the version, generated ones
+//                                              included, names this one (default: VERSION's)
+//   node scripts/version.mjs release <version> a release build: writes <version> into VERSION and every file that
+//                                              names the version, generated ones included, then checks them
 //
-// scripts/generate.sh runs `stamp` first and `check` last, so `make generate` sets the version everywhere and a
-// file that disagrees fails the generation (and the CI generate job). What carries the version:
+// scripts/generate.sh runs `stamp` first and `check` last, so `make generate` sets VERSION's version everywhere
+// and a file that disagrees fails the generation (and the CI generate job). `release` needs only Node, no
+// generators: a release workflow for any registry (.github/workflows/release-npm.yml today; PyPI, Go and
+// crates.io later) runs `node scripts/version.mjs release "${TAG#v}"` on a clean checkout of the tag, then builds.
+// Stamping the generated files as text gives what generating at that version gives: generation writes the
+// version in exactly these places.
+//
+// What carries the version:
 //   TypeScript  the sdk-core and sdk package.json files, the npm lock file, the User-Agent and the tracer version
 //   Python      the caitlyn and caitlyn-core pyproject.toml files, the caitlyn-core pin, both __version__ values
 //               (the User-Agent and the tracer version), the uv lock file
@@ -17,8 +27,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
-const version = fs.readFileSync(path.join(root, 'VERSION'), 'utf8').trim();
-if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) throw new Error(`VERSION: ${JSON.stringify(version)} is not a semantic version`);
+const SEMVER = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+const [mode, given] = process.argv.slice(2);
+if (mode === 'release' && !given) {
+  console.error('Usage: node scripts/version.mjs release <version>, for example 0.1.0');
+  process.exit(2);
+}
+const version = (mode === 'stamp' ? undefined : given) ?? fs.readFileSync(path.join(root, 'VERSION'), 'utf8').trim();
+if (!SEMVER.test(version)) throw new Error(`${JSON.stringify(version)} is not a semantic version`);
 
 const V = String.raw`(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)`;
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -72,28 +88,42 @@ function matches(r) {
   return { text, found };
 }
 
-const mode = process.argv[2];
-if (mode === 'stamp') {
+/** Rewrites every match of the rules to `version`. Returns the files it changed. */
+function stamp(rules) {
   const changed = new Set();
-  for (const r of stamped) {
+  for (const r of rules) {
     const { text, found } = matches(r);
     if (found.every((m) => m[1] === version)) continue;
     const out = text.replace(r.pattern, (whole, v) => whole.slice(0, whole.lastIndexOf(v)) + version + whole.slice(whole.lastIndexOf(v) + v.length));
     fs.writeFileSync(path.join(root, r.file), out);
     changed.add(r.file);
   }
-  console.log(`version: ${version}${changed.size ? ` (stamped ${[...changed].join(', ')})` : ''}`);
-} else if (mode === 'check') {
+  return [...changed];
+}
+
+function check() {
   const wrong = [];
   for (const r of [...stamped, ...generated]) {
     for (const m of matches(r).found) if (m[1] !== version) wrong.push(`${r.file}: ${m[1]}`);
   }
   if (wrong.length) {
-    console.error(`These files name a version other than VERSION (${version}); run make generate:\n  ${wrong.join('\n  ')}`);
+    console.error(`These files name a version other than ${version}${mode === 'check' && !given ? ' (VERSION); run make generate' : ''}:\n  ${wrong.join('\n  ')}`);
     process.exit(1);
   }
   console.log(`version: every SDK is at ${version}`);
+}
+
+if (mode === 'stamp') {
+  const changed = stamp(stamped);
+  console.log(`version: ${version}${changed.length ? ` (stamped ${changed.join(', ')})` : ''}`);
+} else if (mode === 'check') {
+  check();
+} else if (mode === 'release') {
+  fs.writeFileSync(path.join(root, 'VERSION'), `${version}\n`);
+  const changed = stamp([...stamped, ...generated]);
+  console.log(`version: stamped ${version} into VERSION and ${changed.length} files`);
+  check();
 } else {
-  console.error('Usage: node scripts/version.mjs stamp|check');
+  console.error('Usage: node scripts/version.mjs stamp | check [version] | release <version>');
   process.exit(2);
 }
