@@ -28,7 +28,12 @@ export interface TokenStore {
 }
 
 export type AuthOptions =
-  | { mode: 'token'; token: string }
+  | {
+      mode: 'token';
+      token: string;
+      /** In a browser, silences the warning that a long-lived token there is exposed (for local testing). */
+      allowBrowserToken?: boolean;
+    }
   | { mode: 'clientCredentials'; clientId: string; clientSecret: string; scopes?: string[]; resource?: string }
   | {
       mode: 'oauth';
@@ -100,6 +105,39 @@ export const workspaceAudience = (workspace: string) => `https://${workspaceHost
 /** A workspace given as a hostname or a URL, as its bare hostname. */
 export const workspaceHost = (workspace: string) => workspace.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
 
+/**
+ * Whether this is a browser page: a `window` and a `document`. Node, Deno and Bun have no `document`, and web,
+ * service and shared workers have neither. A test environment that simulates a DOM (jsdom) counts as a browser.
+ */
+export const isBrowser = (): boolean => {
+  const g = globalThis as { window?: unknown; document?: unknown };
+  return typeof g.window !== 'undefined' && typeof g.document !== 'undefined';
+};
+
+const IN_BROWSER = 'not_allowed_in_browser';
+
+/**
+ * In a browser, refuses the modes whose credential everyone who loads the page could read, or that only work on a
+ * server, and warns about a long-lived token (PROTOCOL.md section 12.6). Throws when the client is created.
+ */
+function guardBrowser(o: AuthOptions): void {
+  if (!isBrowser()) return;
+  if (o.mode === 'clientCredentials' || (o.mode === 'oauth' && o.clientSecret)) {
+    throw new CaitlynAuthError(
+      `${o.mode === 'oauth' ? 'oauth with a clientSecret' : 'clientCredentials'} cannot be used in a browser: a client secret in a browser is visible to everyone who loads the page. Use oauth without a clientSecret (authorisation code with PKCE), or sign in on your server.`,
+      IN_BROWSER,
+    );
+  }
+  if (o.mode === 'awsIam' || o.mode === 'workloadIdentity') {
+    throw new CaitlynAuthError(`${o.mode} cannot be used in a browser: it signs in a server workload with that workload's own identity. Use oauth in a browser.`, IN_BROWSER);
+  }
+  if (o.mode === 'token' && !o.allowBrowserToken) {
+    console.warn(
+      'Caitlyn: a long-lived token in a browser is exposed to anyone who can run script on the page. token mode in a browser is for local testing; use oauth instead. Set auth.allowBrowserToken: true to silence this warning.',
+    );
+  }
+}
+
 /** What `client.auth` offers: the current token, and the `oauth` mode's sign-in steps. */
 export class AuthSession {
   private cached?: { token: string; refreshAt?: number };
@@ -127,6 +165,7 @@ export class AuthSession {
     this.workspaceUrl = `https://${workspace}`;
     // From the workspace, never from an endpoint override: a token is always for the workspace it names.
     this.resource = ('resource' in options && options.resource) || workspaceAudience(workspace);
+    guardBrowser(options);
   }
 
   get mode() {

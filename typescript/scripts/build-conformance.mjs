@@ -12,6 +12,7 @@ await build({
     'conformance.test': path.join(root, '../conformance/typescript/conformance.test.ts'),
     'auth.test': path.join(root, 'test/auth.test.ts'),
     'waiter.test': path.join(root, 'test/waiter.test.ts'),
+    'browser-guard.test': path.join(root, 'test/browser-guard.test.ts'),
   },
   outdir: path.join(root, 'dist'),
   outExtension: { '.js': '.mjs' },
