@@ -1,6 +1,6 @@
 export { CaitlynRestJsonProtocol, type WithRaw } from './protocol.js';
 export { getCaitlynSdkPlugin, getCaitlynConnectionErrorPlugin, NotSupportedByServer, CAITLYN_SDK_USER_AGENT_PREFIX } from './plugin.js';
-export { CaitlynRetryStrategy, NO_RETRY } from './retry.js';
+export { CaitlynRetryStrategy, RetryBudget, DEFAULT_RETRY_BUDGET, NO_RETRY } from './retry.js';
 export { caitlynEndpointProvider } from './endpoint.js';
 export { getCaitlynTelemetryPlugin, caitlynTracer } from './telemetry.js';
 export { SseStream, type SseSpec, type SseOpened } from './stream.js';

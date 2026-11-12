@@ -11,6 +11,7 @@
 
 pub mod auth;
 pub mod aws;
+mod budget;
 mod client;
 pub mod error;
 pub mod paginate;

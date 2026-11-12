@@ -82,6 +82,9 @@ func WithMaxAttempts(n int) Option { return core.WithMaxAttempts(n) }
 // WithMaxRetryDelay sets the longest Retry-After the client waits for (default 60 s); a longer one fails at once.
 func WithMaxRetryDelay(d time.Duration) Option { return core.WithMaxRetryDelay(d) }
 
+// WithRetryBudget sets the size of the client's retry budget, in tokens (default 500); 0 turns retries off.
+func WithRetryBudget(tokens int) Option { return core.WithRetryBudget(tokens) }
+
 // WithTracerProvider sets the OpenTelemetry tracer provider (default: the global one).
 func WithTracerProvider(tp trace.TracerProvider) Option { return core.WithTracerProvider(tp) }
 

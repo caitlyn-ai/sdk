@@ -102,6 +102,46 @@ async def test_retry_long(mock: Mock, case_id: str) -> None:
     assert time.monotonic() - t0 >= 7
 
 
+def fault503(n: int) -> list[dict[str, int]]:
+    return [{"status": 503, "retryAfter": 0}] * n
+
+
+@case("retry.budget-drains")
+async def test_retry_budget_drains(mock: Mock, case_id: str) -> None:
+    c = client(mock, retry_budget=10)
+    mock.faults(status={"GetAgentVersion": fault503(4)})
+    first = await expect_error(c.versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    assert isinstance(first, ServiceUnavailableError) and len(mock.api()) == 3  # two retries, 5 tokens each
+    t0 = time.monotonic()
+    second = await expect_error(c.versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    assert isinstance(second, ServiceUnavailableError) and len(mock.api()) == 4  # spent: no retry
+    assert time.monotonic() - t0 < 1
+    # A retry after no response costs 10: a budget of 9 pays for a 503's retry but not this one.
+    mock.reset()
+    mock.faults(status={"GetAgentVersion": [{"close": True}]})
+    closed = await expect_error(client(mock, retry_budget=9).versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    assert isinstance(closed, CaitlynConnectionError) and len(mock.api()) == 1
+
+
+@case("retry.budget-refund")
+async def test_retry_budget_refund(mock: Mock, case_id: str) -> None:
+    c = client(mock, retry_budget=5)
+    mock.faults(status={"GetAgentVersion": fault503(1)})
+    await c.versions.get(agent_id="GHT7YRWXPL", version="draft")  # retried once, then refunded
+    mock.faults(status={"GetAgentVersion": fault503(1)})
+    v = await c.versions.get(agent_id="GHT7YRWXPL", version="draft")
+    assert v.name == "draft" and len(mock.api()) == 4
+
+
+@case("retry.budget-first-attempt")
+async def test_retry_budget_first_attempt(mock: Mock, case_id: str) -> None:
+    c = client(mock, retry_budget=0)
+    assert (await c.versions.get(agent_id="GHT7YRWXPL", version="draft")).name == "draft"
+    mock.faults(status={"GetAgentVersion": fault503(1)})
+    err = await expect_error(c.versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    assert isinstance(err, ServiceUnavailableError) and len(mock.api()) == 2
+
+
 @case("retry.idempotency-key-kept")
 async def test_idempotency_key_kept(mock: Mock, tmp_path: Path, case_id: str) -> None:
     mock.faults(status={"CreateUpload": [{"status": 503, "retryAfter": 0}, {"status": 429, "retryAfter": 0}]})

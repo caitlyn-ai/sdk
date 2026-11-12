@@ -30,6 +30,12 @@ export interface CaitlynOptions {
   maxAttempts?: number;
   /** Longest Retry-After the SDK waits for (default 60 000 ms); above it the call fails at once. */
   maxRetryDelayMs?: number;
+  /**
+   * The size of this client's retry budget, in tokens (default 500). A retry costs 5, or 10 after a failure with no
+   * response; a call that succeeds gives back 1, or its last retry's cost. When the budget cannot pay for a retry,
+   * the call fails at once with its error. 0 turns retries off (PROTOCOL.md 6.4).
+   */
+  retryBudget?: number;
   telemetry?: { tracerProvider?: TracerProvider; enabled?: boolean };
 }
 
@@ -58,7 +64,9 @@ export function clientConfig(opts: CaitlynOptions, auth: AuthSession = createAut
     caitlynTracer: opts.telemetry?.enabled === false ? undefined : caitlynTracer(opts.telemetry?.tracerProvider),
     ...(opts.requestHandler !== undefined ? { requestHandler: opts.requestHandler } : {}),
     ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
-    ...(opts.maxRetryDelayMs !== undefined ? { retryStrategy: new CaitlynRetryStrategy(opts.maxAttempts ?? 3, opts.maxRetryDelayMs) } : {}),
+    ...(opts.maxRetryDelayMs !== undefined || opts.retryBudget !== undefined
+      ? { retryStrategy: new CaitlynRetryStrategy(opts.maxAttempts ?? 3, opts.maxRetryDelayMs, opts.retryBudget) }
+      : {}),
   };
 }
 

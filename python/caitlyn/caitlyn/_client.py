@@ -854,6 +854,8 @@ class Caitlyn:
         endpoint: overrides the URL built from `workspace` (a proxy, a local app). Tokens are still for `workspace`.
         max_attempts: attempts per call, including the first (default 3).
         max_retry_delay: the longest Retry-After to wait for, in seconds (default 60); above it the call fails at once.
+        retry_budget: the retry tokens this client's calls share (default 500; a retry costs 5, or 10 after no response;
+            a success gives back 1, or its last retry's cost). When it is spent, calls fail without retrying. 0 turns retries off.
         retry: the full retry policy.
         tracer_provider: OpenTelemetry tracer provider (default: the global one).
         interceptors: hooks run around every call and attempt.
@@ -876,6 +878,7 @@ class Caitlyn:
         endpoint: str | None = None,
         max_attempts: int | None = None,
         max_retry_delay: float | None = None,
+        retry_budget: int | None = None,
         retry: RetryPolicy | None = None,
         timeout: float | httpx.Timeout = 60.0,
         tracer_provider: TracerProvider | None = None,
@@ -891,6 +894,7 @@ class Caitlyn:
             sdk_model=SDK_MODEL,
             max_attempts=max_attempts,
             max_retry_delay=max_retry_delay,
+            retry_budget=retry_budget,
             retry=retry,
             timeout=timeout,
             tracer_provider=tracer_provider,
@@ -936,6 +940,8 @@ class AsyncCaitlyn:
         endpoint: overrides the URL built from `workspace` (a proxy, a local app). Tokens are still for `workspace`.
         max_attempts: attempts per call, including the first (default 3).
         max_retry_delay: the longest Retry-After to wait for, in seconds (default 60); above it the call fails at once.
+        retry_budget: the retry tokens this client's calls share (default 500; a retry costs 5, or 10 after no response;
+            a success gives back 1, or its last retry's cost). When it is spent, calls fail without retrying. 0 turns retries off.
         retry: the full retry policy.
         tracer_provider: OpenTelemetry tracer provider (default: the global one).
         interceptors: hooks run around every call and attempt.
@@ -958,6 +964,7 @@ class AsyncCaitlyn:
         endpoint: str | None = None,
         max_attempts: int | None = None,
         max_retry_delay: float | None = None,
+        retry_budget: int | None = None,
         retry: RetryPolicy | None = None,
         timeout: float | httpx.Timeout = 60.0,
         tracer_provider: TracerProvider | None = None,
@@ -973,6 +980,7 @@ class AsyncCaitlyn:
             sdk_model=SDK_MODEL,
             max_attempts=max_attempts,
             max_retry_delay=max_retry_delay,
+            retry_budget=retry_budget,
             retry=retry,
             timeout=timeout,
             tracer_provider=tracer_provider,

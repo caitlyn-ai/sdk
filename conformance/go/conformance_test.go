@@ -180,6 +180,50 @@ var protocol = map[string]func(t *testing.T, m mock){
 			t.Fatalf("waited %v, want ≥ 7 s", time.Since(t0))
 		}
 	},
+	"retry.budget-drains": func(t *testing.T, m mock) {
+		c := client(t, m, caitlyn.WithRetryBudget(10))
+		m.faults(t, status("GetAgentVersion", fault(503, 0), fault(503, 0), fault(503, 0), fault(503, 0)))
+		get := func(c *caitlyn.Client) error {
+			_, err := c.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+			return err
+		}
+		var su *caitlyn.ServiceUnavailableError
+		if err := get(c); !errors.As(err, &su) || len(m.api(t)) != 3 {
+			t.Fatalf("first call: %v after %d requests", err, len(m.api(t)))
+		}
+		start := time.Now()
+		if err := get(c); !errors.As(err, &su) || len(m.api(t)) != 4 || time.Since(start) > time.Second {
+			t.Fatalf("second call: %v after %d requests, %v", err, len(m.api(t)), time.Since(start))
+		}
+		// A retry after no response costs 10: a budget of 9 pays for a 503's retry but not this one. (A transport of
+		// its own: net/http resends a GET once by itself when a reused keep-alive connection closes.)
+		m = fresh(t)
+		m.faults(t, status("GetAgentVersion", map[string]any{"close": true}))
+		var ce *caitlyn.ConnectionError
+		own := caitlyn.WithHTTPClient(&http.Client{Transport: &http.Transport{}})
+		if err := get(client(t, m, caitlyn.WithRetryBudget(9), own)); !errors.As(err, &ce) || len(m.api(t)) != 1 {
+			t.Fatalf("no response: %v after %d requests", err, len(m.api(t)))
+		}
+	},
+	"retry.budget-refund": func(t *testing.T, m mock) {
+		c := client(t, m, caitlyn.WithRetryBudget(5))
+		m.faults(t, status("GetAgentVersion", fault(503, 0)))
+		draft(t, c) // retried once, then refunded
+		m.faults(t, status("GetAgentVersion", fault(503, 0)))
+		if v := draft(t, c); v.Name != "draft" || len(m.api(t)) != 4 {
+			t.Fatalf("requests %d", len(m.api(t)))
+		}
+	},
+	"retry.budget-first-attempt": func(t *testing.T, m mock) {
+		c := client(t, m, caitlyn.WithRetryBudget(0))
+		draft(t, c)
+		m.faults(t, status("GetAgentVersion", fault(503, 0)))
+		_, err := c.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+		var su *caitlyn.ServiceUnavailableError
+		if !errors.As(err, &su) || len(m.api(t)) != 2 {
+			t.Fatalf("%v after %d requests", err, len(m.api(t)))
+		}
+	},
 	"retry.idempotency-key-kept": func(t *testing.T, m mock) {
 		m.faults(t, status("CreateUpload", fault(503, 0), fault(429, 0)))
 		path := filepath.Join(t.TempDir(), "hello.txt")

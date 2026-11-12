@@ -702,6 +702,10 @@ final class ServiceGenerator {
                     + "    pub fn max_attempts(self, n: u32) -> Self {\n        ClientBuilder(self.0.max_attempts(n))\n    }\n\n");
             w.l("    /// The longest `Retry-After` the client waits for (default 60 s); a longer one fails at once.\n"
                     + "    pub fn max_retry_delay(self, d: Duration) -> Self {\n        ClientBuilder(self.0.max_retry_delay(d))\n    }\n\n");
+            w.l("    /// The size of the client's retry budget, in tokens (default 500). A retry costs 5, or 10 after an attempt that\n"
+                    + "    /// got no response; a call that succeeds gives back 1, or its last retry's cost. When the budget cannot pay\n"
+                    + "    /// for a retry, the call fails at once with its error. 0 turns retries off.\n"
+                    + "    pub fn retry_budget(self, tokens: u32) -> Self {\n        ClientBuilder(self.0.retry_budget(tokens))\n    }\n\n");
             w.l("    /// Adds `app/<id>` to the user agent.\n    pub fn app_id(self, id: impl Into<String>) -> Self {\n        ClientBuilder(self.0.app_id(id))\n    }\n\n");
             w.l("    /// Writes trace context into each attempt's headers (see [`Propagator`](rt::Propagator)).\n"
                     + "    pub fn propagator(self, p: impl rt::Propagator + 'static) -> Self {\n        ClientBuilder(self.0.propagator(p))\n    }\n\n");

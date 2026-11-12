@@ -153,6 +153,42 @@ test('[retry.long-retry-after] a long Retry-After (7 s) is honoured in full', as
   assert.ok(Date.now() - t0 >= 7000, `waited ${Date.now() - t0} ms`);
 });
 
+const fault503 = (n: number) => Array.from({ length: n }, () => ({ status: 503, retryAfter: 0 }));
+const getDraft = (c: Caitlyn) => c.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+
+test('[retry.budget-drains] two retries spend a budget of 10; the next 503 fails at once; no response costs 10', async () => {
+  const c = client({ retryBudget: 10 });
+  await faults({ status: { GetAgentVersion: fault503(4) } });
+  assert.ok((await expectError(getDraft(c))) instanceof ServiceUnavailableError);
+  assert.equal((await api()).length, 3); // two retries, 5 tokens each
+  const t0 = Date.now();
+  assert.ok((await expectError(getDraft(c))) instanceof ServiceUnavailableError);
+  assert.equal((await api()).length, 4); // spent: no retry, no wait
+  assert.ok(Date.now() - t0 < 1000);
+  // A retry after no response costs 10: a budget of 9 pays for a 503's retry but not this one.
+  await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
+  await faults({ status: { GetAgentVersion: [{ close: true }] } });
+  assert.ok((await expectError(getDraft(client({ retryBudget: 9 })))) instanceof CaitlynConnectionError);
+  assert.equal((await api()).length, 1);
+});
+
+test('[retry.budget-refund] a call that succeeds after a retry refunds it, so the next call can retry too', async () => {
+  const c = client({ retryBudget: 5 });
+  await faults({ status: { GetAgentVersion: fault503(1) } });
+  await getDraft(c); // retried once, then refunded
+  await faults({ status: { GetAgentVersion: fault503(1) } });
+  assert.equal((await getDraft(c)).name, 'draft');
+  assert.equal((await api()).length, 4);
+});
+
+test('[retry.budget-first-attempt] with an empty budget the first attempt still goes', async () => {
+  const c = client({ retryBudget: 0 });
+  assert.equal((await getDraft(c)).name, 'draft');
+  await faults({ status: { GetAgentVersion: fault503(1) } });
+  assert.ok((await expectError(getDraft(c))) instanceof ServiceUnavailableError);
+  assert.equal((await api()).length, 2);
+});
+
 test('[retry.idempotency-key-kept] the idempotency key is generated once and kept across retries', async () => {
   await faults({ status: { CreateUpload: [{ status: 503, retryAfter: 0 }] } });
   await client().uploads.reserve({ fileName: 'a.txt', contentType: 'text/plain', byteSize: 1, sha256: 'x' });

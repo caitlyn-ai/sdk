@@ -54,6 +54,7 @@ pub struct ClientBuilder {
     max_retry_delay: Duration,
     app_id: Option<String>,
     propagator: Option<Arc<dyn Propagator>>,
+    retry_budget: u32,
 }
 
 impl ClientBuilder {
@@ -68,6 +69,7 @@ impl ClientBuilder {
             max_retry_delay: Duration::from_secs(60),
             app_id: None,
             propagator: None,
+            retry_budget: crate::budget::DEFAULT_RETRY_BUDGET,
         }
     }
 
@@ -93,6 +95,14 @@ impl ClientBuilder {
     /// The longest `Retry-After` the client waits for (default 60 s); a longer one fails at once.
     pub fn max_retry_delay(mut self, d: Duration) -> Self {
         self.max_retry_delay = d;
+        self
+    }
+
+    /// The size of the client's retry budget, in tokens (default 500). A retry costs 5, or 10 after an attempt that
+    /// got no response; a call that succeeds gives back 1, or its last retry's cost. When the budget cannot pay for a
+    /// retry, the call fails at once with its error. 0 turns retries off (PROTOCOL.md 6.4.6).
+    pub fn retry_budget(mut self, tokens: u32) -> Self {
+        self.retry_budget = tokens;
         self
     }
 
@@ -130,6 +140,7 @@ impl ClientBuilder {
                 max_retry_delay: self.max_retry_delay,
                 propagator: self.propagator,
                 auth,
+                budget: crate::budget::RetryBudget::new(self.retry_budget),
                 server_version: Mutex::new(None),
             }),
         })
@@ -177,6 +188,7 @@ struct Inner {
     user_agent: String,
     propagator: Option<Arc<dyn Propagator>>,
     auth: AuthSession,
+    budget: crate::budget::RetryBudget,
     server_version: Mutex<Option<String>>,
 }
 
@@ -267,6 +279,7 @@ impl Client {
         async {
             let mut attempt: u32 = 0;
             let mut signed_in_again = false;
+            let mut last_retry_cost: Option<u32> = None; // PROTOCOL.md 6.4.6
             loop {
                 let attempt_span = tracing::info_span!(
                     "caitlyn.attempt",
@@ -294,6 +307,7 @@ impl Client {
                         if let Some(id) = resp.header("caitlyn-request-id") {
                             span.record("caitlyn.request_id", id.as_str());
                         }
+                        self.inner.budget.release(last_retry_cost);
                         return Ok(resp);
                     }
                     Err(e) => e,
@@ -309,7 +323,16 @@ impl Client {
                         continue;
                     }
                 }
-                match self.retry_delay(op, &err, attempt) {
+                // The budget pays for the retry, or the call fails at once with this attempt's error.
+                let cost = match err {
+                    AttemptError::NoResponse(_) => crate::budget::NO_RESPONSE_RETRY_COST,
+                    AttemptError::Other(_) => crate::budget::RETRY_COST,
+                };
+                let delay = self.retry_delay(op, &err, attempt).filter(|_| self.inner.budget.acquire(cost));
+                if delay.is_some() {
+                    last_retry_cost = Some(cost);
+                }
+                match delay {
                     Some(delay) => {
                         tokio::time::sleep(delay).await;
                         attempt += 1;
