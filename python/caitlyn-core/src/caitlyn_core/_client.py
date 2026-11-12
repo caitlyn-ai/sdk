@@ -59,7 +59,7 @@ class ClientConfig:
     """Appended to the user agent as ``app/<app_id>``. Declared only; never used for authorisation."""
     max_reconnects: int = 3
     workspace: str = ""
-    """The workspace hostname: it sets the token audience, ``https://<workspace>/api/v3``, whatever the endpoint."""
+    """The workspace hostname: it sets the token audience, ``https://<workspace>/api``, whatever the endpoint."""
 
     @classmethod
     def create(

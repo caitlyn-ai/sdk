@@ -504,7 +504,7 @@ MOCK_AWS_REGION = "ap-southeast-2"
 MOCK_PAT = "pat_test"
 MOCK_SESSION_COOKIE = "caitlyn_session=mock-session"
 # The audience comes from the workspace, never from the endpoint override these tests use.
-RESOURCE = "https://your-company.getcaitlyn.ai/api/v3"
+RESOURCE = "https://your-company.getcaitlyn.ai/api"
 REDIRECT = "https://app.example.com/callback"
 
 
@@ -832,7 +832,7 @@ async def test_auth_workload_identity(mock: Mock, case_id: str) -> None:
     await read(signed_in(mock, WorkloadIdentity(ci_token)))
     assert asked == 1
     assert mock.api()[0]["headers"]["authorization"].startswith("Bearer cai_x_oidc_")
-    err = await auth_error(read(signed_in(mock, WorkloadIdentity(lambda: mock_oidc_token("https://other.getcaitlyn.ai/api/v3")))))
+    err = await auth_error(read(signed_in(mock, WorkloadIdentity(lambda: mock_oidc_token("https://other.getcaitlyn.ai/api")))))
     assert err.code == "invalid_grant"
 
 

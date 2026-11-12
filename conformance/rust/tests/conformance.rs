@@ -37,7 +37,7 @@ fn s<E: std::fmt::Display>(e: E) -> String {
 const KB: &str = "KB4T7YQ2WL";
 const AGENT: &str = "GHT7YRWXPL";
 const WORKSPACE: &str = "your-company.getcaitlyn.ai";
-const RESOURCE: &str = "https://your-company.getcaitlyn.ai/api/v3";
+const RESOURCE: &str = "https://your-company.getcaitlyn.ai/api";
 const PAT: &str = "pat_test";
 const ANSWER: &str = "Staff receive 20 days of annual leave.";
 
@@ -1591,7 +1591,7 @@ fn auth_case<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let e = auth_err(
                 read(&client_with(
                     m,
-                    Auth::workload_identity(|| async { Ok(oidc_token("https://other.getcaitlyn.ai/api/v3")) }),
+                    Auth::workload_identity(|| async { Ok(oidc_token("https://other.getcaitlyn.ai/api")) }),
                 ))
                 .await,
             )?;

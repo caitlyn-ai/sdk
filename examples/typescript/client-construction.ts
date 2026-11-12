@@ -14,7 +14,7 @@ export const asPerson = new Caitlyn({
     clientSecret: process.env.STUDIOS_CLIENT_SECRET, // confidential client on a server; omit in a browser
     redirectUri: 'https://studio.caitlyn.ai/auth/callback',
     scopes: ['chat:write', 'agents:write', 'mcp:read'],
-    resource: 'https://customd.caitlyn.ai/api/v3',
+    resource: 'https://customd.caitlyn.ai/api',
     tokenStore: encryptedStoreFor(userId), // {load, save, clear}
   },
 });

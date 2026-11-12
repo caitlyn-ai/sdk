@@ -36,7 +36,7 @@ const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { m
 | `session` | The Caitlyn app itself, or a tool driving a local app with a session cookie | `cookie` (server side only), `origin` |
 
 The workspace works as a region does in the AWS SDKs: it decides where requests go (`https://<workspace>/api`)
-and the audience every token is bound to (`https://<workspace>/api/v3`). `endpoint` overrides only where
+and the audience every token is bound to (`https://<workspace>/api`). `endpoint` overrides only where
 requests go, for a proxy or a local app; the audience still comes from the workspace. `caitlyn.auth.workspace`
 and `caitlyn.auth.resource` show what the client uses.
 
@@ -90,7 +90,7 @@ that trusts the account's issuer and the role.
 publish:
   id_tokens:
     CAITLYN_ID_TOKEN:
-      aud: https://your-company.getcaitlyn.ai/api/v3
+      aud: https://your-company.getcaitlyn.ai/api
 ```
 
 ```ts

@@ -39,7 +39,7 @@ chosen by HTTP status, each carrying an `ApiError` with `status`, `code` and `re
 ### The workspace and the endpoint
 
 The workspace works like an AWS region: it decides where requests go (`https://<workspace>/api`) and the audience
-every token is bound to (`https://<workspace>/api/v3`). `Client::builder(…).endpoint(url)` moves only where
+every token is bound to (`https://<workspace>/api`). `Client::builder(…).endpoint(url)` moves only where
 requests go (a proxy, a local app); the audience stays the workspace's.
 
 ### Sign-in modes

@@ -12,5 +12,5 @@ Not started. The integrations MCP server (lane P1) will live beside it, in `mcp/
 profiles, each a workspace and its settings (sign-in mode and its options, an endpoint override, output format),
 chosen with `--profile` or `CAITLYN_PROFILE`, with a `default` profile. The workspace plays the part an AWS
 region plays: as in the SDKs, it decides both the endpoint (`https://<workspace>/api`) and the audience of every
-token (`https://<workspace>/api/v3`), and an endpoint override changes only where requests go. Secrets and tokens
+token (`https://<workspace>/api`), and an endpoint override changes only where requests go. Secrets and tokens
 go to the operating system's credential store, never into the config file.

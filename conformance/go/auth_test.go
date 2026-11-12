@@ -35,7 +35,7 @@ const (
 	mockSessionCookie = "caitlyn_session=mock-session"
 	workspace         = "your-company.getcaitlyn.ai"
 	// resource is the audience: it comes from the workspace, never from the endpoint override these cases use.
-	resource    = "https://your-company.getcaitlyn.ai/api/v3"
+	resource    = "https://your-company.getcaitlyn.ai/api"
 	redirectURI = "https://app.example.com/callback"
 )
 
@@ -489,7 +489,7 @@ var authCases = map[string]func(t *testing.T, m mock){
 		if a := m.api(t)[0].Headers["authorization"]; asked != 1 || !strings.HasPrefix(a, "Bearer cai_x_oidc_") {
 			t.Fatalf("asked %d times, authorization %q", asked, a)
 		}
-		_, err := read(signedIn(t, m, workload(func() string { return mockOIDCToken("https://other.getcaitlyn.ai/api/v3") })))
+		_, err := read(signedIn(t, m, workload(func() string { return mockOIDCToken("https://other.getcaitlyn.ai/api") })))
 		if e := authError(t, err); e.Code != "invalid_grant" {
 			t.Fatalf("a token for another workspace: got %+v", e)
 		}

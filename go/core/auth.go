@@ -86,7 +86,7 @@ type ClientCredentials struct {
 	ClientID     string
 	ClientSecret string
 	Scopes       []string
-	// Resource replaces the workspace audience, https://<workspace>/api/v3.
+	// Resource replaces the workspace audience, https://<workspace>/api.
 	Resource string
 }
 
@@ -98,7 +98,7 @@ type OAuth struct {
 	ClientSecret string
 	RedirectURI  string
 	Scopes       []string
-	// Resource replaces the workspace audience, https://<workspace>/api/v3.
+	// Resource replaces the workspace audience, https://<workspace>/api.
 	Resource string
 	// TokenStore keeps the tokens. Default: in memory for the life of the client.
 	TokenStore TokenStore
@@ -128,7 +128,7 @@ type AWSIAM struct {
 // variable. Token is called at every sign-in: the server accepts each JWT once, so the SDK never reuses one.
 type WorkloadIdentity struct {
 	Token func(ctx context.Context) (string, error)
-	// Resource replaces the workspace audience, https://<workspace>/api/v3.
+	// Resource replaces the workspace audience, https://<workspace>/api.
 	Resource string
 }
 
@@ -169,9 +169,9 @@ func WorkspaceHost(workspace string) string {
 	return host
 }
 
-// WorkspaceAudience is the audience of a workspace's tokens, https://<workspace>/api/v3.
+// WorkspaceAudience is the audience of a workspace's tokens, https://<workspace>/api.
 func WorkspaceAudience(workspace string) string {
-	return "https://" + WorkspaceHost(workspace) + "/api/v3"
+	return "https://" + WorkspaceHost(workspace) + "/api"
 }
 
 // AuthSession is a client's sign-in: the cached token and the OAuth mode's steps. Get it with Client.Auth().
@@ -241,7 +241,7 @@ func newAuthSession(auth Auth, endpoint, workspace string, httpClient HTTPDoer, 
 // (a TokenFunc or another Auth).
 func (s *AuthSession) Mode() string { return s.mode }
 
-// Resource is the audience every token is for: https://<workspace>/api/v3 unless the mode's Resource is set.
+// Resource is the audience every token is for: https://<workspace>/api unless the mode's Resource is set.
 // An endpoint override never changes it.
 func (s *AuthSession) Resource() string { return s.resource }
 

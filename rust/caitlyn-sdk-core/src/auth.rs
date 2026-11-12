@@ -12,7 +12,7 @@
 //! | [`WorkloadIdentity`] | A JWT from another trusted issuer (GitLab CI `id_tokens`), exchanged (RFC 8693) |
 //! | [`Session`] | A Caitlyn session cookie, with `Origin` on every write (server-side tools and recordings) |
 //!
-//! The token audience is always the workspace's resource URL, `https://<workspace>/api/v3`, whatever endpoint
+//! The token audience is always the workspace's resource URL, `https://<workspace>/api`, whatever endpoint
 //! the client sends requests to.
 
 use std::fmt;
@@ -130,7 +130,7 @@ impl ClientCredentials {
         self
     }
 
-    /// Overrides the token audience (default `https://<workspace>/api/v3`).
+    /// Overrides the token audience (default `https://<workspace>/api`).
     pub fn resource(mut self, resource: impl Into<String>) -> Self {
         self.resource = Some(resource.into());
         self
@@ -429,7 +429,7 @@ impl AuthSession {
         &self.workspace
     }
 
-    /// The audience every token is bound to: `https://<workspace>/api/v3`, from the workspace, never from an
+    /// The audience every token is bound to: `https://<workspace>/api`, from the workspace, never from an
     /// endpoint override.
     pub fn resource(&self) -> &str {
         &self.resource
@@ -790,6 +790,6 @@ mod tests {
         let u = url::Url::parse(&a.url).unwrap();
         let q: std::collections::HashMap<_, _> = u.query_pairs().into_owned().collect();
         assert_eq!(q["code_challenge"], b64url(&Sha256::digest(a.code_verifier.as_bytes())));
-        assert_eq!(q["resource"], "https://w.example/api/v3");
+        assert_eq!(q["resource"], "https://w.example/api");
     }
 }

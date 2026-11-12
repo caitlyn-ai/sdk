@@ -699,7 +699,7 @@ final class ServiceGenerator {
             w.l("\n\tcore *core.Client\n}\n\n");
             w.l(Names.comment("NewClient returns a client for workspace (for example \"your-company.getcaitlyn.ai\"), authenticated by auth "
                     + "(for example caitlyn.Token(\"pat_…\") or caitlyn.ClientCredentials{…}). The workspace sets the endpoint and the token audience, "
-                    + "https://<workspace>/api/v3. Options set the endpoint, the HTTP client, retries and telemetry; "
+                    + "https://<workspace>/api. Options set the endpoint, the HTTP client, retries and telemetry; "
                     + "nothing is read from the environment, except by caitlyn.AWSIAM sign-in.", ""));
             w.l("func NewClient(workspace string, auth Auth, opts ...Option) (*Client, error) {\n");
             w.l("\tcc, err := core.NewClient(core.SDKInfo{Version: SDKVersion, ModelVersion: ModelVersion}, workspace, auth, opts...)\n");

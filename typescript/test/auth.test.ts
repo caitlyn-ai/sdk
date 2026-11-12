@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Caitlyn } from '@caitlyn-ai/sdk';
 
-const RESOURCE = 'https://your-company.getcaitlyn.ai/api/v3';
+const RESOURCE = 'https://your-company.getcaitlyn.ai/api';
 
 test('client.auth reports the workspace, the token audience and the token endpoint', () => {
   const plain = new Caitlyn({ workspace: 'https://your-company.getcaitlyn.ai/', auth: { mode: 'token', token: 'pat_test' } });
@@ -23,6 +23,6 @@ test('an endpoint override moves the token endpoint but not the audience', () =>
 });
 
 test('a resource option, where a mode offers one, replaces the workspace audience', () => {
-  const c = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'clientCredentials', clientId: 'c', clientSecret: 's', resource: 'https://other.example/api/v3' } });
-  assert.equal(c.auth.resource, 'https://other.example/api/v3');
+  const c = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'clientCredentials', clientId: 'c', clientSecret: 's', resource: 'https://other.example/api' } });
+  assert.equal(c.auth.resource, 'https://other.example/api');
 });

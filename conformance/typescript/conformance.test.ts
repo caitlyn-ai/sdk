@@ -485,7 +485,7 @@ test('[endpoint.workspace] a workspace hostname resolves to https://<workspace>/
 // on the mock's `require` fault, so every /v3/ request needs a credential the mock issued or accepts.
 
 // The audience comes from the workspace, never from the endpoint override these tests use.
-const RESOURCE = 'https://your-company.getcaitlyn.ai/api/v3';
+const RESOURCE = 'https://your-company.getcaitlyn.ai/api';
 const signInRequired = () => faults({ auth: { require: true } });
 const authCounts = async (): Promise<Record<string, number>> => (await (await fetch(`${BASE}/__mock/auth`)).json()).counts;
 const tokenRequests = async () => (await requests()).filter((r) => r.path === '/oauth/token').map((r) => new URLSearchParams(r.body));
@@ -750,7 +750,7 @@ test('[auth.workload-identity] a CI identity token is exchanged once; a token fo
   await read(signedIn({ mode: 'workloadIdentity', token: async () => (asked++, mockOidcToken(RESOURCE)) }));
   assert.equal(asked, 1);
   assert.match((await api())[0].headers.authorization, /^Bearer cai_x_oidc_/);
-  const err = await authError(read(signedIn({ mode: 'workloadIdentity', token: () => mockOidcToken('https://other.getcaitlyn.ai/api/v3') })));
+  const err = await authError(read(signedIn({ mode: 'workloadIdentity', token: () => mockOidcToken('https://other.getcaitlyn.ai/api') })));
   assert.equal(err.code, 'invalid_grant');
 });
 
