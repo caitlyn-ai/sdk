@@ -8,6 +8,9 @@
 //                                              included, names this one (default: VERSION's)
 //   node scripts/version.mjs release <version> a release build: writes <version> into VERSION and every file that
 //                                              names the version, generated ones included, then checks them
+//   node scripts/version.mjs files             lists VERSION and every file that names the version, one per line
+//   node scripts/version.mjs assets            fails unless .releaserc.yml's release commit and .gitlab-ci.yml's
+//                                              stamp-version artifacts list exactly those files
 //
 // scripts/generate.sh runs `stamp` first and `check` last, so `make generate` sets VERSION's version everywhere
 // and a file that disagrees fails the generation (and the CI generate job). `release` needs only Node, no
@@ -80,6 +83,30 @@ const generated = [
   rule('rust/caitlyn-sdk/Cargo.toml', String.raw`caitlyn-sdk-core = \{ version = "${V}"`),
   rule('rust/caitlyn-sdk/src/lib.rs', String.raw`pub const SDK_VERSION: &str = "${V}";`),
 ];
+
+if (mode === 'files' || mode === 'assets') {
+  const files = [...new Set(['VERSION', ...[...stamped, ...generated].map((r) => r.file)])];
+  if (mode === 'files') {
+    console.log(files.join('\n'));
+  } else {
+    // The release commit (@semantic-release/git) and the stamp-version artifacts must carry every stamped file, or the
+    // tag's tree would name 0.0.0 somewhere. Both lists mark their lines "# stamped".
+    let failed = false;
+    for (const file of ['.releaserc.yml', '.gitlab-ci.yml']) {
+      const text = fs.readFileSync(path.join(root, file), 'utf8');
+      const listed = new Set([...text.matchAll(/^\s+- '?([^'\s]+)'?\s*# stamped$/gm)].map((m) => m[1]));
+      const missing = files.filter((f) => !listed.has(f));
+      const extra = [...listed].filter((f) => !files.includes(f));
+      if (missing.length || extra.length) {
+        console.error(`${file}: the lines marked "# stamped" must be exactly the stamped files (node scripts/version.mjs files).\n  missing: ${missing.join(', ') || 'none'}\n  not stamped: ${extra.join(', ') || 'none'}`);
+        failed = true;
+      }
+    }
+    if (failed) process.exit(1);
+    console.log(`version: the release commit and the stamp-version artifacts carry all ${files.length} stamped files`);
+  }
+  process.exit(0);
+}
 
 function matches(r) {
   const text = fs.readFileSync(path.join(root, r.file), 'utf8');
