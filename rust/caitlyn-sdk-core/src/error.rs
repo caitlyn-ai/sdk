@@ -103,8 +103,12 @@ pub struct ApiError {
     pub retry_after_seconds: Option<u64>,
     /// Field problems on a 400 `VALIDATION_FAILED`.
     pub errors: Vec<FieldError>,
-    /// The problem body as received, unknown fields included.
+    /// The problem body as received, unknown fields included; `None` when the body is not JSON.
     pub raw: Option<Value>,
+    /// The response body as received (up to 1 MiB), as text: the only view of a body that is not problem
+    /// details, such as a proxy's or a web framework's own error page. Empty for an empty body and for errors
+    /// the SDK raises itself.
+    pub raw_body: String,
     /// What caused an SDK-raised error, where there is one.
     pub source: Option<Box<dyn std::error::Error + Send + Sync>>,
 }
@@ -169,6 +173,7 @@ struct Problem {
 pub(crate) fn problem_from_response(status: u16, headers: &HeaderMap, body: &[u8]) -> ApiError {
     let mut e = problem_from_body(status, body);
     e.status = status;
+    e.raw_body = String::from_utf8_lossy(body).into_owned();
     if e.request_id.is_none() {
         e.request_id = header(headers, "caitlyn-request-id");
     }
@@ -316,6 +321,21 @@ mod tests {
         assert_eq!(parse_retry_after("7"), Some(7));
         assert_eq!(parse_retry_after("Wed, 21 Oct 2015 07:28:00 GMT"), Some(0));
         assert_eq!(parse_retry_after("soon"), None);
+    }
+
+    #[test]
+    fn a_body_that_is_not_json_keeps_the_status_and_the_text() {
+        let e = problem_from_response(502, &HeaderMap::new(), b"Bad Gateway");
+        assert_eq!(
+            (
+                e.status,
+                e.code.as_str(),
+                e.request_id.as_deref(),
+                e.raw.is_none(),
+                e.raw_body.as_str()
+            ),
+            (502, "HTTP_502", None, true, "Bad Gateway")
+        );
     }
 
     #[test]

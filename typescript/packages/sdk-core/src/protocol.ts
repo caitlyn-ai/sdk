@@ -87,7 +87,17 @@ export class CaitlynRestJsonProtocol extends HttpBindingProtocol {
   override async deserializeResponse<Output extends MetadataBearer>(operationSchema: OperationSchema, context: HandlerExecutionContext & SerdeFunctions, response: HttpResponse): Promise<Output> {
     const ns = NormalizedSchema.of(operationSchema.output);
     const streaming = [...ns.structIterator()].some(([, m]) => m.getMemberTraits().httpPayload && m.isStreaming());
-    if (streaming || response.statusCode >= 300) return super.deserializeResponse(operationSchema, context, response);
+    if (response.statusCode >= 300) {
+      // A body that is not a JSON object (a proxy's or a web framework's own error page, or no body) is still
+      // the typed error for its status, never a parse error (PROTOCOL.md 6.1).
+      const bytes = await collectBody(response.body, context);
+      response.body = bytes;
+      if (!isJsonObject(bytes)) {
+        await this.handleError(operationSchema, context, response, {}, this.deserializeMetadata(response));
+      }
+      return super.deserializeResponse(operationSchema, context, response);
+    }
+    if (streaming) return super.deserializeResponse(operationSchema, context, response);
     const bytes = await collectBody(response.body, context);
     response.body = bytes;
     const output = await super.deserializeResponse<Output>(operationSchema, context, response);
@@ -117,7 +127,14 @@ export class CaitlynRestJsonProtocol extends HttpBindingProtocol {
     const registry = this.compositeErrorRegistry;
     registry.copyFrom(TypeRegistry.for(this.options.defaultNamespace));
     const errorMetadata = { $metadata: metadata, $fault: response.statusCode < 500 ? 'client' : 'server' };
-    const body: Record<string, unknown> = { ...dataObject, requestId: dataObject.requestId ?? response.headers['caitlyn-request-id'] };
+    const rawBody = response.body instanceof Uint8Array ? new TextDecoder().decode(response.body) : '';
+    const body: Record<string, unknown> = {
+      ...dataObject,
+      status: typeof dataObject.status === 'number' ? dataObject.status : response.statusCode,
+      code: typeof dataObject.code === 'string' && dataObject.code ? dataObject.code : `HTTP_${response.statusCode}`,
+      requestId: dataObject.requestId ?? response.headers['caitlyn-request-id'],
+      rawBody,
+    };
     const message = (body.detail ?? body.title ?? `HTTP ${response.statusCode}`) as string;
 
     const schema = registry.find((s) => {
@@ -129,7 +146,7 @@ export class CaitlynRestJsonProtocol extends HttpBindingProtocol {
     if (!schema) {
       const base = registry.getBaseException();
       const Ctor = (base && registry.getErrorCtor(base)) || Error;
-      const name = typeof body.code === 'string' ? body.code : `Http${response.statusCode}`;
+      const name = body.code as string;
       throw decorateServiceException(Object.assign(new (Ctor as any)({ name, message }), errorMetadata), body);
     }
 
@@ -145,6 +162,17 @@ export class CaitlynRestJsonProtocol extends HttpBindingProtocol {
       else if (body[key] !== undefined) fields[name] = reader.readObject(member, body[key]);
     }
     throw decorateServiceException(Object.assign(exception, errorMetadata, { $fault: ns.getMergedTraits().error, message }, fields), body);
+  }
+}
+
+/** Whether a response body parses as a JSON object, the only body problem details can be read from. */
+function isJsonObject(bytes: Uint8Array): boolean {
+  if (bytes.byteLength === 0) return false;
+  try {
+    const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+  } catch {
+    return false;
   }
 }
 

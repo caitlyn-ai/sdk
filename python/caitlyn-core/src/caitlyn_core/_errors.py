@@ -32,6 +32,7 @@ class CaitlynError(Exception):
         retry_after_seconds: float | None = None,
         errors: Sequence[Mapping[str, Any]] = (),
         raw: Mapping[str, Any] | None = None,
+        raw_body: str = "",
     ) -> None:
         super().__init__(message)
         self.status = status
@@ -45,6 +46,10 @@ class CaitlynError(Exception):
         """Field-level problems on a 400 ``VALIDATION_FAILED``: each has ``code`` and a ``pointer`` (JSON
         Pointer into the body) or a ``parameter`` (query parameter), and may have ``detail``."""
         self.raw: Mapping[str, Any] = raw or {}
+        """The problem body as received, unknown fields included; empty when the body is not a JSON object."""
+        self.raw_body = raw_body
+        """The response body as received, as text: the only view of a body that is not problem details (a
+        proxy's or a web framework's own error page). Empty for an empty body and for errors the SDK raises."""
 
 
 class CaitlynConnectionError(CaitlynError):

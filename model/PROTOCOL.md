@@ -98,6 +98,8 @@ Error responses are RFC 9457 problem details, `application/problem+json`:
 
 `code` is the stable, documented product code. It is always a field, never a shape name. `type` is that code's page in the public error reference, `https://build.caitlyn.ai/errors/{code}`. `instance` is not used, because `requestId` identifies the occurrence. No `X-Amzn-Errortype` header is sent or read.
 
+**Bodies that are not problem details.** Something in front of the API can answer instead of Caitlyn: a proxy or load balancer (a `text/plain` 502), or the web framework itself (an HTML 404 page for a route that does not exist, a 405 with no body). An error response whose body is empty, is not JSON, or is JSON but not an object is still the typed error for its status (section 6.2), never a parse error. Its fields are filled as section 6.3 says when there is no body: `status` is the HTTP status, `code` is `HTTP_<status>` (for example `HTTP_404`), `title`, `detail` and `type` are empty, `requestId` is the `Caitlyn-Request-Id` header if there is one and otherwise empty, and the body is kept as text in `rawBody`. The usual retry rules apply (section 6.4): such a 502 is not retried.
+
 ### 6.2 Choosing the error class
 
 1. Collect the operation's error shapes, then the service's.
@@ -110,10 +112,11 @@ Error responses are RFC 9457 problem details, `application/problem+json`:
 | Field                     | Source                                                  |
 | ------------------------- | ------------------------------------------------------- |
 | `status`                  | Body `status`, or the HTTP status.                      |
-| `code`                    | Body `code`.                                            |
+| `code`                    | Body `code`, else `HTTP_<status>`.                      |
 | `title`, `detail`, `type` | Body.                                                   |
-| `requestId`               | Body `requestId`, else the `Caitlyn-Request-Id` header. |
+| `requestId`               | Body `requestId`, else the `Caitlyn-Request-Id` header; empty when neither has one. |
 | `retryAfterSeconds`       | `Retry-After`, on 429 and 503.                          |
+| `rawBody`                 | The response body as received, as text (invalid UTF-8 replaced; an SDK may keep only the first 1 MiB). Empty for an empty body and for errors the SDK raises itself. TypeScript `rawBody`, Python and Rust `raw_body`, Go `RawBody`. |
 
 Errors the SDK raises itself use the same class and fields, with `status: 0` and these codes: `STREAM_LOST`, `NO_FINAL_EVENT`, `UPLOAD_PUT_FAILED`. `NotSupportedByServer` (section 9) is a separate class, because nothing was sent.
 
