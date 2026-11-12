@@ -1,12 +1,15 @@
-# Publishes @caitlyn-ai/sdk-core and @caitlyn-ai/sdk to npm with provenance (npm trusted publishing).
+# Stages @caitlyn-ai/sdk-core and @caitlyn-ai/sdk on npm with provenance (npm trusted publishing), for a maintainer
+# to approve on npmjs.com with two-factor authentication. The trusted publishers allow `npm stage publish` only;
+# direct `npm publish` is off (https://docs.npmjs.com/staged-publishing).
 #
 # Runs on the GitHub mirror of custom-d/caitlyn/sdk (github.com/caitlyn-ai/sdk), never on GitLab: npm trusted publishing accepts OpenID
 # Connect tokens from GitHub Actions (and GitLab.com), not from git.customd.com. The mirror receives main and the
 # release tags from GitLab; nobody commits to it. Setting up the mirror, the npm trusted publishers and the
 # `npm` environment is described in CONTRIBUTING.md, "Releasing to npm".
 #
-# A tag v<version> publishes that version, which must match both packages' package.json. The `npm` environment
-# holds the job until a required reviewer approves it.
+# A tag v<version> stages that version, which must match both packages' package.json. The job runs in the `npm`
+# environment because the trusted publishers are bound to that name; it has no required reviewer, since the one
+# approval is on npmjs.com.
 name: release-npm
 
 on:
@@ -17,7 +20,7 @@ permissions:
   contents: read
 
 jobs:
-  publish:
+  stage:
     runs-on: ubuntu-24.04
     environment: npm
     permissions:
@@ -32,8 +35,8 @@ jobs:
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-      # Trusted publishing needs npm 11.5.1 or later.
-      - run: npm install -g npm@11.6.2
+      # Staged publishing needs npm 11.15.0 or later (trusted publishing alone needs 11.5.1).
+      - run: npm install -g npm@11.21.1
       - name: Check the tag matches both packages
         run: |
           version="${GITHUB_REF_NAME#v}"
@@ -43,9 +46,10 @@ jobs:
           done
       - name: Test, build and check the packages
         run: ../scripts/test-typescript.sh
-      - name: Publish @caitlyn-ai/sdk-core
-        run: npm publish --provenance --access public
+      # sdk-core first: the SDK depends on that exact version.
+      - name: Stage @caitlyn-ai/sdk-core
+        run: npm stage publish --provenance --access public
         working-directory: typescript/packages/sdk-core
-      - name: Publish @caitlyn-ai/sdk
-        run: npm publish --provenance --access public
+      - name: Stage @caitlyn-ai/sdk
+        run: npm stage publish --provenance --access public
         working-directory: typescript/packages/sdk

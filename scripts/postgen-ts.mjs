@@ -73,3 +73,15 @@ const published = {
 };
 fs.writeFileSync(pkgUrl, JSON.stringify(published, null, 4) + '\n');
 console.log('postgen-ts: wrote the npm description of packages/sdk/package.json');
+
+// The version is set once, in packages/sdk-core/package.json. The generated User-Agent version
+// (caitlyn-sdk-ts/<version>) follows it, and the tracer version in sdk-core's telemetry must match it.
+const sharedUrl = new URL('runtimeConfig.shared.ts', dir);
+const shared = fs.readFileSync(sharedUrl, 'utf8');
+const sdkVersion = /caitlynSdkVersion: config\?\.caitlynSdkVersion \?\? "[^"]*"/g;
+if ((shared.match(sdkVersion) ?? []).length !== 1) throw new Error('postgen-ts: expected exactly one caitlynSdkVersion default in runtimeConfig.shared.ts');
+fs.writeFileSync(sharedUrl, shared.replace(sdkVersion, `caitlynSdkVersion: config?.caitlynSdkVersion ?? ${JSON.stringify(corePkg.version)}`));
+const telemetry = fs.readFileSync(new URL('../typescript/packages/sdk-core/src/telemetry.ts', import.meta.url), 'utf8');
+if (!telemetry.includes(`getTracer('@caitlyn-ai/sdk', '${corePkg.version}')`))
+  throw new Error(`postgen-ts: typescript/packages/sdk-core/src/telemetry.ts names a tracer version other than ${corePkg.version}`);
+console.log(`postgen-ts: the User-Agent and tracer version is ${corePkg.version}`);

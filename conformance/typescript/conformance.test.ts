@@ -30,6 +30,7 @@ import { MOCK_AWS, MOCK_CLIENT, MOCK_OAUTH_CLIENT, MOCK_PAT, MOCK_SESSION_COOKIE
 
 const ROOT = process.env.CAITLYN_REPO_ROOT ?? path.resolve(import.meta.dirname, '../..');
 const EXAMPLES: ExampleCase[] = JSON.parse(fs.readFileSync(path.join(ROOT, 'conformance/cases/examples.json'), 'utf8')).cases;
+const SDK_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'typescript/packages/sdk-core/package.json'), 'utf8')).version as string;
 const SDK_MODEL = JSON.parse(fs.readFileSync(path.join(ROOT, 'model/model.lock.json'), 'utf8')).stampNext as string;
 const PORT = 4100 + Math.floor(Math.random() * 500);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -387,7 +388,7 @@ test('[wire.headers] exactly the SDK headers: Caitlyn user agent, Caitlyn-Sdk-Mo
   for (const r of sent) {
     const aws = r.headerNames.filter((h: string) => /^(x-amz|amz-sdk|x-amzn)/.test(h));
     assert.deepEqual(aws, [], `AWS headers sent: ${aws.join(', ')}`);
-    assert.match(r.headers['user-agent'], /^caitlyn-sdk-ts\/0\.0\.1 lang\/js md\/nodejs#\d+\.\d+\.\d+$/);
+    assert.match(r.headers['user-agent'], new RegExp(`^caitlyn-sdk-ts/${SDK_VERSION.replaceAll('.', '\\.')} lang/js md/nodejs#\\d+\\.\\d+\\.\\d+$`));
     assert.equal(r.headers['caitlyn-sdk-model'], SDK_MODEL);
     assert.equal(r.headers.authorization, 'Bearer pat_test');
     assert.equal(r.headers['caitlyn-api-version'], undefined, 'a response header only');
