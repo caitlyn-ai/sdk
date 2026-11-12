@@ -26,9 +26,6 @@
         "./node_modules/@types/*"
       ]
     },
-    "customConditions": [
-      "caitlyn-source"
-    ],
     "allowJs": true
   },
   "include": [

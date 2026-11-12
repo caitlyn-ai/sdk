@@ -20,6 +20,6 @@ export class CaitlynServiceException extends __ServiceException {
    */
   constructor(options: __ServiceExceptionOptions) {
     super(options);
-    Object.setPrototypeOf(this, CaitlynServiceException.prototype);
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }

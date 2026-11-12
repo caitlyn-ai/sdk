@@ -224,6 +224,8 @@ final class FacadeGenerator {
         imports.add("import type { CaitlynClient } from \"../CaitlynClient\";\n");
         imports.add("import { CaitlynServiceException } from \"../models/CaitlynServiceException\";\n");
         imports.add("import { SseStream, uploadFile, type CallOptions, type WithRaw } from \"@caitlyn-ai/sdk-core\";\n");
+        // A single call's output carries the response metadata (HTTP status, request id), as the command's does.
+        imports.add("import type { MetadataBearer as __MetadataBearer } from \"@smithy/types\";\n");
 
         // PROTOCOL.md 5.5 and 6.2: problem details that arrive outside an HTTP error response (the SSE failure
         // event, a failed upload) raise the same class an error response with that status would.
@@ -357,10 +359,10 @@ final class FacadeGenerator {
             } else {
                 body.append("export function ").append(fn).append("(client: CaitlynClient, ").append(positionalParam)
                     .append("input: ").append(inputType).append(", ").append(optionsParam)
-                    .append("): Promise<WithRaw<").append(out).append(">> {\n")
+                    .append("): Promise<WithRaw<").append(out).append(" & __MetadataBearer>> {\n")
                     .append("  const { signal, ...rest } = options;\n")
                     .append("  return client.send(new ").append(opName).append("Command(").append(commandInput)
-                    .append("), { abortSignal: signal }) as Promise<WithRaw<").append(out).append(">>;\n}\n\n");
+                    .append("), { abortSignal: signal }) as Promise<WithRaw<").append(out).append(" & __MetadataBearer>>;\n}\n\n");
             }
             if (op.hasTrait(PRESIGNED_UPLOAD)) presigned = op;
         }

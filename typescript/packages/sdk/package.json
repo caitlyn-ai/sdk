@@ -15,7 +15,6 @@
     "types": "./dist-types/sdk/index.d.ts",
     "exports": {
         ".": {
-            "caitlyn-source": "./src/sdk/index.ts",
             "types": "./dist-types/sdk/index.d.ts",
             "browser": "./dist-browser/sdk/index.mjs",
             "worker": "./dist-browser/sdk/index.mjs",
