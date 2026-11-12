@@ -1,12 +1,16 @@
 # semantic-release on main (the shared template custom-d/devops-platform/ci-templates/semantic-versioning runs it; see
-# .gitlab-ci.yml). From the conventional commits since the last v* tag it works out the next version, then creates
-# the vX.Y.Z tag and a GitLab release with notes. The push mirror takes the tag to GitHub, where
-# .github/workflows/release-npm.yml stamps that version into every SDK and stages the npm packages
+# .gitlab-ci.yml). From the conventional commits since the last v* tag it works out the next version, then:
+#   1. checks that the stamp-version job's files carry that version (scripts/version.mjs check);
+#   2. commits them to main as `chore(release): <version>` (@semantic-release/git);
+#   3. tags that commit vX.Y.Z and creates a GitLab release with notes (@semantic-release/gitlab).
+# The tag's tree carries the real version, so installs from git (Go, Python, Rust) report it, and the push mirror
+# takes the tag to GitHub, where .github/workflows/release-npm.yml checks the stamp and stages the npm packages
 # (CONTRIBUTING.md, "Releasing").
 #
 # Only commits that change what the SDKs do release: feat, fix, perf and revert, and breaking changes. docs, ci,
-# chore, test, refactor, style and build commits never do. Nothing is committed back: the version lives only in the
-# tag, and the release build stamps it from there.
+# chore, test, refactor, style and build commits never do, so the release commit (chore) cannot start another
+# release. Its message carries no [skip ci]: GitHub Actions would then skip the tag's release-npm run. GitLab skips
+# the main pipeline for it with a workflow rule instead.
 plugins:
   - - '@semantic-release/commit-analyzer'
     - releaseRules:
@@ -15,9 +19,34 @@ plugins:
         - breaking: true
           release: minor
   - '@semantic-release/release-notes-generator'
-  # VERSION.txt is the fetch-semantic-version job's artifact: the version the next release would have.
+  # VERSION.txt is the fetch-semantic-version job's artifact: the version the next release would have. Before the
+  # release commit, the files stamp-version wrote from it must name exactly the version being released.
   - - '@semantic-release/exec'
     - verifyReleaseCmd: 'echo ${nextRelease.version} > VERSION.txt'
+      prepareCmd: 'node scripts/version.mjs check ${nextRelease.version}'
+  # The release commit. No notes in its message: they could contain "BREAKING CHANGE" and make it releasable.
+  # The assets are every stamped file; scripts/version.mjs assets (in make generate) keeps this list complete.
+  - - '@semantic-release/git'
+    - message: 'chore(release): ${nextRelease.version}'
+      assets:
+        - 'VERSION' # stamped
+        - 'typescript/packages/sdk-core/package.json' # stamped
+        - 'typescript/packages/sdk-core/src/telemetry.ts' # stamped
+        - 'typescript/package-lock.json' # stamped
+        - 'python/caitlyn-core/pyproject.toml' # stamped
+        - 'python/caitlyn-core/src/caitlyn_core/__init__.py' # stamped
+        - 'python/uv.lock' # stamped
+        - 'rust/Cargo.toml' # stamped
+        - 'rust/Cargo.lock' # stamped
+        - 'conformance/rust/Cargo.lock' # stamped
+        - 'codegen/smithy-build.json' # stamped
+        - 'typescript/packages/sdk/package.json' # stamped
+        - 'typescript/packages/sdk/src/runtimeConfig.shared.ts' # stamped
+        - 'python/caitlyn/pyproject.toml' # stamped
+        - 'python/caitlyn/caitlyn/_version.py' # stamped
+        - 'go/version.go' # stamped
+        - 'rust/caitlyn-sdk/Cargo.toml' # stamped
+        - 'rust/caitlyn-sdk/src/lib.rs' # stamped
   - '@semantic-release/gitlab'
 branches:
   - main

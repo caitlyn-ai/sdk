@@ -129,9 +129,10 @@ project access token with `write_repository` and `api`.
 The SDKs send `Caitlyn-Sdk-Model`, the highest `@since` in the model they were generated from, and refuse,
 before sending, an operation or member newer than the server's `Caitlyn-Api-Version` (PROTOCOL.md section 9).
 
-All four SDKs share one version, and the repository stores none: the release tag is the version. The top-level
-`VERSION` file holds `0.0.0`, the version of every build that is not a release, and is never edited by hand.
-`make generate` stamps `VERSION`'s version everywhere it appears (`scripts/version.mjs` lists each place):
+All four SDKs share one version. On `main`, the top-level `VERSION` file holds `0.0.0`, the version of every build
+that is not a release, and nobody edits it. Each release commit (below) stamps the real version, and the release's
+tag points at that commit. `make generate` stamps `VERSION`'s version everywhere it appears (`scripts/version.mjs`
+lists each place):
 
 - TypeScript: both `package.json` files, the SDK's dependency on `sdk-core`, `typescript/package-lock.json`, the
   `User-Agent` and the OpenTelemetry tracer version;
@@ -144,33 +145,35 @@ All four SDKs share one version, and the repository stores none: the release tag
 Generation fails when any of them disagrees with `VERSION`, and the `generate` CI job fails when the committed
 files differ from what generation writes. Each conformance harness checks its `User-Agent` against `VERSION`.
 
-A release build stamps the tag's version instead, with Node only and no generators:
+A release stamps its version with Node only, no generators:
 
 ```bash
-node scripts/version.mjs release 0.1.0   # VERSION and every file above at 0.1.0, then checked
+node scripts/version.mjs release 0.1.1   # VERSION and every file above at 0.1.1, then checked
+node scripts/version.mjs check 0.1.1     # fails unless every one of them names 0.1.1
+node scripts/version.mjs files           # the stamped files, which the release commit carries
 ```
 
-Installed from git rather than from a registry, the SDKs see the repository as committed, at 0.0.0:
+`release` writes the version in exactly the places generation does, so the result is what `make generate` at that
+version would commit.
 
-- **Go** installs only from git tags, so a Go client reports the version of the module it was built with, which
-  Go records in the binary (`core.ModuleVersion`, from `runtime/debug.ReadBuildInfo`): `go get …@v0.1.1` sends
-  `caitlyn-sdk-go/0.1.1`. It reads the module path from the generated `ModulePath`, so it works for a module in a
-  subdirectory too, whose tags are `go/vX.Y.Z`. `SDKVersion` (0.0.0) is the fallback, for a local `replace` or a
-  build from a working tree.
-- **Python** (`pip install "git+…#subdirectory=python/caitlyn"`) and **Rust** (a `git` dependency) build what is
-  committed, so they report 0.0.0. Their released versions are to come from PyPI and crates.io, whose release jobs
-  stamp the version first, as the npm one does.
+**Installed from git**, an SDK reports the version of the commit it was built from. A release tag's tree is its
+release commit, so every SDK installed from a tag reports that version: Go (`go get …@v0.1.1`), Python
+(`pip install "git+…@v0.1.1#subdirectory=python/caitlyn"`, with `caitlyn-core` from the same tag, since `caitlyn`
+pins `caitlyn-core==0.1.1`) and Rust (a `git` dependency with `tag = "v0.1.1"`). Installed from a branch or another
+commit, they report 0.0.0, except Go, which reads the module version Go records in the binary
+(`core.ModuleVersion`) and falls back to `SDKVersion`.
 
-It writes the version in exactly the places generation does, so the result is what `make generate` at that version
-would commit. `.github/workflows/release-npm.yml` runs it on the tag's checkout; the PyPI, Go and crates.io
-releases are to run the same command before they build.
+**Which pipeline tests what.** Merge request and `main` pipelines generate and test every SDK at 0.0.0. The release
+commit runs no `main` pipeline (a workflow rule skips `chore(release):` commits on `main`), because it only changes
+the stamped version. Its tag's pipeline runs `release:version`, which checks that the tag's files carry the tag's
+version, and GitHub's `release-npm` checks the same before it tests, builds and stages the packages at that version.
 
 ## How a version is chosen
 
 semantic-release (`.releaserc.yml`, run by the `release` CI job from the shared
 `custom-d/devops-platform/ci-templates/semantic-versioning` template, as in the app repository) runs on every
 `main` pipeline whose conformance passed. From the conventional commits since the last `v*` tag it works out the
-next version, creates the tag `v<version>` and a GitLab release with notes, and commits nothing back:
+next version:
 
 | Commit | Release |
 | --- | --- |
@@ -180,25 +183,42 @@ next version, creates the tag `v<version>` and a GitLab release with notes, and 
 | `docs`, `ci`, `chore`, `test`, `refactor`, `style`, `build` | none |
 
 So the commit type is what releases: a commit that changes what an SDK does is `feat` or `fix`, and one that
-changes only the pipeline, the docs or the tests is not. The `fetch-semantic-version` job shows on `main` what the
-next version would be (`VERSION.txt`).
+changes only the pipeline, the docs or the tests is not. The release commit is `chore(release): x.y.z`, with no
+release notes in its message, so it can never start another release. The `fetch-semantic-version` job shows on
+`main` what the next version would be (`VERSION.txt`).
 
 ## Releasing
 
-**Never tag by hand.** Merge to `main`; when its commits call for a release, the `release` job tags it. Then:
+**Never tag by hand, and never edit `VERSION`.** Merge to `main`; when its commits call for a release, the pipeline
+cuts it, in the order the app repository's pipeline does:
 
-1. The `release` job (semantic-release) creates `v<version>` and the GitLab release.
-2. The push mirror takes the protected tag to `github.com/caitlyn-ai/sdk`.
-3. On GitHub, `release-npm` stamps the tag's version (`scripts/version.mjs release`), checks it, tests, builds and
-   checks the packages, then stages `sdk-core` and then `sdk`.
-4. On npmjs.com, account settings → Staged Packages: check both versions (name, version, dist-tag `latest`,
+1. `fetch-semantic-version` (a semantic-release dry run) writes the next version to `VERSION.txt`.
+2. `stamp-version` stamps it into every SDK file (`scripts/version.mjs release`), as artifacts.
+3. `release` (semantic-release) checks the stamped files name that version, commits them to `main` as
+   `chore(release): x.y.z` (`@semantic-release/git`), tags that commit `v<version>` and creates the GitLab release.
+4. The push mirror takes `main` and the protected tag to `github.com/caitlyn-ai/sdk`.
+5. On GitHub, `release-npm` checks the tag's files carry its version (`scripts/version.mjs check`), tests, builds
+   and checks the packages, then stages `sdk-core` and then `sdk`.
+6. On npmjs.com, account settings → Staged Packages: check both versions (name, version, dist-tag `latest`,
    publisher), then approve them, `sdk-core` with or before `sdk`, since the SDK depends on that exact
    `sdk-core` version. A batch approves both with one two-factor challenge.
 
-The `release` job pushes the tag with `GITLAB_TOKEN`, a CI variable (masked, protected) holding a project access
-token with the **Maintainer** role, because only Maintainers may create the protected `v*` tags, and the `api` and
-`write_repository` scopes. The token expires: replace it before then, or releases stop with "HTTP Basic: Access
-denied" (the template's README, https://git.customd.com/custom-d/devops-platform/ci-templates/semantic-versioning).
+The release commit has no `[skip ci]`, on purpose: GitHub Actions skips every `push`-triggered workflow whose head
+commit message contains `[skip ci]`, `[ci skip]`, `[no ci]`, `[skip actions]` or `[actions skip]`, and a tag push is
+a push, so `release-npm` would never run ("Skipping workflow runs",
+https://docs.github.com/en/actions/managing-workflow-runs-and-deployments/managing-workflow-runs/skipping-workflow-runs).
+GitLab skips the release commit's `main` pipeline with a workflow rule instead.
+
+The `release` job pushes the release commit and the tag with `GITLAB_TOKEN`, a CI variable (masked, protected)
+holding a project access token (`GITLAB_TOKEN`, bot user `project_857_bot_f4d639af535f0bcf131cd87b09f601c5`) with
+the **Maintainer** role and the `api` and `write_repository` scopes. Two protections must let that bot through:
+
+- the protected `v*` tags allow Maintainers to create them;
+- the protected branch `main` must allow the bot to push (Settings → Repository → Protected branches → `main` →
+  "Allowed to push and merge"). Merges stay as they are.
+
+The token expires: replace it before then, or releases stop with "HTTP Basic: Access denied" (the template's
+README, https://git.customd.com/custom-d/devops-platform/ci-templates/semantic-versioning).
 
 ### npm
 
@@ -247,4 +267,6 @@ npm releases run.
 
 Conventional commits, in British English: `feat(codegen): …`, `fix(conformance): …`, `ci: …`,
 `docs: …`. The type decides the release ("How a version is chosen"), so pick it for what the commit does to the
-SDKs: a merge request's squash commit or merge commit message is what semantic-release reads. A regenerate from a new model is `feat(model): regenerate the SDKs from model <version>`.
+SDKs: a merge request's squash commit or merge commit message is what semantic-release reads. Never write a skip-CI marker
+(the bracketed "skip ci" or "ci skip") anywhere in a commit message, even to talk about it: GitLab then skips that
+commit's pipelines, and GitHub Actions skips its push-triggered workflows. A regenerate from a new model is `feat(model): regenerate the SDKs from model <version>`.

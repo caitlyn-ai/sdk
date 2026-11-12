@@ -32,6 +32,11 @@ include:
 
 workflow:
   rules:
+    # The release commit (chore(release): x.y.z, which the release job pushes to main) runs no branch pipeline: it
+    # only stamps the version, and its tag's pipeline (below) checks that. Its message has no [skip ci], because
+    # GitHub Actions would then skip the tag's release-npm run (CONTRIBUTING.md, "Releasing").
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_MESSAGE =~ /^chore\(release\): /'
+      when: never
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_PIPELINE_SOURCE == "pipeline" # triggered by an app release (regenerate)
     - if: $CI_PIPELINE_SOURCE == "schedule"
@@ -300,9 +305,15 @@ docs:knowledge-base:
 
 # ---------------------------------------------------------------------------- releases
 
-# The template's jobs (custom-d/devops-platform/ci-templates/semantic-versioning). A release is cut only from a
-# main pipeline whose conformance passed and whose fetch-semantic-version dry run succeeded; nothing is committed
-# back, so there is no [skip ci] loop.
+# The template's jobs (custom-d/devops-platform/ci-templates/semantic-versioning), with stamp-version between them,
+# as the app's update-package-version job is. On main, after conformance passes:
+#   fetch-semantic-version  the dry run: VERSION.txt, the version the next release would have (none when no release
+#                           is due)
+#   stamp-version           writes that version into VERSION and every file that carries it (scripts/version.mjs
+#                           release), as artifacts
+#   release                 semantic-release: checks the stamp, commits it to main as chore(release): x.y.z, tags
+#                           that commit vX.Y.Z and creates the GitLab release (.releaserc.yml)
+# The release commit is chore, which never releases, and the workflow rules run no main pipeline for it.
 #
 # Both run on main only. The template's rules also accept other branch patterns, and they match a tag pipeline too
 # ($CI_COMMIT_BRANCH and the unset $CI_TESTING_BRANCH are both empty there), where `conformance` does not exist and
@@ -316,18 +327,55 @@ fetch-semantic-version:
   variables:
     SEMANTIC_RELEASE_PACKAGE: 'Caitlyn SDKs'
 
+# The artifact paths are every stamped file; scripts/version.mjs assets (in make generate) keeps this list complete.
+stamp-version:
+  extends: .toolchain
+  stage: conformance
+  needs:
+    - job: fetch-semantic-version
+      artifacts: true
+  script:
+    - |
+      if [ ! -s VERSION.txt ]; then
+        echo "No release is due: nothing to stamp."
+        exit 0
+      fi
+      node scripts/version.mjs release "$(cat VERSION.txt)"
+  artifacts:
+    paths:
+      - VERSION # stamped
+      - typescript/packages/sdk-core/package.json # stamped
+      - typescript/packages/sdk-core/src/telemetry.ts # stamped
+      - typescript/package-lock.json # stamped
+      - python/caitlyn-core/pyproject.toml # stamped
+      - python/caitlyn-core/src/caitlyn_core/__init__.py # stamped
+      - python/uv.lock # stamped
+      - rust/Cargo.toml # stamped
+      - rust/Cargo.lock # stamped
+      - conformance/rust/Cargo.lock # stamped
+      - codegen/smithy-build.json # stamped
+      - typescript/packages/sdk/package.json # stamped
+      - typescript/packages/sdk/src/runtimeConfig.shared.ts # stamped
+      - python/caitlyn/pyproject.toml # stamped
+      - python/caitlyn/caitlyn/_version.py # stamped
+      - go/version.go # stamped
+      - rust/caitlyn-sdk/Cargo.toml # stamped
+      - rust/caitlyn-sdk/src/lib.rs # stamped
+  rules:
+    - !reference [fetch-semantic-version, rules]
+
 release:
-  # `needs` replaces the template's stage ordering, under which release ran only after every earlier job,
-  # fetch-semantic-version included, had passed. So both are named: a failed job in `needs` (neither allows
-  # failure) skips the release. fetch-semantic-version's VERSION.txt comes along, as the stage order would have
-  # brought it. `optional` covers a pipeline where SEMVER_TEST_DISABLED leaves the dry run out.
+  # `needs` replaces the template's stage ordering, under which release ran only after every earlier job had
+  # passed, so each one it depends on is named: a failed job in `needs` (none allows failure) skips the release.
+  # stamp-version's artifacts are the stamped files the release commit carries. The dry run is required now, so
+  # SEMVER_TEST_DISABLED turns the release off too.
   needs:
     - job: conformance
     - job: fetch-semantic-version
+    - job: stamp-version
       artifacts: true
-      optional: true
   rules:
-    - if: $SEMVER_DISABLED || $CI_DEPLOY_FREEZE
+    - if: $SEMVER_DISABLED || $SEMVER_TEST_DISABLED || $CI_DEPLOY_FREEZE
       when: never
     - if: $SEMVER_MANUAL_RELEASE == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: manual
@@ -335,14 +383,14 @@ release:
   variables:
     SEMANTIC_RELEASE_PACKAGE: 'Caitlyn SDKs'
 
-# On the tag the release job made: the version stamping every release build runs (scripts/version.mjs release),
-# so a tag the package builds could not stamp fails here, in GitLab, as well as on GitHub.
+# On the tag the release job made: the tag's tree must already carry its version in every stamped file (the release
+# commit). GitHub's release-npm checks the same before it stages anything.
 release:version:
   extends: .toolchain
   stage: release
   needs: []
   script:
-    - node scripts/version.mjs release "${CI_COMMIT_TAG#v}"
+    - node scripts/version.mjs check "${CI_COMMIT_TAG#v}"
   rules:
     - if: $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+/
 
