@@ -587,8 +587,8 @@ async def test_telemetry_attributes(mock: Mock, tmp_path: Path, case_id: str) ->
     a = attrs(call)
     assert (a["rpc.system"], a["error.type"], a["caitlyn.error.code"]) == ("caitlyn", "NotFoundError", "NOT_FOUND")
     assert a["caitlyn.request_id"] == sent[-1]["requestId"]
-    assert call.status.status_code == StatusCode.ERROR
-    assert any(e.name == "exception" for e in call.events)
+    assert call.status.status_code == StatusCode.ERROR and call.status.description
+    assert any(e.name == "exception" and (e.attributes or {}).get("exception.type") == "NotFoundError" for e in call.events)
     attempts = children(call)
     assert [s.name for s in attempts] == ["caitlyn.attempt"] * 2
     assert [attrs(s)["http.request.resend_count"] for s in attempts] == [0, 1]
@@ -599,7 +599,13 @@ async def test_telemetry_attributes(mock: Mock, tmp_path: Path, case_id: str) ->
         assert (a["http.request.method"], a["server.address"]) == ("GET", "127.0.0.1")
         assert a["url.full"] == f"{mock.base}/v3/agents/GHT7YRWXPL/versions/nope"
         assert a["caitlyn.server.api_version"] == "5.120.0"
-        assert s.status.status_code == StatusCode.ERROR
+        assert s.status.status_code == StatusCode.ERROR and s.status.description
+    assert [attrs(s)["error.type"] for s in attempts] == ["ServiceUnavailableError", "NotFoundError"]
+    assert [attrs(s)["caitlyn.error.code"] for s in attempts] == ["SERVICE_UNAVAILABLE", "NOT_FOUND"]
+    assert [next((e.attributes or {}).get("exception.type") for e in s.events if e.name == "exception") for s in attempts] == [
+        "ServiceUnavailableError",
+        "NotFoundError",
+    ]
 
     listed = next(s for s in spans if s.name == "caitlyn.call" and attrs(s).get("rpc.method") == "ListDocuments")
     assert [attrs(s)["url.full"] for s in children(listed)] == [f"{mock.base}/v3/knowledge-bases/KB4T7YQ2WL/documents"]

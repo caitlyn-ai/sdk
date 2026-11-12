@@ -162,8 +162,18 @@ class _CoreBase:
             hook.before_attempt(call.context, request)
         return request, span
 
-    def _after_attempt(self, call: _Call, span: Span, request: httpx.Request, response: httpx.Response | None, error: BaseException | None) -> None:
-        request_id = Telemetry.end_attempt(span, call.span, response, error, REQUEST_ID_HEADER)
+    def _after_attempt(
+        self,
+        call: _Call,
+        span: Span,
+        request: httpx.Request,
+        response: httpx.Response | None,
+        error: BaseException | None,
+        failure: BaseException | None = None,
+    ) -> None:
+        """Ends the attempt. ``error`` is what interceptors see (the transport error, or None with a response);
+        ``failure`` is what the attempt span records (PROTOCOL.md 13): the error the attempt produced."""
+        request_id = Telemetry.end_attempt(span, call.span, response, failure or error, REQUEST_ID_HEADER)
         if request_id:
             call.context.request_id = request_id
         if response is not None and (version := response.headers.get(API_VERSION_HEADER)):
@@ -210,27 +220,30 @@ class SyncClientCore(_CoreBase):
                 try:
                     response = self._http.send(request, auth=self._send_auth or httpx.USE_CLIENT_DEFAULT, stream=True)
                 except httpx.TransportError as e:
-                    self._after_attempt(call, span, request, None, e)
+                    connection = self._connection_error(spec, e)
+                    self._after_attempt(call, span, request, None, e, connection)
                     delay = transport_retry_delay(policy, spec.retry_safe, call.context.attempt, e)
                     if delay is None:
-                        raise self._connection_error(spec, e) from e
+                        raise connection from e
                     time.sleep(delay)
                     call.context.attempt += 1
                     continue
                 except BaseException as e:  # signing in failed, or interrupted while waiting
                     self._after_attempt(call, span, request, None, e)
                     raise
-                self._after_attempt(call, span, request, response, None)
                 if not response.is_success or not spec.streaming:
                     try:
                         response.read()
                     except httpx.TransportError as e:  # after response bytes arrived: never retried
                         response.close()
-                        raise self._connection_error(spec, e) from e
-                if response.is_success:
+                        connection = self._connection_error(spec, e)
+                        self._after_attempt(call, span, request, response, None, connection)
+                        raise connection from e
+                error = None if response.is_success else read_error(spec, response)
+                self._after_attempt(call, span, request, response, None, error)
+                if error is None:
                     return response, call
                 response.close()
-                error = read_error(spec, response)
                 delay = error_retry_delay(policy, spec.retry_safe, call.context.attempt, error)
                 if delay is None:
                     raise error
@@ -296,27 +309,30 @@ class AsyncClientCore(_CoreBase):
                 try:
                     response = await self._http.send(request, auth=self._send_auth or httpx.USE_CLIENT_DEFAULT, stream=True)
                 except httpx.TransportError as e:
-                    self._after_attempt(call, span, request, None, e)
+                    connection = self._connection_error(spec, e)
+                    self._after_attempt(call, span, request, None, e, connection)
                     delay = transport_retry_delay(policy, spec.retry_safe, call.context.attempt, e)
                     if delay is None:
-                        raise self._connection_error(spec, e) from e
+                        raise connection from e
                     await asyncio.sleep(delay)
                     call.context.attempt += 1
                     continue
                 except BaseException as e:  # cancelled while waiting for the response
                     self._after_attempt(call, span, request, None, e)
                     raise
-                self._after_attempt(call, span, request, response, None)
                 if not response.is_success or not spec.streaming:
                     try:
                         await response.aread()
                     except httpx.TransportError as e:  # after response bytes arrived: never retried
-                        raise self._connection_error(spec, e) from e
+                        connection = self._connection_error(spec, e)
+                        self._after_attempt(call, span, request, response, None, connection)
+                        raise connection from e
                     finally:
                         await response.aclose()
-                if response.is_success:
+                error = None if response.is_success else read_error(spec, response)
+                self._after_attempt(call, span, request, response, None, error)
+                if error is None:
                     return response, call
-                error = read_error(spec, response)
                 delay = error_retry_delay(policy, spec.retry_safe, call.context.attempt, error)
                 if delay is None:
                     raise error

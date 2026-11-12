@@ -23,7 +23,7 @@ type Client struct {
 // HTTP client, retries and telemetry; nothing is read from the environment, except by caitlyn.AWSIAM
 // sign-in.
 func NewClient(workspace string, auth Auth, opts ...Option) (*Client, error) {
-	cc, err := core.NewClient(core.SDKInfo{Version: SDKVersion, ModelVersion: ModelVersion}, workspace, auth, opts...)
+	cc, err := core.NewClient(core.SDKInfo{Version: core.ModuleVersion(ModulePath, SDKVersion), ModelVersion: ModelVersion}, workspace, auth, opts...)
 	if err != nil {
 		return nil, err
 	}

@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -262,11 +261,12 @@ func (c *Client) attempt(ctx context.Context, op *Operation, req *Request, cs *c
 
 	resp, err := c.s.httpClient.Do(hr)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
 		if ctx.Err() != nil {
+			recordFailure(span, ctx.Err())
 			return nil, ctx.Err()
 		}
+		// The call raises this as a *ConnectionError once retries are spent; the attempt reports it as one.
+		recordFailure(span, newConnectionError(op.Name, err))
 		return nil, &errNoResponse{err: err}
 	}
 	span.SetAttributes(attribute.Int("http.response.status_code", resp.StatusCode))
@@ -287,11 +287,12 @@ func (c *Client) attempt(ctx context.Context, op *Operation, req *Request, cs *c
 	if ae.Status != resp.StatusCode {
 		ae.Status = resp.StatusCode // the class is chosen by the HTTP status (PROTOCOL.md 6.2)
 	}
-	span.SetStatus(codes.Error, ae.Code)
+	var typed error = ae
 	if op.Errors != nil {
-		return nil, op.Errors(resp.StatusCode, ae)
+		typed = op.Errors(resp.StatusCode, ae)
 	}
-	return nil, ae
+	recordFailure(span, typed)
+	return nil, typed
 }
 
 // retryDelay applies PROTOCOL.md 6.4.

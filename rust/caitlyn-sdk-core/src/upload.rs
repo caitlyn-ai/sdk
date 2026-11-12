@@ -88,6 +88,7 @@ impl Client {
             otel.name = "caitlyn.upload",
             otel.kind = "client",
             otel.status_code = tracing::field::Empty,
+            otel.status_message = tracing::field::Empty,
             http.request.method = method.as_str(),
             server.address = server_address.as_str(),
             url.full = url_full.as_str(),

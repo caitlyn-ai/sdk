@@ -5,6 +5,7 @@
 import type { Pluggable, HandlerExecutionContext, FinalizeHandler, FinalizeHandlerArguments } from '@smithy/types';
 import { HttpRequest, HttpResponse } from '@smithy/core/protocols';
 import { context, propagation, trace, SpanKind, SpanStatusCode, type TracerProvider, type Span, type Tracer } from '@opentelemetry/api';
+import { NO_RESPONSE } from './plugin.js';
 
 type Ctx = HandlerExecutionContext & { __caitlynSpan?: Span; __attempt?: number };
 
@@ -23,13 +24,21 @@ export function urlWithoutQuery(url: string): string {
   return u.toString();
 }
 
-/** Ends a span with an error: status, `error.type` (the class name), `caitlyn.error.code` and an exception event. */
+/**
+ * Marks a span failed (PROTOCOL.md 13): status error with the error's message, `error.type` (the class name),
+ * `caitlyn.error.code` and an exception event. An attempt that got no response sees the network error itself,
+ * which the call later raises as CaitlynConnectionError, so it is reported as that.
+ */
 export function recordFailure(span: Span, err: unknown): void {
-  const e = err as { name?: string; code?: unknown; message?: string };
-  span.recordException(err instanceof Error ? err : { name: String(e?.name ?? 'Error'), message: String(e?.message ?? err) });
-  span.setStatus({ code: SpanStatusCode.ERROR, message: e?.message });
-  span.setAttribute('error.type', e?.name ?? 'Error');
-  if (typeof e?.code === 'string') span.setAttribute('caitlyn.error.code', e.code);
+  const e = err as { name?: string; code?: unknown; message?: string; [NO_RESPONSE]?: boolean };
+  const noResponse = !!e?.[NO_RESPONSE];
+  const name = noResponse ? 'CaitlynConnectionError' : (e?.name ?? 'Error');
+  const message = String(e?.message ?? err);
+  span.recordException({ name, message, stack: err instanceof Error ? err.stack : undefined });
+  span.setStatus({ code: SpanStatusCode.ERROR, message });
+  span.setAttribute('error.type', name);
+  const code = noResponse ? 'CONNECTION_ERROR' : e?.code;
+  if (typeof code === 'string') span.setAttribute('caitlyn.error.code', code);
 }
 
 export function getCaitlynTelemetryPlugin(provider?: TracerProvider): Pluggable<any, any> {
@@ -81,15 +90,15 @@ export function getCaitlynTelemetryPlugin(provider?: TracerProvider): Pluggable<
             }
             const api = res.headers['caitlyn-api-version'];
             if (api) span.setAttribute('caitlyn.server.api_version', api);
-            if (res.statusCode >= 400) span.setStatus({ code: SpanStatusCode.ERROR });
           };
           try {
             const out = await next(args);
             response(out.response);
             return out;
           } catch (err) {
+            // An error response (deserialised into its typed error) or no response at all: the attempt failed.
             response((err as { $response?: unknown }).$response);
-            span.setStatus({ code: SpanStatusCode.ERROR });
+            recordFailure(span, err);
             throw err;
           } finally {
             span.end();

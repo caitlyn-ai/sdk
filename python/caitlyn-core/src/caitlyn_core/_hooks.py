@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import traceback
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -76,11 +77,8 @@ class Telemetry:
             api_version = response.headers.get("Caitlyn-Api-Version")
             if api_version:
                 span.set_attribute("caitlyn.server.api_version", api_version)
-            if response.status_code >= 400:
-                span.set_status(Status(StatusCode.ERROR))
         if error is not None:
-            span.set_status(Status(StatusCode.ERROR))
-            span.set_attribute("error.type", type(error).__name__)
+            record_failure(span, error)
         span.end()
         return request_id
 
@@ -105,8 +103,17 @@ def http_attributes(method: str, url: httpx.URL) -> dict[str, str]:
 
 
 def record_failure(span: Span, error: BaseException) -> None:
-    """Status, ``error.type`` (the error's class name), ``caitlyn.error.code`` and an exception event."""
-    span.record_exception(error)
+    """Status (with the error's message), ``error.type`` (the error's class name), ``caitlyn.error.code`` and an
+    exception event whose ``exception.type`` is that class name too, as in every SDK. (``span.record_exception``
+    would qualify it with the module, ``caitlyn.errors.NotFoundError``.)"""
+    span.add_event(
+        "exception",
+        {
+            "exception.type": type(error).__name__,
+            "exception.message": str(error),
+            "exception.stacktrace": "".join(traceback.format_exception(error)),
+        },
+    )
     span.set_status(Status(StatusCode.ERROR, str(error)))
     span.set_attribute("error.type", type(error).__name__)
     code = getattr(error, "code", None)

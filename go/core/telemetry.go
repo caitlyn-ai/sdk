@@ -25,12 +25,14 @@ func httpAttributes(method, rawURL string) []attribute.KeyValue {
 	return attrs
 }
 
-// recordFailure sets the span's status, error.type (the error's class name), caitlyn.error.code and an
-// exception event.
+// recordFailure sets the span's status (with the error's message), error.type (the error's class name),
+// caitlyn.error.code and an exception event whose exception.type is that class name too, as in every SDK.
+// (span.RecordError would name the Go type, *caitlyn.NotFoundError.)
 func recordFailure(span trace.Span, err error) {
-	span.RecordError(err)
+	kind := ErrorType(err)
+	span.AddEvent("exception", trace.WithAttributes(attribute.String("exception.type", kind), attribute.String("exception.message", err.Error())))
 	span.SetStatus(codes.Error, err.Error())
-	span.SetAttributes(attribute.String("error.type", ErrorType(err)))
+	span.SetAttributes(attribute.String("error.type", kind))
 	var ae interface{ apiError() *APIError }
 	if errors.As(err, &ae) && ae.apiError().Code != "" {
 		span.SetAttributes(attribute.String("caitlyn.error.code", ae.apiError().Code))

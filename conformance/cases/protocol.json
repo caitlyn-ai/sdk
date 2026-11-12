@@ -39,7 +39,7 @@
     {"id": "since.fails-before-sending", "section": "9", "title": "An operation newer than the server's Caitlyn-Api-Version fails before anything is sent"},
     {"id": "headers.request-id", "section": "4", "title": "Caitlyn-Request-Id and Caitlyn-Api-Version are on successful outputs"},
     {"id": "headers.response-metadata", "section": "4.2", "title": "A successful call's response metadata gives its HTTP status (200), its request id and, where the language keeps it there, its ETag"},
-    {"id": "telemetry.attributes", "section": "13", "title": "caitlyn.call, caitlyn.attempt and caitlyn.upload spans with the shared attributes; a failed call has error.type, caitlyn.error.code and an exception event; url.full has no query"},
+    {"id": "telemetry.attributes", "section": "13", "title": "caitlyn.call, caitlyn.attempt and caitlyn.upload spans with the shared attributes; a failed call and each failed attempt have a status message, error.type, caitlyn.error.code and an exception event; url.full has no query"},
     {"id": "telemetry.spans", "section": "11", "title": "One span per call, one child span per attempt, traceparent sent"},
     {"id": "endpoint.workspace", "section": "3", "title": "A workspace hostname resolves to https://<workspace>/api"},
     {"id": "auth.workspace", "section": "12", "title": "A workspace given as a hostname or URL sets the token audience https://<workspace>/api; an endpoint override moves the token request, not the audience"},
