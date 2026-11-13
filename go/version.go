@@ -5,7 +5,7 @@ package caitlyn
 // SDKVersion is the version stamped into the source: a release's version, or the 0.0.0 placeholder in the
 // repository. Go installs from a git tag, so a client reports the module version it was built with instead
 // (core.ModuleVersion), and SDKVersion only when the build information has none.
-const SDKVersion = "0.3.0"
+const SDKVersion = "0.4.0"
 
 // ModulePath is this SDK's module path, which core.ModuleVersion looks up in the build information.
 const ModulePath = "github.com/caitlyn-ai/caitlyn-go"
