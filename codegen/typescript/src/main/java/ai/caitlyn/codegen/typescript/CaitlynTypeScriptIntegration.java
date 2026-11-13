@@ -87,7 +87,7 @@ public final class CaitlynTypeScriptIntegration implements TypeScriptIntegration
             return MapUtils.of(
                 "maxAttempts", writer -> writer.write("3"),
                 "retryMode", writer -> writer.write("$S", "standard"),
-                // Every runtime, Node included, sends requests with the platform's fetch (Sam, 13 November 2026):
+                // Every runtime, Node included, sends requests with the platform's fetch (decided 13 November 2026):
                 // sdk-core's runtime has its own fetch handler, and @smithy/node-http-handler would bring
                 // @smithy/core's protocol, serde and event-stream modules into a Node bundle.
                 "requestHandler", writer -> {

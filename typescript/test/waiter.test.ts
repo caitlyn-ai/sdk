@@ -1,5 +1,5 @@
 // The waiter runtime (the runtime half of @waitable). Generated waitUntil…() methods are checked by the shared
-// conformance cases once the model has @waitable operations (lane K4).
+// conformance cases once the model has @waitable operations.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { waitUntil, WaiterError } from '@caitlyn-ai/sdk-core';

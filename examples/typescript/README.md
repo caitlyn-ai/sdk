@@ -5,16 +5,16 @@ today, and the code the developer docs show. `scripts/test-typescript.sh` type-c
 reference's programs, generated into `reference/`) against the generated SDK (strict), so an
 example that no longer matches the SDK fails CI.
 
-| File | Task | What the model does not have yet (the server lane that adds it) |
+| File | Task | What the model does not have yet |
 | --- | --- | --- |
 | `client-construction.ts` | Creating a client in each sign-in mode | Nothing |
-| `task-1-ask-an-agent.ts` | 1. Ask an agent a question and stream a cited, multi-turn answer | `conversations.create` (S2) |
-| `task-2-load-documents.ts` | 2. Load documents into a knowledge base and wait until they are searchable | `knowledgeBases.create`, `documents.waitUntilIndexed`, `uploadMany`, `replace`, `delete` (S3) |
-| `task-3-change-an-agent.ts` | 3. Change an agent safely: edit the draft, test it, publish it, roll back | `versions.pin`, `publish`, `reset`, `compare`, `list` (S1); `conversations.ask` (S2) |
+| `task-1-ask-an-agent.ts` | 1. Ask an agent a question and stream a cited, multi-turn answer | `conversations.create` |
+| `task-2-load-documents.ts` | 2. Load documents into a knowledge base and wait until they are searchable | `knowledgeBases.create`, `documents.waitUntilIndexed`, `uploadMany`, `replace`, `delete` |
+| `task-3-change-an-agent.ts` | 3. Change an agent safely: edit the draft, test it, publish it, roll back | `versions.pin`, `publish`, `reset`, `compare`, `list`; `conversations.ask` |
 | `browser-sign-in-server.ts` | Sign in from a browser, on your server (the guide `docs/guides/sign-in-from-a-browser.md`) | Nothing in the model; the guide says what the server is still building |
 | `getting-started.ts`, `sign-in-modes.ts`, `concepts.ts` | The developer docs' Getting started, Authentication, Errors, Retries, Streaming, Pagination and Telemetry pages (`docs/`) | Nothing in the model; the pages say which operations the server does not serve yet |
 | `browser-sign-in-page.ts` | Sign in from a browser, in a browser-only app (the same guide) | Browser API clients and cross-origin calls on the server, being built in caitlyn!2062 |
 
 Tasks 4 to 10 (unattended runs, MCP connectors as code, policy reviews, share links, reporting exports, users
-and roles, the audit log) need operations no lane has added to the model yet; their examples are added with
-those operations (lane X1).
+and roles, the audit log) need operations the model does not have yet; their examples are added with those
+operations.

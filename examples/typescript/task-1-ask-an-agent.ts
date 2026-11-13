@@ -1,5 +1,5 @@
 // Task 1: ask an agent a question and stream a cited, multi-turn answer.
-// conversations.create arrives with lane S2; until then this starts from an existing conversation.
+// conversations.create is not in the model yet; until it is, this starts from an existing conversation.
 import { Caitlyn } from '@caitlyn-ai/sdk';
 
 const service = new Caitlyn({

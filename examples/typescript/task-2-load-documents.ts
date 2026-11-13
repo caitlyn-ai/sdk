@@ -1,5 +1,5 @@
 // Task 2: load documents into a knowledge base. knowledgeBases.create, documents.waitUntilIndexed (a @waitable
-// waiter), uploadMany, replace and delete arrive with lane S3; until then this uploads into an existing
+// waiter), uploadMany, replace and delete are not in the model yet; until they are, this uploads into an existing
 // knowledge base and lists what is there.
 import { openAsBlob } from 'node:fs';
 import { Caitlyn } from '@caitlyn-ai/sdk';

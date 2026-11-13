@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The last step of the regenerate job: commits the new model snapshot and generated code on branch
 # model/<version>, pushes it and opens a merge request. Runs in CI only, with SDK_BOT_TOKEN (a project
-# access token with write_repository and api). The SDKs' public-API change summary (lane R2) will go in the
+# access token with write_repository and api). A summary of the SDKs' public-API changes is to go in the
 # description.
 set -euo pipefail
 : "${SDK_BOT_TOKEN:?SDK_BOT_TOKEN is not set: a project access token with write_repository and api}"

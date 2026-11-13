@@ -9,6 +9,8 @@
 #                          Firefox and WebKit (Playwright's image), from a page on another origin than the mock server.
 #   conformance            Checks that every language ran and passed every protocol and example case.
 #   model:version-check    Is the snapshot the latest published model? A warning on merge requests when not.
+#   model:snapshot-only    Merge requests: fails when model/ changes without model/model.lock.json, that is, when the
+#                          snapshot was edited here instead of pulled from the app's smithy/ (CONTRIBUTING.md).
 #   regenerate             An app release that publishes a model triggers this project (multi-project pipeline);
 #                          it pulls the model, regenerates, tests, and opens a merge request.
 #   docs:*                 Developer docs build, merge request previews, publishing to build.caitlyn.ai and to
@@ -200,6 +202,14 @@ conformance:
   rules: !reference [.mr-and-main, rules]
 
 # ---------------------------------------------------------------------------- the model
+
+model:snapshot-only:
+  extends: .toolchain
+  stage: generate
+  script:
+    - scripts/model-snapshot-check.sh
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
 model:version-check:
   extends: .toolchain
@@ -456,14 +466,14 @@ release:version:
 # ---------------------------------------------------------------------------- package releases
 
 # Placeholders. Package names on PyPI, the Go module path and the Homebrew tap can only be claimed by a first
-# publish, which is lane R2's: trusted publishing (npm, PyPI), Sigstore signatures, software bills of
+# publish, which is still to be set up: trusted publishing (PyPI), Sigstore signatures, software bills of
 # materials, provenance and the GitHub mirrors under github.com/caitlyn-ai come with it.
 .release-placeholder:
   stage: release
   image: alpine:3.22
   needs: []
   script:
-    - echo "$RELEASE_WHAT is not built yet (lane R2 of the v3 implementation plan)." && exit 1
+    - echo "$RELEASE_WHAT is not built yet." && exit 1
   rules:
     - if: $RELEASES_ENABLED == "true" && $CI_COMMIT_TAG
       when: manual
@@ -486,7 +496,7 @@ release:go:
   variables:
     RELEASE_WHAT: 'Mirroring go/ to github.com/caitlyn-ai/caitlyn-go and tagging the module'
 
-# The first upload claims the crate names; crates.io trusted publishing (GitHub Actions OIDC) is lane R2's.
+# The first upload claims the crate names; crates.io trusted publishing (GitHub Actions OIDC) comes with it.
 release:crates:
   extends: .release-placeholder
   variables:

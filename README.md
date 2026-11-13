@@ -11,7 +11,7 @@ conformance suite, and (later) the Go CLI, the integrations MCP server and the d
 | Rust | `caitlyn-sdk` | Caitlyn's own generator (`codegen/rust`): serde and tokio | `caitlyn-sdk-core` | `rust/` |
 
 None of them uses an AWS runtime: no `@aws-sdk` package, no botocore, no aws-sdk-go, no aws-smithy crate, and
-none reads AWS configuration. They depend on the OpenTelemetry API only (Rust: the `tracing` crate). Nothing is published yet (lane R2).
+none reads AWS configuration. They depend on the OpenTelemetry API only (Rust: the `tracing` crate). The TypeScript packages are on npm; releases to PyPI, crates.io and as a tagged Go module are not set up yet.
 
 ## Where things are
 
@@ -37,7 +37,7 @@ conformance/
   typescript/ python/ go/ rust/   one thin harness per language
 examples/              the examples the docs show, in each language, compiled against the SDKs in CI
 docs/                  the developer docs site, build.caitlyn.ai (docs/README.md)
-cli/                   the Go CLI (lane C1)
+cli/                   the Go CLI (not started)
 docker/Dockerfile      the toolchain image every make target and CI job runs in
 scripts/               generation, model pull and check, tests, docs
 ```
@@ -70,15 +70,15 @@ snapshot in `model/`, and the generated code beside it is committed too, so a mo
 reviewable diff of every SDK. See [CONTRIBUTING.md](CONTRIBUTING.md) for pulling a new model and for the
 multi-project pipeline that does it on every app release.
 
-Today the snapshot is the Gate 1 build of the model (seven operations), which is not published yet; its
+Today the snapshot is an early build of the model (seven operations), which is not published yet; its
 `@since("next")` traits are stamped as `5.115.0` (`stampNext` in the lock file) when the generators read it.
 
-## Plans and decisions
+## The protocol
 
-- The design, the implementation plan (gates and lanes) and the generator trial results are in Notion, under
-  "Caitlyn v3 API and SDK platform — design".
-- `model/PROTOCOL.md` is the contract between the server and every SDK. It is changed in the app repository,
-  agreed by all three generator lanes first, with a conformance case in the same change.
+`model/PROTOCOL.md` is the contract between the server and every SDK: the wire format, errors, retries,
+streams, sign-in and telemetry. A change to it is agreed for every SDK, lands with a conformance case that all of
+them pass, and is made in the app repository's `smithy/PROTOCOL.md`, from which `model/` is copied
+([CONTRIBUTING.md](CONTRIBUTING.md), "The model snapshot").
 
 ## Licence
 

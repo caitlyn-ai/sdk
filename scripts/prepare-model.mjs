@@ -3,7 +3,7 @@
 //   - removes the `validators` and `suppressions` metadata: they name the app's Caitlyn lint rules,
 //     which run in the app's model build and are not on the generators' classpath;
 //   - replaces any @since("next") with the lock's `stampNext`. A published model never contains
-//     "next" (the app's release stamps it); an unpublished build, such as the Gate 1 snapshot, does.
+//     "next" (the app's release stamps it); an unpublished build, such as the current snapshot, does.
 // Usage: node scripts/prepare-model.mjs
 import crypto from 'node:crypto';
 import fs from 'node:fs';
