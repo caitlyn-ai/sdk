@@ -1,0 +1,421 @@
+{
+ "description": "Heading ids for Markdown citations, shared by caitlyn-data-ingestion (pdf/topic/document_citation.py) and the docs site. 'slugs': each case is the headings of one page, in order, through ONE github-slugger; 'ids' is what github-slugger@2.0.0 returns. 'documents': each case is a whole Markdown page; 'ids' is the id of every heading on it in document order, including an empty heading (id '') and a raw HTML <h1>-<h6>. Expected values were produced by running github-slugger@2.0.0 itself (BananaSlug.slug over each heading's visible text, or the explicit id) under Node, not by the Python port.",
+ "slugger": "github-slugger@2.0.0",
+ "astro": "@astrojs/markdown-remark@7.3.6 (rehypeHeadingIds; Starlight 0.42.10 / Astro 7.4.7)",
+ "slugs": [
+  {
+   "name": "plain words",
+   "headings": [
+    "Getting started",
+    "Install the CLI"
+   ],
+   "ids": [
+    "getting-started",
+    "install-the-cli"
+   ]
+  },
+  {
+   "name": "case is folded",
+   "headings": [
+    "API Reference",
+    "HTTP/2 Support"
+   ],
+   "ids": [
+    "api-reference",
+    "http2-support"
+   ]
+  },
+  {
+   "name": "duplicates count up",
+   "headings": [
+    "Example",
+    "Example",
+    "Example"
+   ],
+   "ids": [
+    "example",
+    "example-1",
+    "example-2"
+   ]
+  },
+  {
+   "name": "a later heading's slug equals an earlier suffixed one",
+   "headings": [
+    "a",
+    "a",
+    "a-1"
+   ],
+   "ids": [
+    "a",
+    "a-1",
+    "a-1-1"
+   ]
+  },
+  {
+   "name": "the suffixed slug comes first",
+   "headings": [
+    "a-1",
+    "a",
+    "a"
+   ],
+   "ids": [
+    "a-1",
+    "a",
+    "a-2"
+   ]
+  },
+  {
+   "name": "counter interplay across three",
+   "headings": [
+    "foo",
+    "foo-1",
+    "foo",
+    "foo-1",
+    "foo"
+   ],
+   "ids": [
+    "foo",
+    "foo-1",
+    "foo-2",
+    "foo-1-1",
+    "foo-3"
+   ]
+  },
+  {
+   "name": "empty headings take a turn",
+   "headings": [
+    "",
+    "",
+    "Text"
+   ],
+   "ids": [
+    "",
+    "-1",
+    "text"
+   ]
+  },
+  {
+   "name": "punctuation is dropped",
+   "headings": [
+    "Hello, World!",
+    "What's new?",
+    "C++ & C#",
+    "A/B testing",
+    "100% done",
+    "$HOME and ~/.config",
+    "foo.bar()",
+    "Q&A: part 1"
+   ],
+   "ids": [
+    "hello-world",
+    "whats-new",
+    "c--c",
+    "ab-testing",
+    "100-done",
+    "home-and-config",
+    "foobar",
+    "qa-part-1"
+   ]
+  },
+  {
+   "name": "hyphens and underscores are kept",
+   "headings": [
+    "kebab-case",
+    "snake_case",
+    "--leading",
+    "trailing-",
+    "a - b"
+   ],
+   "ids": [
+    "kebab-case",
+    "snake_case",
+    "--leading",
+    "trailing-",
+    "a---b"
+   ]
+  },
+  {
+   "name": "spaces become hyphens, every one",
+   "headings": [
+    "two  spaces",
+    " leading space",
+    "tab\there",
+    "line\nbreak"
+   ],
+   "ids": [
+    "two--spaces",
+    "-leading-space",
+    "tabhere",
+    "linebreak"
+   ]
+  },
+  {
+   "name": "typographic punctuation",
+   "headings": [
+    "It’s “quoted”",
+    "Em — dash",
+    "En – dash",
+    "Ellipsis…",
+    "« guillemets »",
+    "Section § 2",
+    "© 2026 Example"
+   ],
+   "ids": [
+    "its-quoted",
+    "em--dash",
+    "en--dash",
+    "ellipsis",
+    "-guillemets-",
+    "section--2",
+    "-2026-example"
+   ]
+  },
+  {
+   "name": "accented and non-Latin letters are kept",
+   "headings": [
+    "Café crème",
+    "Straße",
+    "Ñandú",
+    "Ελληνικά ΟΔΟΣ",
+    "Русский текст",
+    "日本語の見出し",
+    "中文标题",
+    "العربية",
+    "हिन्दी शीर्षक",
+    "한국어 제목"
+   ],
+   "ids": [
+    "café-crème",
+    "straße",
+    "ñandú",
+    "ελληνικά-οδος",
+    "русский-текст",
+    "日本語の見出し",
+    "中文标题",
+    "العربية",
+    "हिन्दी-शीर्षक",
+    "한국어-제목"
+   ]
+  },
+  {
+   "name": "emoji are dropped",
+   "headings": [
+    "🚀 Launch",
+    "Done ✅",
+    "Thumbs 👍🏽 up",
+    "Family 👨‍👩‍👧 time",
+    "Flag 🇳🇿 here",
+    "😄"
+   ],
+   "ids": [
+    "-launch",
+    "done-",
+    "thumbs--up",
+    "family--time",
+    "flag--here",
+    ""
+   ]
+  },
+  {
+   "name": "digits and symbols",
+   "headings": [
+    "1. Introduction",
+    "v2.0.0 release",
+    "x² + y²",
+    "π ≈ 3.14",
+    "€5 price",
+    "1/2 cup"
+   ],
+   "ids": [
+    "1-introduction",
+    "v200-release",
+    "x--y",
+    "π--314",
+    "5-price",
+    "12-cup"
+   ]
+  },
+  {
+   "name": "code-span text as written",
+   "headings": [
+    "The useState() hook",
+    "Run npm install --save",
+    "<Component /> props"
+   ],
+   "ids": [
+    "the-usestate-hook",
+    "run-npm-install---save",
+    "component--props"
+   ]
+  },
+  {
+   "name": "mixed duplicates after normalisation",
+   "headings": [
+    "Hello world",
+    "hello-world",
+    "Hello World!",
+    "HELLO WORLD"
+   ],
+   "ids": [
+    "hello-world",
+    "hello-world-1",
+    "hello-world-2",
+    "hello-world-3"
+   ]
+  }
+ ],
+ "documents": [
+  {
+   "name": "a code span's text is part of the id",
+   "markdown": "## The `useState()` hook\n",
+   "ids": [
+    "the-usestate-hook"
+   ]
+  },
+  {
+   "name": "emphasis and link text, markers dropped",
+   "markdown": "## Using *emphasis*, **strong** and [links](https://example.test)\n",
+   "ids": [
+    "using-emphasis-strong-and-links"
+   ]
+  },
+  {
+   "name": "an entity is its character",
+   "markdown": "## Fish &amp; chips\n",
+   "ids": [
+    "fish--chips"
+   ]
+  },
+  {
+   "name": "a backslash escape is its character",
+   "markdown": "## 2\\. Not a list\n",
+   "ids": [
+    "2-not-a-list"
+   ]
+  },
+  {
+   "name": "closing hashes are not text",
+   "markdown": "## Closing ##\n",
+   "ids": [
+    "closing"
+   ]
+  },
+  {
+   "name": "inline HTML tags drop, their text stays",
+   "markdown": "## Press <kbd>Ctrl</kbd> + <kbd>C</kbd>\n",
+   "ids": [
+    "press-ctrl--c"
+   ]
+  },
+  {
+   "name": "a picture adds nothing but the spaces round it stay",
+   "markdown": "## Logo ![the logo](logo.png) here\n",
+   "ids": [
+    "logo--here"
+   ]
+  },
+  {
+   "name": "a setext heading's line break is removed, not hyphenated",
+   "markdown": "Line one\nline two\n========\n",
+   "ids": [
+    "line-oneline-two"
+   ]
+  },
+  {
+   "name": "the same text at different levels counts as a duplicate",
+   "markdown": "# Overview\n\n## Overview\n\n### Overview\n",
+   "ids": [
+    "overview",
+    "overview-1",
+    "overview-2"
+   ]
+  },
+  {
+   "name": "headings inside a blockquote and a list item count",
+   "markdown": "## Notes\n\n> ## Notes\n\n- ## Notes\n",
+   "ids": [
+    "notes",
+    "notes-1",
+    "notes-2"
+   ]
+  },
+  {
+   "name": "an explicit id overrides the slug and is not heading text",
+   "markdown": "## Install the CLI {#setup}\n",
+   "ids": [
+    "setup"
+   ]
+  },
+  {
+   "name": "an explicit id does not take a turn with the slugger",
+   "markdown": "## Intro\n\n## Intro {#custom}\n\n## Intro\n",
+   "ids": [
+    "intro",
+    "custom",
+    "intro-1"
+   ]
+  },
+  {
+   "name": "an explicit id equal to a later slug does not make it unique",
+   "markdown": "## First {#setup}\n\n## Setup\n",
+   "ids": [
+    "setup",
+    "setup"
+   ]
+  },
+  {
+   "name": "braces not at the end, or with no space before, are text",
+   "markdown": "## Braces {#not-id} here\n\n## Tight{#x}\n",
+   "ids": [
+    "braces-not-id-here",
+    "tightx"
+   ]
+  },
+  {
+   "name": "a raw HTML heading takes a turn",
+   "markdown": "<h2>Raw heading</h2>\n\n## Raw heading\n",
+   "ids": [
+    "raw-heading",
+    "raw-heading-1"
+   ]
+  },
+  {
+   "name": "a raw HTML heading with its own id does not",
+   "markdown": "<h2 id=\"mine\">Raw</h2>\n\n## Raw\n",
+   "ids": [
+    "mine",
+    "raw"
+   ]
+  },
+  {
+   "name": "emoji and accents",
+   "markdown": "## 🚀 Déploiement rapide\n",
+   "ids": [
+    "-déploiement-rapide"
+   ]
+  },
+  {
+   "name": "a footnote reference adds its number",
+   "markdown": "## A claim[^note]\n\nText.[^note]\n\n[^note]: The note.\n",
+   "ids": [
+    "a-claim1"
+   ]
+  },
+  {
+   "name": "an empty heading takes a turn",
+   "markdown": "##\n\n##\n\n## Text\n",
+   "ids": [
+    "",
+    "-1",
+    "text"
+   ]
+  },
+  {
+   "name": "the id comes from the full text, past the 256-character heading cap",
+   "markdown": "## Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment Segment end\n",
+   "ids": [
+    "segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-segment-end"
+   ]
+  }
+ ]
+}

@@ -24,7 +24,7 @@
 //   Python      the caitlyn and caitlyn-core pyproject.toml files, the caitlyn-core pin, both __version__ values
 //               (the User-Agent and the tracer version), the uv lock file
 //   Go          SDKVersion (the User-Agent and the tracer's instrumentation version)
-//   Rust        both crates' versions, the core dependency, SDK_VERSION (the User-Agent), both Cargo.lock files
+//   Rust        both crates' versions, the core dependency, SDK_VERSION (the User-Agent), the three Cargo.lock files (the SDK's, the conformance harness's, the docs examples')
 // Go module versions are git tags, so no Go file carries one apart from SDKVersion.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -61,6 +61,9 @@ const stamped = [
   rule('rust/Cargo.lock', lockEntry('caitlyn-sdk-core')),
   rule('conformance/rust/Cargo.lock', lockEntry('caitlyn-sdk')),
   rule('conformance/rust/Cargo.lock', lockEntry('caitlyn-sdk-core')),
+  // The developer docs' Rust examples (examples/rust), compiled with --locked against the SDK in this repository
+  rule('examples/rust/Cargo.lock', lockEntry('caitlyn-sdk')),
+  rule('examples/rust/Cargo.lock', lockEntry('caitlyn-sdk-core')),
   // The generators' settings: the TypeScript package version, the Python, Go and Rust SDK versions, and the
   // version of the Rust core crate the generated crate depends on.
   rule('codegen/smithy-build.json', String.raw`"packageVersion": "${V}"`),

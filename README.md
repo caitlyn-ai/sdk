@@ -35,8 +35,8 @@ conformance/
   cases/examples.json  one case per @examples entry, plus synthesised 403 and 404 cases (generated)
   mock-server/         the mock Caitlyn server, with fault injection and example matching
   typescript/ python/ go/ rust/   one thin harness per language
-examples/typescript/   the proposal's top-ten task examples in TypeScript, type-checked in CI
-docs/                  the developer docs (a skeleton until lane D2)
+examples/              the examples the docs show, in each language, compiled against the SDKs in CI
+docs/                  the developer docs site, build.caitlyn.ai (docs/README.md)
 cli/                   the Go CLI (lane C1)
 docker/Dockerfile      the toolchain image every make target and CI job runs in
 scripts/               generation, model pull and check, tests, docs

@@ -1,15 +1,56 @@
 # Developer docs
 
-The public developer site, `build.caitlyn.ai`, is built from this repository: the API reference from the
-model, guides that pull their code from the tested examples, Markdown copies of every page and `llms.txt`.
-The real site will be built with Astro Starlight; until then `make docs` runs a skeleton
-(`scripts/docs-build.mjs`) that writes a holding page, one Markdown reference page per operation and the
-guides, so the publishing jobs have real input.
+The public developer site, `build.caitlyn.ai`, is built from this repository with Astro Starlight: the API
+reference generated from the model, hand-written pages and guides whose code comes from tested examples, a
+Markdown copy of every page, and `llms.txt`. `make docs` builds it (in the toolchain image); nothing after the
+package install needs the network.
 
 | Output | What it is |
 | --- | --- |
-| `build/docs/site/` | The static site. CI uploads it with `scripts/docs-upload.sh`. |
-| `build/docs/pages.json` | One entry per page: its path, public URL, title and metadata (the same values as its front matter). |
+| `build/docs/site/` | The static site. CI uploads it with `scripts/docs-upload.sh`. Each page is `<path>/index.html` with its Markdown copy at `<path>.md`, plus `llms.txt`, `llms-full.txt` and the Pagefind search index. |
+| `build/docs/pages.json` | One entry per page: its Markdown copy's path, public URL, title and metadata (the same values as its front matter). |
+
+To work on it locally:
+
+```bash
+make docs                                   # or, with Node 24 on your machine:
+(cd docs/site && npm ci) && node scripts/prepare-model.mjs && node scripts/docs-build.mjs
+(cd docs/site && npx astro preview)         # serves build/docs/site at http://localhost:4321
+```
+
+## How it is built
+
+| Where | What |
+| --- | --- |
+| `docs/*.md`, `docs/guides/*.md` | The hand-written pages: the landing page (`index.md`), Getting started, Authentication, Errors, Retries, Streaming, Pagination, Telemetry, and the guides. The file's path is the page's address. |
+| `docs/error-codes.mjs` | What each error code means and what to do about it; the rest of each `/errors/<CODE>/` page comes from the model. |
+| `scripts/docs-reference.mjs` | The API reference from the model: a page per public operation, per type and per error code. `LIVE_OPERATIONS` lists the operations a Caitlyn release serves; every other operation's page says it is not available yet. |
+| `scripts/docs-snippets.mjs` | The reference's runnable programs, one per `@examples` entry and language. |
+| `scripts/docs-build.mjs` | Checks every page, writes the Starlight content (`docs/site/src/content/docs/`, generated) and sidebar, runs `astro build`, then writes the Markdown copies, `llms.txt` and `pages.json`. |
+| `docs/site/` | The Astro Starlight project, with Astro and Starlight pinned to exact versions in `package-lock.json`. |
+
+The build fails on front matter ingestion would skip, a page whose code differs from its example, a
+site-relative link to a page or heading that does not exist, a raw HTML heading, and a page Starlight did not write.
+
+**Markdown is the canonical output.** Each page is first written as Markdown with its knowledge-base front matter,
+and that is its `.md` copy; the HTML is built from the same text. The title is written `# Title {#_top}`, the id
+Starlight gives the page title, so a citation anchor under the title matches the page.
+
+**Language tabs.** Consecutive code blocks whose info string has `tab="<label>"` become one tab group
+(`docs/site/src/plugins/remark-lang-tabs.mjs`); the `.md` copy keeps them one after another, each labelled. On the
+site, `docs/site/src/scripts/lang-tabs.ts` shows one language at a time, remembers the reader's choice, and opens
+the tab that `?lang=<typescript|python|go|rust>` names.
+
+**Heading ids and fragment links.** A heading's id is github-slugger over its text, one slugger per page, or the
+`{#id}` at the end of the heading (`docs/site/src/plugins/remark-heading-ids.mjs`). These are the anchors
+caitlyn-data-ingestion gives citations; `docs/site/test/heading-ids.test.mjs` runs the fixture both repositories
+share (`heading-ids.json`, a copy of the ingestion repository's `pdf/topic/tests/fixtures/heading_ids.json`). A
+`:~:text=` link into a code block in a hidden tab opens that tab and highlights the text; Safari hides the
+fragment from scripts, so there the link only works for text that is already visible. The site does not change
+quotes or dashes in text (no SmartyPants), so a quote taken from the Markdown matches the page.
+
+**The Caitlyn widget** is a placeholder (`docs/site/src/components/CaitlynWidgetPlaceholder.astro`) that renders
+nothing until the v3 widget and embed work is done.
 
 ## Publishing
 
@@ -25,29 +66,40 @@ in to AWS with GitLab `id_tokens` (OIDC, audience `https://git.customd.com`); th
 | `docs:preview:stop` | Manual, or when the merge request closes | `DOCS_PREVIEW_ROLE_ARN` | Deletes the preview |
 | `docs:publish` | `main` | `DOCS_PUBLISH_ROLE_ARN` | Uploads the live site and invalidates `DOCS_DISTRIBUTION_ID` |
 | `docs:knowledge-base` | `main`, after `docs:publish` | none yet | A dry run of `scripts/docs-kb-publish.mjs` (see below) |
+| `pages` | Merge requests, whatever `DOCS_ENABLED` says | none | Builds the docs under the merge request's GitLab Pages path and deploys them there for a week: a private parallel deployment, `mr-<iid>`, that only project members can open. The merge request's environment links to it. |
 
-None of them runs until the CI variable `DOCS_ENABLED` is `true`, which should wait for the first real
-site: until then `build.caitlyn.ai` stays a 404, as the hosting intends.
+None of them runs until the CI variable `DOCS_ENABLED` is `true`. The roles' ARNs and the distribution ID are
+the CI variables `DOCS_PREVIEW_ROLE_ARN`, `DOCS_PUBLISH_ROLE_ARN` and `DOCS_DISTRIBUTION_ID`.
 
-## Guides
+## Code on the pages
 
-Guides are hand-written pages in `docs/guides/`, one Markdown file each, named for the task in the
-imperative (`sign-in-from-a-browser.md`). Each starts with front matter (below), `pageType: guide`, then a
-`#` title.
-
-A guide's code comes from the examples in `examples/`, which CI type-checks against the SDK. Mark a region in
-the example with `// #region <name>` and `// #endregion`, and put a marker line before the guide's code block:
+A page's code comes from the examples in `examples/`, which CI compiles against each SDK. Mark a region in the
+example with `// #region <name>` and `// #endregion` (`# #region` and `# #endregion` in Python), and put a marker
+line before the page's code block:
 
 ````markdown
 <!-- example: examples/typescript/browser-sign-in-page.ts#sign-in -->
-```ts
+```ts tab="TypeScript"
 ```
 ````
 
-`node scripts/docs-guides.mjs --write` copies each region into its code block, and
+`node scripts/docs-guides.mjs --write` copies each region, less its shared indentation, into its code block, and
 `node scripts/docs-guides.mjs` (run by `scripts/test-typescript.sh` in CI, and by the docs build) fails when a
-block differs from its region, a region is missing or the front matter is one ingestion would skip. So a guide
-whose code stops compiling, or drifts from the example, fails the pipeline.
+block differs from its region, a region is missing or the front matter is one ingestion would skip.
+
+| Language | Examples | Compiled by |
+| --- | --- | --- |
+| TypeScript | `examples/typescript/` | `tsc --strict` in `scripts/test-typescript.sh` |
+| Python | `examples/python/` | `pyright --strict` in `scripts/test-python.sh` |
+| Go | `examples/go/` (its own module, using `go/`) | `go build`, `go vet` and `staticcheck` in `scripts/test-go.sh` |
+| Rust | `examples/rust/` (its own crate, using `rust/caitlyn-sdk`) | `cargo clippy -D warnings` in `scripts/test-rust.sh` |
+
+The reference's programs are generated into `examples/<language>/reference/` (`examples/rust/examples/` for
+Rust) by `node scripts/docs-snippets.mjs <language>`, which each of those scripts runs first; the directories are
+ignored by git. So a model or SDK change that breaks a program shown in the docs fails that language's job.
+
+Guides are in `docs/guides/`, named for the task in the imperative (`sign-in-from-a-browser.md`), with
+`pageType: guide`. Every hand-written page starts with front matter (below), then a `#` title.
 
 ## Into Ask Caitlyn
 

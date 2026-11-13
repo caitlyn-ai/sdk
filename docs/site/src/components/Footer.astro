@@ -1,0 +1,13 @@
+---
+// Starlight's footer, plus what every page needs: the language tab and fragment script, and the place the
+// Caitlyn widget will go.
+import Default from '@astrojs/starlight/components/Footer.astro';
+import CaitlynWidgetPlaceholder from './CaitlynWidgetPlaceholder.astro';
+---
+
+<Default><slot /></Default>
+<CaitlynWidgetPlaceholder />
+
+<script>
+  import '../scripts/lang-tabs.ts';
+</script>

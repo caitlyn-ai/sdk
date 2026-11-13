@@ -17,3 +17,13 @@ __pycache__/
 /typescript/packages/*/*.tgz
 /typescript/packages/*/LICENSE
 /typescript/packages/*/NOTICE
+# The API reference's programs, written from the model's @examples by scripts/docs-snippets.mjs for the
+# language jobs to compile; the developer site and its build output.
+/examples/typescript/reference/
+/examples/python/reference/
+/examples/go/reference/
+/examples/rust/examples/
+/examples/rust/target/
+/docs/site/src/content/docs/
+/docs/site/src/generated/
+/docs/site/.astro/

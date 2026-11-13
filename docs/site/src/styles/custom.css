@@ -1,0 +1,67 @@
+/* Language tabs (src/plugins/remark-lang-tabs.mjs, src/scripts/lang-tabs.ts). Without script every panel shows,
+   each labelled; with it, one language at a time. */
+.lang-tabs {
+  margin-top: 1.5rem;
+}
+.lang-tab-list {
+  display: none;
+}
+.lang-tabs:not(.lang-tabs-ready) > .lang-panel::before {
+  content: attr(data-label);
+  display: block;
+  font-size: var(--sl-text-sm);
+  font-weight: 600;
+  color: var(--sl-color-gray-2);
+  margin-bottom: 0.25rem;
+}
+.lang-tabs:not(.lang-tabs-ready) > .lang-panel + .lang-panel {
+  margin-top: 1rem;
+}
+.lang-tabs-ready > .lang-tab-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--sl-color-gray-5);
+  margin-bottom: 0.75rem;
+}
+.sl-markdown-content .lang-tab-list > .lang-tab {
+  margin-top: 0;
+}
+.lang-tab {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 0.375rem 0.75rem;
+  color: var(--sl-color-gray-2);
+  font: inherit;
+  font-size: var(--sl-text-sm);
+  cursor: pointer;
+}
+.lang-tab:hover {
+  color: var(--sl-color-white);
+}
+.lang-tab[aria-selected='true'] {
+  color: var(--sl-color-white);
+  border-bottom-color: var(--sl-color-text-accent);
+  font-weight: 600;
+}
+.lang-tabs-ready > .lang-panel {
+  margin-top: 0;
+}
+.sl-markdown-content .lang-panel > :first-child {
+  margin-top: 0;
+}
+
+/* A `:~:text=` target this site's script found (the browser's own highlight is ::target-text) */
+::highlight(caitlyn-fragment),
+::target-text {
+  background-color: color-mix(in srgb, var(--sl-color-text-accent) 30%, transparent);
+  color: inherit;
+}
+
+/* Reference tables: member names stay on one line */
+.sl-markdown-content table td:first-child code {
+  white-space: nowrap;
+}

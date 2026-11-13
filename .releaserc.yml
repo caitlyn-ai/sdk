@@ -48,6 +48,7 @@ plugins:
         - 'rust/Cargo.toml' # stamped
         - 'rust/Cargo.lock' # stamped
         - 'conformance/rust/Cargo.lock' # stamped
+        - 'examples/rust/Cargo.lock' # stamped
         - 'codegen/smithy-build.json' # stamped
         - 'typescript/packages/sdk/package.json' # stamped
         - 'typescript/packages/sdk/src/runtimeConfig.shared.ts' # stamped
