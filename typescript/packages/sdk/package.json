@@ -1,7 +1,7 @@
 {
     "name": "@caitlyn-ai/sdk",
     "description": "The TypeScript SDK for the Caitlyn v3 API.",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "license": "Apache-2.0",
     "homepage": "https://build.caitlyn.ai",
     "repository": {
@@ -41,7 +41,7 @@
     },
     "dependencies": {
         "tslib": "^2.6.2",
-        "@caitlyn-ai/sdk-core": "0.4.0",
+        "@caitlyn-ai/sdk-core": "0.5.0",
         "@smithy/core": "^3.37.0",
         "@smithy/fetch-http-handler": "^5.8.0",
         "@smithy/types": "^4.19.0"

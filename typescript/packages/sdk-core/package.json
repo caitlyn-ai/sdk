@@ -1,6 +1,6 @@
 {
   "name": "@caitlyn-ai/sdk-core",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "The runtime core of the Caitlyn TypeScript SDK: the Caitlyn REST JSON protocol, sign-in, retries, server-sent events, waiters and telemetry.",
   "license": "Apache-2.0",
   "homepage": "https://build.caitlyn.ai",
