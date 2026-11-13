@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, ClassVar
 
+from ._models import FieldError
+
 
 class CaitlynError(Exception):
     """An error response from the Caitlyn API, read from its RFC 9457 problem details.
@@ -30,7 +32,7 @@ class CaitlynError(Exception):
         type: str | None = None,
         request_id: str | None = None,
         retry_after_seconds: float | None = None,
-        errors: Sequence[Mapping[str, Any]] = (),
+        errors: Sequence[FieldError] = (),
         raw: Mapping[str, Any] | None = None,
         raw_body: str = "",
         raw_body_truncated: bool = False,
@@ -43,9 +45,10 @@ class CaitlynError(Exception):
         self.type = type
         self.request_id = request_id
         self.retry_after_seconds = retry_after_seconds
-        self.errors: tuple[Mapping[str, Any], ...] = tuple(errors)
+        self.errors: list[FieldError] = list(errors)
         """Field-level problems on a 400 ``VALIDATION_FAILED``: each has ``code`` and a ``pointer`` (JSON
-        Pointer into the body) or a ``parameter`` (query parameter), and may have ``detail``."""
+        Pointer into the body) or a ``parameter`` (query parameter), and may have ``detail``. An entry the
+        SDK cannot read (one without a ``code``) is left out here and kept in ``raw``."""
         self.raw: Mapping[str, Any] = raw or {}
         """The problem body as received, unknown fields included; empty when the body is not a JSON object."""
         self.raw_body = raw_body

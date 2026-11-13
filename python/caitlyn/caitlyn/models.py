@@ -3,24 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from caitlyn_core import CaitlynModel, CaitlynResult, OpenEnum
+from caitlyn_core import CaitlynModel, CaitlynResult, FieldError as FieldError, OpenEnum
 from pydantic import JsonValue
-
-class FieldError(CaitlynModel):
-    """One problem with one request member or query parameter."""
-
-    pointer: str | None = None
-    """A JSON Pointer (RFC 6901) into the request body, for example `/context/0/label`. Absent when
-    the problem is with a query parameter.
-    """
-    parameter: str | None = None
-    """The query parameter at fault, for example `filter[staus][eq]`. Absent when the problem is in
-    the body.
-    """
-    code: str
-    """The code for this field's problem, from the same catalogue as the response's own code."""
-    detail: str | None = None
-    """What is wrong with the field, written for the integrator."""
 
 
 class AttachmentSettings(CaitlynModel):

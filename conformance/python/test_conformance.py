@@ -405,8 +405,9 @@ async def test_field_errors(mock: Mock, case_id: str) -> None:
     err = await expect_error(c.versions.update_draft("GHT7YRWXPL", if_match=draft.etag, identity="x", clear=["identity"]))
     assert isinstance(err, ValidationError)
     assert (err.status, err.code) == (400, "VALIDATION_FAILED")
-    assert err.errors[0]["pointer"] == "/identity"
-    assert err.errors[0]["code"] == "VALIDATION_FAILED"
+    [field] = err.errors
+    assert isinstance(field, caitlyn.FieldError)
+    assert (field.pointer, field.code) == ("/identity", "VALIDATION_FAILED")
     patch = [r for r in mock.api() if r["method"] == "PATCH"][-1]
     assert json.loads(patch["body"]) == {"identity": "x", "clear": ["identity"]}
 

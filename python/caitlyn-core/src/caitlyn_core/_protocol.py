@@ -13,10 +13,11 @@ from typing import Any, cast
 from urllib.parse import quote
 
 import httpx
+import pydantic
 from pydantic import BaseModel
 
 from ._errors import CaitlynError, NotSupportedByServer
-from ._models import CaitlynModel, CaitlynResult, ResponseMetadata
+from ._models import CaitlynModel, CaitlynResult, FieldError, ResponseMetadata
 from ._retry import parse_retry_after
 from ._spec import OperationSpec
 
@@ -221,10 +222,16 @@ def error_from_problem(
     return err
 
 
-def _field_errors(value: object) -> list[Mapping[str, Any]]:
+def _field_errors(value: object) -> list[FieldError]:
     if not isinstance(value, list):
         return []
-    return [cast(Mapping[str, Any], e) for e in cast(list[object], value) if isinstance(e, dict)]
+    out: list[FieldError] = []
+    for e in cast(list[object], value):
+        try:
+            out.append(FieldError.from_wire(e))
+        except pydantic.ValidationError:
+            continue  # not a field error this SDK can read; still in the error's `raw`
+    return out
 
 
 def _str_or_none(value: object) -> str | None:

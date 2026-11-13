@@ -15,7 +15,7 @@ from ._client import (
 from ._errors import CaitlynConnectionError, CaitlynError, NotSupportedByServer, StreamLostError
 from ._hooks import CallContext, Interceptor
 from .auth import AsyncAuthSession, Auth, CaitlynAuthError, SyncAuthSession
-from ._models import CaitlynEvent, CaitlynModel, CaitlynResult, OpenEnum, ResponseMetadata
+from ._models import CaitlynEvent, CaitlynModel, CaitlynResult, FieldError, OpenEnum, ResponseMetadata
 from ._pagination import AsyncPaginator, Paginator
 from ._retry import RetryPolicy
 from ._spec import Member, OperationSpec
@@ -39,6 +39,7 @@ __all__ = [
     "ClientConfig",
     "EventDecoder",
     "EventStream",
+    "FieldError",
     "Interceptor",
     "Member",
     "NotSupportedByServer",

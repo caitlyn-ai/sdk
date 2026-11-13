@@ -90,6 +90,22 @@ class CaitlynModel(BaseModel):
                 raise
 
 
+class FieldError(CaitlynModel):
+    """One problem with one request member or query parameter, from a problem body's ``errors`` (PROTOCOL.md
+    6.1). The runtime reads it with the rest of the problem details, so the generated SDK re-exports this class
+    rather than generating its own."""
+
+    pointer: str | None = None
+    """A JSON Pointer (RFC 6901) into the request body, for example ``/context/0/label``. Absent when the
+    problem is with a query parameter."""
+    parameter: str | None = None
+    """The query parameter at fault, for example ``filter[staus][eq]``. Absent when the problem is in the body."""
+    code: str
+    """The code for this field's problem, from the same catalogue as the response's own code."""
+    detail: str | None = None
+    """What is wrong with the field, written for the integrator."""
+
+
 @dataclass(frozen=True, slots=True)
 class ResponseMetadata:
     """The response a call's result was read from (PROTOCOL.md 4.2)."""

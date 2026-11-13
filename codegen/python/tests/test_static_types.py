@@ -41,6 +41,19 @@ CASES: dict[str, tuple[str, bool]] = {  # (code, is a type error)
     ),
     "final message is typed": ("with c.conversations.send('c', message='m') as s:\n    t: str = s.final_message().text", False),
     "paginator yields typed items": ('for d in c.documents.list(knowledge_base_id="k"):\n    s: str = d.status', False),
+    "field errors are typed": (
+        "from caitlyn import ValidationError\n"
+        "def f(err: ValidationError) -> None:\n"
+        "    p: str | None = err.errors[0].pointer\n"
+        "    k: str = err.errors[0].code",
+        False,
+    ),
+    "a field error has only its own members": (
+        "from caitlyn import ValidationError\n"
+        "def f(err: ValidationError) -> None:\n"
+        "    k: str = err.errors[0].pointer",
+        True,
+    ),
     "misspelt attribute is an error": ('c.versions.get(agent_id="a", version="draft").configuration.instrctions', True),
 }
 
