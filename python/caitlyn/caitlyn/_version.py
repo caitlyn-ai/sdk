@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Final
 
-__version__: Final = "0.5.0"
+__version__: Final = "0.6.0"
 SDK_MODEL: Final = "5.115.0"
 """The model version this SDK was generated from (the newest `@since`), sent as Caitlyn-Sdk-Model."""
 
