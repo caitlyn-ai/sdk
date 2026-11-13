@@ -11,6 +11,7 @@ from caitlyn_core.auth import (
     AwsIam,
     CaitlynAuthError,
     ClientCredentials,
+    LockingTokenStore,
     OAuth,
     OAuthTokens,
     Session,
@@ -20,4 +21,4 @@ from caitlyn_core.auth import (
     WorkloadIdentity,
 )
 
-__all__ = ["AsyncAuthSession", "Auth", "AuthorizationRequest", "AwsCredentials", "AwsIam", "CaitlynAuthError", "ClientCredentials", "OAuth", "OAuthTokens", "Session", "SyncAuthSession", "Token", "TokenStore", "WorkloadIdentity"]
+__all__ = ["AsyncAuthSession", "Auth", "AuthorizationRequest", "AwsCredentials", "AwsIam", "CaitlynAuthError", "ClientCredentials", "LockingTokenStore", "OAuth", "OAuthTokens", "Session", "SyncAuthSession", "Token", "TokenStore", "WorkloadIdentity"]

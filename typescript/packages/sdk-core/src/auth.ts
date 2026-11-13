@@ -29,6 +29,13 @@ export interface TokenStore {
   load(): Promise<OAuthTokens | undefined> | OAuthTokens | undefined;
   save(tokens: OAuthTokens): Promise<void> | void;
   clear(): Promise<void> | void;
+  /**
+   * Runs `fn` while holding a lock that every client sharing this store respects (a database row lock, a Redis
+   * lock, `navigator.locks.request(name, fn)` across browser tabs). Offer it when the store is shared: the SDK
+   * loads, refreshes and saves inside it, so a refresh token, which is single-use, is never sent twice, and a
+   * client that waited uses the tokens the other one saved (PROTOCOL.md 12.2, `oauth` step 5).
+   */
+  withLock?<T>(fn: () => Promise<T>): Promise<T>;
 }
 
 export type AuthOptions =
@@ -90,8 +97,30 @@ const randomString = (n = 32) => b64url(crypto.getRandomValues(new Uint8Array(n)
 /** The audience of a workspace's tokens: its resource URL, https://<workspace>/api. */
 export const workspaceAudience = (workspace: string) => `https://${workspaceHost(workspace)}/api`;
 
-/** A workspace given as a hostname or a URL, as its bare hostname. */
-export const workspaceHost = (workspace: string) => workspace.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+const WORKSPACE_FORM = 'your-company.getcaitlyn.ai or https://your-company.getcaitlyn.ai';
+
+/**
+ * A workspace given as a hostname (`your-company.getcaitlyn.ai`) or as its URL (`https://your-company.getcaitlyn.ai`,
+ * with or without a trailing slash), as its bare hostname in lower case. Anything else (another scheme, a path, a
+ * query string, a fragment, user information, an empty value) throws a TypeError naming the expected form
+ * (PROTOCOL.md 12.1).
+ */
+export const workspaceHost = (workspace: string): string => {
+  const given = String(workspace ?? '').trim();
+  const refuse = (what: string): never => {
+    throw new TypeError(`workspace must be a hostname such as ${WORKSPACE_FORM}; ${JSON.stringify(given)} ${what}. Use the endpoint option for a proxy or a local server.`);
+  };
+  if (!given) refuse('is empty');
+  const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(given);
+  if (scheme && scheme[1]!.toLowerCase() !== 'https') refuse(`has the scheme ${scheme[1]}:// (only https:// is allowed)`);
+  const rest = scheme ? given.slice(scheme[0].length) : given;
+  const host = rest.replace(/\/$/, '');
+  if (/[?#]/.test(host)) refuse('has a query string or fragment');
+  if (host.includes('/')) refuse('has a path');
+  if (host.includes('@')) refuse('has user information');
+  if (!/^[a-z0-9.-]+(:\d+)?$/i.test(host) || host.startsWith('.') || host.startsWith('-')) refuse('is not a hostname');
+  return host.toLowerCase();
+};
 
 /** What `client.auth` offers: the current token, and the `oauth` mode's sign-in steps. */
 export class AuthSession {
@@ -137,10 +166,15 @@ export class AuthSession {
     return this.inflight;
   }
 
-  /** Forgets the cached token, so the next call signs in again (done once after a 401). */
-  invalidate(): void {
-    this.refused = this.cached?.token;
-    this.cached = undefined;
+  /**
+   * Forgets a token the server refused, so the next call signs in again (done once after a 401). Only that token:
+   * when a 401 arrives after another call has already renewed it, the new token stays (PROTOCOL.md 12.4).
+   * `sent` is the refused token, with or without its `Bearer ` prefix; without it, the cached token is forgotten.
+   */
+  invalidate(sent?: string): void {
+    const token = sent?.replace(/^Bearer /, '') ?? this.cached?.token;
+    this.refused = token;
+    if (this.cached && this.cached.token === token) this.cached = undefined;
   }
 
   /** Whether a 401 is worth one more try with a new token. */
@@ -235,22 +269,8 @@ export class AuthSession {
     let t: OAuthTokens;
     switch (o.mode) {
       case 'oauth': {
-        const stored = await this.loadTokens();
-        const held = this.cached?.token ?? this.refused;
-        if (stored && (stored.expiresAt === undefined || stored.expiresAt - REFRESH_EARLY_MS > Date.now()) && stored.accessToken !== held) {
-          t = stored; // signed in or refreshed by another process (or not yet used by this client)
-        } else if (stored?.refreshToken) {
-          try {
-            t = await this.requestToken({ grant_type: 'refresh_token', refresh_token: stored.refreshToken, ...this.clientParams() });
-          } catch (err) {
-            if (err instanceof CaitlynAuthError && err.code === 'invalid_grant') await o.tokenStore?.clear();
-            throw err;
-          }
-          t.refreshToken ??= stored.refreshToken;
-          await this.saveTokens(t);
-        } else {
-          throw new CaitlynAuthError('oauth: not signed in. Call auth.authorizationUrl() and auth.handleCallback() first.', 'sign_in_required');
-        }
+        // Load, decide, refresh and save under the store's lock, when it offers one (PROTOCOL.md 12.2, oauth step 5).
+        t = o.tokenStore?.withLock ? await o.tokenStore.withLock(() => this.oauthTokens()) : await this.oauthTokens();
         break;
       }
       default:
@@ -258,6 +278,29 @@ export class AuthSession {
     }
     this.cached = { token: t.accessToken, refreshAt: refreshAt(t) };
     return t.accessToken;
+  }
+
+  /** `oauth` mode: the stored tokens when another client already renewed them, else a refresh. */
+  private async oauthTokens(): Promise<OAuthTokens> {
+    const o = this.oauth();
+    const stored = await this.loadTokens();
+    const held = this.cached?.token ?? this.refused;
+    if (stored && (stored.expiresAt === undefined || stored.expiresAt - REFRESH_EARLY_MS > Date.now()) && stored.accessToken !== held) {
+      return stored; // signed in or refreshed by another client (or not yet used by this one)
+    }
+    if (!stored?.refreshToken) {
+      throw new CaitlynAuthError('oauth: not signed in. Call auth.authorizationUrl() and auth.handleCallback() first.', 'sign_in_required');
+    }
+    let t: OAuthTokens;
+    try {
+      t = await this.requestToken({ grant_type: 'refresh_token', refresh_token: stored.refreshToken, ...this.clientParams() });
+    } catch (err) {
+      if (err instanceof CaitlynAuthError && err.code === 'invalid_grant') await o.tokenStore?.clear();
+      throw err;
+    }
+    t.refreshToken ??= stored.refreshToken;
+    await this.saveTokens(t);
+    return t;
   }
 
   /** What the server-only modes (auth-server.ts) sign in with. */
@@ -299,7 +342,11 @@ export const tokenIdentityProvider = (auth: AuthSession) => async (): Promise<To
 /** Session headers, and one retry with a new token after a 401. */
 export function getCaitlynAuthPlugin(auth: AuthSession): Pluggable<any, any> {
   const o = auth.options;
-  const session: FinalizeRequestMiddleware<any, any> = (next) => async (args) => {
+  const session: FinalizeRequestMiddleware<any, any> = (next, context) => async (args) => {
+    // The token this attempt carries: a 401 forgets only that one (PROTOCOL.md 12.4).
+    if (HttpRequest.isInstance(args.request)) {
+      (context as { __caitlynSentToken?: string }).__caitlynSentToken = args.request.headers.authorization ?? args.request.headers.Authorization;
+    }
     if (o.mode === 'session' && HttpRequest.isInstance(args.request)) {
       delete args.request.headers.authorization;
       delete args.request.headers.Authorization;
@@ -308,12 +355,12 @@ export function getCaitlynAuthPlugin(auth: AuthSession): Pluggable<any, any> {
     }
     return next(args);
   };
-  const reauth: InitializeMiddleware<any, any> = (next) => async (args) => {
+  const reauth: InitializeMiddleware<any, any> = (next, context) => async (args) => {
     try {
       return await next(args);
     } catch (err) {
       if (!auth.canRefresh || (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode !== 401) throw err;
-      auth.invalidate();
+      auth.invalidate((context as { __caitlynSentToken?: string }).__caitlynSentToken);
       return next(args);
     }
   };

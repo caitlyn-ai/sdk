@@ -45,6 +45,9 @@ type (
 	OAuthTokens = core.OAuthTokens
 	// TokenStore keeps the OAuth mode's tokens between processes.
 	TokenStore = core.TokenStore
+	// TokenStoreLocker is what a TokenStore shared between clients or processes also implements, so that a refresh
+	// token is never sent twice: the OAuth mode loads, refreshes and saves inside WithLock.
+	TokenStoreLocker = core.TokenStoreLocker
 	// AuthorizationRequest is the start of an OAuth sign-in: the URL, and the state and PKCE verifier to keep.
 	AuthorizationRequest = core.AuthorizationRequest
 	// AuthorizationOptions overrides the OAuth settings for one sign-in.

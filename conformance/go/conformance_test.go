@@ -869,6 +869,19 @@ var protocol = map[string]func(t *testing.T, m mock){
 			}
 		}
 	},
+	"endpoint.workspace-url": func(t *testing.T, m mock) {
+		for _, w := range []string{"https://your-company.getcaitlyn.ai", "https://your-company.getcaitlyn.ai/", "your-company.getcaitlyn.ai/", "HTTPS://Your-Company.GetCaitlyn.ai"} {
+			c, err := caitlyn.NewClient(w, caitlyn.Token("pat_test"))
+			if err != nil || c.Endpoint() != "https://your-company.getcaitlyn.ai/api" || c.Auth().TokenEndpoint() != "https://your-company.getcaitlyn.ai/api/oauth/token" {
+				t.Fatalf("%q: endpoint %v, err %v", w, c, err)
+			}
+		}
+		for _, w := range []string{"https://your-company.getcaitlyn.ai/api", "https://your-company.getcaitlyn.ai/?x=1", "https://your-company.getcaitlyn.ai#top", "http://your-company.getcaitlyn.ai", "ftp://your-company.getcaitlyn.ai", "me@your-company.getcaitlyn.ai", ""} {
+			if _, err := caitlyn.NewClient(w, caitlyn.Token("pat_test")); err == nil || !strings.Contains(err.Error(), "your-company.getcaitlyn.ai or https://your-company.getcaitlyn.ai") {
+				t.Fatalf("%q: err %v", w, err)
+			}
+		}
+	},
 	"endpoint.workspace": func(t *testing.T, m mock) {
 		c, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token("pat_test"))
 		if err != nil || c.Endpoint() != "https://your-company.getcaitlyn.ai/api" {

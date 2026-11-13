@@ -24,7 +24,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { authFaults, authorised, handleAuth, resetAuth } from './auth.mjs';
+import { authFaults, authorised, handleAuth, refusalDelayMs, resetAuth } from './auth.mjs';
 
 const API_VERSION_DEFAULT = '5.120.0';
 const EXAMPLES = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '../cases/examples.json'), 'utf8')).cases;
@@ -637,7 +637,11 @@ const server = http.createServer(async (req, res) => {
     for (const h of LOGGED_HEADERS) if (req.headers[h] != null) entry.headers[h] = req.headers[h];
     log.push(entry);
     if (await handleAuth(req, res, url, body)) return;
-    if (url.pathname.startsWith('/v3/') && !authorised(req)) return problem(res, rid, 401, 'UNAUTHENTICATED', 'The bearer token is missing, expired or not valid for this workspace');
+    if (url.pathname.startsWith('/v3/') && !authorised(req)) {
+      const delay = refusalDelayMs();
+      if (delay) await new Promise((r) => setTimeout(r, delay));
+      return problem(res, rid, 401, 'UNAUTHENTICATED', 'The bearer token is missing, expired or not valid for this workspace');
+    }
     if (primed && !primed.served && !url.pathname.startsWith('/__s3/')) return await serveExample(req, res, url, body);
     for (const [method, re, handler] of routes) {
       if (req.method !== method) continue;

@@ -158,6 +158,15 @@ pub trait TokenStore: Send + Sync {
     fn load(&self) -> BoxFuture<'_, Option<OAuthTokens>>;
     fn save(&self, tokens: OAuthTokens) -> BoxFuture<'_, ()>;
     fn clear(&self) -> BoxFuture<'_, ()>;
+
+    /// Runs `work` while holding a lock that every client sharing this store respects (a database row lock, a Redis
+    /// lock, a file lock). The `oauth` mode loads, refreshes and saves inside it, so a refresh token, which is
+    /// single-use, is never sent twice, and a client that waited uses the tokens the other one saved (PROTOCOL.md
+    /// 12.2, `oauth` step 5). Implement it for a store shared between clients or processes; the default runs `work`
+    /// without a lock, which is enough for a store one client uses.
+    fn with_lock<'a>(&'a self, work: BoxFuture<'a, ()>) -> BoxFuture<'a, ()> {
+        work
+    }
 }
 
 /// A [`TokenStore`] in memory.
@@ -458,11 +467,16 @@ impl AuthSession {
     }
 
     /// Forgets the cached token, so the next call signs in again (done once after a 401).
-    pub async fn invalidate(&self) {
+    /// Forgets a token the server refused, so the next call signs in again (done once after a 401). Only that token:
+    /// when a 401 arrives after another call has already renewed it, the new token stays (PROTOCOL.md 12.4). With
+    /// `None`, the cached token is forgotten.
+    pub async fn invalidate(&self, sent: Option<&str>) {
         let mut st = self.state.lock().await;
-        if let Some(c) = st.cached.take() {
-            st.refused = Some(c.token);
+        let refused = sent.map(str::to_owned).or_else(|| st.cached.as_ref().map(|c| c.token.clone()));
+        if st.cached.as_ref().is_some_and(|c| Some(&c.token) == refused.as_ref()) {
+            st.cached = None;
         }
+        st.refused = refused;
     }
 
     pub(crate) async fn credential(&self) -> Result<Credential, AuthError> {
@@ -488,7 +502,27 @@ impl AuthSession {
                 return Ok(c.token.clone());
             }
         }
-        let t = self.fetch_token(&mut st).await?;
+        let t = match &self.auth {
+            // Load, decide, refresh and save under the store's lock (PROTOCOL.md 12.2, oauth step 5).
+            Auth::OAuth(OAuth {
+                token_store: Some(store), ..
+            }) => {
+                let mut out = None;
+                let state = &mut *st;
+                store
+                    .with_lock(Box::pin(async {
+                        out = Some(self.fetch_token(state).await);
+                    }))
+                    .await;
+                out.unwrap_or_else(|| {
+                    Err(AuthError::new(
+                        "invalid_request",
+                        "the token store's with_lock did not run its work",
+                    ))
+                })?
+            }
+            _ => self.fetch_token(&mut st).await?,
+        };
         st.cached = Some(Cached {
             token: t.access_token.clone(),
             refresh_at: refresh_at(t.expires_at),

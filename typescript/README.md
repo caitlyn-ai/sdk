@@ -15,7 +15,8 @@ Runnable examples are in `examples/typescript/` in the SDK repository.
 
 ## Creating a client
 
-`workspace` is your workspace's hostname. `auth.mode` says how the client signs in. Every mode except
+`workspace` is your workspace's hostname, or its URL (`https://your-company.getcaitlyn.ai`); a path, query string
+or other scheme is refused with a `TypeError`. `auth.mode` says how the client signs in. Every mode except
 `session` ends in the same short-lived Caitlyn bearer token, which the client caches and renews a minute
 before it expires, one request at a time however many calls are waiting.
 
@@ -56,7 +57,11 @@ await app.auth.handleCallback({ code, state: returnedState, expectedState: state
 ```
 
 `tokenStore` is `{load, save, clear}`, so an application can keep each person's tokens encrypted on its own
-server. Without one, tokens live in memory for the life of the client. Refresh is automatic. A refresh token
+server. Without one, tokens live in memory for the life of the client. Refresh is automatic, and one client
+refreshes once however many calls need it. A refresh token works only once, so when several clients or
+processes share a store (two server instances, two browser tabs), give the store `withLock(fn)` as well: the SDK
+loads, refreshes and saves inside it, and a client that waited uses the tokens the other one saved. Use any lock
+they all share, for example a database row lock, a Redis lock, or `navigator.locks.request(name, fn)` in a browser. A refresh token
 the server refuses (`invalid_grant`) clears the store and fails the call with `CaitlynAuthError`, code
 `invalid_grant`; sign the person in again.
 
