@@ -47,6 +47,15 @@ export async function collectBody(body: unknown, context?: { streamCollector?: (
   if (!body) return new Uint8Array();
   if (typeof Blob !== 'undefined' && body instanceof Blob) return new Uint8Array(await body.arrayBuffer());
   if (typeof (body as ReadableStream).getReader === 'function') return new Uint8Array(await new Response(body as ReadableStream).arrayBuffer());
+  // A Node stream, from a handler of the caller's own such as @smithy/node-http-handler's
+  if (typeof (body as AsyncIterable<unknown>)[Symbol.asyncIterator] === 'function') {
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of body as AsyncIterable<Uint8Array | string>) chunks.push(typeof chunk === 'string' ? fromUtf8(chunk) : chunk);
+    const out = new Uint8Array(chunks.reduce((n, c) => n + c.byteLength, 0));
+    let at = 0;
+    for (const c of chunks) (out.set(c, at), (at += c.byteLength));
+    return out;
+  }
   if (context?.streamCollector) return context.streamCollector(body);
   throw new Error('Caitlyn: cannot read a response body of this type');
 }

@@ -72,9 +72,14 @@ const published = {
   },
   files: ['dist-*/**', 'README.md', 'LICENSE', 'NOTICE'],
   engines: pkg.engines,
-  dependencies: { ...pkg.dependencies, '@caitlyn-ai/sdk-core': corePkg.version },
+  // Every runtime uses fetch (CaitlynTypeScriptIntegration), so the Node HTTP handler smithy-typescript always lists
+  // is not a dependency; the check below fails generation if anything imports it.
+  dependencies: { ...Object.fromEntries(Object.entries(pkg.dependencies).filter(([d]) => d !== '@smithy/node-http-handler')), '@caitlyn-ai/sdk-core': corePkg.version },
   publishConfig: corePkg.publishConfig,
 };
+for (const file of fs.readdirSync(dir, { recursive: true }).filter((f) => f.endsWith('.ts'))) {
+  if (fs.readFileSync(new URL(file, dir), 'utf8').includes('@smithy/node-http-handler')) throw new Error(`postgen-ts: ${file} imports @smithy/node-http-handler`);
+}
 fs.writeFileSync(pkgUrl, JSON.stringify(published, null, 4) + '\n');
 console.log('postgen-ts: wrote the npm description of packages/sdk/package.json');
 

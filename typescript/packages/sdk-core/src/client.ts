@@ -21,10 +21,11 @@ export interface CaitlynOptions {
    */
   endpoint?: string;
   /**
-   * The HTTP handler API calls go through, for this client only: a `NodeHttpHandler` with your own `https.Agent`
-   * (a private certificate authority, a proxy, keep-alive settings), a `FetchHttpHandler`, any object with
-   * `handle(request)`, or the default handler's options (`{ httpsAgent }` on Node). Default: a handler of the
-   * client's own. Sign-in requests go through `fetch`.
+   * The HTTP handler API calls go through, for this client only: the fetch handler's options (`requestTimeout`,
+   * `keepAlive`, `credentials`, `cache`, `requestInit`, `customFetch`: on Node, a `fetch` with an undici dispatcher
+   * for a private certificate authority or a proxy), or any object with `handle(request)`, such as a
+   * `NodeHttpHandler`. Default: a fetch handler of the client's own, in every runtime. Sign-in requests go through
+   * `fetch`.
    */
   requestHandler?: HttpHandlerUserInput;
   maxAttempts?: number;

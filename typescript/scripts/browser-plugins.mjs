@@ -2,7 +2,7 @@
 // (scripts/build-conformance.mjs and scripts/conformance-browser.mjs), which compile the same sources the same way.
 //
 // - The generated SDK's @smithy/* imports go to sdk-core's runtime (packages/sdk-core/src/runtime/smithy.ts), in
-//   every build; only the Node HTTP handler is imported as it is.
+//   every build.
 // - The browser build of sdk-core leaves out the sign-in modes a browser may not use and the AWS signer
 //   (src/browser/auth-server.ts and src/browser/aws.ts in place of src/auth-server.ts and src/aws.ts).
 import path from 'node:path';
@@ -13,8 +13,8 @@ const sdkSrc = path.join(root, 'packages/sdk/src');
 const runtimeBarrel = path.join(coreSrc, 'runtime/smithy.ts');
 const isSdkSource = (dir) => dir === sdkSrc || dir.startsWith(`${sdkSrc}${path.sep}`);
 const SMITHY = /^@smithy\//;
-/** The generated SDK's imports that go to sdk-core's runtime: every @smithy/* package but the Node HTTP handler. */
-const toRuntime = (a) => isSdkSource(a.resolveDir) && a.path !== '@smithy/node-http-handler';
+/** The generated SDK's @smithy/* imports, which all go to sdk-core's runtime. */
+const toRuntime = (a) => isSdkSource(a.resolveDir);
 
 /** The generated runtimeConfig for fetch: the edge and browser builds. */
 export const fetchRuntimeConfig = {

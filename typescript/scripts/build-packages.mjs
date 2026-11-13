@@ -1,5 +1,5 @@
 // Builds @caitlyn-ai/sdk-core and @caitlyn-ai/sdk for npm, into each package's dist-* folders:
-//   dist-es       ESM for Node (.mjs), with the Node HTTP handler
+//   dist-es       ESM for Node (.mjs)
 //   dist-cjs      CommonJS for Node (.cjs)
 //   dist-edge     ESM for Deno, Cloudflare Workers, Vercel Edge and web workers bundled with the `worker` condition
 //                 (.mjs): the Node build's code with the fetch handler (runtimeConfig.browser); the SDK only
@@ -11,7 +11,7 @@
 //                 public API mentions inlined, so a project type-checks against them without @types/node
 //                 (a browser project with skipLibCheck false); see bundleDeclarations below. Every build has the
 //                 same declarations.
-// In every build, the generated SDK's @smithy/* imports (the Node HTTP handler apart) go to sdk-core's runtime,
+// In every build, the generated SDK's @smithy/* imports go to sdk-core's runtime,
 // '@caitlyn-ai/sdk-core/smithy' (src/runtime/smithy.ts): the small parts of the Smithy runtime as they are, and its
 // own protocol, retries, endpoints, commands and fetch handler in place of the rest (scripts/browser-plugins.mjs).
 // Dependencies stay external, so a bundler can tree-shake across them; each entry point is one module per
@@ -50,12 +50,12 @@ async function buildPackage(dir, entryPoints, { plugins = [], edge, browser } = 
 
 /**
  * No build imports the parts of the Smithy runtime that sdk-core's runtime replaces: AWS retry strategies, event
- * streams, checksums, the endpoint rules engine, the restJson protocol and its codec, or the fetch handler (which
- * reaches them through @smithy/core/protocols). The generated SDK imports only sdk-core's runtime and the Node HTTP
- * handler; sdk-core imports only these @smithy/core modules.
+ * streams, checksums, the endpoint rules engine, the restJson protocol and its codec, or the Smithy HTTP handlers
+ * (which reach them through @smithy/core/protocols). The generated SDK imports only sdk-core's runtime; sdk-core
+ * imports only these @smithy/core modules.
  */
 function assertNoAwsRuntime(name, metafile) {
-  const allowed = /^(@smithy\/core\/(client|transport|schema)|@smithy\/types|@smithy\/node-http-handler|@opentelemetry\/api|@caitlyn-ai\/sdk-core(\/(browser|smithy|browser\/smithy))?|tslib|node:.*)$/;
+  const allowed = /^(@smithy\/core\/(client|transport|schema)|@smithy\/types|@opentelemetry\/api|@caitlyn-ai\/sdk-core(\/(browser|smithy|browser\/smithy))?|tslib|node:.*)$/;
   for (const [file, output] of Object.entries(metafile.outputs)) {
     for (const i of output.imports) if (i.external && !allowed.test(i.path)) throw new Error(`build-packages: ${name}/${file} imports ${i.path}`);
   }
@@ -64,7 +64,7 @@ function assertNoAwsRuntime(name, metafile) {
 /** The browser build imports nothing a page cannot run, and carries no server-only sign-in mode. */
 function assertBrowserOnly(dir, metafile) {
   for (const [file, output] of Object.entries(metafile.outputs)) {
-    for (const i of output.imports) if (i.external && /^(node:|@smithy\/node-http-handler)/.test(i.path)) throw new Error(`build-packages: the browser build's ${file} imports ${i.path}`);
+    for (const i of output.imports) if (i.external && /^node:/.test(i.path)) throw new Error(`build-packages: the browser build's ${file} imports ${i.path}`);
   }
   for (const file of fs.readdirSync(dir, { recursive: true }).filter((f) => f.endsWith('.mjs'))) {
     const code = fs.readFileSync(path.join(dir, file), 'utf8');

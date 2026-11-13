@@ -87,15 +87,18 @@ public final class CaitlynTypeScriptIntegration implements TypeScriptIntegration
             return MapUtils.of(
                 "maxAttempts", writer -> writer.write("3"),
                 "retryMode", writer -> writer.write("$S", "standard"),
+                // Every runtime, Node included, sends requests with the platform's fetch (Sam, 13 November 2026):
+                // sdk-core's runtime has its own fetch handler, and @smithy/node-http-handler would bring
+                // @smithy/core's protocol, serde and event-stream modules into a Node bundle.
                 "requestHandler", writer -> {
-                    if (target == LanguageTarget.NODE) {
-                        writer.addImport("NodeHttpHandler", "RequestHandler",
-                            software.amazon.smithy.typescript.codegen.TypeScriptDependency.AWS_SDK_NODE_HTTP_HANDLER);
-                    } else {
-                        writer.addImport("FetchHttpHandler", "RequestHandler",
-                            software.amazon.smithy.typescript.codegen.TypeScriptDependency.AWS_SDK_FETCH_HTTP_HANDLER);
-                    }
+                    writer.addImport("FetchHttpHandler", "RequestHandler",
+                        software.amazon.smithy.typescript.codegen.TypeScriptDependency.AWS_SDK_FETCH_HTTP_HANDLER);
                     writer.write("RequestHandler.create(config?.requestHandler ?? (async () => undefined))");
+                },
+                "streamCollector", writer -> {
+                    writer.addImport("streamCollector", null,
+                        software.amazon.smithy.typescript.codegen.TypeScriptDependency.AWS_SDK_FETCH_HTTP_HANDLER);
+                    writer.write("streamCollector");
                 }
             );
         }

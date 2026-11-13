@@ -24,3 +24,15 @@ test('requestHandler: API calls go through the handler the client was given', as
   const other = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 'cait-pat-test' } });
   assert.notEqual(other.client.config.requestHandler, c.client.config.requestHandler);
 });
+
+test('requestHandler: the default fetch handler takes customFetch, which Node clients use for an undici dispatcher', async () => {
+  const seen: string[] = [];
+  const customFetch = async (request: Request) => {
+    seen.push(`${request.method} ${request.url} ${request.headers.get('authorization')}`);
+    return new Response(JSON.stringify(VERSION), { status: 200, headers: { 'content-type': 'application/json', 'caitlyn-request-id': 'R2' } });
+  };
+  const c = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 'cait-pat-test' }, requestHandler: { customFetch } as never });
+  const v = await c.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+  assert.equal(v.requestId, 'R2');
+  assert.deepEqual(seen, ['GET https://your-company.getcaitlyn.ai/api/v3/agents/GHT7YRWXPL/versions/draft Bearer cait-pat-test']);
+});
