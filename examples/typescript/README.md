@@ -1,7 +1,8 @@
 # TypeScript examples
 
 The proposal's example code for the ten most important tasks, in TypeScript, for the operations the model has
-today. `scripts/test-typescript.sh` type-checks every file here against the generated SDK (strict), so an
+today, and the code the developer docs show. `scripts/test-typescript.sh` type-checks every file here (and the API
+reference's programs, generated into `reference/`) against the generated SDK (strict), so an
 example that no longer matches the SDK fails CI.
 
 | File | Task | What the model does not have yet (the server lane that adds it) |
@@ -11,6 +12,7 @@ example that no longer matches the SDK fails CI.
 | `task-2-load-documents.ts` | 2. Load documents into a knowledge base and wait until they are searchable | `knowledgeBases.create`, `documents.waitUntilIndexed`, `uploadMany`, `replace`, `delete` (S3) |
 | `task-3-change-an-agent.ts` | 3. Change an agent safely: edit the draft, test it, publish it, roll back | `versions.pin`, `publish`, `reset`, `compare`, `list` (S1); `conversations.ask` (S2) |
 | `browser-sign-in-server.ts` | Sign in from a browser, on your server (the guide `docs/guides/sign-in-from-a-browser.md`) | Nothing in the model; the guide says what the server is still building |
+| `getting-started.ts`, `sign-in-modes.ts`, `concepts.ts` | The developer docs' Getting started, Authentication, Errors, Retries, Streaming, Pagination and Telemetry pages (`docs/`) | Nothing in the model; the pages say which operations the server does not serve yet |
 | `browser-sign-in-page.ts` | Sign in from a browser, in a browser-only app (the same guide) | Browser API clients and cross-origin calls on the server, being built in caitlyn!2062 |
 
 Tasks 4 to 10 (unattended runs, MCP connectors as code, policy reviews, share links, reporting exports, users

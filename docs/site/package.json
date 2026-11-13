@@ -1,0 +1,19 @@
+{
+  "name": "caitlyn-developer-docs",
+  "private": true,
+  "type": "module",
+  "description": "The build.caitlyn.ai developer site: Astro Starlight over the pages scripts/docs-build.mjs prepares (docs/README.md).",
+  "scripts": {
+    "build": "astro build",
+    "dev": "astro dev",
+    "preview": "astro preview",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@astrojs/markdown-remark": "7.3.5",
+    "@astrojs/starlight": "0.42.7",
+    "astro": "7.4.4",
+    "github-slugger": "2.0.0",
+    "unist-util-visit": "5.2.0"
+  }
+}

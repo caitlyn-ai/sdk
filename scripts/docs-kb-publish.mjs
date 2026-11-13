@@ -10,16 +10,16 @@
 // skips an invalid value and records a partial failure, so this script checks every page's front matter
 // against the fields' option keys first and sends nothing if any page fails.
 //
-// A STUB. The real publisher (lane D4) uses @caitlyn-ai/sdk: documents.upload with metadata, sourceUrl and
+// A STUB. The real publisher uses @caitlyn-ai/sdk: documents.upload with metadata, sourceUrl and
 // externalId, new versions on change, deletes and moves, and waitUntilIndexed. None of that exists until
-// the server lanes ship v3 documents (S3) and the TypeScript SDK covers them (K1). Until
+// the server serves the v3 document operations and the TypeScript SDK covers them. Until
 // then this script reads build/docs/pages.json, checks every page's front matter and, with --dry-run,
 // prints what it would send. Without --dry-run it stops, saying so.
 //
 // Sign-in: OAuth client credentials for the docs publisher's machine client, which may write only to this
 // knowledge base. The values are CI variables (masked, protected), never in the repository:
 //   ASK_CAITLYN_CLIENT_ID, ASK_CAITLYN_CLIENT_SECRET
-// The plan's lane D4 replaces them with workloadIdentity (GitLab CI id_tokens) once lane A3 exists, so no
+// They are to be replaced with workloadIdentity (GitLab CI id_tokens) once the server accepts workload sign-in, so no
 // secret is stored at all.
 //
 // Usage: node scripts/docs-kb-publish.mjs [--dry-run]
@@ -65,6 +65,6 @@ if (dryRun) {
   process.exit(0);
 }
 
-console.error('docs-kb-publish: publishing is not built yet. It needs v3 documents (lane S3) and @caitlyn-ai/sdk ' +
-  'documents.upload with metadata, sourceUrl and externalId (lane K1); lane D4 builds it. Use --dry-run.');
+console.error('docs-kb-publish: publishing is not built yet. It needs the v3 document operations on the server and ' +
+  '@caitlyn-ai/sdk documents.upload with metadata, sourceUrl and externalId. Use --dry-run.');
 process.exit(1);

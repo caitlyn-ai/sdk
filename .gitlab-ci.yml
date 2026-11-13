@@ -13,6 +13,7 @@
 #                          it pulls the model, regenerates, tests, and opens a merge request.
 #   docs:*                 Developer docs build, merge request previews, publishing to build.caitlyn.ai and to
 #                          the ask.caitlyn.ai knowledge base. Off until DOCS_ENABLED is "true" (docs/README.md).
+#   pages                  Merge requests: the docs as a private GitLab Pages deployment under mr-<iid>, for review.
 #   fetch-semantic-version On main: the version the next release would have (VERSION.txt), from the shared
 #                          semantic-versioning template.
 #   release                On main, after conformance passes: semantic-release (.releaserc.yml) tags vX.Y.Z and
@@ -113,7 +114,7 @@ generate:
       # The generated code, and the hand-written files scripts/version.mjs stamps with the version in VERSION.
       if ! git diff --exit-code --stat -- typescript/packages/sdk python/caitlyn go rust/caitlyn-sdk conformance/cases \
           typescript/packages/sdk-core typescript/package-lock.json python/caitlyn-core python/uv.lock rust/Cargo.toml \
-          rust/Cargo.lock conformance/rust/Cargo.lock codegen/smithy-build.json; then
+          rust/Cargo.lock conformance/rust/Cargo.lock examples/rust/Cargo.lock codegen/smithy-build.json; then
         echo "The committed generated code differs from a fresh generation. Run make generate and commit the result."
         exit 1
       fi
@@ -255,6 +256,38 @@ docs:build:
     - if: $DOCS_ENABLED == "true" && $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $DOCS_ENABLED == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
+# A merge request's docs as a GitLab Pages parallel deployment, so a reviewer can read them before the CloudFront
+# preview (docs:preview) works. Pages on this project is private, so only project members can open it. Each merge
+# request gets its own path (mr-<iid>), which the build uses as its base, and the deployment expires after a week.
+# It needs no AWS and does not depend on DOCS_ENABLED; the production site is built and published as before.
+pages:
+  extends: .toolchain
+  stage: docs
+  needs: []
+  script:
+    - |
+      # CI_PAGES_URL names the parallel deployment's own address; add the prefix if this GitLab leaves it off
+      url="${CI_PAGES_URL%/}"
+      case "$url" in */"mr-$CI_MERGE_REQUEST_IID") ;; *) url="$url/mr-$CI_MERGE_REQUEST_IID" ;; esac
+      export DOCS_SITE_URL="$url"
+      export DOCS_BASE="$(printf '%s' "$url" | sed -E 's#^https?://[^/]+##')/"
+      echo "Building the docs for $DOCS_SITE_URL/ (base $DOCS_BASE)"
+    - scripts/docs-build.sh
+  pages:
+    path_prefix: "mr-$CI_MERGE_REQUEST_IID"
+    expire_in: 1 week
+    publish: build/docs/site
+  artifacts:
+    expire_in: 1 week
+    paths: [build/docs/site]
+  environment:
+    name: docs-pages/mr-$CI_MERGE_REQUEST_IID
+    # This GitLab's CI_PAGES_URL is the project's Pages address, without the parallel deployment's prefix
+    url: $CI_PAGES_URL/mr-$CI_MERGE_REQUEST_IID/
+    auto_stop_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
 .docs-aws:
   stage: docs
   image:
@@ -316,8 +349,8 @@ docs:publish:
   rules:
     - if: $DOCS_ENABLED == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
-# Publishes the built pages into the ask.caitlyn.ai developer-docs knowledge base. A dry run until lane D4
-# builds the publisher on @caitlyn-ai/sdk (scripts/docs-kb-publish.mjs explains what it waits for).
+# Publishes the built pages into the ask.caitlyn.ai developer-docs knowledge base. A dry run until the publisher
+# is built on @caitlyn-ai/sdk (scripts/docs-kb-publish.mjs explains what it waits for).
 docs:knowledge-base:
   extends: .toolchain
   stage: docs
@@ -378,6 +411,7 @@ stamp-version:
       - rust/Cargo.toml # stamped
       - rust/Cargo.lock # stamped
       - conformance/rust/Cargo.lock # stamped
+      - examples/rust/Cargo.lock # stamped
       - codegen/smithy-build.json # stamped
       - typescript/packages/sdk/package.json # stamped
       - typescript/packages/sdk/src/runtimeConfig.shared.ts # stamped

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Go: build, vet and staticcheck the SDK and the harness, run the conformance harness (writes
+# Go: build, vet and staticcheck the SDK, the developer docs' examples and the harness, run the conformance harness (writes
 # build/conformance/go.json), then again with the race detector.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -7,6 +7,13 @@ mkdir -p "$root/build/conformance"
 cd "$root/go"
 test -z "$(gofmt -l .)" || { gofmt -l .; echo "gofmt: the files above are not formatted" >&2; exit 1; }
 go build ./... && go vet ./... && staticcheck ./... && go test -count=1 ./...
+# The developer docs' Go: the hand-written examples and the API reference's programs (scripts/docs-snippets.mjs)
+cd "$root"
+node scripts/prepare-model.mjs > /dev/null
+node scripts/docs-snippets.mjs go
+cd "$root/examples/go"
+test -z "$(gofmt -l .)" || { gofmt -l .; echo "gofmt: the files above are not formatted" >&2; exit 1; }
+go build ./... && go vet ./... && staticcheck ./...
 cd "$root/conformance/go"
 test -z "$(gofmt -l .)" || { gofmt -l .; echo "gofmt: the files above are not formatted" >&2; exit 1; }
 go vet ./... && staticcheck ./...

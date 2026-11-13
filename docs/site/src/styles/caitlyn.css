@@ -1,0 +1,265 @@
+/*
+ * The Caitlyn Design System (v24, the Caitlynize artifact) applied to Starlight. Every colour, size, weight,
+ * line height and tracking value below is a token from the system's tokens.json, named in the comment beside
+ * it. Where the system has no rule for something a docs site needs, the choice is marked GAP: the most
+ * neutral option that sits with the tokens, for the design owners to confirm or replace.
+ */
+
+/* ------------------------------------------------------------- web fonts */
+/* The licensed Euclid Circular web fonts. The files are not in this repository (it is mirrored publicly, and the
+   licence covers serving them, not publishing them): the hosting uploads them to /_fonts/v1/ on build.caitlyn.ai
+   and on every preview (production-demo-infrastructure, developer-docs/fonts.tf). Anywhere else, such as the
+   GitLab Pages copy or `astro preview`, the request 404s and the fallback stack is used. Only Regular (400) and
+   Medium (500) have web files, so text set at Light (300), the body's token weight, renders in Regular. */
+@font-face {
+  font-family: 'Euclid Circular';
+  src: url('/_fonts/v1/EuclidCircularA-Regular-WebM.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Euclid Circular';
+  src: url('/_fonts/v1/EuclidCircularB-Medium-WebS.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ---------------------------------------------------------------- tokens */
+:root {
+  /* type.families */
+  --caitlyn-sans: 'Euclid Circular', Poppins, system-ui, sans-serif;
+  --caitlyn-accent: 'Ryo Text Plus', Georgia, serif;
+
+  /* Palette 4.1 */
+  --caitlyn-primary-dark-100: #0a0c0b;
+  --caitlyn-pure-white: #ffffff;
+  --caitlyn-primary-light-10: #f2f0f0;
+  --caitlyn-accent-neutral-50: #667470;
+  --caitlyn-amber-primary: #ffbb26;
+
+  /* Semantic tokens, light theme */
+  --caitlyn-ground: var(--caitlyn-pure-white);
+  --caitlyn-ink: var(--caitlyn-primary-dark-100);
+  --caitlyn-muted: var(--caitlyn-accent-neutral-50);
+  --caitlyn-rule: #d9d5d3;
+  --caitlyn-strong-rule: var(--caitlyn-primary-dark-100);
+  --caitlyn-panel: var(--caitlyn-primary-light-10);
+  --caitlyn-highlight: var(--caitlyn-amber-primary);
+}
+
+/* Semantic tokens, dark theme (tokens.json gives each semantic token a dark value) */
+:root[data-theme='dark'] {
+  --caitlyn-ground: var(--caitlyn-primary-dark-100);
+  --caitlyn-ink: var(--caitlyn-pure-white);
+  --caitlyn-muted: #a8b0ad;
+  --caitlyn-rule: #2e3331;
+  --caitlyn-strong-rule: var(--caitlyn-pure-white);
+  --caitlyn-panel: #1a1d1c;
+}
+
+/* ------------------------------------------------- Starlight's colours from the tokens, both themes */
+:root,
+:root[data-theme='light'],
+[data-theme='light'] ::backdrop {
+  --sl-font: var(--caitlyn-sans);
+
+  /* Starlight's ramp runs from its strongest text colour (white) to its ground (black). The system has
+     five neutrals, so the ramp repeats them: text at full contrast (ink), secondary text muted, hairlines
+     rule, fills panel. GAP: the ramp's in-between steps have no tokens; each takes its nearest neutral. */
+  --sl-color-white: var(--caitlyn-ink);
+  --sl-color-gray-1: var(--caitlyn-ink);
+  --sl-color-gray-2: var(--caitlyn-ink);
+  --sl-color-gray-3: var(--caitlyn-muted);
+  --sl-color-gray-4: var(--caitlyn-muted);
+  --sl-color-gray-5: var(--caitlyn-rule);
+  --sl-color-gray-6: var(--caitlyn-panel);
+  --sl-color-gray-7: var(--caitlyn-panel);
+  --sl-color-black: var(--caitlyn-ground);
+
+  /* Monochrome first: links, the current page and the selected tab are ink, never amber (amber is not a
+     text colour and reaches only 2.2:1 on white). GAP: navigation and sidebar states. */
+  --sl-color-accent-low: var(--caitlyn-panel);
+  --sl-color-accent: var(--caitlyn-ink);
+  --sl-color-accent-high: var(--caitlyn-ink);
+  --sl-color-text: var(--caitlyn-ink);
+  --sl-color-text-accent: var(--caitlyn-ink);
+  --sl-color-text-invert: var(--caitlyn-ground);
+  --sl-color-bg: var(--caitlyn-ground);
+  --sl-color-bg-nav: var(--caitlyn-ground);
+  --sl-color-bg-sidebar: var(--caitlyn-ground);
+  --sl-color-bg-inline-code: var(--caitlyn-panel);
+  --sl-color-bg-accent: var(--caitlyn-ink);
+  --sl-color-hairline: var(--caitlyn-rule);
+  --sl-color-hairline-light: var(--caitlyn-rule);
+  --sl-color-hairline-shade: var(--caitlyn-rule);
+
+  /* No shadows or blur: structure comes from whitespace and hairlines. */
+  --sl-shadow-sm: none;
+  --sl-shadow-md: none;
+  --sl-shadow-lg: none;
+
+  /* Type scale: body, subhead, section-title and cover-title */
+  --sl-text-body: 14px; /* body */
+  --sl-text-body-sm: 14px; /* body: supporting text shares the body size */
+  --sl-text-code: 14px; /* body */
+  --sl-text-code-sm: 14px; /* body */
+  --sl-text-h1: 56px; /* cover-title */
+  --sl-text-h2: 26px; /* section-title */
+  --sl-text-h3: 15px; /* subhead */
+  --sl-text-h4: 15px; /* subhead */
+  --sl-text-h5: 15px; /* subhead */
+  --sl-line-height: 1.55; /* body */
+  --sl-line-height-headings: 1.05; /* section-title */
+}
+:root[data-theme='dark'] {
+  --sl-color-white: var(--caitlyn-ink);
+  --sl-color-gray-1: var(--caitlyn-ink);
+  --sl-color-gray-2: var(--caitlyn-ink);
+  --sl-color-gray-3: var(--caitlyn-muted);
+  --sl-color-gray-4: var(--caitlyn-muted);
+  --sl-color-gray-5: var(--caitlyn-rule);
+  --sl-color-gray-6: var(--caitlyn-panel);
+  --sl-color-black: var(--caitlyn-ground);
+  --sl-color-accent-low: var(--caitlyn-panel);
+  --sl-color-accent: var(--caitlyn-ink);
+  --sl-color-accent-high: var(--caitlyn-ink);
+  --sl-color-text: var(--caitlyn-ink);
+  --sl-color-text-accent: var(--caitlyn-ink);
+  --sl-color-text-invert: var(--caitlyn-ground);
+  --sl-color-bg: var(--caitlyn-ground);
+  --sl-color-bg-nav: var(--caitlyn-ground);
+  --sl-color-bg-sidebar: var(--caitlyn-ground);
+  --sl-color-bg-inline-code: var(--caitlyn-panel);
+  --sl-color-bg-accent: var(--caitlyn-ink);
+  --sl-color-hairline: var(--caitlyn-rule);
+  --sl-color-hairline-light: var(--caitlyn-rule);
+  --sl-color-hairline-shade: var(--caitlyn-rule);
+  --sl-color-backdrop-overlay: color-mix(in srgb, var(--caitlyn-primary-dark-100) 66%, transparent);
+}
+
+/* ------------------------------------------------------------ corners: radius-0 everywhere */
+*,
+*::before,
+*::after {
+  border-radius: 0 !important; /* radius-0 */
+}
+
+/* ---------------------------------------------------------------------------- type */
+body {
+  font-family: var(--caitlyn-sans);
+  font-weight: 300; /* body: Euclid Light */
+  color: var(--caitlyn-ink);
+}
+.sl-markdown-content strong,
+.sl-markdown-content b {
+  font-weight: 500; /* body emphasis steps up to Medium */
+}
+
+/* The page title: cover-title */
+h1#_top {
+  font-size: 56px;
+  line-height: 0.95;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+/* On a narrow screen a long operation name would overflow cover-title; it takes the next size in the scale,
+   section-title, rather than an in-between size. */
+@media (max-width: 50rem) {
+  h1#_top {
+    font-size: 26px;
+    line-height: 1.05;
+  }
+}
+.sl-markdown-content h2 {
+  font-size: 26px; /* section-title */
+  line-height: 1.05;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+.sl-markdown-content :is(h3, h4, h5, h6) {
+  font-size: 15px; /* subhead */
+  line-height: 1.35;
+  font-weight: 500;
+  letter-spacing: normal;
+}
+/* Sections open with clear air above */
+.sl-markdown-content h2:not(:first-child) {
+  margin-top: 40px; /* space-10 */
+}
+
+/* Starlight sets 600 in places; the system's weights are 300, 400 and 500 */
+.site-title,
+.sidebar-content [aria-current='page'],
+.sidebar-content summary .group-label,
+starlight-toc a[aria-current='true'],
+.lang-tab[aria-selected='true'] {
+  font-weight: 500;
+}
+
+/* Secondary metadata (the table of contents heading, the last-updated line) is muted; content stays ink */
+.right-sidebar h2 {
+  font-size: 15px; /* subhead */
+  font-weight: 500;
+}
+
+/* --------------------------------------------------------------- header and logo */
+.site-title img {
+  height: 28px; /* above the logo's 20px smallest size */
+}
+.caitlyn-site-title {
+  display: flex;
+  align-items: center;
+  gap: 16px; /* space-4 */
+  min-width: 0;
+}
+.caitlyn-docs-label {
+  font-size: 15px; /* subhead */
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--caitlyn-ink);
+}
+@media (max-width: 30rem) {
+  .caitlyn-docs-label {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------------- tables */
+/* A table opens with a strong rule and its rows divide with hairlines; no vertical rules, no fills.
+   GAP: the strong rule's thickness is not a token; it is a 1px line in strong-rule. */
+.sl-markdown-content table {
+  border-collapse: collapse;
+  border-top: 1px solid var(--caitlyn-strong-rule);
+}
+.sl-markdown-content :is(th, td) {
+  border: 0;
+  border-bottom: 1px solid var(--caitlyn-rule);
+  background: transparent;
+}
+.sl-markdown-content th {
+  font-weight: 500;
+  color: var(--caitlyn-ink);
+}
+
+/* ------------------------------------------------------------------- notes and code */
+/* A note carries the highlight rule at its left (the "Not yet available" and "Preview" notes) */
+.sl-markdown-content blockquote {
+  border-inline-start: 2px solid var(--caitlyn-highlight); /* GAP: rule width is not a token */
+  color: var(--caitlyn-ink);
+}
+
+/* Inline code on a panel fill, square */
+.sl-markdown-content code:not(pre code) {
+  background-color: var(--caitlyn-panel);
+}
+
+/* ---------------------------------------------------------------------------- focus */
+/* Visible focus on every interactive element, in ink (white on dark). GAP: focus states are not specified;
+   this is a 2px outline in ink, offset so it never sits on a hairline. */
+:focus-visible {
+  outline: 2px solid var(--caitlyn-ink);
+  outline-offset: 2px;
+}

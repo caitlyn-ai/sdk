@@ -12,7 +12,7 @@ generate: ## Regenerate all four SDKs and the example cases from model/model.jso
 
 # Hand-written files scripts/version.mjs stamps with the version in VERSION.
 VERSIONED := typescript/packages/sdk-core typescript/package-lock.json python/caitlyn-core python/uv.lock rust/Cargo.toml \
-  rust/Cargo.lock conformance/rust/Cargo.lock codegen/smithy-build.json
+  rust/Cargo.lock conformance/rust/Cargo.lock examples/rust/Cargo.lock codegen/smithy-build.json
 
 check-generated: generate ## Fail if the committed generated code differs from a fresh generation
 	@git diff --exit-code --stat -- typescript/packages/sdk python/caitlyn go rust/caitlyn-sdk conformance/cases $(VERSIONED) \
@@ -35,7 +35,7 @@ conformance: typescript python go rust ## All four conformance suites, then the 
 
 check: generate conformance ## What a merge request pipeline runs
 
-docs: ## Build the developer docs (a skeleton until lane D2)
+docs: ## Build the developer docs site into build/docs (docs/README.md)
 	@$(RUN) scripts/docs-build.sh
 
 docs-kb-dry-run: docs ## Show what the knowledge-base publisher would send, without sending anything

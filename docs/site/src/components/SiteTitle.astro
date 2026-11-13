@@ -1,0 +1,10 @@
+---
+// Starlight's site title (the Caitlyn lockup, linking home), with "Developer docs" beside it. The lockup is the
+// design system's file, as supplied; the label is set in Euclid at the subhead size (src/styles/caitlyn.css).
+import Default from '@astrojs/starlight/components/SiteTitle.astro';
+---
+
+<div class="caitlyn-site-title">
+  <Default />
+  <span class="caitlyn-docs-label" aria-hidden="true">Developer docs</span>
+</div>
