@@ -95,7 +95,7 @@ console.log('cjs ok');`);
 process.stdout.write(run('node', ['esm.mjs']) + run('node', ['cjs.cjs']));
 
 // 2. Types
-const typed = `import { Caitlyn, ValidationError, type ConversationEvent } from '@caitlyn-ai/sdk';
+const typed = `import { Caitlyn, CaitlynError, ValidationError, type ConversationEvent } from '@caitlyn-ai/sdk';
 const c = new Caitlyn({ workspace: 'w', auth: { mode: 'workloadIdentity', token: () => 'jwt' } });
 export async function f(): Promise<string | undefined> {
   for await (const e of c.conversations.send('C1', { message: 'hi' })) { const x: ConversationEvent = e; void x; }
@@ -104,7 +104,11 @@ export async function f(): Promise<string | undefined> {
     const status: number | undefined = v.$metadata.httpStatusCode; // a single call's output carries its response metadata
     const requestId: string | undefined = v.$metadata.requestId;
     void [status, requestId, v.raw];
-  } catch (e) { if (e instanceof ValidationError) return e.code; }
+  } catch (e) {
+    if (e instanceof ValidationError) return e.code;
+    // Generic handling reads every error's fields without a cast.
+    if (e instanceof CaitlynError) { const s: number = e.status; const r: string | undefined = e.requestId; void [s, r, e.rawBody]; return e.code; }
+  }
   return undefined;
 }
 `;

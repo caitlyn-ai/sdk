@@ -101,6 +101,7 @@ final class FacadeGenerator {
         context.fileManifest().writeFile("src/sdk/operations.ts", operationsFile(methods));
         context.fileManifest().writeFile("src/sdk/client.ts", clientFile(methods));
         context.fileManifest().writeFile("src/sdk/connection.ts", connectionFile());
+        context.fileManifest().writeFile("src/sdk/errors.ts", errorBaseFile());
         context.fileManifest().writeFile("src/sdk/index.ts", indexFile());
     }
 
@@ -459,9 +460,56 @@ final class FacadeGenerator {
             + "export type * from \"../models/models_0\";\n"
             + "export * from \"../models/enums\";\n"
             + "export * from \"../models/errors\";\n"
-            + "export { CaitlynServiceException as CaitlynError } from \"../models/CaitlynServiceException\";\n"
+            + "export { CaitlynError } from \"./errors\";\n"
             + "export { CaitlynConnectionError } from \"./connection\";\n"
             + "export { NotSupportedByServer, SseStream, CaitlynAuthError, WaiterError, createAuth, workspaceAudience, type AuthOptions, type AuthSession, type AwsCredentials, type OAuthTokens, type TokenStore, type CaitlynOptions, type CallOptions, type CaitlynErrorFields, type WaiterOptions, type WithRaw } from \"@caitlyn-ai/sdk-core\";\n";
+    }
+
+    /**
+     * CaitlynError: the generated base exception, typed with the fields every Caitlyn error carries (PROTOCOL.md
+     * 6.3), so `catch (e) { if (e instanceof CaitlynError) e.code }` needs no cast. The fields are the model's
+     * ProblemDetails members (the members every error shape shares) plus the three the SDK adds itself. They cannot be declared on the base class: the
+     * generated error classes' constructor options omit every key the base class has.
+     */
+    private String errorBaseFile() {
+        // The ProblemDetails mixin is flattened into each error shape by the time generators run, so its members
+        // are the ones every error shape has (model lint rule 2 makes every error use the mixin).
+        List<StructureShape> errorShapes = new ArrayList<>();
+        Set<ShapeId> errorIds = new TreeSet<>(service.getErrorsSet());
+        for (OperationShape op : operations()) errorIds.addAll(op.getErrorsSet());
+        for (ShapeId id : errorIds) errorShapes.add(model.expectShape(id, StructureShape.class));
+        if (errorShapes.isEmpty()) throw new IllegalStateException("The service has no error shapes");
+        List<MemberShape> problem = errorShapes.get(0).getAllMembers().values().stream()
+            .filter(m -> !m.hasTrait(HttpHeaderTrait.class))
+            .filter(m -> errorShapes.stream().allMatch(e -> e.getMember(m.getMemberName())
+                .map(o -> o.getTarget().equals(m.getTarget())).orElse(false)))
+            .toList();
+        // Always set, from the response or the SDK's own code; a body that is not problem details leaves the other
+        // members empty (PROTOCOL.md 6.1), so they are optional here whatever the model says.
+        Set<String> alwaysSet = Set.of("status", "code");
+        Set<String> structures = new TreeSet<>();
+        StringBuilder fields = new StringBuilder();
+        for (MemberShape m : problem) {
+            Shape target = model.expectShape(m.getTarget());
+            if (target.isStructureShape()) structures.add(tsType(m.getTarget()));
+            if (target instanceof ListShape l && model.expectShape(l.getMember().getTarget()).isStructureShape()) {
+                structures.add(tsType(l.getMember().getTarget()));
+            }
+            fields.append(doc(m, "  ")).append("  ").append(m.getMemberName())
+                .append(alwaysSet.contains(m.getMemberName()) ? ": " : "?: ").append(tsType(m.getTarget())).append(";\n");
+        }
+        fields.append("  /** `Retry-After` in seconds, on 429 and 503 responses. */\n  retryAfterSeconds?: number;\n")
+            .append("  /** The response body as received, as text, at most its first 8 KiB: the only view of a body that is not problem details. */\n  rawBody?: string;\n")
+            .append("  /** True when the body was longer than 8 KiB and `rawBody` holds only its first 8 KiB. */\n  rawBodyTruncated?: boolean;\n");
+        return HEADER
+            + "import { CaitlynServiceException, type __ServiceExceptionOptions } from \"../models/CaitlynServiceException\";\n"
+            + (structures.isEmpty() ? "" : "import type { " + String.join(", ", structures) + " } from \"../models/models_0\";\n")
+            + "\n/**\n * Every Caitlyn error: the typed classes (NotFoundError, ValidationError…) and the generic error for a status\n"
+            + " * the model does not name. Generated from the model's ProblemDetails (PROTOCOL.md 6.3).\n */\n"
+            + "export interface CaitlynError extends CaitlynServiceException {\n" + fields + "}\n\n"
+            + "/** The base class of every Caitlyn error, for `instanceof`. */\n"
+            + "export const CaitlynError: {\n  new (options: __ServiceExceptionOptions): CaitlynError;\n  readonly prototype: CaitlynError;\n}"
+            + " = CaitlynServiceException as never;\n";
     }
 
     /** The connection error (PROTOCOL.md 6.5): a CaitlynError, so it extends the generated base exception. */
