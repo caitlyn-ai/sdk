@@ -171,19 +171,26 @@ operations gain them.
 
 ## Your own HTTP handler
 
-`requestHandler` gives this client its own HTTP handler, for a private certificate authority, a proxy or
-keep-alive settings, without changing the process-wide default:
+Every runtime, Node included, sends API calls with the platform's `fetch`. `requestHandler` changes that for one
+client, without changing the process-wide default. It takes the fetch handler's options
+(`requestTimeout`, `keepAlive`, `credentials`, `cache`, `requestInit`, and `customFetch`, a `fetch` of your own),
+or any object with `handle(request)`.
+
+On Node, a private certificate authority, a proxy or connection settings go in an undici dispatcher, which
+`customFetch` hands to Node's `fetch`:
 
 ```ts
-import https from 'node:https';
-import { NodeHttpHandler } from '@smithy/node-http-handler';
+import { Agent } from 'undici'; // or ProxyAgent, for a proxy
 
+const dispatcher = new Agent({ connect: { ca: fs.readFileSync('ca.pem') } });
 const caitlyn = new Caitlyn({
   workspace: 'your-company.getcaitlyn.ai',
   auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! },
-  requestHandler: new NodeHttpHandler({ httpsAgent: new https.Agent({ ca: fs.readFileSync('ca.pem') }) }),
+  requestHandler: { customFetch: (request) => fetch(request, { dispatcher } as RequestInit) },
 });
 ```
+
+A handler from `@smithy/node-http-handler` (`new NodeHttpHandler({ httpsAgent })`) still works too, if you install it.
 
 Sign-in requests go through the `fetch` option, which takes your own `fetch` the same way.
 
@@ -198,8 +205,8 @@ section 13), and passes `traceparent` on, with whatever tracer provider your app
 
 | Runtime | Export condition | Build | HTTP |
 | --- | --- | --- | --- |
-| Node and Bun, ECMAScript modules | `import` | `dist-es` | Node's `http`/`https` |
-| Node, CommonJS | `require` | `dist-cjs` | Node's `http`/`https` |
+| Node and Bun, ECMAScript modules | `import` | `dist-es` | `fetch` |
+| Node, CommonJS | `require` | `dist-cjs` | `fetch` |
 | Deno, Cloudflare Workers, Vercel Edge, and web workers bundled with the `worker` condition (webpack) | `deno`, `workerd`, `worker`, `edge-light` | `dist-edge` | `fetch` |
 | Browser pages (Vite, webpack, esbuild and Rollup building for the browser) | `browser` | `dist-browser` | `fetch` |
 

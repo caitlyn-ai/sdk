@@ -189,6 +189,10 @@ next version:
 | a breaking change (`feat!:`, or a `BREAKING CHANGE:` footer) | minor while the version is below 1.0; going to 1.0 is a decision, made by removing that rule in `.releaserc.yml` |
 | `docs`, `ci`, `chore`, `test`, `refactor`, `style`, `build` | none |
 
+Merge requests are squashed, and the squash commit message is the merge request's title alone, so the title is what
+semantic-release reads. Mark a breaking change in the title, `feat(typescript)!: …`: a `BREAKING CHANGE:` footer in a
+commit body is lost in the squash. `.releaserc.yml` teaches the release image's parser to read the `!`.
+
 So the commit type is what releases: a commit that changes what an SDK does is `feat` or `fix`, and one that
 changes only the pipeline, the docs or the tests is not. The release commit is `chore(release): x.y.z`, with no
 release notes in its message, so it can never start another release. The `fetch-semantic-version` job shows on

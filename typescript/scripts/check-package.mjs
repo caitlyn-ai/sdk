@@ -10,8 +10,8 @@
 //   6. checks which build each export condition gives a bundler: the browser build for `browser` and for the explicit
 //      `@caitlyn-ai/sdk/browser` under any conditions, the edge build for `worker` (and the other edge runtimes);
 //      that no bundle has any of the Smithy code sdk-core's runtime replaces (AWS retry strategies, event streams,
-//      checksums, the endpoint rules engine, the restJson protocol and codec, the date and number parsers); and that
-//      Node loads none of the retry, event-stream or checksum modules.
+//      checksums, the endpoint rules engine, the restJson protocol and codec, the date and number parsers, the Smithy
+//      HTTP handlers), Node bundles included; and that unbundled Node loads none of it either.
 // Run after scripts/build-packages.mjs. Writes build/package/report.json.
 import { build } from 'esbuild';
 import { execFileSync } from 'node:child_process';
@@ -56,6 +56,13 @@ export const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', au
   },
   // A web worker bundled by webpack gets the edge build from '@caitlyn-ai/sdk' (the `worker` condition comes first),
   // and the browser build when it imports '@caitlyn-ai/sdk/browser'.
+  // A Node bundle (a Lambda, say): the Node build, on fetch, with nothing from the Smithy HTTP handlers.
+  'client + one operation, bundled for Node': {
+    budget: 27_500,
+    platform: 'node',
+    code: `import { createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk';
+export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
+  },
   'client + one operation, @caitlyn-ai/sdk/browser in a web worker': {
     budget: 24_500,
     conditions: ['worker'],
@@ -140,10 +147,10 @@ console.log('error class names survive bundling (constructor.name unminified, er
 
 // 5. Size
 const sizes = {};
-for (const [name, { code, budget, conditions }] of Object.entries(ENTRIES)) {
+for (const [name, { code, budget, conditions, platform = 'browser' }] of Object.entries(ENTRIES)) {
   const file = path.join(work, `size-${Object.keys(sizes).length}.mjs`);
   fs.writeFileSync(file, code);
-  const out = await build({ entryPoints: [file], bundle: true, minify: true, splitting: true, format: 'esm', platform: 'browser', conditions, outdir: path.join(work, 'size-out', String(Object.keys(sizes).length)), write: false, metafile: true, logLevel: 'error', absWorkingDir: work });
+  const out = await build({ entryPoints: [file], bundle: true, minify: true, splitting: true, format: 'esm', platform, conditions, outdir: path.join(work, 'size-out', String(Object.keys(sizes).length)), write: false, metafile: true, logLevel: 'error', absWorkingDir: work });
   const files = new Map(out.outputFiles.map((f) => [path.relative(work, f.path), f.contents]));
   const outputs = out.metafile.outputs;
   const entry = Object.keys(outputs).find((k) => outputs[k].entryPoint && !k.endsWith('.map'));
@@ -175,28 +182,26 @@ const builds = {
 const REPLACED = /@smithy\/core\/dist-[a-z]+\/(index\.js|legacy-root-exports\/|submodules\/(retry|event-streams|checksum|endpoints|protocols|serde|cbor|config)\/)|@smithy\/fetch-http-handler/;
 for (const [name, { want, ...options }] of Object.entries(builds)) {
   const r = await build({ entryPoints: [conditionsFile], bundle: true, format: 'esm', write: false, metafile: true, logLevel: 'error', absWorkingDir: work, outdir: path.join(work, 'conditions-out'), ...options });
-  // A Node bundle is the exception: @smithy/node-http-handler imports @smithy/core/protocols, whose HttpProtocol
-  // brings AWS event-stream support with it. Nothing calls it, and unbundled Node never loads it (checked below).
-  const replaced = want === 'dist-es' ? [] : Object.keys(r.metafile.inputs).filter((k) => REPLACED.test(k));
+  const replaced = Object.keys(r.metafile.inputs).filter((k) => REPLACED.test(k));
   if (replaced.length) throw new Error(`${name}: the bundle has Smithy code the runtime replaces: ${replaced.join(', ')}`);
   const sdkInput = Object.keys(r.metafile.inputs).find((k) => k.includes('@caitlyn-ai/sdk/dist-'));
   if (!sdkInput?.includes(`/${want}/`)) throw new Error(`${name}: a bundler gets ${sdkInput}, not ${want}`);
   if (want === 'dist-browser' && Object.keys(r.metafile.inputs).some((k) => k.includes('@caitlyn-ai/sdk-core/dist-es'))) throw new Error(`${name}: the browser build loads sdk-core's Node build`);
 }
-console.log(`export conditions ok (${Object.keys(builds).join('; ')}), and no browser or edge bundle has the Smithy code the runtime replaces`);
+console.log(`export conditions ok (${Object.keys(builds).join('; ')}), and no bundle, Node's included, has the Smithy code the runtime replaces`);
 
-// In Node, @smithy/node-http-handler loads @smithy/core's protocols and serde modules (and serde the endpoints and
-// config ones), which nothing calls; the retry, event-stream and checksum modules must not load at all.
+// Unbundled Node loads none of it either: of @smithy/core only the client, transport and schema modules, and no
+// Smithy HTTP handler.
 fs.writeFileSync(path.join(work, 'loaded.mjs'), `import { registerHooks, createRequire } from 'node:module';
 const seen = new Set();
 registerHooks({ load(url, ctx, next) { seen.add(url); return next(url, ctx); } });
 const { Caitlyn } = await import('@caitlyn-ai/sdk');
 await new Caitlyn({ workspace: 'w', auth: { mode: 'token', token: 't' } }).versions.get({ agentId: 'A', version: 'draft' }, { signal: AbortSignal.abort() }).catch(() => undefined);
 createRequire(import.meta.url)('@caitlyn-ai/sdk');
-const bad = [...seen].filter((u) => /@smithy\\/core\\/dist-[a-z]+\\/submodules\\/(retry|event-streams|checksum|cbor)\\//.test(u));
+const bad = [...seen].filter((u) => /@smithy\\/(core\\/dist-[a-z]+\\/(index\\.js|submodules\\/(retry|event-streams|checksum|cbor|endpoints|protocols|serde|config)\\/)|node-http-handler|fetch-http-handler)/.test(u));
 if (bad.length) { console.error(bad.join('\\n')); process.exit(1); }`);
 run('node', ['loaded.mjs']);
-console.log('Node loads no retry, event-stream or checksum module of @smithy/core (ESM and CommonJS)');
+console.log('Node loads only the client, transport and schema modules of @smithy/core, and no Smithy HTTP handler (ESM and CommonJS)');
 fs.writeFileSync(path.join(work, 'report.json'), JSON.stringify({ sizes }, null, 2));
 const over = Object.entries(sizes).filter(([, s]) => s.gzip > s.budget);
 if (over.length) throw new Error(`over the size budget: ${over.map(([n, s]) => `${n} ${s.gzip} B > ${s.budget} B`).join(', ')}`);

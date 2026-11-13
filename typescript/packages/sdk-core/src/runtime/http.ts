@@ -1,4 +1,4 @@
-// The fetch request handler (the browser and edge builds' default), the Content-Length middleware and the HTTP
+// The fetch request handler (every build's default, Node's included), the Content-Length middleware and the HTTP
 // handler extension configuration, ported from @smithy/fetch-http-handler and @smithy/core/protocols. Those
 // packages reach their modules through @smithy/core/protocols, whose HttpProtocol loads AWS event-stream support on
 // demand, so a bundler emits that code even though nothing calls it; these do the same work without it. Any

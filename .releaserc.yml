@@ -11,6 +11,11 @@
 # chore, test, refactor, style and build commits never do, so the release commit (chore) cannot start another
 # release. Its message carries no [skip ci]: GitHub Actions would then skip the tag's release-npm run. GitLab skips
 # the main pipeline for it with a workflow rule instead.
+#
+# Merge requests are squashed, and the squash commit is the merge request's title alone, so a breaking change must be
+# marked in the title: `feat(typescript)!: …`. The release image has only the angular preset, whose parser does not
+# read the `!`, so parserOpts teaches both the analyser and the notes generator to: a `!` before the colon is a
+# breaking change, listed under BREAKING CHANGES. A BREAKING CHANGE footer still works too.
 plugins:
   - - '@semantic-release/commit-analyzer'
     - releaseRules:
@@ -18,7 +23,11 @@ plugins:
         # revert are patch, as the default rules say. Going to 1.0 is a deliberate decision: remove this rule then.
         - breaking: true
           release: minor
-  - '@semantic-release/release-notes-generator'
+      parserOpts: &parserOpts
+        headerPattern: '^(\w*)(?:\((.*)\))?!?: (.*)$'
+        breakingHeaderPattern: '^(\w*)(?:\((.*)\))?!: (.*)$'
+  - - '@semantic-release/release-notes-generator'
+    - parserOpts: *parserOpts
   # VERSION.txt is the fetch-semantic-version job's artifact: the version the next release would have. Before the
   # release commit, the files stamp-version wrote from it must name exactly the version being released.
   - - '@semantic-release/exec'
