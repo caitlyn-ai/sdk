@@ -1,5 +1,5 @@
 // Task 3: change an agent safely. Reading and editing the draft work today; pin, publish, reset, compare and
-// the version history arrive with lane S1, and conversations.ask with lane S2.
+// the version history, and conversations.ask, are not in the model yet.
 import { Caitlyn, PreconditionFailedError, ValidationError } from '@caitlyn-ai/sdk';
 
 const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! } });

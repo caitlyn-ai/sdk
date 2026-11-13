@@ -122,7 +122,7 @@ final class ServiceGenerator {
             case STREAM -> stream(w, op);
         }
         if (op.op.findTrait(WAITABLE).isPresent()) {
-            // Waiters come with the waiter runtime (as K1 has); nothing in the model uses them yet.
+            // Waiters come with the waiter runtime (as the TypeScript SDK has); nothing in the model uses them yet.
             skippedWaiters.add(op.name);
         }
     }

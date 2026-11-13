@@ -13,8 +13,8 @@ builds and runs them in the toolchain image.
 | `rust` | `caitlyn-rust-client-codegen` | `rust/caitlyn-sdk`: serde types that keep their raw JSON, open enums with an `Unknown(String)` variant, an `Error` enum with one variant per error shape, event enums, namespaced clients on `caitlyn-sdk-core` |
 
 The Python, Go and Rust generators are on Smithy's own codegen framework (`smithy-codegen-core`: `CodegenDirector`,
-`DirectedCodegen`, symbol providers and writers). smithy-python (pre-alpha) and smithy-go (no retries, auth,
-pagination or SSE) were assessed in the generator trial and not used.
+`DirectedCodegen`, symbol providers and writers). smithy-python and smithy-go were considered and not used:
+smithy-python is pre-alpha, and smithy-go has no retries, auth, pagination or SSE.
 
 Generator-level tests live beside each generator; `codegen/python/tests` checks the Python SDK's static types
 with pyright and its interceptor hooks (`make python` runs them).
@@ -41,6 +41,6 @@ extend:
 
 So the Rust generator follows the Python and Go ones: a Smithy codegen-core plugin over the shared
 `model-support` rules, emitting plain serde and tokio code on a hand-written runtime crate. The OpenAPI route
-(generating from `model/openapi.json`) was not taken further for the same reason the other lanes gave: OpenAPI
+(generating from `model/openapi.json`) was not taken further, for the same reason as for Python and Go: OpenAPI
 loses resources, `@sseEvents`, `@since`, pagination and the upload traits, which are where the client methods come
 from.

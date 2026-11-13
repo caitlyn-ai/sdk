@@ -11,9 +11,10 @@ for you. CI runs the same scripts in the same image, so a local run and CI agree
   CI job fails when the committed code differs from a fresh generation.
 - **Never edit `model/` by hand.** It is a copy of a published model; `scripts/model-pull.sh` writes it and its
   lock file together, and `scripts/prepare-model.mjs` refuses a snapshot whose SHA-256 does not match the lock.
-- **The model and `PROTOCOL.md` change in the app repository**, not here. A generator lane never edits the
-  model. A protocol change is agreed by all three generator lanes before any of them implements it, and lands
-  with a conformance case (the implementation plan, "Running lanes in parallel sessions").
+- **The model and `PROTOCOL.md` change in the app repository**, in `smithy/` (`smithy/PROTOCOL.md` for the
+  protocol), not here. A protocol change is agreed for every SDK before any of them implements it, and lands with
+  a conformance case that every SDK passes. The `model:snapshot-only` CI job refuses a merge request that edits
+  `model/` without pulling a model ("The model snapshot", below).
 - **Every protocol behaviour has a conformance case** in `conformance/cases/protocol.json`, and every harness
   runs it. Adding a case there fails the other languages until they implement it, which is the point.
 
@@ -88,6 +89,23 @@ There are two kinds of case:
 
 `scripts/check-conformance.mjs` reads each harness's report (`build/conformance/`) and fails if any case is
 missing or failed in any language.
+
+## The model snapshot
+
+`model/model.json`, `model/openapi.json` and `model/PROTOCOL.md` are a copy of the app's model, whose source is
+`smithy/` in the app repository (https://git.customd.com/custom-d/caitlyn/platform/caitlyn): `smithy/PROTOCOL.md`,
+and the Smithy sources under `smithy/model/` that `model.json` and `openapi.json` are built from.
+`scripts/model-pull.sh` writes them together with `model/model.lock.json`, so a pulled snapshot always changes the
+lock file.
+
+An edit made to `model/` here would be erased by the next pull. So the `model:snapshot-only` job, on every merge
+request pipeline, fails when a file under `model/` changes and `model/model.lock.json` does not, and its message
+says where to make the change. `make model-snapshot-check` runs the same check locally against `origin/main`, and
+`make check` includes it.
+
+To change the protocol or the model: change `smithy/` in the app repository, then pull it here with
+`scripts/model-pull.sh <version>`, or `scripts/model-pull.sh --from-build <app checkout>/smithy` for an unpublished
+build, run `make generate`, and commit the snapshot, the lock file and the generated code together.
 
 ## How the model version flows in
 
@@ -240,12 +258,12 @@ provenance and need no stored npm token. GitLab stays the source: the mirror onl
 
 The workflow never publishes directly. It **stages** each version (`npm stage publish`), and a maintainer
 approves it on npmjs.com with two-factor authentication, which is the release's one approval
-(https://docs.npmjs.com/staged-publishing). Version 0.0.1 of both packages was published by hand from Sam's
-account; every version after it goes through the workflow.
+(https://docs.npmjs.com/staged-publishing). Version 0.0.1 of both packages was published by hand by a maintainer;
+every version after it goes through the workflow.
 
-What is set up (by Sam: the GitHub organisation and the npm scope are his):
+What is set up (by the maintainers who own the `caitlyn-ai` GitHub organisation and npm scope):
 
-1. **The mirror repository: `github.com/caitlyn-ai/sdk`** (created by Sam). Actions enabled; nobody pushes
+1. **The mirror repository: `github.com/caitlyn-ai/sdk`**. Actions enabled; nobody pushes
    to it except the mirror.
 2. **The push mirror, over HTTPS** (GitLab's "Set up a push mirror from GitLab to GitHub",
    https://docs.gitlab.com/user/project/repository/mirror/push/#set-up-a-push-mirror-from-gitlab-to-github):
