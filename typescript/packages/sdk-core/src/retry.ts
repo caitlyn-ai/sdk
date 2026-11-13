@@ -9,8 +9,8 @@
 // - A retry budget per client (rule 6): AWS's "standard" retry quota. A retry costs 5 tokens, or 10 after a
 //   failure with no response; a call that succeeds gives back its last retry's cost, or 1. When the budget cannot
 //   pay, the call fails at once with its error. The first attempt is never blocked.
-// The retry middleware itself sleeps for the token's delay. Both builds' retry middleware (@smithy/core's for Node,
-// browser/retry.ts for browsers, once that lands) call refreshRetryTokenForRetry and recordSuccess.
+// The retry loop below the strategy (getRetryPlugin, which every build uses) sleeps for the token's delay, asks
+// refreshRetryTokenForRetry after each failure and passes the latest token to recordSuccess.
 import type { Provider, RetryErrorInfo, RetryStrategyV2, RetryToken } from '@smithy/types';
 
 export const NO_RETRY = Symbol.for('caitlyn.noRetry');
