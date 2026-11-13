@@ -115,8 +115,13 @@ final class CaitlynPythonCodegen implements DirectedCodegen<GenerationContext, P
         if (!facts.isGenerated(shape)) {
             return;
         }
-        boolean result = facts.resultNames.containsKey(shape.getId());
         String className = ctx.symbolProvider().toSymbol(shape).getName();
+        if (facts.fieldError.filter(shape.getId()::equals).isPresent()) {
+            // The runtime parses problem details' field errors itself; one class serves both (explicit re-export).
+            ctx.writerDelegator().useShapeWriter(shape, w -> w.importFrom("caitlyn_core", className + " as " + className));
+            return;
+        }
+        boolean result = facts.resultNames.containsKey(shape.getId());
         ctx.writerDelegator().useShapeWriter(shape, w -> {
             // A call's result also carries the response it was read from (PROTOCOL.md 4.2).
             String base = result ? "CaitlynResult" : "CaitlynModel";

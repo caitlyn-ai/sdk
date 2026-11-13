@@ -47,6 +47,11 @@ final class ModelFacts {
     final Map<ShapeId, String> resultDocs = new HashMap<>();
     /** Error members the runtime's CaitlynError already carries: the ProblemDetails mixin's, and Retry-After. */
     final Set<String> problemFields = new HashSet<>();
+    /**
+     * The structure a problem body's {@code errors} list holds (FieldError). The runtime reads it with the rest of
+     * the problem details, so models.py re-exports caitlyn_core's class instead of generating one.
+     */
+    final java.util.Optional<ShapeId> fieldError;
     /** Highest @since in the service: the Caitlyn release the SDK is generated against. */
     final String apiVersion;
 
@@ -62,6 +67,11 @@ final class ModelFacts {
         apiVersion = Versions.modelVersion(model, service);
         problemFields.addAll(ProblemDetails.memberNames(model, service));
         problemFields.add("retryAfterSeconds");
+        fieldError = service.getErrorsSet().stream()
+                .flatMap(e -> model.expectShape(e).getMember("errors").stream())
+                .flatMap(m -> model.expectShape(m.getTarget()).asListShape().stream())
+                .map(l -> l.getMember().getTarget())
+                .findFirst();
 
         for (OperationShape op : TopDownIndex.of(model).getContainedOperations(service)) {
             ops.getInputShape(op).ifPresent(in -> inputs.add(in.getId()));
