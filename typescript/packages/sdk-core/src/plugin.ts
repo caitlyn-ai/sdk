@@ -41,7 +41,11 @@ export function getCaitlynConnectionErrorPlugin(toError: (operation: string, cau
       return await next(args);
     } catch (err) {
       if (err && typeof err === 'object' && (err as { [NO_RESPONSE]?: boolean })[NO_RESPONSE]) {
-        throw toError(context.commandName?.replace(/Command$/, '') ?? 'call', err);
+        const error = toError(context.commandName?.replace(/Command$/, '') ?? 'call', err) as Error & { $metadata?: Record<string, unknown> };
+        // Keep what the retry loop recorded (attempts, totalRetryDelay), as every other error has it.
+        const { attempts, totalRetryDelay } = (err as { $metadata?: { attempts?: number; totalRetryDelay?: number } }).$metadata ?? {};
+        if (error.$metadata) Object.assign(error.$metadata, attempts !== undefined ? { attempts } : {}, totalRetryDelay !== undefined ? { totalRetryDelay } : {});
+        throw error;
       }
       throw err;
     }
