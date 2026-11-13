@@ -221,7 +221,9 @@ Every suite runs against the mock server and covers, at least:
 - an error status the operation does not list is still that status's class (section 6.2);
 - a resume after the answer finished ends with no events and no error (section 5.9);
 - every `@examples` entry in the model, as a request the mock server answers with the example's output or error (design guide, section 14);
-- sign-in: each mode, the shared token request and early renewal, and the one retry after a 401 (section 12).
+- sign-in: each mode, the shared token request and early renewal, and the one retry after a 401 (section 12);
+- one refresh for many concurrent 401s, and one refresh across clients sharing a locking token store (section 12.2, `oauth` step 5);
+- a workspace given as a URL is reduced to its hostname, and a path, query string or other scheme is refused (section 12.1).
 
 ## 12. Sign-in
 
@@ -229,7 +231,8 @@ How an SDK gets the credential it sends. The TypeScript runtime (`@caitlyn-ai/sd
 
 ### 12.1 The workspace, the endpoint and the audience
 
-- The client is created for a **workspace**, given as a hostname (`your-company.getcaitlyn.ai`) or a URL (`https://your-company.getcaitlyn.ai/`). The SDK reduces it to the hostname.
+- The client is created for a **workspace**, given as a hostname (`your-company.getcaitlyn.ai`) or as its URL (`https://your-company.getcaitlyn.ai`, with or without a trailing `/`). The SDK reduces it to the hostname, in lower case, keeping a port if one is given.
+- Anything else is refused when the client is created, before any request, with an error that names the expected form (`your-company.getcaitlyn.ai` or `https://your-company.getcaitlyn.ai`) and what was wrong: a scheme other than `https` (`http://`, `ftp://`), a path (`https://your-company.getcaitlyn.ai/api`), a query string or fragment, user information (`user@…`), or an empty value. TypeScript throws a `TypeError`, Python raises `ValueError`, Go's `NewClient` returns an error, and Rust's `build` returns `Error::Input` for the member `workspace`. A local server or a proxy is reached with the `endpoint` option, not through the workspace.
 - The workspace sets two things:
   - the **endpoint**, `https://<workspace>/api`: operation paths (`/v3/…`) and the sign-in paths (`/oauth/token`, `/oauth/authorize`) are appended to it;
   - the **token audience**, always `https://<workspace>/api`: the `resource` parameter of every token request and authorisation URL, and the audience of the AWS identity token in `awsIam` mode. It is one audience for the workspace's whole REST API, v2 and v3 alike; there is no separate v3 audience. (The server also accepts `https://<workspace>/api/v3`, which SDK versions up to 0.0.2 request, as an alias.)
@@ -254,6 +257,10 @@ Every mode except `token` and `session` ends in the same thing: a short-lived Ca
 1. *Start:* the SDK builds `{endpoint}/oauth/authorize?response_type=code&client_id=…&redirect_uri=…&code_challenge=…&code_challenge_method=S256&state=…&resource=…[&scope=…]`. The PKCE verifier is 48 random bytes, base64url-encoded; the challenge is the base64url SHA-256 of the verifier. `state` is random unless the caller gives one. A redirect URI is required. The caller keeps the state and the verifier.
 2. *Callback:* when the caller passes the state it expects, a different returned state fails with `invalid_state` before any request. Then `grant_type=authorization_code` with `code`, `code_verifier`, `redirect_uri`, `resource`, `client_id` and, for a confidential client, `client_secret`. The tokens are saved to the token store (default: in memory for the life of the client).
 3. *Calls:* the SDK loads the store. A stored access token with more than a minute left (or no expiry), and that is not the token this client already holds or last saw refused, is used as it is (another process signed in or refreshed). Otherwise the stored refresh token is used: `grant_type=refresh_token` with `refresh_token`, `client_id` and `client_secret` when there is one. The new tokens are saved; when the response has no refresh token, the old one is kept. A refresh refused with `invalid_grant` clears the store and fails the call with that code. With nothing to refresh, the call fails with `sign_in_required` and sends nothing.
+5. *One refresh at a time.* Refresh tokens are single-use and rotate: the server refuses a refresh token used a second time (and may treat the reuse as a stolen token). So a refresh token is never sent twice:
+   - Within a client, section 12.3 already makes one token request serve every waiting call, and section 12.4 forgets only the token that was refused, so a 401 that arrives after a refresh does not throw the new token away and refresh again.
+   - Across clients and processes that share a token store, the store may offer a lock: TypeScript `withLock(fn)`, Python `with_lock(fn)`, Go the optional `TokenStoreLocker` interface (`WithLock(ctx, fn)`), Rust `TokenStore::with_lock`. When it does, the SDK runs step 3 (load, decide, refresh, save) inside it. Whoever waited then loads the tokens the winner saved and uses them instead of refreshing again. A store shared between processes should offer it: a database row lock, a Redis lock, `navigator.locks` for browser tabs. The in-memory default store needs none.
+   - A compare-and-swap `save` is not offered, because it would only notice the race after the second refresh request had already spent the token.
 4. *Sign-out:* a `POST` to the token endpoint with `action=revoke`, `token=<refresh token>` and the client parameters, whose failure is ignored; then the cached token and the store are cleared.
 
 **`awsIam`.**
@@ -276,6 +283,7 @@ Every mode except `token` and `session` ends in the same thing: a short-lived Ca
 
 - In `clientCredentials`, `oauth`, `awsIam` and `workloadIdentity` mode, a 401 response makes the SDK forget its cached token and send the call **once more**, with a new token got as in section 12.3. A 401 on that second attempt is raised. This happens for every operation, including those section 6.4 never retries, because the server refused the first attempt before acting on it. It is separate from, and counts nothing against, the retries of section 6.4.
 - In `oauth` mode the refused token is never reloaded from the store; the refresh token replaces it.
+- The SDK forgets only the token it sent and the server refused. When several calls were sent with the same token and their 401s arrive one after another, the first starts the renewal and the later ones find the new token already cached, so one renewal serves them all.
 - In `token` and `session` mode a 401 is raised at once: the SDK has no other credential to try.
 
 ### 12.5 Sign-in errors

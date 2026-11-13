@@ -133,6 +133,30 @@ func cc(scopes ...string) caitlyn.ClientCredentials {
 }
 
 // memoryStore is a TokenStore a test can look into.
+// lockingStore is a memoryStore whose WithLock runs one function at a time: what a database or Redis lock gives a
+// shared store.
+type lockingStore struct {
+	memoryStore
+	lock sync.Mutex
+	n    int
+	nmu  sync.Mutex
+}
+
+func (s *lockingStore) WithLock(ctx context.Context, fn func(context.Context) error) error {
+	s.nmu.Lock()
+	s.n++
+	s.nmu.Unlock()
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	return fn(ctx)
+}
+
+func (s *lockingStore) locks() int {
+	s.nmu.Lock()
+	defer s.nmu.Unlock()
+	return s.n
+}
+
 type memoryStore struct {
 	mu     sync.Mutex
 	tokens *caitlyn.OAuthTokens
@@ -383,6 +407,46 @@ var authCases = map[string]func(t *testing.T, m mock){
 		api := m.api(t)
 		if store.get().RefreshToken == first || !strings.HasPrefix(api[len(api)-1].Headers["authorization"], "Bearer cai_refresh_") {
 			t.Fatalf("refresh token not rotated, or sent %q", api[len(api)-1].Headers["authorization"])
+		}
+	},
+	"auth.oauth-401-single-flight": func(t *testing.T, m mock) {
+		signInRequired(t, m)
+		c := signedIn(t, m, oauthMode(&memoryStore{}))
+		oauthSignIn(t, c)
+		mustRead(t, c)
+		// Every call is sent with the token the server now refuses; the 401s after the first arrive after its refresh.
+		authFaults(t, m, map[string]any{"revokeIssued": true, "laterRefusalsDelayMs": 300})
+		readConcurrently(t, c, 5)
+		if n := authCounts(t, m)["refresh_token"]; n != 1 {
+			t.Fatalf("%d refreshes, want 1", n)
+		}
+	},
+	"auth.oauth-shared-store-lock": func(t *testing.T, m mock) {
+		signInRequired(t, m)
+		store := &lockingStore{}
+		oauthSignIn(t, signedIn(t, m, oauthMode(store)))
+		expired := *store.get()
+		expired.ExpiresAt = time.Now().Add(-time.Millisecond) // both clients find it expired
+		store.Save(context.Background(), expired)
+		authFaults(t, m, map[string]any{"refreshDelayMs": 300}) // the first refresh is still in flight when the second client asks
+		a := signedIn(t, m, caitlyn.OAuth{ClientID: mockOAuthClient, TokenStore: store})
+		b := signedIn(t, m, caitlyn.OAuth{ClientID: mockOAuthClient, TokenStore: store})
+		errs := make(chan error, 2)
+		for _, c := range []*caitlyn.Client{a, b} {
+			go func() { _, err := read(c); errs <- err }()
+		}
+		for range 2 {
+			if err := <-errs; err != nil {
+				t.Fatal(err)
+			}
+		}
+		if n := authCounts(t, m)["refresh_token"]; n != 1 {
+			t.Fatalf("%d refreshes, want 1", n)
+		}
+		api := m.api(t)
+		x, y := api[len(api)-2].Headers["authorization"], api[len(api)-1].Headers["authorization"]
+		if x != y || !strings.HasPrefix(x, "Bearer cai_refresh_") || store.locks() < 2 {
+			t.Fatalf("sent %q and %q after %d locks; want the first client's tokens twice", x, y, store.locks())
 		}
 	},
 	"auth.oauth-401-refreshes": func(t *testing.T, m mock) {

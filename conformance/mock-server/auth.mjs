@@ -11,7 +11,9 @@
 //
 // Faults (POST /__mock/faults, key `auth`): {require: true} makes every /v3/ request need a token this
 // server issued (or pat_test, or the session cookie); {expiresIn: n} sets token lifetimes; {revokeIssued:
-// true} forgets every issued token, so the next request gets 401.
+// true} forgets every issued token, so the next request gets 401; {refreshDelayMs: n} answers each refresh_token
+// request n ms late, so concurrent clients overlap; {laterRefusalsDelayMs: n} sends every 401 after the first n ms
+// late, so it arrives after the renewal the first one started.
 import crypto from 'node:crypto';
 
 export const MOCK_CLIENT = { id: 'machine-client', secret: 'machine-secret' };
@@ -22,7 +24,7 @@ export const MOCK_SESSION_COOKIE = 'caitlyn_session=mock-session';
 
 let st;
 export function resetAuth() {
-  st = { tokens: new Map(), refresh: new Map(), usedRefresh: new Set(), codes: new Map(), jti: new Set(), counts: { sts: 0 }, faults: { require: false, expiresIn: 3600 } };
+  st = { tokens: new Map(), refresh: new Map(), usedRefresh: new Set(), codes: new Map(), jti: new Set(), counts: { sts: 0 }, refusals: 0, faults: { require: false, expiresIn: 3600 } };
 }
 resetAuth();
 
@@ -50,6 +52,12 @@ function issue(res, grant, { refresh = false, scope } = {}) {
   }
   if (scope) body.scope = scope;
   return json(res, 200, body);
+}
+
+/** How long to hold this 401 back (the laterRefusalsDelayMs fault): every refusal after the first. */
+export function refusalDelayMs() {
+  st.refusals += 1;
+  return st.refusals > 1 ? (st.faults.laterRefusalsDelayMs ?? 0) : 0;
 }
 
 /** Does this /v3/ request carry a credential the mock accepts? Only enforced when the `require` fault is on. */
@@ -135,6 +143,7 @@ export async function handleAuth(req, res, url, body) {
       }
       case 'refresh_token': {
         const rt = p.get('refresh_token');
+        if (st.faults.refreshDelayMs) await new Promise((r) => setTimeout(r, st.faults.refreshDelayMs));
         if (st.usedRefresh.has(rt) || !st.refresh.has(rt)) return oauthError(res, 400, 'invalid_grant', 'Refresh token is not valid'), true;
         st.refresh.delete(rt);
         st.usedRefresh.add(rt);

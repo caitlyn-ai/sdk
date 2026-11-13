@@ -1315,6 +1315,40 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             ensure!(reqs.iter().all(|r| header(r, "traceparent").is_some()), "no traceparent");
             Ok(())
         }),
+        "endpoint.workspace-url" => Box::pin(async move {
+            for w in [
+                "https://your-company.getcaitlyn.ai",
+                "https://your-company.getcaitlyn.ai/",
+                "your-company.getcaitlyn.ai/",
+                "HTTPS://Your-Company.GetCaitlyn.ai",
+            ] {
+                let c = Client::new(w, Auth::token(PAT)).map_err(s)?;
+                ensure!(
+                    c.endpoint() == "https://your-company.getcaitlyn.ai/api"
+                        && c.auth().token_endpoint() == "https://your-company.getcaitlyn.ai/api/oauth/token",
+                    "{w:?}: endpoint {}",
+                    c.endpoint()
+                );
+            }
+            for w in [
+                "https://your-company.getcaitlyn.ai/api",
+                "https://your-company.getcaitlyn.ai/?x=1",
+                "https://your-company.getcaitlyn.ai#top",
+                "http://your-company.getcaitlyn.ai",
+                "ftp://your-company.getcaitlyn.ai",
+                "me@your-company.getcaitlyn.ai",
+                "",
+            ] {
+                match Client::new(w, Auth::token(PAT)) {
+                    Err(Error::Input(e))
+                        if e.member == "workspace"
+                            && e.reason
+                                .contains("your-company.getcaitlyn.ai or https://your-company.getcaitlyn.ai") => {}
+                    other => return Err(format!("{w:?}: {:?}", other.err())),
+                }
+            }
+            Ok(())
+        }),
         "endpoint.workspace" => Box::pin(async move {
             let c = Client::new(WORKSPACE, Auth::token(PAT)).map_err(s)?;
             ensure!(
@@ -1594,6 +1628,33 @@ async fn sign_in(m: &Mock, c: &Client) -> R {
     Ok(())
 }
 
+/// A token store whose `with_lock` runs one piece of work at a time: what a database or Redis lock gives a shared store.
+#[derive(Default)]
+struct LockingStore {
+    inner: MemoryTokenStore,
+    lock: tokio::sync::Mutex<()>,
+    locks: AtomicUsize,
+}
+
+impl TokenStore for LockingStore {
+    fn load(&self) -> caitlyn_sdk_core::BoxFuture<'_, Option<OAuthTokens>> {
+        self.inner.load()
+    }
+    fn save(&self, tokens: OAuthTokens) -> caitlyn_sdk_core::BoxFuture<'_, ()> {
+        self.inner.save(tokens)
+    }
+    fn clear(&self) -> caitlyn_sdk_core::BoxFuture<'_, ()> {
+        self.inner.clear()
+    }
+    fn with_lock<'a>(&'a self, work: caitlyn_sdk_core::BoxFuture<'a, ()>) -> caitlyn_sdk_core::BoxFuture<'a, ()> {
+        self.locks.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async move {
+            let _held = self.lock.lock().await;
+            work.await;
+        })
+    }
+}
+
 fn auth_case<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
     let oauth = || Auth::oauth("studio-client").redirect_uri("https://app.example.com/callback");
     Some(match id {
@@ -1853,6 +1914,44 @@ fn auth_case<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                     .unwrap_or_default()
                     .starts_with("Bearer cai_refresh_"),
                 "authorization"
+            );
+            Ok(())
+        }),
+        "auth.oauth-401-single-flight" => Box::pin(async move {
+            let c = client_with(m, oauth().token_store(Arc::new(MemoryTokenStore::default())));
+            sign_in(m, &c).await?;
+            read(&c).await.map_err(s)?;
+            // Every call is sent with the token the server now refuses; the 401s after the first arrive after its refresh.
+            m.faults(json!({"auth": {"revokeIssued": true, "laterRefusalsDelayMs": 300}})).await;
+            let (r1, r2, r3, r4, r5) = tokio::join!(read(&c), read(&c), read(&c), read(&c), read(&c));
+            r1.and(r2).and(r3).and(r4).and(r5).map_err(s)?;
+            let n = m.counts().await["refresh_token"].clone();
+            ensure!(n == json!(1), "{n} refreshes, want 1");
+            Ok(())
+        }),
+        "auth.oauth-shared-store-lock" => Box::pin(async move {
+            let store = Arc::new(LockingStore::default());
+            sign_in(m, &client_with(m, oauth().token_store(store.clone()))).await?;
+            let mut t = store.inner.get().ok_or("nothing stored")?;
+            t.expires_at = Some(chrono::Utc::now() - chrono::Duration::seconds(1)); // both clients find it expired
+            store.inner.save(t).await;
+            // The first refresh is still in flight when the second client asks.
+            m.faults(json!({"auth": {"refreshDelayMs": 300}})).await;
+            let a = client_with(m, Auth::oauth("studio-client").token_store(store.clone()));
+            let b = client_with(m, Auth::oauth("studio-client").token_store(store.clone()));
+            let (ra, rb) = tokio::join!(read(&a), read(&b));
+            ra.and(rb).map_err(s)?;
+            let n = m.counts().await["refresh_token"].clone();
+            ensure!(n == json!(1), "{n} refreshes, want 1");
+            let api = m.api().await;
+            let sent: Vec<_> = api[api.len() - 2..]
+                .iter()
+                .map(|r| header(r, "authorization").unwrap_or_default())
+                .collect();
+            ensure!(
+                sent[0] == sent[1] && sent[0].starts_with("Bearer cai_refresh_") && store.locks.load(Ordering::SeqCst) >= 2,
+                "sent {sent:?} after {} locks; want the first client's tokens twice",
+                store.locks.load(Ordering::SeqCst)
             );
             Ok(())
         }),

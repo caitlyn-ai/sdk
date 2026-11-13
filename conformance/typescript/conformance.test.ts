@@ -753,6 +753,18 @@ async function oauthSignIn(c: Caitlyn): Promise<URL> {
   return new URL(url);
 }
 
+test('[endpoint.workspace-url] a workspace URL is its hostname; a path, query, fragment, user or other scheme is refused', async () => {
+  const make = (workspace: string) => new Caitlyn({ workspace, auth: { mode: 'token', token: 'pat_test' } });
+  for (const w of ['https://your-company.getcaitlyn.ai', 'https://your-company.getcaitlyn.ai/', 'your-company.getcaitlyn.ai/', 'HTTPS://Your-Company.GetCaitlyn.ai']) {
+    const c = make(w);
+    assert.equal(c.auth.workspace, 'your-company.getcaitlyn.ai', w);
+    assert.equal(c.auth.tokenEndpoint, 'https://your-company.getcaitlyn.ai/api/oauth/token', w);
+  }
+  for (const w of ['https://your-company.getcaitlyn.ai/api', 'https://your-company.getcaitlyn.ai/?x=1', 'https://your-company.getcaitlyn.ai#top', 'http://your-company.getcaitlyn.ai', 'ftp://your-company.getcaitlyn.ai', 'me@your-company.getcaitlyn.ai', '']) {
+    assert.throws(() => make(w), (e: Error) => e instanceof TypeError && e.message.includes('your-company.getcaitlyn.ai or https://your-company.getcaitlyn.ai'), JSON.stringify(w));
+  }
+});
+
 test('[auth.workspace] the workspace sets the endpoint and the token audience; endpoint overrides only where requests go', async () => {
   await signInRequired();
   // A workspace given as a URL is reduced to its hostname.
@@ -886,6 +898,48 @@ test('[auth.oauth-401-refreshes] a stored token the server refuses is not sent a
   assert.equal(sent.length, 3);
   assert.equal(sent[1], sent[0], 'the refused token');
   assert.match(sent[2], /^Bearer cai_refresh_/);
+});
+
+test('[auth.oauth-401-single-flight] five 401s that arrive one after another cause one refresh, and every call succeeds', async () => {
+  await signInRequired();
+  const c = signedIn({ mode: 'oauth', clientId: MOCK_OAUTH_CLIENT.id, redirectUri: 'https://app.example.com/callback', tokenStore: memoryStore() });
+  await oauthSignIn(c);
+  await read(c);
+  // Every call is sent with the token the server now refuses; the 401s after the first arrive after its refresh.
+  await faults({ auth: { revokeIssued: true, laterRefusalsDelayMs: 300 } });
+  await Promise.all([read(c), read(c), read(c), read(c), read(c)]);
+  assert.equal((await authCounts()).refresh_token, 1);
+});
+
+/** A token store whose withLock runs one function at a time: what a database or Redis lock gives a shared store. */
+const lockingStore = (inner: ReturnType<typeof memoryStore>) => {
+  let tail: Promise<unknown> = Promise.resolve();
+  const s = Object.assign(inner, {
+    locks: 0,
+    withLock<T>(fn: () => Promise<T>): Promise<T> {
+      s.locks++;
+      const run = tail.then(fn);
+      tail = run.catch(() => undefined);
+      return run;
+    },
+  });
+  return s;
+};
+
+test('[auth.oauth-shared-store-lock] two clients sharing a locking store refresh once; the second uses the tokens the first saved', async () => {
+  await signInRequired();
+  const store = lockingStore(memoryStore());
+  await oauthSignIn(signedIn({ mode: 'oauth', clientId: MOCK_OAUTH_CLIENT.id, redirectUri: 'https://app.example.com/callback', tokenStore: store }));
+  store.tokens = { ...store.tokens!, expiresAt: Date.now() - 1 }; // both clients find an expired access token
+  await faults({ auth: { refreshDelayMs: 300 } }); // the first refresh is still in flight when the second client asks
+  const a = signedIn({ mode: 'oauth', clientId: MOCK_OAUTH_CLIENT.id, tokenStore: store });
+  const b = signedIn({ mode: 'oauth', clientId: MOCK_OAUTH_CLIENT.id, tokenStore: store });
+  await Promise.all([read(a), read(b)]);
+  assert.equal((await authCounts()).refresh_token, 1);
+  assert.ok(store.locks >= 2, 'both clients took the lock');
+  const sent = (await api()).slice(-2).map((r) => r.headers.authorization);
+  assert.equal(sent[0], sent[1], "the second client used the first one's tokens");
+  assert.match(sent[0], /^Bearer cai_refresh_/);
 });
 
 test('[auth.oauth-refresh-refused] a refused refresh token clears the store and asks for sign-in', async () => {

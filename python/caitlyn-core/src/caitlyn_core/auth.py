@@ -19,6 +19,7 @@ import base64
 import dataclasses
 import hashlib
 import os
+import re
 import secrets
 import threading
 import time
@@ -59,9 +60,40 @@ REFRESH_EARLY_SECONDS = 60.0
 REQUEST_ID_HEADER = "Caitlyn-Request-Id"
 
 
+_WORKSPACE_FORM = "your-company.getcaitlyn.ai or https://your-company.getcaitlyn.ai"
+_SCHEME = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.-]*)://")
+_HOST = re.compile(r"^[a-zA-Z0-9.-]+(:\d+)?$")
+
+
 def workspace_host(workspace: str) -> str:
-    """A workspace given as a hostname or a URL, as its bare hostname."""
-    return workspace.split("://", 1)[-1].split("/", 1)[0]
+    """A workspace given as a hostname (``your-company.getcaitlyn.ai``) or as its URL
+    (``https://your-company.getcaitlyn.ai``, with or without a trailing slash), as its bare hostname in lower case.
+    Anything else (another scheme, a path, a query string, a fragment, user information, an empty value) raises
+    ``ValueError`` naming the expected form (PROTOCOL.md 12.1)."""
+    given = str(workspace).strip()
+
+    def refuse(what: str) -> ValueError:
+        return ValueError(
+            f"workspace must be a hostname such as {_WORKSPACE_FORM}; {given!r} {what}. "
+            "Use endpoint= for a proxy or a local server."
+        )
+
+    if not given:
+        raise refuse("is empty")
+    scheme = _SCHEME.match(given)
+    if scheme and scheme.group(1).lower() != "https":
+        raise refuse(f"has the scheme {scheme.group(1)}:// (only https:// is allowed)")
+    host = given[scheme.end() :] if scheme else given
+    host = host.removesuffix("/")
+    if "?" in host or "#" in host:
+        raise refuse("has a query string or fragment")
+    if "/" in host:
+        raise refuse("has a path")
+    if "@" in host:
+        raise refuse("has user information")
+    if not _HOST.match(host) or host.startswith((".", "-")):
+        raise refuse("is not a hostname")
+    return host.lower()
 
 
 def workspace_audience(workspace: str) -> str:
@@ -129,6 +161,18 @@ class TokenStore(Protocol):
     def load(self) -> OAuthTokens | None | Awaitable[OAuthTokens | None]: ...
     def save(self, tokens: OAuthTokens) -> None | Awaitable[None]: ...
     def clear(self) -> None | Awaitable[None]: ...
+
+
+class LockingTokenStore(TokenStore, Protocol):
+    """A token store shared between clients or processes, which offers a lock they all respect (a database row
+    lock, a Redis lock, a file lock). The SDK loads, refreshes and saves inside ``with_lock``, so a refresh token,
+    which is single-use, is never sent twice, and a client that waited uses the tokens the other one saved
+    (PROTOCOL.md 12.2, ``oauth`` step 5).
+
+    ``with_lock(fn)`` calls ``fn()`` while holding the lock and returns its result. With ``AsyncCaitlyn``, ``fn()``
+    returns an awaitable and ``with_lock`` must be ``async`` and await it."""
+
+    def with_lock(self, fn: Callable[[], Any]) -> Any: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,6 +286,16 @@ class _AuthState:
     def renews(self) -> bool:
         """Whether a 401 is worth one more try with a new token."""
         return isinstance(self.mode, (ClientCredentials, OAuth, AwsIam, WorkloadIdentity))
+
+    def _store_lock(self) -> Callable[[Callable[[], Any]], Any] | None:
+        """The token store's ``with_lock``, in ``OAuth`` mode with a store that offers one (PROTOCOL.md 12.2,
+        ``oauth`` step 5): the SDK fetches inside it."""
+        m = self.mode
+        if isinstance(m, OAuth) and m.token_store is not None:
+            lock = getattr(m.token_store, "with_lock", None)
+            if callable(lock):
+                return cast(Callable[[Callable[[], Any]], Any], lock)
+        return None
 
     def _cached_token(self) -> str | None:
         return self._cached.token if self._cached is not None and self._cached.fresh() else None
@@ -493,7 +547,11 @@ class SyncAuthSession(_AuthState, httpx.Auth):
             assert flight.token is not None
             return flight.token
         try:
-            flight.token = run_sync(self._http, self._fetch())
+            lock = self._store_lock()
+            if lock is None:
+                flight.token = run_sync(self._http, self._fetch())
+            else:
+                flight.token = cast(str, lock(lambda: run_sync(self._http, self._fetch())))
             return flight.token
         except BaseException as e:
             flight.error = e
@@ -550,7 +608,11 @@ class AsyncAuthSession(_AuthState, httpx.Auth):
         flight.add_done_callback(lambda f: f.cancelled() or f.exception())  # retrieved even when nobody waits
         self._flight = flight
         try:
-            token = await run_async(self._http, self._fetch())
+            lock = self._store_lock()
+            if lock is None:
+                token = await run_async(self._http, self._fetch())
+            else:
+                token = cast(str, await lock(lambda: run_async(self._http, self._fetch())))
         except BaseException as e:
             if isinstance(e, Exception):
                 flight.set_exception(e)

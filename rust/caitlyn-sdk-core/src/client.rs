@@ -27,9 +27,59 @@ pub struct SdkInfo {
 /// A workspace given as a hostname or a URL, as its bare hostname: `https://acme.getcaitlyn.ai/` gives
 /// `acme.getcaitlyn.ai`.
 pub fn workspace_host(workspace: &str) -> String {
+    if let Ok(host) = parse_workspace(workspace) {
+        return host;
+    }
     let w = workspace.trim();
     let w = w.strip_prefix("https://").or_else(|| w.strip_prefix("http://")).unwrap_or(w);
     w.split('/').next().unwrap_or_default().to_owned()
+}
+
+/// A workspace given as a hostname (`your-company.getcaitlyn.ai`) or as its URL (`https://your-company.getcaitlyn.ai`,
+/// with or without a trailing slash), as its bare hostname in lower case. Anything else (another scheme, a path, a
+/// query string, a fragment, user information, an empty value) is an error message that names the expected form
+/// (PROTOCOL.md 12.1). [`ClientBuilder::build`] calls it.
+pub fn parse_workspace(workspace: &str) -> Result<String, String> {
+    let given = workspace.trim();
+    let refuse = |what: &str| {
+        Err(format!(
+            "must be a hostname such as your-company.getcaitlyn.ai or https://your-company.getcaitlyn.ai; {given:?} {what}. \
+             Use ClientBuilder::endpoint for a proxy or a local server"
+        ))
+    };
+    if given.is_empty() {
+        return refuse("is empty");
+    }
+    let mut host = given;
+    if let Some(i) = given.find("://") {
+        let scheme = &given[..i];
+        let is_scheme = scheme.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+            && scheme.chars().all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c));
+        if is_scheme {
+            if !scheme.eq_ignore_ascii_case("https") {
+                return refuse(&format!("has the scheme {scheme}:// (only https:// is allowed)"));
+            }
+            host = &given[i + 3..];
+        }
+    }
+    let host = host.strip_suffix('/').unwrap_or(host);
+    if host.contains(['?', '#']) {
+        return refuse("has a query string or fragment");
+    }
+    if host.contains('/') {
+        return refuse("has a path");
+    }
+    if host.contains('@') {
+        return refuse("has user information");
+    }
+    let (name, port) = host.split_once(':').unwrap_or((host, ""));
+    let name_ok =
+        !name.is_empty() && !name.starts_with(['.', '-']) && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
+    let port_ok = !host.contains(':') || (!port.is_empty() && port.chars().all(|c| c.is_ascii_digit()));
+    if !name_ok || !port_ok {
+        return refuse("is not a hostname");
+    }
+    Ok(host.to_ascii_lowercase())
 }
 
 /// The base URL of a workspace's API, `https://<workspace>/api`; operation paths (`/v3/…`) are appended to it.
@@ -119,10 +169,13 @@ impl ClientBuilder {
     }
 
     pub fn build(self) -> Result<Client, Error> {
-        let workspace = workspace_host(&self.workspace);
-        if workspace.is_empty() {
-            return Err(Error::missing_input("Client", "workspace"));
-        }
+        let workspace = parse_workspace(&self.workspace).map_err(|reason| {
+            Error::Input(crate::error::InputError {
+                operation: "Client".to_owned(),
+                member: "workspace".to_owned(),
+                reason,
+            })
+        })?;
         let endpoint = self.endpoint.unwrap_or_else(|| workspace_endpoint(&workspace));
         let http = match self.http {
             Some(h) => h,
@@ -297,8 +350,9 @@ impl Client {
                     caitlyn.request_id = Empty,
                     caitlyn.server.api_version = Empty,
                 );
+                let mut sent_token = None;
                 let result = self
-                    .attempt(op, &req, opts, idempotency_key.as_deref())
+                    .attempt(op, &req, opts, idempotency_key.as_deref(), &mut sent_token)
                     .instrument(attempt_span)
                     .await;
                 let span = tracing::Span::current();
@@ -319,7 +373,8 @@ impl Client {
                     // One more try with a new token when the server stopped accepting the cached one.
                     if e.status == 401 && !signed_in_again && self.inner.auth.can_refresh() {
                         signed_in_again = true;
-                        self.inner.auth.invalidate().await;
+                        // Forget only the token that was refused: one renewed meanwhile by another call stays.
+                        self.inner.auth.invalidate(sent_token.as_deref()).await;
                         continue;
                     }
                 }
@@ -358,6 +413,7 @@ impl Client {
         req: &Request,
         opts: &CallOptions,
         idempotency_key: Option<&str>,
+        sent_token: &mut Option<String>,
     ) -> Result<Response, AttemptError> {
         let mut url = format!("{}{}", self.inner.endpoint, req.path);
         if !req.query.is_empty() {
@@ -389,7 +445,10 @@ impl Client {
             append(&mut headers, "if-match", m);
         }
         match self.inner.auth.credential().await.map_err(|e| AttemptError::Other(e.into()))? {
-            Credential::Bearer(t) => append(&mut headers, "authorization", &format!("Bearer {t}")),
+            Credential::Bearer(t) => {
+                append(&mut headers, "authorization", &format!("Bearer {t}"));
+                *sent_token = Some(t);
+            }
             Credential::Session { cookie, origin } => {
                 if let Some(c) = cookie {
                     append(&mut headers, "cookie", &c);

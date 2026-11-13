@@ -116,9 +116,17 @@ func NewClient(sdk SDKInfo, workspace string, auth Auth, opts ...Option) (*Clien
 	for _, o := range opts {
 		o(&s)
 	}
+	if workspace != "" {
+		host, err := ParseWorkspace(workspace)
+		if err != nil {
+			return nil, err
+		}
+		workspace = host
+	}
 	if s.endpoint == "" {
 		if workspace == "" {
-			return nil, errors.New("caitlyn: a workspace or caitlyn.WithEndpoint is required")
+			_, err := ParseWorkspace(workspace) // names the expected form
+			return nil, err
 		}
 		s.endpoint = WorkspaceEndpoint(workspace)
 	}

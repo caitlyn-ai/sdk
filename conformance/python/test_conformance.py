@@ -674,6 +674,27 @@ async def test_telemetry(mock: Mock, case_id: str) -> None:
     assert all("traceparent" in r["headers"] for r in mock.api())
 
 
+@case("endpoint.workspace-url")
+async def test_endpoint_workspace_url(mock: Mock, case_id: str) -> None:
+    for w in ["https://your-company.getcaitlyn.ai", "https://your-company.getcaitlyn.ai/", "your-company.getcaitlyn.ai/", "HTTPS://Your-Company.GetCaitlyn.ai"]:
+        c = AsyncCaitlyn(workspace=w, auth=Token("pat_test"))
+        assert c.auth.workspace == "your-company.getcaitlyn.ai", w
+        assert c.auth.token_endpoint == "https://your-company.getcaitlyn.ai/api/oauth/token", w
+        await c.aclose()
+    refused = [
+        "https://your-company.getcaitlyn.ai/api",
+        "https://your-company.getcaitlyn.ai/?x=1",
+        "https://your-company.getcaitlyn.ai#top",
+        "http://your-company.getcaitlyn.ai",
+        "ftp://your-company.getcaitlyn.ai",
+        "me@your-company.getcaitlyn.ai",
+        "",
+    ]
+    for w in refused:
+        with pytest.raises(ValueError, match="your-company.getcaitlyn.ai or https://your-company.getcaitlyn.ai"):
+            AsyncCaitlyn(workspace=w, auth=Token("pat_test"))
+
+
 @case("endpoint.workspace")
 async def test_endpoint(mock: Mock, case_id: str) -> None:
     assert workspace_endpoint("your-company.getcaitlyn.ai") == "https://your-company.getcaitlyn.ai/api"
@@ -924,6 +945,49 @@ async def test_auth_oauth_refresh(mock: Mock, case_id: str) -> None:
     assert mock.auth_counts()["refresh_token"] == 1, "one refresh however many calls wait"
     assert store.tokens.refresh_token != first
     assert mock.api()[-1]["headers"]["authorization"].startswith("Bearer cai_refresh_")
+
+
+@case("auth.oauth-401-single-flight")
+async def test_auth_oauth_401_single_flight(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    c = signed_in(mock, OAuth(MOCK_OAUTH_CLIENT[0], redirect_uri=REDIRECT, token_store=MemoryStore()))
+    await oauth_sign_in(c)
+    await read(c)
+    # Every call is sent with the token the server now refuses; the 401s after the first arrive after its refresh.
+    mock.faults(auth={"revokeIssued": True, "laterRefusalsDelayMs": 300})
+    await asyncio.gather(*(read(c) for _ in range(5)))
+    assert mock.auth_counts()["refresh_token"] == 1
+
+
+class LockingStore(MemoryStore):
+    """A token store whose with_lock runs one function at a time: what a database or Redis lock gives a shared store."""
+
+    def __init__(self, tokens: OAuthTokens | None = None) -> None:
+        super().__init__(tokens)
+        self.lock = asyncio.Lock()
+        self.locks = 0
+
+    async def with_lock(self, fn: Callable[[], Awaitable[T]]) -> T:
+        self.locks += 1
+        async with self.lock:
+            return await fn()
+
+
+@case("auth.oauth-shared-store-lock")
+async def test_auth_oauth_shared_store_lock(mock: Mock, case_id: str) -> None:
+    sign_in_required(mock)
+    store = LockingStore()
+    await oauth_sign_in(signed_in(mock, OAuth(MOCK_OAUTH_CLIENT[0], redirect_uri=REDIRECT, token_store=store)))
+    assert store.tokens is not None
+    store.tokens = dataclasses.replace(store.tokens, expires_at=time.time() - 1)  # both clients find it expired
+    mock.faults(auth={"refreshDelayMs": 300})  # the first refresh is still in flight when the second client asks
+    a = signed_in(mock, OAuth(MOCK_OAUTH_CLIENT[0], token_store=store))
+    b = signed_in(mock, OAuth(MOCK_OAUTH_CLIENT[0], token_store=store))
+    await asyncio.gather(read(a), read(b))
+    assert mock.auth_counts()["refresh_token"] == 1
+    assert store.locks >= 2
+    sent = [r["headers"]["authorization"] for r in mock.api()[-2:]]
+    assert sent[0] == sent[1] and sent[0].startswith("Bearer cai_refresh_"), "the second client used the first one's tokens"
 
 
 @case("auth.oauth-401-refreshes")

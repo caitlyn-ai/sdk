@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -79,6 +80,14 @@ type TokenStore interface {
 	Load(ctx context.Context) (*OAuthTokens, error)
 	Save(ctx context.Context, tokens OAuthTokens) error
 	Clear(ctx context.Context) error
+}
+
+// TokenStoreLocker is what a TokenStore shared between clients or processes also implements: a lock they all
+// respect (a database row lock, a Redis lock, a file lock). The OAuth mode loads, refreshes and saves inside
+// WithLock, so a refresh token, which is single-use, is never sent twice, and a client that waited uses the tokens
+// the other one saved (PROTOCOL.md 12.2, oauth step 5). WithLock runs fn while holding the lock and returns its error.
+type TokenStoreLocker interface {
+	WithLock(ctx context.Context, fn func(ctx context.Context) error) error
 }
 
 // ClientCredentials signs in with a client ID and secret (a machine client).
@@ -159,6 +168,9 @@ func (Session) Authorize(context.Context, *http.Request) error { return errUnbou
 
 // WorkspaceHost reduces a workspace given as a hostname or a URL to its hostname.
 func WorkspaceHost(workspace string) string {
+	if host, err := ParseWorkspace(workspace); err == nil {
+		return host
+	}
 	host := workspace
 	if i := strings.Index(host, "://"); i >= 0 {
 		host = host[i+3:]
@@ -167,6 +179,44 @@ func WorkspaceHost(workspace string) string {
 		host = host[:i]
 	}
 	return host
+}
+
+var (
+	workspaceScheme = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9+.-]*)://`)
+	workspaceHostRE = regexp.MustCompile(`^[a-zA-Z0-9.-]+(:[0-9]+)?$`)
+)
+
+// ParseWorkspace reduces a workspace given as a hostname (your-company.getcaitlyn.ai) or as its URL
+// (https://your-company.getcaitlyn.ai, with or without a trailing slash) to its bare hostname in lower case. Anything
+// else (another scheme, a path, a query string, a fragment, user information, an empty value) is an error that names
+// the expected form (PROTOCOL.md 12.1). NewClient calls it.
+func ParseWorkspace(workspace string) (string, error) {
+	given := strings.TrimSpace(workspace)
+	refuse := func(what string) (string, error) {
+		return "", fmt.Errorf("caitlyn: workspace must be a hostname such as your-company.getcaitlyn.ai or https://your-company.getcaitlyn.ai; %q %s. Use caitlyn.WithEndpoint for a proxy or a local server", given, what)
+	}
+	if given == "" {
+		return refuse("is empty")
+	}
+	host := given
+	if m := workspaceScheme.FindStringSubmatch(given); m != nil {
+		if !strings.EqualFold(m[1], "https") {
+			return refuse("has the scheme " + m[1] + ":// (only https:// is allowed)")
+		}
+		host = given[len(m[0]):]
+	}
+	host = strings.TrimSuffix(host, "/")
+	switch {
+	case strings.ContainsAny(host, "?#"):
+		return refuse("has a query string or fragment")
+	case strings.Contains(host, "/"):
+		return refuse("has a path")
+	case strings.Contains(host, "@"):
+		return refuse("has user information")
+	case !workspaceHostRE.MatchString(host) || strings.HasPrefix(host, ".") || strings.HasPrefix(host, "-"):
+		return refuse("is not a hostname")
+	}
+	return strings.ToLower(host), nil
 }
 
 // WorkspaceAudience is the audience of a workspace's tokens, https://<workspace>/api.
@@ -381,6 +431,16 @@ func (s *AuthSession) fetchToken(ctx context.Context) (string, error) {
 		}
 		t, err = s.requestToken(ctx, p)
 	case OAuth:
+		// Load, decide, refresh and save under the store's lock, when it offers one (PROTOCOL.md 12.2, oauth step 5).
+		if l, ok := a.TokenStore.(TokenStoreLocker); ok {
+			var tok string
+			err := l.WithLock(ctx, func(ctx context.Context) error {
+				var err error
+				tok, err = s.oauthToken(ctx, a)
+				return err
+			})
+			return tok, err
+		}
 		return s.oauthToken(ctx, a)
 	case AWSIAM:
 		var subject string

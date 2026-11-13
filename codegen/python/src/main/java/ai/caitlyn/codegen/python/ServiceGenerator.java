@@ -725,7 +725,7 @@ final class ServiceGenerator {
             w.write("$D\n", "Sign-in modes (model/PROTOCOL.md section 12): `Token`, `ClientCredentials`, `OAuth`, `AwsIam`, "
                     + "`WorkloadIdentity` and `Session`.");
             List<String> names = List.of("AsyncAuthSession", "Auth", "AuthorizationRequest", "AwsCredentials", "AwsIam", "CaitlynAuthError",
-                    "ClientCredentials", "OAuth", "OAuthTokens", "Session", "SyncAuthSession", "Token", "TokenStore", "WorkloadIdentity");
+                    "ClientCredentials", "LockingTokenStore", "OAuth", "OAuthTokens", "Session", "SyncAuthSession", "Token", "TokenStore", "WorkloadIdentity");
             for (String n : names) {
                 w.importFrom(CORE + ".auth", n);
             }
