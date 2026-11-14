@@ -40,6 +40,8 @@ Before you begin, ensure you have:
 
 Open **Settings → Connectors**, then **Manage Connectors** in the title bar. The registry lists every connector registered for your organisation.
 
+![The Manage Connectors registry listing registered connectors](/images/tools/connectors-manage.webp)
+
 Choose **Add Connector** and pick the **Amazon Connect** template (or open an existing Amazon Connect connector with **Edit**). In the **AWS access** section, enter the ARN the role will have once created:
 
 ```

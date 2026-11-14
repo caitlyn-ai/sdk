@@ -77,7 +77,11 @@ Open **Settings → Connectors → Manage Connectors → Add Connector** and cho
 
 Instead of typing an ARN, you'll see a **Pick a runtime** list of runtimes discovered in the configured AWS region. Select yours. Caitlyn fills in the ARN, region, and name, then inspects the runtime and shows the detected auth mode.
 
+![The Add connector dialog with the Bedrock AgentCore template selected and the Pick a runtime list populated](/images/tools/agentcore-add-connector.webp)
+
 > **Detected: AWS IAM (SigV4).**
+
+![The Add connector dialog after selecting a runtime, showing the detected AWS IAM (SigV4) badge](/images/tools/agentcore-detected-auth.webp)
 
 Save. Because IAM connectors need no per-user sign-in, there is no Connect button, so the connector is ready immediately. (For the detailed click-path and per-user OAuth connectors, see **Managing Connectors** in Caitlyn's Help.)
 
@@ -92,6 +96,8 @@ Ask an agent a question that should trigger your tool. With the template's examp
 1. On **Settings → Connectors → Manage Connectors**, find your connector's card.
 2. Ask an agent whose workflow includes the connector a question that should trigger one of your tools.
 3. Open the agent's trace and confirm the tool call resolves with a result.
+
+![The registered AgentCore connector card showing bedrock-agentcore · iam](/images/tools/agentcore-connector-card.webp)
 
 **It works when:**
 
