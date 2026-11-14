@@ -48,10 +48,14 @@ The app registration is the identity Caitlyn uses to ask Microsoft "is this pers
 1. Go to the [Azure portal](https://portal.azure.com).
 2. Open **Microsoft Entra ID → App registrations**, then click **New registration**.
 
+![The App registrations page in Microsoft Entra ID with the New registration button in the toolbar](/images/sign-in/microsoft-app-registrations-list.webp)
+
 3. Give it a clear name, for example **`Caitlyn`**.
 4. Under **Supported account types**, choose **Single tenant only** followed by your organisation's name.
 5. Under **Redirect URI**, choose **Web** and paste the callback URL you were sent, exactly as written. If you do not have it yet, leave this empty and add it in Step 6.
 6. Click **Register**.
+
+![The Register an application form with the name set to Caitlyn, Single tenant only selected and the Redirect URI left empty](/images/sign-in/microsoft-app-registration.webp)
 
 ## Step 2: Collect the Credentials
 
@@ -67,20 +71,28 @@ Caitlyn needs three values from the registration you just created. Each one goes
 
 Both values are on the app registration's **Overview** page, under **Essentials**. Use the copy button beside each value rather than selecting the text.
 
+![The app registration Overview page with the copy button beside the Application (client) ID](/images/sign-in/microsoft-overview-client-id.webp)
+
 ### Client Secret
 
 1. In the app's left sidebar, go to **Certificates & secrets**, open the **Client secrets** tab, and click **New client secret**.
 2. Enter a **Description** (for example **`Caitlyn`**), choose an **Expires** period, and click **Add**.
 
+![The Add a client secret panel with the description set to Caitlyn and an expiry of 730 days (24 months)](/images/sign-in/microsoft-client-secret-add.webp)
+
 > **Note**: Client secrets expire. Note the expiry date you chose, and before then create a new secret and replace the stored one in Caitlyn (**Settings → Sign-in Methods → Edit → Replace credentials**), or send it to us. We recommend a 12- or 24-month expiry.
 
 3. Copy the new secret's **Value** with the copy button beside it.
+
+![The Client secrets tab listing the new secret, with the copy button beside its Value](/images/sign-in/microsoft-client-secret.webp)
 
 ## Step 3: Add Microsoft Graph Permissions
 
 This is the step most administrators rightly scrutinise, so the next section explains the reasoning in full. In short, Caitlyn requests four narrow delegated permissions: three are needed for sign-in, session refresh, and group-based access control; the fourth powers an optional sharing picker and doesn't require admin consent.
 
 1. In the app's left sidebar, go to **API permissions → Add a permission**.
+
+![The API permissions page, showing the Add a permission button above the configured Microsoft Graph permissions](/images/sign-in/microsoft-api-permissions.webp)
 
 2. Choose **Microsoft Graph → Delegated permissions**.
 
@@ -96,15 +108,25 @@ Microsoft Graph sorts its permissions into groups, so the four permissions are i
 
 `offline_access` is in **OpenId permissions**, the first group in the list:
 
+![The Request API permissions panel with Delegated permissions selected and offline_access ticked under OpenId permissions](/images/sign-in/microsoft-graph-permissions-openid.webp)
+
 `User.Read` and `User.ReadBasic.All` are in the **User** group:
 
+![The User group in the Request API permissions panel with User.Read and User.ReadBasic.All ticked](/images/sign-in/microsoft-graph-permissions-user.webp)
+
 `GroupMember.Read.All` is in the **GroupMember** group:
+
+![The GroupMember group in the Request API permissions panel with GroupMember.Read.All ticked](/images/sign-in/microsoft-graph-permissions-groupmember.webp)
 
 4. Click **Add permissions**. If you are adding permissions to a registration that already has some, the button reads **Update permissions**.
 
 The four permissions are now listed under **Configured permissions**. `GroupMember.Read.All` shows **Not granted** in the **Status** column until you grant admin consent in the next step.
 
+![The Configured permissions table listing the four Microsoft Graph delegated permissions, with GroupMember.Read.All marked Not granted](/images/sign-in/microsoft-graph-permissions-added.webp)
+
 5. Click **Grant admin consent for `{Your Organisation}`**, then click **Yes** to confirm. You should see a green tick in the **Status** column for each permission.
+
+![The Grant admin consent confirmation dialog with the Yes and No buttons](/images/sign-in/microsoft-graph-permissions-consent.webp)
 
 ## Why Caitlyn Asks for These Permissions
 
@@ -155,18 +177,26 @@ To create each group:
 
 1. In the [Microsoft Entra admin centre](https://entra.microsoft.com/), go to **Entra ID → Groups → All groups**, then select **New group**.
 
+![The All groups page in the Microsoft Entra admin centre with the New group button in the toolbar](/images/sign-in/microsoft-groups-list.webp)
+
 2. Configure:
    - **Group type:** Security
    - **Group name:** `Caitlyn_Chat` (then repeat for `Caitlyn_Admin`)
    - **Membership type:** Assigned
 
+![The New Group form with Group type set to Security, Group name set to Caitlyn_Chat and Membership type set to Assigned](/images/sign-in/microsoft-group-new.webp)
+
 3. Add the relevant members under **Members**, then select **Create**. You can also add members after the group is created, from the group's **Members** page with **Add members**.
+
+![The Members page of the Caitlyn_Chat group listing its direct members, with the Add members button in the toolbar](/images/sign-in/microsoft-group-members.webp)
 
 4. Repeat for the second group.
 
 > **Note**: A person who needs admin access should be added to **both** groups; admin access does not automatically include chat access. You can add or remove members at any time; changes take effect at that person's next sign-in.
 
 After creating each group, open it and copy its **Object ID** from the group's **Overview** page with the copy button beside it. Caitlyn needs the Object ID, not the group's name.
+
+![The Caitlyn_Chat group Overview page with the copy button beside the Object ID](/images/sign-in/microsoft-group-object-id.webp)
 
 If we are adding the sign-in method for you, send your Caitlyn onboarding contact these values, with the client secret through a secure channel rather than plain email:
 
@@ -214,11 +244,17 @@ Sign-in fails until this URL is registered on the app registration.
 1. In the [Azure portal](https://portal.azure.com), open **App registrations → your app → Authentication**. The portal may label this page **Authentication (Preview)**.
 2. On the **Redirect URI configuration** tab, click **Add Redirect URI**, then choose **Web** under **Web applications**. If a Web platform already exists, add a new entry to it instead.
 
+![The Select a platform to add redirect URI panel with the Web option under Web applications](/images/sign-in/microsoft-redirect-platform.webp)
+
 3. Paste the callback URL into **Redirect URI** exactly as Caitlyn shows it. Use the copy button in Caitlyn rather than retyping it.
 4. Under **Implicit grant and hybrid flows**, ensure **Access tokens** and **ID tokens** are both ticked.
 5. Click **Configure**. In the older Authentication page, this button is **Save**.
 
+![The Add Redirect URI panel with a Caitlyn callback URL entered and both Access tokens and ID tokens ticked](/images/sign-in/microsoft-redirect-add.webp)
+
 The callback URL is now listed under the **Web** platform.
+
+![The Redirect URI configuration tab listing the Caitlyn callback URL under the Web platform](/images/sign-in/microsoft-redirect-list.webp)
 
 > **Note**: If you have both a staging and a production Caitlyn domain, each has its own sign-in method and its own callback URL. Add both URLs to the same app registration.
 

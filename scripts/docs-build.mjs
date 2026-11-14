@@ -153,6 +153,8 @@ for (const p of pages) {
   for (const m of p.body.matchAll(/\]\((\/[^)\s]*)\)/g)) {
     const [target, anchor] = m[1].split('#');
     if (target === '/llms.txt' || target === '/llms-full.txt') continue;
+    // A file the site publishes as it is, such as a screenshot in docs/site/public/images/
+    if (!target.endsWith('/') && fs.existsSync(path.join(project, 'public', target))) continue;
     const slug = target.replace(/^\/|\/$/g, '');
     if (!target.endsWith('/') || !slugs.has(slug)) fail(p.source === 'the model' ? `${p.slug} (generated)` : p.source, `the link ${m[1]} names no page (page links end in /)`);
     else if (anchor !== undefined && !anchors(bySlugEarly.get(slug)).has(anchor)) fail(p.source === 'the model' ? `${p.slug} (generated)` : p.source, `the link ${m[1]} names no heading on that page`);
