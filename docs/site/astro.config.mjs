@@ -30,7 +30,7 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'Caitlyn developer docs',
-      description: 'The Caitlyn v3 API and its SDKs for TypeScript, Python, Go and Rust.',
+      description: 'The Caitlyn v3 API and its SDKs.',
       // The approved Caitlyn lockup, as supplied by the design system (the PNGs, which share one tight crop): black
       // on light grounds, white on dark
       logo: {
