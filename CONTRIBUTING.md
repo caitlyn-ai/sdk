@@ -90,6 +90,29 @@ There are two kinds of case:
 `scripts/check-conformance.mjs` reads each harness's report (`build/conformance/`) and fails if any case is
 missing or failed in any language.
 
+## Running the examples against a workspace
+
+The conformance suites run against a mock server. The developer docs' examples also run against a real Caitlyn
+workspace, so an example in the docs is known to work, not only to compile. `scripts/examples-live.mjs` runs
+each SDK's examples in the toolchain image against the workspace's API and prints a table of checks: one per
+operation, and one that `stream.reset` reaches the caller.
+
+```sh
+CAITLYN_WORKSPACE=your-workspace.example.com CAITLYN_AGENT_ID=… CAITLYN_TOKEN_REF='op://…' \
+  make examples-live            # or: node scripts/examples-live.mjs typescript python
+```
+
+- `CAITLYN_WORKSPACE` is the workspace's hostname. The examples call `https://<workspace>/api`, or
+  `CAITLYN_ENDPOINT` when it is set.
+- The credential is a personal access token for a person in that workspace: `CAITLYN_TOKEN`, or
+  `CAITLYN_TOKEN_REF`, a 1Password secret reference the script reads with `op read`. It is passed into the
+  container by name, never on a command line, and the script never prints it.
+- `CAITLYN_AGENT_ID` is an agent whose draft can answer.
+- Each language's runner is `scripts/examples-live/<language>.sh`. It runs the examples with the client's
+  `endpoint` set to `CAITLYN_ENDPOINT`, and prints `ok <check>` or `fail <check>: <why>` for each check.
+
+It needs a workspace and a credential, so it is not part of `make check` or CI.
+
 ## The model snapshot
 
 `model/model.json`, `model/openapi.json` and `model/PROTOCOL.md` are a copy of the app's model, whose source is
