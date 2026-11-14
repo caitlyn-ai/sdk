@@ -21,11 +21,8 @@ Caitlyn as the person using it:
 Both use the SDK's `oauth` mode. Personal access tokens (`token` mode) are for scripts and local testing,
 never for a page other people use.
 
-> **Not live yet.** The v3 API, browser API clients and cross-origin calls to v3 are being built in
-> [caitlyn!2062](https://git.customd.com/custom-d/caitlyn/platform/caitlyn/-/merge_requests/2062), and the SDK's
-> browser checks (see [What the SDK refuses in a browser](#what-the-sdk-refuses-in-a-browser)) come in the
-> TypeScript SDK's next release. This page describes how they will work; until the server change is released,
-> pattern 2 cannot reach a Caitlyn workspace.
+> **Not available yet.** Caitlyn workspaces do not accept browser API clients or cross-origin calls to the v3 API
+> yet, so a browser-only app (pattern 2) cannot reach a workspace. This page describes how it works.
 
 ## Which pattern to use
 
@@ -372,8 +369,7 @@ environment.
 
 ## What the SDK refuses in a browser
 
-The TypeScript SDK checks where it is running, and refuses to hold a secret in a browser. These checks come
-in its next release (`PROTOCOL.md` section 12.6 specifies them).
+The TypeScript SDK checks where it is running, and refuses to hold a secret in a browser.
 
 | Sign-in | In a browser |
 | --- | --- |

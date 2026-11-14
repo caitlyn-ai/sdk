@@ -72,10 +72,13 @@ patient, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token(os
 ```
 <!-- example: examples/rust/src/concepts.rs#retries -->
 ```rust tab="Rust"
-let patient = Client::builder("your-company.getcaitlyn.ai", Auth::token(std::env::var("CAITLYN_TOKEN")?))
-    .max_attempts(5) // the first attempt included; default 3
-    .max_retry_delay(Duration::from_secs(120)) // the longest Retry-After to wait for; default 60 s
-    .build()?;
+let patient = Client::builder(
+    "your-company.getcaitlyn.ai",
+    Auth::token(std::env::var("CAITLYN_TOKEN")?),
+)
+.max_attempts(5) // the first attempt included; default 3
+.max_retry_delay(Duration::from_secs(120)) // the longest Retry-After to wait for; default 60 s
+.build()?;
 ```
 
 ## The retry budget
@@ -120,9 +123,12 @@ batch, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token(os.G
 ```
 <!-- example: examples/rust/src/concepts.rs#retry-budget -->
 ```rust tab="Rust"
-let batch = Client::builder("your-company.getcaitlyn.ai", Auth::token(std::env::var("CAITLYN_TOKEN")?))
-    .retry_budget(2000) // retry tokens shared by every call on this client; default 500, and 0 turns retries off
-    .build()?;
+let batch = Client::builder(
+    "your-company.getcaitlyn.ai",
+    Auth::token(std::env::var("CAITLYN_TOKEN")?),
+)
+.retry_budget(2000) // retry tokens shared by every call on this client; default 500, and 0 turns retries off
+.build()?;
 ```
 
 The SDKs do not slow themselves down to a rate of their own choosing. Caitlyn says when to slow down, with 429

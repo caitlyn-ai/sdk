@@ -13,7 +13,7 @@ operations:
 A list operation returns its results a page at a time. The SDKs hide the pages: iterate the result and each page
 is fetched when the loop reaches it, so a `break` stops fetching.
 
-> **Not yet available.** No Caitlyn release serves [ListDocuments](/reference/list-documents/) yet. This page
+> **Not available yet.** Caitlyn workspaces do not serve [ListDocuments](/reference/list-documents/) yet. This page
 > describes how the SDKs handle lists.
 
 <!-- example: examples/typescript/concepts.ts#pagination -->

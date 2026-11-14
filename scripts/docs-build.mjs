@@ -120,6 +120,34 @@ for (const p of pages) {
 }
 // No raw HTML headings: Astro gives them no id, while citation anchors count them (docs/site/test/heading-ids.test.mjs)
 for (const p of pages) if (/^\s*<h[1-6][\s>]/im.test(p.body)) fail(p.source, 'a raw HTML heading; write it as a Markdown heading');
+// Nothing on a page points readers at how Caitlyn is built: the protocol document, the model and its traits, the
+// generators, CI, repository paths, merge requests, internal hosts, or release plans. Say what the SDK does instead.
+// Prose is checked outside code; hosts and merge request links are checked everywhere.
+const INTERNAL_PROSE = [
+  [/PROTOCOL\.md/, 'PROTOCOL.md'],
+  [/\bsmithy\b/i, 'Smithy'],
+  [/\bconformance\b/i, 'the conformance suites'],
+  [/`@[a-z][A-Za-z]*`/, 'a model trait'],
+  [/\bcode owners\b/i, 'code owners'],
+  [/\b(?:codegen|generators?)\b/i, 'the generators'],
+  [/\bexamples:live\b/, 'a CI job of this repository'],
+  [/(?:^|[\s(`])(?:scripts|codegen|conformance|model)\/[\w.-]/, 'a repository path'],
+  [/\bnext release\b|\bnot in a release\b|\bno Caitlyn release\b|\breleased yet\b/i, 'release plans'],
+];
+const INTERNAL_ANYWHERE = [
+  [/merge_requests\/\d+|\b[\w-]+![0-9]{2,}\b/, 'a merge request'],
+  [/\bgit\.customd\.com\b|\bcustomd\.com\b|\blndo\.site\b|\bmr-\d+\.labs\b/i, 'an internal host'],
+];
+for (const p of pages) {
+  const where = p.source === 'the model' ? `${p.slug} (generated)` : p.source;
+  let fence = false;
+  for (const line of p.body.split('\n')) {
+    if (/^\s*```/.test(line)) fence = !fence;
+    const prose = fence || /^<!-- example:/.test(line) ? '' : line.replace(/`[^`]*`/g, (c) => (/^`@[a-z]/.test(c) ? c : '``'));
+    for (const [re, what] of INTERNAL_PROSE) if (re.test(prose)) fail(where, `mentions ${what}: "${line.trim().slice(0, 100)}"`);
+    for (const [re, what] of INTERNAL_ANYWHERE) if (re.test(line)) fail(where, `names ${what}: "${line.trim().slice(0, 100)}"`);
+  }
+}
 // Every site-relative link must name a page (with its trailing slash), an anchor on it, or a published file.
 for (const p of pages) {
   for (const m of p.body.matchAll(/\]\((\/[^)\s]*)\)/g)) {

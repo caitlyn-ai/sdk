@@ -86,12 +86,12 @@ func Clients(ctx context.Context, userID, sessionCookie string) error {
 	_ = ciJob
 
 	// #region session
-	localApp, err := caitlyn.NewClient("caitlyn.lndo.site",
-		caitlyn.Session{Cookie: sessionCookie, Origin: "https://caitlyn.lndo.site"})
+	appPage, err := caitlyn.NewClient("your-company.getcaitlyn.ai",
+		caitlyn.Session{Cookie: sessionCookie, Origin: "https://your-company.getcaitlyn.ai"})
 	// #endregion
 	if err != nil {
 		return err
 	}
-	_ = localApp
+	_ = appPage
 	return nil
 }

@@ -13,7 +13,28 @@ export { T, C };
 export function loadModel() {
   const file = path.join(root, 'build/model/model.json');
   if (!fs.existsSync(file)) throw new Error('build/model/model.json is missing: run node scripts/prepare-model.mjs first');
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
+  const ast = JSON.parse(fs.readFileSync(file, 'utf8'));
+  for (const shape of Object.values(ast.shapes)) {
+    for (const traits of [shape.traits, ...Object.values(shape.members ?? {}).map((m) => m.traits)]) {
+      if (traits?.[T('documentation')]) traits[T('documentation')] = publicDoc(traits[T('documentation')]);
+    }
+  }
+  return ast;
+}
+
+/** What marks a sentence of the model's documentation as written for the model's authors, not for readers. */
+export const INTERNAL_DOC = /PROTOCOL\.md|`@[a-z][A-Za-z]*`|\bsmithy\b|code owners|stamp-since/i;
+
+/**
+ * The model's documentation as the public docs show it: a sentence that talks about the model itself (its traits,
+ * PROTOCOL.md, who approves changes) is left out. scripts/docs-build.mjs fails on any that get through.
+ */
+export function publicDoc(text) {
+  return text
+    .split(/\n\s*\n/)
+    .map((para) => (INTERNAL_DOC.test(para) ? para.split(/(?<=[.!?])\s+(?=[A-Z`])/).filter((sentence) => !INTERNAL_DOC.test(sentence)).join(' ') : para))
+    .filter((para) => para.trim())
+    .join('\n\n');
 }
 
 export const local = (id) => id.split('#')[1];
@@ -146,7 +167,7 @@ export function operations(ast) {
         method,
         positional: label,
         http: t[T('http')],
-        stability: t[C('stability')] ?? 'ga',
+        stability: t[C('stability')] ?? 'beta',
         since: t[C('since')],
         doc: (t[T('documentation')] ?? '').trim(),
       };

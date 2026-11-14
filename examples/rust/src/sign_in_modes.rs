@@ -6,16 +6,26 @@ use caitlyn_sdk::auth::WorkloadIdentity;
 use caitlyn_sdk::{Auth, Callback, Client, MemoryTokenStore};
 
 /// One client per mode.
-pub async fn clients(session_cookie: &str, code: String, returned_state: String) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn clients(
+    session_cookie: &str,
+    code: String,
+    returned_state: String,
+) -> Result<(), Box<dyn std::error::Error>> {
     // #region token
-    let script = Client::new("your-company.getcaitlyn.ai", Auth::token(std::env::var("CAITLYN_TOKEN")?))?;
+    let script = Client::new(
+        "your-company.getcaitlyn.ai",
+        Auth::token(std::env::var("CAITLYN_TOKEN")?),
+    )?;
     // #endregion
 
     // #region client-credentials
     let service = Client::new(
         "your-company.getcaitlyn.ai",
-        Auth::client_credentials(std::env::var("CAITLYN_CLIENT_ID")?, std::env::var("CAITLYN_CLIENT_SECRET")?)
-            .scopes(["api:read"]),
+        Auth::client_credentials(
+            std::env::var("CAITLYN_CLIENT_ID")?,
+            std::env::var("CAITLYN_CLIENT_SECRET")?,
+        )
+        .scopes(["api:read"]),
     )?;
     // #endregion
 
@@ -47,17 +57,26 @@ pub async fn clients(session_cookie: &str, code: String, returned_state: String)
     // #endregion
 
     // #region aws-iam
-    let worker = Client::new("your-company.getcaitlyn.ai", Auth::aws_iam().region("ap-southeast-2"))?;
+    let worker = Client::new(
+        "your-company.getcaitlyn.ai",
+        Auth::aws_iam().region("ap-southeast-2"),
+    )?;
     // #endregion
 
     // #region workload-identity
-    let ci_job = Client::new("your-company.getcaitlyn.ai", WorkloadIdentity::from_env("CAITLYN_ID_TOKEN"))?;
+    let ci_job = Client::new(
+        "your-company.getcaitlyn.ai",
+        WorkloadIdentity::from_env("CAITLYN_ID_TOKEN"),
+    )?;
     // #endregion
 
     // #region session
-    let local_app = Client::new("caitlyn.lndo.site", Auth::session(session_cookie).origin("https://caitlyn.lndo.site"))?;
+    let app_page = Client::new(
+        "your-company.getcaitlyn.ai",
+        Auth::session(session_cookie).origin("https://your-company.getcaitlyn.ai"),
+    )?;
     // #endregion
 
-    drop((script, service, worker, ci_job, local_app));
+    drop((script, service, worker, ci_job, app_page));
     Ok(())
 }
