@@ -73,8 +73,8 @@ ci_job = Caitlyn(
 # #endregion
 
 # #region session
-local_app = Caitlyn(
-    workspace="caitlyn.lndo.site",
-    auth=Session(cookie=session_cookie, origin="https://caitlyn.lndo.site"),
+app_page = Caitlyn(
+    workspace="your-company.getcaitlyn.ai",
+    auth=Session(cookie=session_cookie, origin="https://your-company.getcaitlyn.ai"),
 )
 # #endregion

@@ -63,10 +63,10 @@ const ciJob = new Caitlyn({
 // #endregion
 
 // #region session
-const localApp = new Caitlyn({
-  workspace: 'caitlyn.lndo.site',
-  auth: { mode: 'session', cookie: sessionCookie, origin: 'https://caitlyn.lndo.site' },
+const appPage = new Caitlyn({
+  workspace: 'your-company.getcaitlyn.ai',
+  auth: { mode: 'session', cookie: sessionCookie, origin: 'https://your-company.getcaitlyn.ai' },
 });
 // #endregion
 
-export { script, service, asPerson, url, worker, ciJob, localApp };
+export { script, service, asPerson, url, worker, ciJob, appPage };

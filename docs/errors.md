@@ -90,7 +90,10 @@ default:
 ```
 <!-- example: examples/rust/src/concepts.rs#errors -->
 ```rust tab="Rust"
-let input = GetAgentVersionInput { agent_id: "GHT7YRWXPL".into(), version: "v99".into() };
+let input = GetAgentVersionInput {
+    agent_id: "GHT7YRWXPL".into(),
+    version: "v99".into(),
+};
 match client.versions().get(input).await {
     Ok(version) => println!("{}", version.name),
     Err(Error::NotFound(_)) => println!("No such version"),

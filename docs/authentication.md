@@ -52,7 +52,10 @@ script, err := caitlyn.NewClient("your-company.getcaitlyn.ai",
 ```
 <!-- example: examples/rust/src/sign_in_modes.rs#token -->
 ```rust tab="Rust"
-let script = Client::new("your-company.getcaitlyn.ai", Auth::token(std::env::var("CAITLYN_TOKEN")?))?;
+let script = Client::new(
+    "your-company.getcaitlyn.ai",
+    Auth::token(std::env::var("CAITLYN_TOKEN")?),
+)?;
 ```
 
 ## A service: client credentials
@@ -96,8 +99,11 @@ service, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.ClientCr
 ```rust tab="Rust"
 let service = Client::new(
     "your-company.getcaitlyn.ai",
-    Auth::client_credentials(std::env::var("CAITLYN_CLIENT_ID")?, std::env::var("CAITLYN_CLIENT_SECRET")?)
-        .scopes(["api:read"]),
+    Auth::client_credentials(
+        std::env::var("CAITLYN_CLIENT_ID")?,
+        std::env::var("CAITLYN_CLIENT_SECRET")?,
+    )
+    .scopes(["api:read"]),
 )?;
 ```
 
@@ -224,7 +230,7 @@ as_person
 
 ## A workload on AWS: awsIam
 
-> **Not live yet.** The SDKs have this mode, but Caitlyn does not accept workload sign-in yet.
+> **Not available yet.** The SDKs have this mode, but Caitlyn workspaces do not accept workload sign-in yet.
 
 A workload on AWS signs in with its own IAM role: no secret is stored anywhere. The client asks AWS STS
 (`GetWebIdentityToken`, on the regional endpoint) for a token AWS signs, and exchanges it for a Caitlyn token.
@@ -251,7 +257,10 @@ worker, err := caitlyn.NewClient("your-company.getcaitlyn.ai",
 ```
 <!-- example: examples/rust/src/sign_in_modes.rs#aws-iam -->
 ```rust tab="Rust"
-let worker = Client::new("your-company.getcaitlyn.ai", Auth::aws_iam().region("ap-southeast-2"))?;
+let worker = Client::new(
+    "your-company.getcaitlyn.ai",
+    Auth::aws_iam().region("ap-southeast-2"),
+)?;
 ```
 
 - **Credentials** come from `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (as Lambda sets them), then the
@@ -263,7 +272,7 @@ let worker = Client::new("your-company.getcaitlyn.ai", Auth::aws_iam().region("a
 
 ## A CI job or other workload: workloadIdentity
 
-> **Not live yet.** The SDKs have this mode, but Caitlyn does not accept workload sign-in yet.
+> **Not available yet.** The SDKs have this mode, but Caitlyn workspaces do not accept workload sign-in yet.
 
 A workload with an OpenID Connect token from an issuer the workspace trusts, such as a GitLab CI job's
 `id_tokens`, exchanges that token for a Caitlyn one. The function you give is called at every sign-in, because
@@ -300,37 +309,42 @@ ciJob, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.WorkloadId
 ```
 <!-- example: examples/rust/src/sign_in_modes.rs#workload-identity -->
 ```rust tab="Rust"
-let ci_job = Client::new("your-company.getcaitlyn.ai", WorkloadIdentity::from_env("CAITLYN_ID_TOKEN"))?;
+let ci_job = Client::new(
+    "your-company.getcaitlyn.ai",
+    WorkloadIdentity::from_env("CAITLYN_ID_TOKEN"),
+)?;
 ```
 
 ## The Caitlyn app: session
 
 `session` sends the Caitlyn app's own session cookie instead of a token, and an `Origin` header on every write.
-It is for the Caitlyn app itself and for tools that drive a local copy of it; an integration uses one of the
-other modes.
+It is for the Caitlyn app's own pages; an integration uses one of the other modes.
 
 <!-- example: examples/typescript/sign-in-modes.ts#session -->
 ```ts tab="TypeScript"
-const localApp = new Caitlyn({
-  workspace: 'caitlyn.lndo.site',
-  auth: { mode: 'session', cookie: sessionCookie, origin: 'https://caitlyn.lndo.site' },
+const appPage = new Caitlyn({
+  workspace: 'your-company.getcaitlyn.ai',
+  auth: { mode: 'session', cookie: sessionCookie, origin: 'https://your-company.getcaitlyn.ai' },
 });
 ```
 <!-- example: examples/python/sign_in_modes.py#session -->
 ```python tab="Python"
-local_app = Caitlyn(
-    workspace="caitlyn.lndo.site",
-    auth=Session(cookie=session_cookie, origin="https://caitlyn.lndo.site"),
+app_page = Caitlyn(
+    workspace="your-company.getcaitlyn.ai",
+    auth=Session(cookie=session_cookie, origin="https://your-company.getcaitlyn.ai"),
 )
 ```
 <!-- example: examples/go/signin/signin.go#session -->
 ```go tab="Go"
-localApp, err := caitlyn.NewClient("caitlyn.lndo.site",
-	caitlyn.Session{Cookie: sessionCookie, Origin: "https://caitlyn.lndo.site"})
+appPage, err := caitlyn.NewClient("your-company.getcaitlyn.ai",
+	caitlyn.Session{Cookie: sessionCookie, Origin: "https://your-company.getcaitlyn.ai"})
 ```
 <!-- example: examples/rust/src/sign_in_modes.rs#session -->
 ```rust tab="Rust"
-let local_app = Client::new("caitlyn.lndo.site", Auth::session(session_cookie).origin("https://caitlyn.lndo.site"))?;
+let app_page = Client::new(
+    "your-company.getcaitlyn.ai",
+    Auth::session(session_cookie).origin("https://your-company.getcaitlyn.ai"),
+)?;
 ```
 
 ## Rules every credential follows

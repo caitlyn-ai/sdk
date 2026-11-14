@@ -14,8 +14,8 @@ operations:
 An agent's answer arrives as it is written, as a stream of typed events. [SendMessage](/reference/send-message/)
 returns one; each SDK gives you something to iterate, and the finished message at the end.
 
-> **Not yet available.** No Caitlyn release serves the conversation operations yet. This page describes how the
-> SDKs handle them.
+> **Not available yet.** Caitlyn workspaces do not serve the conversation operations yet. This page describes how
+> the SDKs handle them.
 
 <!-- example: examples/typescript/concepts.ts#streaming -->
 ```ts tab="TypeScript"
@@ -72,13 +72,19 @@ fmt.Println(answer.ID, stream.RequestID())
 ```
 <!-- example: examples/rust/src/concepts.rs#streaming -->
 ```rust tab="Rust"
-let input = SendMessageInput { message: "How much annual leave do part-time staff get?".into(), ..Default::default() };
+let input = SendMessageInput {
+    message: "How much annual leave do part-time staff get?".into(),
+    ..Default::default()
+};
 let mut stream = client.conversations().send(CONVERSATION_ID, input).await?;
 while let Some(event) = stream.next().await {
     match event? {
         ConversationEvent::TextDelta(delta) => print!("{}", delta.delta),
         ConversationEvent::CitationAdded(added) => {
-            println!("\n[{}] {:?}", added.citation.number, added.citation.document_name)
+            println!(
+                "\n[{}] {:?}",
+                added.citation.number, added.citation.document_name
+            )
         }
         _ => {}
     }

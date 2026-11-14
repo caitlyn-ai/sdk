@@ -40,10 +40,10 @@ export const worker = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', aut
 // A CI job or other OIDC workload: its own identity token (GitLab CI id_tokens), exchanged the same way
 export const ci = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'workloadIdentity', token: () => process.env.CAITLYN_ID_TOKEN! } });
 
-// The app itself, or a tool driving a local app with a session cookie
-export const local = new Caitlyn({
-  workspace: 'caitlyn.lndo.site',
-  auth: { mode: 'session', cookie: mintedCookie, origin: 'https://caitlyn.lndo.site' },
+// The Caitlyn app's own pages, with its session cookie
+export const appPage = new Caitlyn({
+  workspace: 'your-company.getcaitlyn.ai',
+  auth: { mode: 'session', cookie: mintedCookie, origin: 'https://your-company.getcaitlyn.ai' },
 });
 
 // A script using a personal access token

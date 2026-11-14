@@ -9,16 +9,16 @@ import { LANGUAGES, snippets } from './docs-snippets.mjs';
 import { OPTIONS, sinceVersion } from './docs-metadata.mjs';
 import { ERROR_CODES } from '../docs/error-codes.mjs';
 
-/**
- * The operations the server serves today. Every other operation's page says it is not available yet: the model
- * and the SDKs are ahead of the server while the v3 API is built. Add an operation here when the app release that
- * serves it is live.
- */
-export const LIVE_OPERATIONS = new Set(['GetAgentVersion']);
+/** The operations Caitlyn workspaces serve today; every other operation's page says it is not available yet. */
+export const LIVE_OPERATIONS = new Set([]);
 
-const NOT_YET = '> **Not yet available.** The SDKs have this operation, but no Caitlyn release serves it yet: a call\n' +
-  '> gets 404. This page describes how it will work. [GetAgentVersion](/reference/get-agent-version/) is the one v3\n' +
-  '> operation served today.';
+const NOT_YET = '> **Not available yet.** The SDKs have this operation, but Caitlyn workspaces do not serve it yet, so a call\n' +
+  '> gets 404. This page describes how it works.';
+
+const STABILITY = {
+  ga: 'Generally available',
+  beta: 'Beta: public, and may still change before it is generally available',
+};
 
 const plural = (n) => (n.endsWith('y') ? `${n.slice(0, -1)}ies` : n.endsWith('s') ? `${n}es` : `${n}s`);
 const singular = (n) => (n.endsWith('ies') ? `${n.slice(0, -3)}y` : n.endsWith('ses') ? n.slice(0, -2) : n.replace(/s$/, ''));
@@ -231,8 +231,9 @@ function operationPage(ast, op, typePages, examples, opsUsingError) {
   out.push('| | |', '| --- | --- |');
   out.push(`| HTTP | \`${op.http.method} /api${op.http.uri}\` |`);
   for (const [lang, call] of Object.entries(calls)) out.push(`| ${lang} | \`${call}\` |`);
-  out.push(`| Stability | ${op.stability === 'ga' ? 'Generally available' : op.stability === 'beta' ? "Beta: in each SDK's `beta` namespace, and may change" : op.stability} |`);
-  out.push(`| Since | Caitlyn ${op.since} |`);
+  // An operation no workspace serves cannot be generally available, whatever an older model snapshot says.
+  out.push(`| Stability | ${live ? (STABILITY[op.stability] ?? STABILITY.beta) : STABILITY.beta} |`);
+  if (live) out.push(`| Since | Caitlyn ${op.since} |`);
   out.push(`| Retried by the SDKs | ${retrySafe(op, ast) ? 'Yes, on 429, 503 and connection failures ([Retries](/retries/))' : 'No: it is not safe to repeat ([Retries](/retries/))'} |`);
   if (t[C('audit')]) out.push(`| Audited | As a write: ${cell(t[C('audit')].reason ?? '')} The call is refused with 503 when its audit event cannot be recorded. |`);
   out.push('');

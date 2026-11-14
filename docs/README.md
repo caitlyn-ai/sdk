@@ -25,7 +25,7 @@ make docs                                   # or, with Node 24 on your machine:
 | `docs/*.md`, `docs/guides/*.md` | The hand-written pages: the landing page (`index.md`), Getting started, Authentication, Errors, Retries, Streaming, Pagination, Telemetry, the FAQ, Guides still in the app, and the guides. The file's path is the page's address. |
 | `docs/embed/`, `docs/sign-in/`, `docs/tools/` | Pages that are not about the SDKs: embedding the chat, setting up sign-in, and MCP tools and connectors. Each folder is a sidebar section, in the order `SECTIONS` in `scripts/docs-build.mjs` gives. |
 | `docs/error-codes.mjs` | What each error code means and what to do about it; the rest of each `/errors/<CODE>/` page comes from the model. |
-| `scripts/docs-reference.mjs` | The API reference from the model: a page per public operation, per type and per error code. `LIVE_OPERATIONS` lists the operations a Caitlyn release serves; every other operation's page says it is not available yet. |
+| `scripts/docs-reference.mjs` | The API reference from the model: a page per public operation, per type and per error code. `LIVE_OPERATIONS` lists the operations Caitlyn workspaces serve; every other operation's page says it is not available yet, and shows it as beta. A sentence of the model's documentation that talks about the model itself (a trait, `PROTOCOL.md`, code owners) is left out (`publicDoc` in `scripts/docs-model.mjs`). |
 | `scripts/docs-snippets.mjs` | The reference's runnable programs, one per `@examples` entry and language. |
 | `scripts/docs-build.mjs` | Checks every page, writes the Starlight content (`docs/site/src/content/docs/`, generated) and sidebar, runs `astro build`, then writes the Markdown copies, `llms.txt` and `pages.json`. |
 | `docs/site/` | The Astro Starlight project, with Astro and Starlight pinned to exact versions in `package-lock.json`. |
@@ -146,3 +146,10 @@ real publisher needs the v3 document operations on the server and the TypeScript
 It signs in with the docs publisher's machine client; its client ID and secret are the masked, protected CI
 variables `ASK_CAITLYN_CLIENT_ID` and `ASK_CAITLYN_CLIENT_SECRET`, set from the Caitlyn vault in 1Password.
 They are to be replaced with `workloadIdentity` once the server accepts workload sign-in.
+
+## No internal details
+
+The published pages say what the SDK does, in the reader's terms. `scripts/docs-build.mjs` fails the build when a
+page's prose mentions `PROTOCOL.md`, Smithy, the conformance suites, a model trait, the generators, a repository
+path, or release plans, or when any line names a merge request or an internal host. Write what the reader can do
+and what happens instead; a behaviour that is not available yet is left out, or says so in plain terms.

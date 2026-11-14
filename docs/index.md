@@ -52,8 +52,8 @@ SDKs you install.
 | Go | `github.com/caitlyn-ai/caitlyn-go` (from the GitHub repository until the module path is published) | Go 1.23 and later |
 | Rust | `caitlyn-sdk` (from the GitHub repository until it is on crates.io) | Rust with tokio |
 
-The SDKs are generated from the same model of the API, share one version number and behave the same way: the
-same sign-in modes, retries, errors and telemetry. None of them depends on an AWS SDK. The source is at
+The SDKs share one version number and behave the same way: the same sign-in modes, retries, errors and
+telemetry. None of them depends on an AWS SDK. The source is at
 [github.com/caitlyn-ai/sdk](https://github.com/caitlyn-ai/sdk).
 
 ## For AI agents and tools

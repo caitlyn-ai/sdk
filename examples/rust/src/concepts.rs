@@ -2,14 +2,20 @@
 //! region each. scripts/test-rust.sh runs clippy over it.
 use std::time::Duration;
 
-use caitlyn_sdk::{Auth, Client, ConversationEvent, Error, GetAgentVersionInput, ListDocumentsInput, SendMessageInput};
+use caitlyn_sdk::{
+    Auth, Client, ConversationEvent, Error, GetAgentVersionInput, ListDocumentsInput,
+    SendMessageInput,
+};
 
 const CONVERSATION_ID: &str = "0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47";
 
 /// Telling the errors apart.
 pub async fn errors(client: &Client) -> Result<(), Error> {
     // #region errors
-    let input = GetAgentVersionInput { agent_id: "GHT7YRWXPL".into(), version: "v99".into() };
+    let input = GetAgentVersionInput {
+        agent_id: "GHT7YRWXPL".into(),
+        version: "v99".into(),
+    };
     match client.versions().get(input).await {
         Ok(version) => println!("{}", version.name),
         Err(Error::NotFound(_)) => println!("No such version"),
@@ -32,10 +38,13 @@ pub async fn errors(client: &Client) -> Result<(), Error> {
 /// A client that tries harder.
 pub fn retries() -> Result<Client, Box<dyn std::error::Error>> {
     // #region retries
-    let patient = Client::builder("your-company.getcaitlyn.ai", Auth::token(std::env::var("CAITLYN_TOKEN")?))
-        .max_attempts(5) // the first attempt included; default 3
-        .max_retry_delay(Duration::from_secs(120)) // the longest Retry-After to wait for; default 60 s
-        .build()?;
+    let patient = Client::builder(
+        "your-company.getcaitlyn.ai",
+        Auth::token(std::env::var("CAITLYN_TOKEN")?),
+    )
+    .max_attempts(5) // the first attempt included; default 3
+    .max_retry_delay(Duration::from_secs(120)) // the longest Retry-After to wait for; default 60 s
+    .build()?;
     // #endregion
     Ok(patient)
 }
@@ -43,9 +52,12 @@ pub fn retries() -> Result<Client, Box<dyn std::error::Error>> {
 /// A client with a larger retry budget.
 pub fn retry_budget() -> Result<Client, Box<dyn std::error::Error>> {
     // #region retry-budget
-    let batch = Client::builder("your-company.getcaitlyn.ai", Auth::token(std::env::var("CAITLYN_TOKEN")?))
-        .retry_budget(2000) // retry tokens shared by every call on this client; default 500, and 0 turns retries off
-        .build()?;
+    let batch = Client::builder(
+        "your-company.getcaitlyn.ai",
+        Auth::token(std::env::var("CAITLYN_TOKEN")?),
+    )
+    .retry_budget(2000) // retry tokens shared by every call on this client; default 500, and 0 turns retries off
+    .build()?;
     // #endregion
     Ok(batch)
 }
@@ -53,13 +65,19 @@ pub fn retry_budget() -> Result<Client, Box<dyn std::error::Error>> {
 /// Streaming an answer.
 pub async fn streaming(client: &Client) -> Result<(), Error> {
     // #region streaming
-    let input = SendMessageInput { message: "How much annual leave do part-time staff get?".into(), ..Default::default() };
+    let input = SendMessageInput {
+        message: "How much annual leave do part-time staff get?".into(),
+        ..Default::default()
+    };
     let mut stream = client.conversations().send(CONVERSATION_ID, input).await?;
     while let Some(event) = stream.next().await {
         match event? {
             ConversationEvent::TextDelta(delta) => print!("{}", delta.delta),
             ConversationEvent::CitationAdded(added) => {
-                println!("\n[{}] {:?}", added.citation.number, added.citation.document_name)
+                println!(
+                    "\n[{}] {:?}",
+                    added.citation.number, added.citation.document_name
+                )
             }
             _ => {}
         }
