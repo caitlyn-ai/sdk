@@ -66,10 +66,23 @@ function handWrittenBody(markdown) {
     .replace(/^\n+/, '');
 }
 
+// Sections of hand-written pages that are not about the SDKs: each is a folder under docs/, shown in the sidebar
+// after the guides with its pages in the order given (a page not listed goes last).
+const SECTIONS = [
+  { dir: 'embed', label: 'Embed', order: ['quick-start', 'embed-widget', 'iframe'] },
+  { dir: 'sign-in', label: 'Sign-in and identity', order: ['options', 'microsoft', 'google-workspace', 'auth0'] },
+  { dir: 'tools', label: 'Tools and connectors', order: ['deploy-an-mcp-server', 'user-identity-headers', 'amazon-connect-connector-role', 'connect-an-mcp-client'] },
+];
+const sectionPages = (s, list) => {
+  const rank = (p) => { const i = s.order.indexOf(p.slug.slice(s.dir.length + 1)); return i < 0 ? s.order.length : i; };
+  return list.filter((p) => p.kind === s.dir).sort((x, y) => rank(x) - rank(y));
+};
+
 const pages = [];
 for (const p of readPages()) {
   for (const problem of p.problems) fail(p.file, problem);
-  pages.push({ slug: p.slug, title: p.title, metadata: p.metadata, body: handWrittenBody(p.markdown), source: p.file, kind: p.slug.startsWith('guides/') ? 'guides' : 'pages' });
+  const section = SECTIONS.find((s) => p.slug.startsWith(`${s.dir}/`));
+  pages.push({ slug: p.slug, title: p.title, metadata: p.metadata, body: handWrittenBody(p.markdown), source: p.file, kind: p.slug.startsWith('guides/') ? 'guides' : section ? section.dir : 'pages' });
 }
 const reference = referencePages(ast);
 for (const p of reference.pages) {
@@ -160,7 +173,7 @@ for (const p of pages) {
 }
 
 // The sidebar: the start pages in a fixed order, the guides, then the reference grouped by SDK namespace.
-const START = ['getting-started', 'authentication', 'errors', 'retries', 'streaming', 'pagination', 'telemetry'];
+const START = ['getting-started', 'authentication', 'errors', 'retries', 'streaming', 'pagination', 'telemetry', 'guides-in-the-app', 'faq'];
 const bySlug = new Map(pages.map((p) => [p.slug, p]));
 // Starlight puts the base in front of sidebar links itself
 const link = (p, label = p.title) => ({ label, link: `/${p.slug ? `${p.slug}/` : ''}` });
@@ -168,6 +181,7 @@ const namespaces = [...new Set(reference.ops.map((o) => o.namespace))];
 const sidebar = [
   { label: 'Start here', items: [link(bySlug.get(''), 'Overview'), ...START.filter((s) => bySlug.has(s)).map((s) => link(bySlug.get(s)))] },
   { label: 'Guides', items: pages.filter((p) => p.kind === 'guides').map((p) => link(p)) },
+  ...SECTIONS.map((s) => ({ label: s.label, items: sectionPages(s, pages).map((p) => link(p)) })),
   {
     label: 'API reference',
     items: [
@@ -216,11 +230,13 @@ const llms = [
   '# Caitlyn developer docs',
   '',
   '> The Caitlyn v3 API and its SDKs: how to sign in, call the API, handle errors, retries, streams and pages,',
-  '> and the reference for every operation, type and error code. Every page is also Markdown, at its address',
+  '> the reference for every operation, type and error code, and how to embed the chat, set up sign-in and connect MCP tools.',
+  '> Every page is also Markdown, at its address',
   '> with `.md` in place of the trailing slash.',
   '',
   ...section('Start here', startPages),
   ...section('Guides', kind('guides')),
+  ...SECTIONS.flatMap((s) => section(s.label, sectionPages(s, entries.map((e) => e.page)).map((pg) => entries.find((e) => e.page === pg)))),
   ...section('API reference', kind('reference')),
   ...section('Types', kind('types')),
   '## Optional',
@@ -230,7 +246,7 @@ const llms = [
   '',
 ];
 fs.writeFileSync(path.join(site, 'llms.txt'), llms.join('\n'));
-const ordered = [...startPages, ...kind('guides'), ...kind('reference'), ...kind('types'), ...kind('errors')];
+const ordered = [...startPages, ...kind('guides'), ...SECTIONS.flatMap((s) => kind(s.dir)), ...kind('reference'), ...kind('types'), ...kind('errors')];
 fs.writeFileSync(
   path.join(site, 'llms-full.txt'),
   ordered.map((e) => `<!-- ${SITE_URL}/${e.page.slug ? `${e.page.slug}/` : ''} -->\n${e.markdown.replace(/^---\n[\s\S]*?\n---\n\n?/, '')}`).join('\n'),
@@ -239,5 +255,5 @@ fs.writeFileSync(
   path.join(out, 'pages.json'),
   JSON.stringify({ pages: entries.map(({ path: p, url, title, metadata }) => ({ path: p, url, title, metadata })) }, null, 2) + '\n',
 );
-const counts = ['pages', 'guides', 'reference', 'types', 'errors'].map((k) => `${entries.filter((e) => e.page.kind === k).length} ${k === 'pages' ? 'start pages' : k}`);
+const counts = ['pages', 'guides', ...SECTIONS.map((s) => s.dir), 'reference', 'types', 'errors'].map((k) => `${entries.filter((e) => e.page.kind === k).length} ${k === 'pages' ? 'start pages' : k}`);
 console.log(`docs-build: ${entries.length} pages (${counts.join(', ')}) in build/docs/site, each with its Markdown copy; llms.txt; release ${release}`);

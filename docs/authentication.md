@@ -333,6 +333,55 @@ localApp, err := caitlyn.NewClient("caitlyn.lndo.site",
 let local_app = Client::new("caitlyn.lndo.site", Auth::session(session_cookie).origin("https://caitlyn.lndo.site"))?;
 ```
 
+## Rules every credential follows
+
+Caitlyn issues three kinds of credential. The modes above use them:
+
+| Credential | Acts as | Created in | Modes |
+| --- | --- | --- | --- |
+| Personal access token | The person who created it | The **Personal access tokens** panel on their profile page | `token` |
+| API client (a machine integration in the app) | The role chosen when it was created | **Settings → API Integrations** | `clientCredentials`, `awsIam`, `workloadIdentity` |
+| User-authorised application | The person who approved it | Your application's own sign-in, through Caitlyn's consent screen | `oauth` |
+
+[Managing API Credentials](#managing-credentials) explains where an administrator issues, re-issues and revokes each one.
+
+- **A credential never does more than the identity behind it.** Scopes narrow; they never widen. A personal
+  access token granted `knowledge-bases:write` still reaches only the knowledge bases its owner can reach, and if
+  the owner's access is reduced, the token's is reduced with it on its next request.
+- **A personal access token has a lower ceiling than an API client.** It can never hold the **Developer tools**
+  area, which can switch off document access control, and it holds **Roles and access** at read only, because a
+  token able to rewrite its owner's role could widen itself. Both limits hold even for a token granted everything.
+  If creating a token refuses a scope you expected, this is usually why, and an API client is the credential to
+  use instead.
+- **Every credential expires**, on a date chosen when it is created: up to a year ahead, with no never-expires
+  option. An API client's secret is re-issued from its row on the **API Integrations** page; the client keeps its
+  ID, role and scopes, and the old secret stops working at once.
+- **Revoking takes effect on the next request**, not when the credential would have expired.
+- **Every secret Caitlyn issues starts with `cait-`**: `cait-pat-` for a personal access token, `cait-secret-`
+  for an API client's secret. One pattern in a secret scanner covers them all. Older tokens with an `mcp_`
+  prefix keep working.
+- **Credentials are for one surface.** A credential issued for the REST API is refused by Caitlyn's MCP server,
+  and one issued for the MCP server is refused by the API, so a credential granted for one integration cannot be
+  replayed against the other.
+- **No token can create or revoke credentials.** That is done in the Caitlyn app while signed in; a token gets
+  [`NOT_AVAILABLE_TO_CREDENTIALS`](/errors/NOT_AVAILABLE_TO_CREDENTIALS/).
+- **Keep secrets on a server.** Never put a token or client secret in browser code, a mobile app or a public
+  repository. A browser app signs in as described in [Sign in from a browser](/guides/sign-in-from-a-browser/).
+
+### What a person sees when they authorise your application {#consent-screen}
+
+In `oauth` mode, the person reaches Caitlyn's consent screen before anything is granted. It names your
+application, and says it will act as them and can never do more than they can. It asks whether to grant
+everything their account can reach or a named set of areas, with a level for each. Nothing is issued until they
+select **Authorise**; cancelling returns them to your redirect URI with no credential created. An administrator
+sees every application their people have authorised, and can withdraw one at any time, so plan for a connection
+ending without your application being told.
+
+### Managing credentials {#managing-credentials}
+
+Issuing, re-issuing and revoking credentials is done in the Caitlyn app. The **Managing API Credentials** guide in
+Caitlyn's Help walks through each screen.
+
 ## When a token is refused
 
 - **One token, renewed early.** A client keeps one access token and renews it a minute before it expires (or

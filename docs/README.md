@@ -22,7 +22,8 @@ make docs                                   # or, with Node 24 on your machine:
 
 | Where | What |
 | --- | --- |
-| `docs/*.md`, `docs/guides/*.md` | The hand-written pages: the landing page (`index.md`), Getting started, Authentication, Errors, Retries, Streaming, Pagination, Telemetry, and the guides. The file's path is the page's address. |
+| `docs/*.md`, `docs/guides/*.md` | The hand-written pages: the landing page (`index.md`), Getting started, Authentication, Errors, Retries, Streaming, Pagination, Telemetry, the FAQ, Guides still in the app, and the guides. The file's path is the page's address. |
+| `docs/embed/`, `docs/sign-in/`, `docs/tools/` | Pages that are not about the SDKs: embedding the chat, setting up sign-in, and MCP tools and connectors. Each folder is a sidebar section, in the order `SECTIONS` in `scripts/docs-build.mjs` gives. |
 | `docs/error-codes.mjs` | What each error code means and what to do about it; the rest of each `/errors/<CODE>/` page comes from the model. |
 | `scripts/docs-reference.mjs` | The API reference from the model: a page per public operation, per type and per error code. `LIVE_OPERATIONS` lists the operations a Caitlyn release serves; every other operation's page says it is not available yet. |
 | `scripts/docs-snippets.mjs` | The reference's runnable programs, one per `@examples` entry and language. |
