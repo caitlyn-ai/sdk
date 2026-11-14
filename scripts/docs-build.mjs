@@ -215,9 +215,9 @@ const startPages = kind('pages').sort((a, b) => startOrder(a) - startOrder(b));
 const llms = [
   '# Caitlyn developer docs',
   '',
-  '> The Caitlyn v3 API and its SDKs for TypeScript, Python, Go and Rust: how to sign in, call the API, handle',
-  '> errors, retries, streams and pages, and the reference for every operation, type and error code. Every page',
-  '> is also Markdown, at its address with `.md` in place of the trailing slash.',
+  '> The Caitlyn v3 API and its SDKs: how to sign in, call the API, handle errors, retries, streams and pages,',
+  '> and the reference for every operation, type and error code. Every page is also Markdown, at its address',
+  '> with `.md` in place of the trailing slash.',
   '',
   ...section('Start here', startPages),
   ...section('Guides', kind('guides')),

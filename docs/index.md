@@ -9,8 +9,7 @@ operations: []
 # Caitlyn developer docs
 
 Build on Caitlyn from your own code: ask an agent a question and stream its cited answer, load documents into a
-knowledge base, and change an agent safely, through the Caitlyn v3 API and its SDKs for TypeScript, Python, Go
-and Rust.
+knowledge base, and change an agent safely, through the Caitlyn v3 API and its SDKs.
 
 > **Preview.** The v3 API is being built. The SDKs and this reference describe the whole of it, but a Caitlyn
 > release serves only [GetAgentVersion](/reference/get-agent-version/) so far; every other operation's page says
@@ -26,8 +25,8 @@ and Rust.
 
 ## The API reference
 
-One reference covers every SDK. Each operation's page shows the call in TypeScript, Python, Go and Rust (pick a
-language once and every page follows), the request and response members, the permission it checks, its errors,
+One reference covers every SDK. Each operation's page shows the call in every SDK's language (pick a language
+once and every page follows), the request and response members, the permission it checks, its errors,
 and complete, runnable examples. The examples are compiled against every SDK on each change, so they match the
 SDKs you install.
 
@@ -45,7 +44,7 @@ SDKs you install.
 | Go | `github.com/caitlyn-ai/caitlyn-go` (from the GitHub repository until the module path is published) | Go 1.23 and later |
 | Rust | `caitlyn-sdk` (from the GitHub repository until it is on crates.io) | Rust with tokio |
 
-All four are generated from the same model of the API, share one version number and behave the same way: the
+The SDKs are generated from the same model of the API, share one version number and behave the same way: the
 same sign-in modes, retries, errors and telemetry. None of them depends on an AWS SDK. The source is at
 [github.com/caitlyn-ai/sdk](https://github.com/caitlyn-ai/sdk).
 

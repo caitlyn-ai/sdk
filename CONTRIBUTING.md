@@ -47,7 +47,7 @@ error members the runtimes already carry. Change a naming rule there and every S
 ## Running conformance
 
 ```bash
-make conformance        # all four, then scripts/check-conformance.mjs
+make conformance        # every SDK, then scripts/check-conformance.mjs
 make typescript         # or one language: type checks, lint and its harness
 make python
 make go
@@ -154,7 +154,7 @@ project access token with `write_repository` and `api`.
 The SDKs send `Caitlyn-Sdk-Model`, the highest `@since` in the model they were generated from, and refuse,
 before sending, an operation or member newer than the server's `Caitlyn-Api-Version` (PROTOCOL.md section 9).
 
-All four SDKs share one version. On `main`, the top-level `VERSION` file holds `0.0.0`, the version of every build
+Every SDK shares one version. On `main`, the top-level `VERSION` file holds `0.0.0`, the version of every build
 that is not a release, and nobody edits it. Each release commit (below) stamps the real version, and the release's
 tag points at that commit. `make generate` stamps `VERSION`'s version everywhere it appears (`scripts/version.mjs`
 lists each place):

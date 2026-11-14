@@ -25,7 +25,7 @@ codegen/               the generators: one Gradle build, one smithy-build plugin
   model-support/       model-reading rules the generators share (client-method names, result names, SSE
                        unions and their failure event, problem-details members, versions)
   typescript/ python/ go/ rust/
-  smithy-build.json    runs all four over the prepared model
+  smithy-build.json    runs every generator over the prepared model
 typescript/            npm workspace: packages/sdk (generated), packages/sdk-core (hand-written)
 python/                uv workspace: caitlyn (generated), caitlyn-core (hand-written)
 go/                    one Go module: the generated package at the root, core/ hand-written
@@ -47,7 +47,7 @@ scripts/               generation, model pull and check, tests, docs
 You need Docker and make. Java, Go, Node, uv and Rust all run in the toolchain image.
 
 ```bash
-make generate      # regenerate the four SDKs and the example cases from model/model.json
+make generate      # regenerate every SDK and the example cases from model/model.json
 make conformance   # run the four conformance suites against the mock server, then check every case passed
 make help          # everything else
 ```
