@@ -23,6 +23,14 @@ knowledge base, and change an agent safely, through the Caitlyn v3 API and its S
 - How the SDKs behave: [errors](/errors/), [retries](/retries/), [streaming](/streaming/),
   [pagination](/pagination/) and [telemetry](/telemetry/).
 
+## Embed, sign-in and tools
+
+- [Embed chat in five minutes](/embed/quick-start/): put Caitlyn's chat on a web page with two lines of HTML.
+- [Sign-in options](/sign-in/options/): how people sign in, with single sign-on from Microsoft, Google Workspace or Auth0.
+- [Tools and connectors](/tools/deploy-an-mcp-server/): give agents tools of your own with an MCP server, or
+  [connect an MCP client](/tools/connect-an-mcp-client/) to Caitlyn.
+- [Guides still in the app](/guides-in-the-app/): the integration guides that wait on the v3 API.
+
 ## The API reference
 
 One reference covers every SDK. Each operation's page shows the call in every SDK's language (pick a language
