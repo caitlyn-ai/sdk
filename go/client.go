@@ -3,7 +3,7 @@
 package caitlyn
 
 import (
-	"github.com/caitlyn-ai/caitlyn-go/core"
+	"github.com/caitlyn-ai/sdk/go/core"
 )
 
 // Client is the Caitlyn API client. Create one with NewClient and share it: it is safe for concurrent

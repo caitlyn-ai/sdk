@@ -8,8 +8,9 @@ Two crates, Apache-2.0:
 | `caitlyn-sdk-core` | The hand-written runtime: the wire protocol (`model/PROTOCOL.md`), sign-in, retries, streams, uploads and `tracing` spans. |
 
 Async on tokio, TLS through rustls (the ring provider; no OpenSSL), telemetry through the `tracing` crate. Like the
-other SDKs it reads no AWS configuration, except in the `awsIam` sign-in mode. Nothing is published yet: the
-crates.io release is still to be set up (`release:crates` in `.gitlab-ci.yml` is a placeholder).
+other SDKs it reads no AWS configuration, except in the `awsIam` sign-in mode. Nothing is published yet: crates.io
+releases run from `.github/workflows/release-crates.yml` once its one-off setup is done (CONTRIBUTING.md,
+"crates.io").
 
 ## Using it
 

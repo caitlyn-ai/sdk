@@ -17,17 +17,21 @@
 #                          the ask.caitlyn.ai knowledge base. Off until DOCS_ENABLED is "true" (docs/README.md).
 #   fetch-semantic-version On main: the version the next release would have (VERSION.txt), from the shared
 #                          semantic-versioning template.
-#   release                On main, after conformance passes: semantic-release (.releaserc.yml) tags vX.Y.Z and
-#                          creates the GitLab release when the commits since the last tag call for one. The push
-#                          mirror takes the tag to GitHub, which stages the npm packages (CONTRIBUTING.md, "Releasing").
-#   release:*              Placeholders for the PyPI, Go, crates.io and Homebrew releases. Off until RELEASES_ENABLED
-#                          is "true".
+#   release                On main, after conformance passes: semantic-release (.releaserc.yml) tags vX.Y.Z, tags
+#                          the same commit go/vX.Y.Z for the Go module, and creates the GitLab release when the
+#                          commits since the last tag call for one. The push mirror takes the tags to GitHub, which
+#                          stages the npm packages and publishes to PyPI and crates.io (CONTRIBUTING.md, "Releasing").
+#   release:go             By hand, from a pipeline run on main with GO_TAG=vX.Y.Z: tags a release for Go when the
+#                          release job's Go tag failed.
+#   release:*              A placeholder for the Homebrew release, and pointers to the GitHub workflows for npm, PyPI
+#                          and crates.io. Off until RELEASES_ENABLED is "true".
 #
 # CI variables this file reads (set on the project, never in this file):
 #   DOCS_ENABLED, DOCS_PUBLISH_ROLE_ARN (protected), DOCS_PREVIEW_ROLE_ARN, DOCS_DISTRIBUTION_ID (protected),
 #   ASK_CAITLYN_CLIENT_ID and ASK_CAITLYN_CLIENT_SECRET (masked, protected), SDK_BOT_TOKEN (masked, protected),
 #   GITLAB_TOKEN (masked, protected: a project access token with the Maintainer role, which may create the
-#   protected v* tags, and the api and write_repository scopes; semantic-release uses it), RELEASES_ENABLED.
+#   protected v* and go/v* tags, and the api and write_repository scopes; semantic-release, scripts/go-tag.mjs and
+#   release:go use it), RELEASES_ENABLED, GO_TAG (release:go only).
 
 include:
   # fetch-semantic-version and release: semantic-release in the shared image, as the app repository runs it.
@@ -46,8 +50,12 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "schedule"
     - if: $CI_PIPELINE_SOURCE == "web"
     - if: $CI_PIPELINE_SOURCE == "api" # a pipeline started through the API, such as examples:live (below)
+    # A go/v* tag (made with each release for the Go module, scripts/go-tag.mjs) runs nothing: it is on the release
+    # commit, which its v* tag's pipeline checks.
+    - if: $CI_COMMIT_TAG =~ /^go\//
+      when: never
     # A v* tag (made by the release job) runs release:version, and the tag-driven release:* placeholders once
-    # RELEASES_ENABLED is "true". Nothing else: npm releases from the tag on the GitHub mirror.
+    # RELEASES_ENABLED is "true". Nothing else: npm, PyPI and crates.io release from the tag on the GitHub mirror.
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
@@ -470,9 +478,9 @@ release:version:
 
 # ---------------------------------------------------------------------------- package releases
 
-# Placeholders. Package names on PyPI, the Go module path and the Homebrew tap can only be claimed by a first
-# publish, which is still to be set up: trusted publishing (PyPI), Sigstore signatures, software bills of
-# materials, provenance and the GitHub mirrors under github.com/caitlyn-ai come with it.
+# Placeholders. npm, PyPI and crates.io releases run on the GitHub mirror, and Go is a tag (below). The Homebrew
+# tap can only be claimed by a first publish, which is still to be set up: Sigstore signatures, software bills of
+# materials and provenance come with it.
 .release-placeholder:
   stage: release
   image: alpine:3.22
@@ -491,21 +499,38 @@ release:npm:
   variables:
     RELEASE_WHAT: 'npm publishing here (it runs on the GitHub mirror: .github/workflows/release-npm.yml)'
 
+# PyPI releases run on the GitHub mirror, not here: PyPI trusted publishing (with attestations) accepts OpenID
+# Connect tokens from GitHub Actions, not from this GitLab. See .github/workflows/release-pypi.yml and
+# CONTRIBUTING.md, "Releasing". This placeholder says so if someone runs it.
 release:pypi:
   extends: .release-placeholder
   variables:
-    RELEASE_WHAT: 'Publishing caitlyn and caitlyn-core to PyPI (the first upload claims the names)'
+    RELEASE_WHAT: 'PyPI publishing here (it runs on the GitHub mirror: .github/workflows/release-pypi.yml)'
 
+# Go needs no publishing: the module github.com/caitlyn-ai/sdk/go is go/ in the GitHub mirror, and a release is the
+# tag go/vX.Y.Z on the release commit, which semantic-release creates with vX.Y.Z (.releaserc.yml,
+# scripts/go-tag.mjs). The Go module proxy fetches the module from GitHub the first time someone asks for it.
+# This job tags a release by hand, when its Go tag failed: run a pipeline on main (Build → Pipelines → Run pipeline)
+# with the variable GO_TAG set to the release tag, such as v0.9.0, then start this job. A Go tag already on that
+# release's commit is left alone. It refuses a release whose go/go.mod declares another module path: every release up
+# to v0.8.0 declares github.com/caitlyn-ai/caitlyn-go, so they have no Go release.
 release:go:
-  extends: .release-placeholder
-  variables:
-    RELEASE_WHAT: 'Mirroring go/ to github.com/caitlyn-ai/caitlyn-go and tagging the module'
+  extends: .toolchain
+  stage: release
+  needs: []
+  script:
+    - node scripts/go-tag.mjs "$GO_TAG"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $GO_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/
+      when: manual
 
-# The first upload claims the crate names; crates.io trusted publishing (GitHub Actions OIDC) comes with it.
+# crates.io releases run on the GitHub mirror, not here: crates.io trusted publishing accepts OpenID Connect
+# tokens from GitHub Actions, not from this GitLab. See .github/workflows/release-crates.yml and CONTRIBUTING.md,
+# "Releasing". This placeholder says so if someone runs it.
 release:crates:
   extends: .release-placeholder
   variables:
-    RELEASE_WHAT: 'Publishing caitlyn-sdk-core, then caitlyn-sdk, to crates.io'
+    RELEASE_WHAT: 'crates.io publishing here (it runs on the GitHub mirror: .github/workflows/release-crates.yml)'
 
 release:homebrew:
   extends: .release-placeholder

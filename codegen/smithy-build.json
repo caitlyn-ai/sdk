@@ -43,10 +43,10 @@
       "plugins": {
         "caitlyn-go-client-codegen": {
           "service": "ai.caitlyn.v3#Caitlyn",
-          "module": "github.com/caitlyn-ai/caitlyn-go",
+          "module": "github.com/caitlyn-ai/sdk/go",
           "package": "caitlyn",
           "version": "0.8.0",
-          "coreModule": "github.com/caitlyn-ai/caitlyn-go/core"
+          "coreModule": "github.com/caitlyn-ai/sdk/go/core"
         }
       }
     },

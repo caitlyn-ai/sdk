@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	caitlyn "github.com/caitlyn-ai/caitlyn-go"
-	"github.com/caitlyn-ai/caitlyn-go/examples/documents"
+	"github.com/caitlyn-ai/sdk/examples/go/documents"
+	caitlyn "github.com/caitlyn-ai/sdk/go"
 )
 
 // leavePolicy is the one-page leave policy the checks load (examples/fixtures/leave-policy.pdf): a file type a

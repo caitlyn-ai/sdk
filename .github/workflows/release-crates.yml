@@ -1,0 +1,129 @@
+# Publishes caitlyn-sdk-core and caitlyn-sdk to crates.io with crates.io trusted publishing (OpenID Connect). No
+# crates.io token is stored anywhere.
+#
+# Runs on the GitHub mirror of custom-d/caitlyn/sdk (github.com/caitlyn-ai/sdk), never on GitLab, for the reason
+# release-npm.yml gives: crates.io trusted publishing accepts OpenID Connect tokens from GitHub Actions, not from
+# git.customd.com. The one-off setup is described in CONTRIBUTING.md, "Releasing", "crates.io".
+#
+# Runs on every release tag semantic-release pushes (v<version>), and by hand (Actions → release-crates → Run
+# workflow, from main) with a tag, to publish a release whose run failed or that came before trusted publishing was
+# set up. Either way it builds from the tag's tree, which already carries its version in every stamped file.
+#
+# `package` runs every time: it checks the version and packages and verifies both crates (cargo publish --dry-run).
+# `publish` runs only once the repository variable CRATES_IO_TRUSTED_PUBLISHING is "true". crates.io lets a trusted
+# publisher be added only to a crate that already exists, so the first version of each crate is published by hand
+# (CONTRIBUTING.md); until then this workflow stops after the dry run.
+#
+# caitlyn-sdk depends on caitlyn-sdk-core at the same version, so caitlyn-sdk-core is published first. A version
+# crates.io already has is skipped, so running it again after a part-failed release finishes the release.
+name: release-crates
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The release tag to publish, such as v0.9.0'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-crates-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  # The Rust the toolchain image (docker/Dockerfile) carries.
+  RUST_VERSION: '1.99.1'
+  CARGO_TERM_COLOR: always
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - name: Choose the tag
+        id: tag
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "\"$TAG\" is not a release tag (vX.Y.Z)" >&2; exit 1; }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      # The check that decides a release, as in release-npm.yml: every stamped file names the tag's version.
+      - name: Check the tag's files carry its version
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: node scripts/version.mjs check "$VERSION"
+      - name: Install Rust
+        run: rustup toolchain install "$RUST_VERSION" --profile minimal && rustup default "$RUST_VERSION"
+      - name: Check both crates carry the tag's version
+        working-directory: rust
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          for crate in caitlyn-sdk-core caitlyn-sdk; do
+            actual="$(cargo metadata --locked --no-deps --format-version 1 \
+              | jq -r --arg c "$crate" '.packages[] | select(.name == $c) | .version')"
+            [ "$actual" = "$VERSION" ] || { echo "$crate is $actual, the tag is v$VERSION" >&2; exit 1; }
+          done
+      # Packages both crates and builds each from its package, caitlyn-sdk against the packaged caitlyn-sdk-core,
+      # so a crate that would not build from crates.io fails here, on every tag, before anything is published.
+      - name: Package and verify both crates (dry run)
+        working-directory: rust
+        run: cargo publish --dry-run --locked --workspace
+
+  publish:
+    needs: package
+    if: vars.CRATES_IO_TRUSTED_PUBLISHING == 'true'
+    runs-on: ubuntu-24.04
+    # The crates.io trusted publishers are bound to this environment's name.
+    environment:
+      name: crates
+      url: https://crates.io/crates/caitlyn-sdk/${{ needs.package.outputs.version }}
+    permissions:
+      contents: read
+      id-token: write # the OpenID Connect token crates.io exchanges for a short-lived publish token
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.package.outputs.tag }}
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install "$RUST_VERSION" --profile minimal && rustup default "$RUST_VERSION"
+      # The token is revoked when the job ends (the action's post step).
+      - uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+        id: auth
+      # caitlyn-sdk-core first: caitlyn-sdk depends on that exact version. cargo waits until crates.io serves it
+      # before it returns, so caitlyn-sdk's verification build finds it.
+      - name: Publish caitlyn-sdk-core, then caitlyn-sdk
+        working-directory: rust
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          # crates.io's sparse index: one JSON line per published version (ca/it/<name> for these names)
+          published() {
+            curl -fsS "https://index.crates.io/ca/it/$1" 2>/dev/null \
+              | jq -e --arg v "$VERSION" 'select(.vers == $v)' > /dev/null
+          }
+          for crate in caitlyn-sdk-core caitlyn-sdk; do
+            if published "$crate"; then
+              echo "$crate $VERSION is already on crates.io; skipping it."
+            else
+              cargo publish --locked -p "$crate"
+            fi
+          done

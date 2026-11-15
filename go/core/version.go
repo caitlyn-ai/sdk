@@ -13,9 +13,9 @@ import (
 // version or as one of its dependencies. A module replaced by a local directory, or built from a working tree
 // ("(devel)"), has no version of its own there, so it gets fallback.
 //
-// It reads the module path from generated code, so it works whatever the path is (github.com/caitlyn-ai/caitlyn-go,
-// or a module in a subdirectory such as github.com/caitlyn-ai/sdk/go, whose tags are go/vX.Y.Z: the build
-// information has the version without the prefix).
+// It reads the module path from generated code, so it works whatever the path is. Today it is
+// github.com/caitlyn-ai/sdk/go, a module in the repository's go/ subdirectory, whose tags are go/vX.Y.Z: the build
+// information has the version without the prefix.
 func ModuleVersion(modulePath, fallback string) string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {

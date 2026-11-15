@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/caitlyn-ai/caitlyn-go/core"
+	"github.com/caitlyn-ai/sdk/go/core"
 )
 
 // BatchDeleteDocumentsInput is the input of Documents.BatchDelete.

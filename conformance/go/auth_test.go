@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/caitlyn-ai/caitlyn-go"
+	"github.com/caitlyn-ai/sdk/go"
 )
 
 // The values conformance/mock-server/auth.mjs accepts.

@@ -2,12 +2,20 @@
 name = "caitlyn-core"
 version = "0.8.0"
 description = "Runtime core for Caitlyn's generated Python SDKs: transport, retries, errors, SSE, telemetry."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "Custom D Ltd" }]
 requires-python = ">=3.12"
 dependencies = [
   "httpx>=0.28,<0.29",
   "pydantic>=2.11,<3",
   "opentelemetry-api>=1.38,<2",
 ]
+
+[project.urls]
+Homepage = "https://build.caitlyn.ai/"
+Documentation = "https://build.caitlyn.ai/"
+Repository = "https://github.com/caitlyn-ai/sdk"
 
 [build-system]
 requires = ["hatchling"]

@@ -5,7 +5,7 @@ package caitlyn
 import (
 	"context"
 
-	"github.com/caitlyn-ai/caitlyn-go/core"
+	"github.com/caitlyn-ai/sdk/go/core"
 )
 
 // CreateUploadInput is the input of Uploads.Reserve. The idempotency key is generated, or set with

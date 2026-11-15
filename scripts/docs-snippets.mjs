@@ -240,7 +240,7 @@ function go(ast, op, example) {
     'import (',
     ...imports.sort().map((i) => `\t"${i}"`),
     '',
-    '\tcaitlyn "github.com/caitlyn-ai/caitlyn-go"',
+    '\tcaitlyn "github.com/caitlyn-ai/sdk/go"',
     ')',
     '',
     'func main() {',

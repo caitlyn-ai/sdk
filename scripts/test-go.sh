@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Go: build, vet and staticcheck the SDK, the developer docs' examples and the harness, run the conformance harness (writes
+# Go: the Go tag script's tests, then build, vet and staticcheck the SDK, the developer docs' examples and the harness, run the conformance harness (writes
 # build/conformance/go.json), then again with the race detector.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$root/build/conformance"
+# The Go release step (scripts/go-tag.mjs, run by semantic-release), against a stand-in for GitLab's API
+node --test "$root/scripts/go-tag.test.mjs"
 cd "$root/go"
 test -z "$(gofmt -l .)" || { gofmt -l .; echo "gofmt: the files above are not formatted" >&2; exit 1; }
 go build ./... && go vet ./... && staticcheck ./... && go test -count=1 ./...

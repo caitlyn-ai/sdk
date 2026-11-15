@@ -1,9 +1,9 @@
-module github.com/caitlyn-ai/caitlyn-go/conformance
+module github.com/caitlyn-ai/sdk/conformance/go
 
 go 1.23.0
 
 require (
-	github.com/caitlyn-ai/caitlyn-go v0.0.1
+	github.com/caitlyn-ai/sdk/go v0.0.1
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/sdk v1.38.0
 )
@@ -19,4 +19,4 @@ require (
 )
 
 // The SDK in this repository, not a published version.
-replace github.com/caitlyn-ai/caitlyn-go => ../../go
+replace github.com/caitlyn-ai/sdk/go => ../../go

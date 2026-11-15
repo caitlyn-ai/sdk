@@ -10,7 +10,7 @@ import software.amazon.smithy.model.shapes.ServiceShape;
 
 /**
  * smithy-build plugin {@code caitlyn-go-client-codegen}: generates the Caitlyn Go SDK on the hand-written
- * runtime github.com/caitlyn-ai/caitlyn-go/core. Output is gofmt-ready, not gofmt-ed: build.sh runs gofmt.
+ * runtime github.com/caitlyn-ai/sdk/go/core. Output is gofmt-ready, not gofmt-ed: build.sh runs gofmt.
  */
 public final class CaitlynGoPlugin implements SmithyBuildPlugin {
 

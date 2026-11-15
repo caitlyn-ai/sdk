@@ -13,7 +13,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 
-	caitlyn "github.com/caitlyn-ai/caitlyn-go"
+	caitlyn "github.com/caitlyn-ai/sdk/go"
 )
 
 const conversationID = "0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47"

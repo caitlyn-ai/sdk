@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	caitlyn "github.com/caitlyn-ai/caitlyn-go"
-	"github.com/caitlyn-ai/caitlyn-go/examples/conversations"
+	"github.com/caitlyn-ai/sdk/examples/go/conversations"
+	caitlyn "github.com/caitlyn-ai/sdk/go"
 )
 
 // report is where the check lines go; os.Stdout is pointed at standard error so the examples' output stays out

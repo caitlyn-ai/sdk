@@ -30,10 +30,11 @@ pip install "caitlyn-core @ git+https://github.com/caitlyn-ai/sdk@{{sdkRelease}}
             "caitlyn @ git+https://github.com/caitlyn-ai/sdk@{{sdkRelease}}#subdirectory=python/caitlyn"
 ```
 ```sh tab="Go"
-# The module path does not resolve yet: build against a copy of the release
+# Not published yet. Once it is: go get github.com/caitlyn-ai/sdk/go@latest
+# Until then, build against a copy of the release:
 git clone --depth 1 --branch {{sdkRelease}} https://github.com/caitlyn-ai/sdk caitlyn-sdk
-go mod edit -require github.com/caitlyn-ai/caitlyn-go@v0.0.0 \
-            -replace github.com/caitlyn-ai/caitlyn-go=./caitlyn-sdk/go
+go mod edit -require github.com/caitlyn-ai/sdk/go@v0.0.0 \
+            -replace github.com/caitlyn-ai/sdk/go=./caitlyn-sdk/go
 go mod tidy
 ```
 ```toml tab="Rust"
@@ -84,7 +85,7 @@ import (
 	"log"
 	"os"
 
-	caitlyn "github.com/caitlyn-ai/caitlyn-go"
+	caitlyn "github.com/caitlyn-ai/sdk/go"
 )
 
 func main() {

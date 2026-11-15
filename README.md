@@ -7,11 +7,12 @@ conformance suite, and (later) the Go CLI, the integrations MCP server and the d
 | --- | --- | --- | --- | --- |
 | TypeScript | `@caitlyn-ai/sdk` | smithy-typescript with Caitlyn's integration (`codegen/typescript`) | `@caitlyn-ai/sdk-core` | `typescript/` |
 | Python | `caitlyn` | Caitlyn's own generator (`codegen/python`): Pydantic v2 and httpx | `caitlyn-core` | `python/` |
-| Go | `github.com/caitlyn-ai/caitlyn-go` | Caitlyn's own generator (`codegen/go`) | `github.com/caitlyn-ai/caitlyn-go/core` | `go/` |
+| Go | `github.com/caitlyn-ai/sdk/go` | Caitlyn's own generator (`codegen/go`) | `github.com/caitlyn-ai/sdk/go/core` | `go/` |
 | Rust | `caitlyn-sdk` | Caitlyn's own generator (`codegen/rust`): serde and tokio | `caitlyn-sdk-core` | `rust/` |
 
 None of them uses an AWS runtime: no `@aws-sdk` package, no botocore, no aws-sdk-go, no aws-smithy crate, and
-none reads AWS configuration. They depend on the OpenTelemetry API only (Rust: the `tracing` crate). The TypeScript packages are on npm; releases to PyPI, crates.io and as a tagged Go module are not set up yet.
+none reads AWS configuration. They depend on the OpenTelemetry API only (Rust: the `tracing` crate). The TypeScript packages are on npm. Releases to PyPI, crates.io and as a tagged Go module are set up
+(CONTRIBUTING.md, "Releasing") but have not published anything yet.
 
 ## Where things are
 

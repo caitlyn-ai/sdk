@@ -853,7 +853,7 @@ final class ServiceGenerator {
                 + title + ", generated from its Smithy model by caitlyn-go-codegen. It depends only on the standard library and "
                 + "the hand-written runtime " + s.coreModule() + " (which adds the OpenTelemetry API); it reads no AWS configuration outside AWSIAM sign-in.", "")
                 + "package " + s.packageName() + "\n");
-        // A runtime inside the SDK's own module (github.com/caitlyn-ai/caitlyn-go/core) needs no go.mod entry: the
+        // A runtime inside the SDK's own module (github.com/caitlyn-ai/sdk/go/core) needs no go.mod entry: the
         // module's go.mod is hand-written, beside the runtime. A separate runtime module gets one.
         if (!s.coreModule().startsWith(s.module() + "/")) {
             StringBuilder mod = new StringBuilder("module " + s.module() + "\n\ngo 1.23\n\nrequire " + s.coreModule() + " " + s.coreVersion() + "\n");

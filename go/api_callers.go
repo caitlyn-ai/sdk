@@ -5,7 +5,7 @@ package caitlyn
 import (
 	"context"
 
-	"github.com/caitlyn-ai/caitlyn-go/core"
+	"github.com/caitlyn-ai/sdk/go/core"
 )
 
 // GetCallerInput is the input of Callers.Get.

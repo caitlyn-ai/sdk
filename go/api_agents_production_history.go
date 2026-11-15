@@ -7,7 +7,7 @@ import (
 	"iter"
 	"strconv"
 
-	"github.com/caitlyn-ai/caitlyn-go/core"
+	"github.com/caitlyn-ai/sdk/go/core"
 )
 
 // GetProductionHistoryEntryInput is the input of Agents.ProductionHistory.Get.

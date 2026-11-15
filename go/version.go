@@ -8,7 +8,7 @@ package caitlyn
 const SDKVersion = "0.8.0"
 
 // ModulePath is this SDK's module path, which core.ModuleVersion looks up in the build information.
-const ModulePath = "github.com/caitlyn-ai/caitlyn-go"
+const ModulePath = "github.com/caitlyn-ai/sdk/go"
 
 // ModelVersion is the Caitlyn release the SDK was generated from (the highest @since in the model), sent as Caitlyn-Sdk-Model.
 const ModelVersion = "5.115.0"

@@ -5,7 +5,7 @@ package caitlyn
 import (
 	"context"
 
-	"github.com/caitlyn-ai/caitlyn-go/core"
+	"github.com/caitlyn-ai/sdk/go/core"
 )
 
 // CreateConversationInput is the input of Conversations.Create. The idempotency key is generated, or

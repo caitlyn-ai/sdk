@@ -6,7 +6,7 @@ import (
 	"context"
 	"os"
 
-	caitlyn "github.com/caitlyn-ai/caitlyn-go"
+	caitlyn "github.com/caitlyn-ai/sdk/go"
 )
 
 func encryptedTokenStoreFor(userID string) caitlyn.TokenStore { panic("your own store") }
