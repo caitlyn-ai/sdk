@@ -25,26 +25,21 @@ people run.
 npm install @caitlyn-ai/sdk
 ```
 ```sh tab="Python"
-# Not on PyPI yet: install both packages from the same release tag
-pip install "caitlyn-core @ git+https://github.com/caitlyn-ai/sdk@{{sdkRelease}}#subdirectory=python/caitlyn-core" \
-            "caitlyn @ git+https://github.com/caitlyn-ai/sdk@{{sdkRelease}}#subdirectory=python/caitlyn"
+pip install caitlyn
+# or, in a uv project
+uv add caitlyn
 ```
 ```sh tab="Go"
-# Not published yet. Once it is: go get github.com/caitlyn-ai/sdk/go@latest
-# Until then, build against a copy of the release:
-git clone --depth 1 --branch {{sdkRelease}} https://github.com/caitlyn-ai/sdk caitlyn-sdk
-go mod edit -require github.com/caitlyn-ai/sdk/go@v0.0.0 \
-            -replace github.com/caitlyn-ai/sdk/go=./caitlyn-sdk/go
-go mod tidy
+go get github.com/caitlyn-ai/sdk/go@latest
 ```
-```toml tab="Rust"
-# Cargo.toml. Not on crates.io yet: depend on the release tag
-[dependencies]
-caitlyn-sdk = { git = "https://github.com/caitlyn-ai/sdk", tag = "{{sdkRelease}}" }
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+```sh tab="Rust"
+cargo add caitlyn-sdk
+# the examples run on tokio
+cargo add tokio --features macros,rt-multi-thread
 ```
 
-`{{sdkRelease}}` is the latest release; the [tags](https://github.com/caitlyn-ai/sdk/tags) list every release.
+Every SDK has the same version number; the [releases](https://github.com/caitlyn-ai/sdk/releases) say what each one
+changed.
 
 ## Make a first call
 

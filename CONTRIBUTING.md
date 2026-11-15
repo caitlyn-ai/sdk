@@ -384,9 +384,8 @@ the release.
 It runs on every release tag, and by hand: in GitHub, Actions → `release-pypi` → Run workflow, from `main`, with the
 tag (such as `v0.9.0`). Running it by hand publishes a release whose run failed. Either way it builds the tag's tree.
 
-**The first PyPI release is the first release tag cut after this workflow and the packages' metadata (readme, licence,
-project URLs) were added.** Releases up to v0.8.0 are not published to PyPI: their `pyproject.toml` files have none
-of that metadata, and PyPI never lets a published version's metadata change.
+**The first PyPI release was 0.8.1.** Releases up to v0.8.0 are not on PyPI: their `pyproject.toml` files have no
+readme, licence or project URLs, and PyPI never lets a published version's metadata change.
 
 To set it up, once (a maintainer of the `caitlyn-ai` GitHub organisation, with a PyPI account that has two-factor
 authentication):
@@ -428,20 +427,19 @@ The workflow has two jobs:
 Run by hand (Actions → `release-crates` → Run workflow, from `main`, with the tag) to publish a release whose run
 failed or that was tagged before the variable was set.
 
-**The first crates.io release is the first release tag cut after this workflow and `caitlyn-sdk`'s `readme` were
-added**; releases up to v0.8.0 are not published, since `caitlyn-sdk` there has no README for its crates.io page.
-Do the setup below once that tag exists.
+**The first crates.io release was 0.8.1**, published by hand as below; releases up to v0.8.0 are not on crates.io,
+since `caitlyn-sdk` there has no README for its crates.io page.
 
 To set it up, once (a maintainer of the `caitlyn-ai` GitHub organisation, with a crates.io account signed in through
 GitHub and a verified email address):
 
 1. **A short-lived token.** On crates.io, Account Settings → API Tokens → New Token: name it for this, the shortest
    expiry offered, scopes `publish-new` and `publish-update`, crates `caitlyn-sdk*`.
-2. **The first publish, by hand, core first,** from a clean checkout of that first release tag (the tag's files
+2. **The first publish, by hand, core first,** from a clean checkout of the first release tag (the tag's files
    carry its version; its `release-crates` run has already passed the dry run):
 
    ```bash
-   git fetch --tags && git checkout v0.9.0   # the first release tag after this workflow
+   git fetch --tags && git checkout v0.8.1   # the first release on crates.io
    cd rust
    read -rs CARGO_REGISTRY_TOKEN && export CARGO_REGISTRY_TOKEN   # paste the token; it is not echoed or stored
    cargo publish --locked -p caitlyn-sdk-core
@@ -478,12 +476,12 @@ a Go tag that is already there alone, and fails if one is on another commit. It 
 
 The import path changed from `github.com/caitlyn-ai/caitlyn-go` to `github.com/caitlyn-ai/sdk/go` before anything
 was published under the old one. Every release up to v0.8.0 still declares the old path in its `go/go.mod`, so they
-have no Go release: **the first Go release is the first release tag cut after the move**.
+have no Go release: **the first Go release was v0.8.1** (`go/v0.8.1`).
 
 To tag a release by hand, when its Go tag failed: in GitLab, Build → Pipelines → Run pipeline, on `main`, with the
 variable `GO_TAG` set to the release tag (such as `v0.9.0`), then start the manual `release:go` job.
 
-To set it up, once, before the first release after the move:
+Set up once, before the first Go release:
 
 1. **Protect the Go tags.** In GitLab, `custom-d/caitlyn/sdk` → Settings → Repository → Protected tags → `go/v*`,
    allowed to create: Maintainers. The push mirror sends only protected tags, and `v*` does not match `go/v0.9.0`.
