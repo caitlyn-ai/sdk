@@ -28,6 +28,16 @@ type waitSettings struct {
 	minDelay, maxDelay time.Duration
 }
 
+// The clock Wait reads and sleeps on. Tests replace both with a virtual clock, so their timing is exact and
+// a slow or paused machine cannot change their outcome.
+var (
+	waitNow   = time.Now
+	waitTimer = func(d time.Duration) (<-chan time.Time, func() bool) {
+		t := time.NewTimer(d)
+		return t.C, t.Stop
+	}
+)
+
 // DefaultMaxWait is the time limit of a waiter whose operation names none (PROTOCOL.md 10.1).
 const DefaultMaxWait = 300 * time.Second
 
@@ -80,7 +90,7 @@ func Wait[O any](ctx context.Context, name string, minDelay, maxDelay, maxWait t
 	}
 	// The context's deadline or cancellation ends the wait with the context's error, never a WaiterError
 	// (PROTOCOL.md 10.1): only the waiter's own limit times out.
-	deadline := time.Now().Add(w.maxWait)
+	deadline := waitNow().Add(w.maxWait)
 	var zero O
 	for attempt := 1; ; attempt++ {
 		out, err := poll(ctx)
@@ -94,18 +104,18 @@ func Wait[O any](ctx context.Context, name string, minDelay, maxDelay, maxWait t
 			return zero, &WaiterError{Waiter: name, State: "failure", Attempts: attempt, Output: lastOutput(out, err), Err: err, Limit: w.maxWait}
 		}
 		delay := waiterDelay(attempt, w.minDelay, w.maxDelay)
-		remaining := time.Until(deadline)
+		remaining := deadline.Sub(waitNow())
 		if remaining <= w.minDelay {
 			return zero, &WaiterError{Waiter: name, State: "timeout", Attempts: attempt, Output: lastOutput(out, err), Err: err, Limit: w.maxWait}
 		}
 		if delay > remaining-w.minDelay {
 			delay = remaining - w.minDelay
 		}
-		t := time.NewTimer(delay)
+		fired, stop := waitTimer(delay)
 		select {
-		case <-t.C:
+		case <-fired:
 		case <-ctx.Done():
-			t.Stop()
+			stop()
 			return zero, ctx.Err()
 		}
 	}
