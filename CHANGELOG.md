@@ -1,3 +1,10 @@
+## [0.8.1](https://github.com/caitlyn-ai/sdk/compare/v0.8.0...v0.8.1) (2026-11-15)
+
+
+### Bug Fixes
+
+* a stream connection open a minute or more restarts the STREAM_LOST count, so a quiet watch outlives the hourly end ([8d40be5](https://github.com/caitlyn-ai/sdk/commit/8d40be5c75fb15f4c957345fbcdc008c444ee07d))
+
 # [0.8.0](https://github.com/caitlyn-ai/sdk/compare/v0.7.0...v0.8.0) (2026-11-15)
 
 
