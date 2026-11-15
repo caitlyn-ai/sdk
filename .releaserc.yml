@@ -28,8 +28,49 @@ plugins:
       parserOpts: &parserOpts
         headerPattern: '^(\w*)(?:\((.*)\))?!?: (.*)$'
         breakingHeaderPattern: '^(\w*)(?:\((.*)\))?!: (.*)$'
+  # The notes' links point at the public GitHub mirror (github.com/caitlyn-ai/sdk), which has the same commits and
+  # tags, not at this GitLab, which the public cannot open: the notes are CHANGELOG.md and the GitHub releases, and
+  # the GitLab release reads them too. repositoryUrl stays this GitLab, where semantic-release pushes. The notes
+  # generator builds its links from repositoryUrl, so headerPartial and commitPartial are the angular preset's own
+  # (conventional-changelog-angular 7.0.0, which semantic-release 23 in the release image uses) with the GitHub
+  # address written in. Issue references stay unlinked: their numbers are this GitLab's, not GitHub's.
   - - '@semantic-release/release-notes-generator'
     - parserOpts: *parserOpts
+      writerOpts:
+        headerPartial: |
+          {{#if isPatch~}}
+            ##
+          {{~else~}}
+            #
+          {{~/if}} {{#if @root.linkCompare~}}
+            [{{version}}](https://github.com/caitlyn-ai/sdk/compare/{{previousTag}}...{{currentTag}})
+          {{~else}}
+            {{~version}}
+          {{~/if}}
+          {{~#if title}} "{{title}}"
+          {{~/if}}
+          {{~#if date}} ({{date}})
+          {{/if}}
+        commitPartial: |+
+          *{{#if scope}} **{{scope}}:**
+          {{~/if}} {{#if subject}}
+            {{~subject}}
+          {{~else}}
+            {{~header}}
+          {{~/if}}
+
+          {{~!-- commit link --}} {{#if @root.linkReferences~}}
+            ([{{shortHash}}](https://github.com/caitlyn-ai/sdk/commit/{{hash}}))
+          {{~else}}
+            {{~shortHash}}
+          {{~/if}}
+
+          {{~!-- commit references, unlinked --}}
+          {{~#if references~}}
+            , closes
+            {{~#each references}} {{#if this.owner}}{{this.owner}}/{{/if}}{{this.repository}}#{{this.issue}}{{/each}}
+          {{~/if}}
+
   # VERSION.txt is the fetch-semantic-version job's artifact: the version the next release would have. Before the
   # release commit, the files stamp-version wrote from it must name exactly the version being released.
   - - '@semantic-release/exec'

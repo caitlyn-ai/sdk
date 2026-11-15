@@ -282,7 +282,7 @@ cuts it, in the order the app repository's pipeline does:
 
 **GitHub releases.** On the same tag, `.github/workflows/release-github.yml` creates the GitHub release for it on the
 mirror, titled with the tag, with the version's section of the tag's `CHANGELOG.md` as its notes
-(`scripts/changelog-section.mjs`, which points the compare and commit links at the mirror). Only the highest version
+(`scripts/changelog-section.mjs`). Only the highest version
 tag is marked the latest release. Running it again edits the release rather than failing. It uses the workflow's
 own `GITHUB_TOKEN` with `contents: write`; there is nothing to set up.
 
@@ -290,6 +290,15 @@ To create or correct a GitHub release by hand, run the workflow from `main` with
 `release-github` → Run workflow, or `gh workflow run release-github.yml --repo caitlyn-ai/sdk --ref main -f tag=v0.8.0`.
 A tag from before `CHANGELOG.md` existed (v0.8.0 and earlier) takes its notes from `main`'s `CHANGELOG.md`, which
 was seeded with the GitLab releases' notes for v0.3.0 to v0.8.0; v0.2.0 and earlier have no GitHub release.
+
+**Links in the notes point at the GitHub mirror**, never at this GitLab, which the public cannot open: the notes are
+`CHANGELOG.md` and the GitHub releases, and the GitLab release shows the same text. The mirror has the same commits
+and tags, so `https://github.com/caitlyn-ai/sdk/commit/<sha>` and `…/compare/vX...vY` work. semantic-release builds
+links from `repositoryUrl`, which must stay this GitLab because it pushes there, so `.releaserc.yml` gives the notes
+generator the angular preset's header and commit templates with the GitHub address written in (issue references are
+left unlinked, since their numbers are this GitLab's). As a safety net, `release-github` points any link still under
+`https://git.customd.com/custom-d/caitlyn/sdk/` at the mirror, and fails rather than publish any other
+`git.customd.com` address.
 
 The release commit has no `[skip ci]`, on purpose: GitHub Actions skips every `push`-triggered workflow whose head
 commit message contains `[skip ci]`, `[ci skip]`, `[no ci]`, `[skip actions]` or `[actions skip]`, and a tag push is

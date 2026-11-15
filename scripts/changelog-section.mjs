@@ -4,11 +4,15 @@
 //   node scripts/changelog-section.mjs <version> [file] [--github]
 //
 // <version> is 0.8.0 or v0.8.0; file defaults to CHANGELOG.md. A section starts at its version's heading ("# [0.8.0](…)",
-// or "## [0.8.1](…)" for a patch) and ends before the next version's heading. It fails, printing nothing, when the
-// file has no section for the version, so a caller can try another copy of the file.
+// or "## [0.8.1](…)" for a patch) and ends before the next version's heading. Exit codes, with nothing printed on
+// failure: 1 when the file has no section for the version, so a caller can try another copy of the file; 2 for bad
+// arguments; 3 when --github finds a link it cannot make public.
 //
-// --github points the compare and commit links at the GitHub mirror instead of this GitLab: the mirror carries the same
-// commits and tags, and a reader of a GitHub release may not be able to open git.customd.com. Other links are kept.
+// --github is for text the public reads (the GitHub releases). semantic-release already writes the GitHub mirror's
+// links (.releaserc.yml), so this is a safety net: any link still under this GitLab's repository
+// (https://git.customd.com/custom-d/caitlyn/sdk/, with or without GitLab's /-/) is pointed at the same path on
+// https://github.com/caitlyn-ai/sdk/, which has the same commits and tags, and any other git.customd.com address left
+// fails the run instead of reaching the public.
 import fs from 'node:fs';
 
 const args = process.argv.slice(2);
@@ -41,9 +45,11 @@ if (end === -1) end = lines.length;
 
 let section = lines.slice(start, end).join('\n').trim();
 if (github) {
-  section = section.replaceAll(
-    /https:\/\/git\.customd\.com\/custom-d\/caitlyn\/sdk\/(?:-\/)?(compare|commit)\//g,
-    'https://github.com/caitlyn-ai/sdk/$1/',
-  );
+  section = section.replaceAll(/https?:\/\/git\.customd\.com\/custom-d\/caitlyn\/sdk\/(?:-\/)?/g, 'https://github.com/caitlyn-ai/sdk/');
+  const left = section.match(/\S*git\.customd\.com\S*/gi);
+  if (left) {
+    console.error(`${file}'s ${version} section still names git.customd.com, which is not public: ${left.join(', ')}`);
+    process.exit(3);
+  }
 }
 process.stdout.write(`${section}\n`);
