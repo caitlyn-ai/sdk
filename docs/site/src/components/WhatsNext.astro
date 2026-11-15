@@ -1,0 +1,34 @@
+---
+// "What's next" on article pages: the page's own closing "Next" list, then its entry in src/whats-next.json, then the
+// pages beside it in the sidebar, as cards (scripts/docs-build.mjs resolves either to titles, descriptions and section labels). Anything in the
+// page's list that is not a page on this site (a pointer to the app's Help) follows the cards as a note.
+// The landing page shows its list as the band under its hero instead (Hero.astro).
+import NextCards from './NextCards.astro';
+
+const data = Astro.locals.starlightRoute.entry.data as {
+  hero?: unknown;
+  whatsNext?: { link: string; title: string; description: string; section: string; icon: string }[];
+  whatsNextNotes?: string[];
+};
+// Never the page the Next link already shows; then four cards, or two, so the grid of two across is always full
+const nextHref = Astro.locals.starlightRoute.pagination.next?.href.replace(/\/?$/, '/');
+const candidates = data.hero ? [] : (data.whatsNext ?? []).filter((c) => c.link.replace(/\/?$/, '/') !== nextHref);
+const cards = candidates.slice(0, candidates.length >= 4 ? 4 : candidates.length >= 2 ? 2 : candidates.length);
+const notes = data.hero ? [] : (data.whatsNextNotes ?? []);
+---
+
+{
+  cards.length > 0 && (
+    <section class="caitlyn-whats-next print:hidden" aria-labelledby="whats-next-heading">
+      <h2 id="whats-next-heading" class="caitlyn-kicker">What's next</h2>
+      <NextCards cards={cards} label="Pages to read next" />
+      {notes.length > 0 && (
+        <ul class="caitlyn-whats-next-notes">
+          {notes.map((note) => (
+            <li set:html={note} />
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}

@@ -14,6 +14,20 @@ export const collections = {
         resources: z.array(z.string()).optional(),
         integrations: z.array(z.string()).optional(),
         operations: z.array(z.string()).optional(),
+        // The site's "What's next" for the page (src/whats-next.json, resolved by scripts/docs-build.mjs)
+        // Where the page sits, shown above its title (src/components/PageTitle.astro)
+        section: z.string().optional(),
+        whatsNext: z.array(z.object({ link: z.string(), title: z.string(), description: z.string(), section: z.string(), icon: z.string() })).optional(),
+        whatsNextNotes: z.array(z.string()).optional(),
+        // An SDK reference operation's header strip (src/components/OperationHeader.astro)
+        operation: z
+          .object({ name: z.string(), method: z.string(), calls: z.record(z.string(), z.string()), http: z.object({ method: z.string(), path: z.string() }),
+            api: z.string(),
+            // Each example's code per language, its response status and body, and a stream's sample events, for the code
+            // panel (src/components/OperationPanel.astro)
+            panel: z.array(z.object({ title: z.string(), code: z.record(z.string(), z.string()), status: z.number(), result: z.string().nullable(), events: z.string().nullable() })),
+          })
+          .optional(),
       }),
     }),
   }),

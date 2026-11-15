@@ -1,0 +1,33 @@
+---
+// An SDK reference operation's header strip, under its title: the call in the reader's code language (the site's
+// language picker chooses it, src/scripts/lang-tabs.ts), the HTTP call, and the same operation in the HTTP API's
+// reference. scripts/docs-build.mjs writes the data from the model (scripts/docs-reference.mjs).
+interface Props {
+  operation: { name: string; method: string; calls: Record<string, string>; http: { method: string; path: string }; api: string };
+}
+const { operation } = Astro.props;
+const LABELS: Record<string, string> = { typescript: 'TypeScript', python: 'Python', go: 'Go', rust: 'Rust' };
+---
+
+<dl class="caitlyn-operation-strip">
+  <div class="caitlyn-operation-strip-row">
+    <dt class="caitlyn-kicker">SDK</dt>
+    <dd>
+      {
+        Object.entries(operation.calls).map(([lang, call]) => (
+          <span data-lang-only={lang}>
+            <span class="sr-only">{LABELS[lang]}: </span>
+            <code>{call}</code>
+          </span>
+        ))
+      }
+    </dd>
+  </div>
+  <div class="caitlyn-operation-strip-row">
+    <dt class="caitlyn-kicker">HTTP</dt>
+    <dd><code>{operation.http.method} {operation.http.path}</code></dd>
+  </div>
+  <div class="caitlyn-operation-strip-row caitlyn-operation-strip-api">
+    <dd><a href={operation.api}>In the API reference</a></dd>
+  </div>
+</dl>

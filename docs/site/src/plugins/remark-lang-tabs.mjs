@@ -12,6 +12,20 @@ import { visit, SKIP } from 'unist-util-visit';
 const TAB = /(?:^|\s)tab="([^"]+)"/;
 export const langKey = (label) => label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
+// A code block outside a tab group gets a header bar naming its language (Expressive Code's frame title), unless
+// it has a title of its own. Inside a group, the tabs are the header.
+const LANGUAGE_LABELS = {
+  ts: 'TypeScript', typescript: 'TypeScript', js: 'JavaScript', javascript: 'JavaScript', python: 'Python', py: 'Python',
+  go: 'Go', rust: 'Rust', rs: 'Rust', json: 'JSON', http: 'HTTP', sh: 'Shell', bash: 'Shell', shell: 'Shell',
+  yaml: 'YAML', yml: 'YAML', toml: 'TOML', markdown: 'Markdown', md: 'Markdown', html: 'HTML', text: 'Text',
+};
+const labelBlocks = (tree) =>
+  visit(tree, 'code', (node, _index, parent) => {
+    if (parent?.type === 'langPanel' || /(?:^|\s)title=/.test(node.meta ?? '')) return;
+    const label = LANGUAGE_LABELS[node.lang ?? ''];
+    if (label) node.meta = `${node.meta ?? ''} title="${label}"`.trim();
+  });
+
 export default function remarkLangTabs() {
   return (tree) => {
     visit(tree, (node, index, parent) => {
@@ -21,7 +35,8 @@ export default function remarkLangTabs() {
       const blocks = parent.children.slice(index, end);
       const tabs = blocks.map((b) => {
         const label = TAB.exec(b.meta)[1];
-        b.meta = b.meta.replace(TAB, '').trim() || null;
+        // The tabs are the block's header bar, so it gets no frame title (and a shell block no terminal bar)
+        b.meta = `${b.meta.replace(TAB, '').trim()} frame="code"`.trim();
         return { label, key: langKey(label), block: b };
       });
       const group = {
@@ -47,5 +62,6 @@ export default function remarkLangTabs() {
       parent.children.splice(index, end - index, group);
       return [SKIP, index + 1];
     });
+    labelBlocks(tree);
   };
 }

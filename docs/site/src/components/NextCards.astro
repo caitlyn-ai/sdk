@@ -1,0 +1,32 @@
+---
+// A grid of rounded panel cards, one per page to read next: an icon for the kind of page, the section's label, the
+// title and its description. Used by "What's next" on article pages (WhatsNext.astro) and the landing page's start
+// band (Hero.astro). The icons are Starlight's own set, chosen per page by scripts/docs-build.mjs.
+import { Icon } from '@astrojs/starlight/components';
+
+type Card = { link: string; title: string; description: string; section: string; icon: string };
+interface Props {
+  cards: Card[];
+  label: string;
+}
+const { cards, label } = Astro.props;
+---
+
+<ol class="caitlyn-cards" aria-label={label}>
+  {
+    cards.map((card) => (
+      <li>
+        <a href={card.link}>
+          <span class="caitlyn-card-top">
+            <span class="caitlyn-card-icon" data-icon={card.icon} aria-hidden="true">
+              <Icon name={card.icon as Parameters<typeof Icon>[0]['name']} size="20px" />
+            </span>
+            <span class="caitlyn-kicker caitlyn-card-section">{card.section}</span>
+          </span>
+          <span class="caitlyn-card-title">{card.title}</span>
+          <span class="caitlyn-card-description">{card.description}</span>
+        </a>
+      </li>
+    ))
+  }
+</ol>

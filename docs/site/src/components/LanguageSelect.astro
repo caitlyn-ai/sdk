@@ -1,0 +1,23 @@
+---
+// The site's code language (TypeScript, Python, Go or Rust), as a menu in the SDK reference's code panel, styled as
+// the language tabs' selected tab: the language's logo and name on the amber fill. Every tab group on the site and
+// the panel follow the one stored choice (src/scripts/lang-tabs.ts). A native select with a label, so it works from
+// the keyboard and with a screen reader.
+export const LANGUAGES = [
+  { value: 'typescript', label: 'TypeScript' },
+  { value: 'python', label: 'Python' },
+  { value: 'go', label: 'Go' },
+  { value: 'rust', label: 'Rust' },
+];
+---
+
+<caitlyn-language-select>
+  <label class="caitlyn-lang-picker">
+    <span class="sr-only">Code language</span>
+    <span class="caitlyn-lang-picker-icon" aria-hidden="true"></span>
+    <select autocomplete="off">
+      {LANGUAGES.map((l, i) => <option value={l.value} selected={i === 0}>{l.label}</option>)}
+    </select>
+    <svg class="caitlyn-lang-picker-caret" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 15.4 6.6 10l1.4-1.4 4 4 4-4 1.4 1.4z" /></svg>
+  </label>
+</caitlyn-language-select>

@@ -121,6 +121,169 @@ function memberTable(ast, mems, typePages, { showWhere = false, wireNames = fals
   return `${head}\n${rows.join('\n')}`;
 }
 
+/**
+ * The site's form of a members table (the Markdown copy keeps the table). Rows are grouped under small headings by
+ * where they are sent (path, query, headers, body) when `grouped`. Each row: the name, the wire name only when it
+ * differs (a query's `filter[folder][eq]`), a Required label, then one muted line joining the type and its
+ * constraints ("string · 1 to 128 characters · default 20"), the description with any sentence that only repeats that
+ * line removed, and an enum's values as chips. A member with members of its own (a structure, or a list or map of one)
+ * opens in place to show them, three levels deep at most and never round a cycle. Markdown inside HTML blocks (a
+ * blank line either side), so links and code are written as in the table and the site's rewriting and checks apply.
+ */
+const GROUPS = [
+  { in: 'path', label: 'Path parameters', icon: 'path' },
+  { in: 'query', label: 'Query parameters', icon: 'query' },
+  { in: 'header', label: 'Headers', icon: 'header' },
+  { in: 'body', label: 'Body', icon: 'body' },
+];
+export function memberTree(ast, mems, typePages, { grouped = false, bodyLabel = 'Body', wireNames = false, depth = 0, seen = new Set() } = {}) {
+  const rows = Object.entries(mems).filter(([, m]) => binding(m).in !== 'status');
+  if (!rows.length) return '';
+  const where = (m) => { const b = binding(m).in; return b === 'payload' ? 'body' : b; };
+  const sets = grouped ? GROUPS.map((g) => ({ ...g, label: g.in === 'body' ? bodyLabel : g.label, rows: rows.filter(([, m]) => where(m) === g.in) })).filter((g) => g.rows.length) : [{ rows }];
+  const out = [];
+  for (const set of sets) {
+    if (set.label) out.push(`<p class="caitlyn-param-group"><span class="caitlyn-icon" data-icon="${set.icon}" aria-hidden="true"></span>${set.label}</p>`, '');
+    out.push(`<div class="caitlyn-params">`, '');
+    for (const [name, m] of set.rows) out.push(...memberRow(ast, name, m, typePages, { wireNames, depth, seen }));
+    out.push('</div>', '');
+  }
+  return out.join('\n');
+}
+
+function memberRow(ast, name, m, typePages, { wireNames, depth, seen }) {
+  const S = ast.shapes;
+  const t = m.traits ?? {};
+  const b = binding(m);
+  const shown = wireNames || depth ? (t[T('jsonName')] ?? name) : name;
+  const wire = !depth && (b.in === 'query' || b.in === 'header') && b.name !== shown ? b.name : null;
+  const head = [`<span class="caitlyn-param-name">\`${shown}\`</span>`];
+  if (wire) head.push(`<span class="caitlyn-param-wire" title="Sent as"><span class="caitlyn-icon" data-icon="wire" aria-hidden="true"></span><span class="sr-only">sent as </span>\`${wire}\`</span>`);
+  if (t[T('required')]) head.push('<span class="caitlyn-param-required">Required</span>');
+  // The one muted line: type, then the constraints, each said once
+  const shape = S[m.target];
+  const all = { ...shape?.traits, ...t };
+  const meta = [typeText(ast, m.target, typePages)];
+  const len = all[T('length')];
+  const unit = shape?.type === 'list' ? 'items' : shape?.type === 'map' ? 'entries' : 'characters';
+  if (len && (len.min !== undefined || len.max !== undefined)) meta.push(len.min !== undefined && len.max !== undefined ? `${len.min} to ${len.max} ${unit}` : len.max !== undefined ? `at most ${len.max} ${unit}` : `at least ${len.min} ${unit}`);
+  const range = all[T('range')];
+  if (range) meta.push(range.min !== undefined && range.max !== undefined ? `${range.min} to ${range.max}` : range.max !== undefined ? `at most ${range.max}` : `at least ${range.min}`);
+  const def = t[T('default')];
+  const hasDefault = def !== undefined && def !== null && !(typeof def === 'object' && !Object.keys(def).length);
+  if (hasDefault) meta.push(`default \`${JSON.stringify(def)}\``);
+  if (all[T('pattern')]) meta.push(`pattern \`${all[T('pattern')]}\``);
+  const doc = withoutRepeats(oneLine(t[T('documentation')] ?? ''), { len, range, def: hasDefault ? def : undefined });
+  const values = enumValues(ast, m);
+  const lines = [head.join(' '), '', `<span class="caitlyn-param-meta">${meta.join(' · ')}</span>`, ''];
+  if (doc) lines.push(`<span class="caitlyn-param-doc">${doc}</span>`, '');
+  if (values.length) lines.push(`<span class="caitlyn-param-values">${values.map((v) => `\`${v}\``).join(' ')}</span>`, '');
+  const inner = nestedTarget(ast, m.target);
+  const children = inner && depth < 3 && !seen.has(inner) ? memberTree(ast, members(ast, inner), typePages, { depth: depth + 1, seen: new Set([...seen, inner]) }) : '';
+  if (children) return ['<details class="caitlyn-param">', '<summary>', '', head.join(' '), '', '</summary>', '', ...lines.slice(2), children, '</details>', ''];
+  return ['<div class="caitlyn-param">', '', ...lines, '</div>', ''];
+}
+
+const STATUS_TEXT = { 200: 'OK', 201: 'Created', 202: 'Accepted', 204: 'No content' };
+
+/** A response status as a row that opens to what it carries: the status by its class (src/styles/components.css), its
+ * name, then the body. Markdown inside HTML blocks. */
+function statusRow(status, label, body, { open = false } = {}) {
+  return [`<details class="caitlyn-param caitlyn-status-row"${open ? ' open' : ''}>`, '<summary>', '', `<span class="caitlyn-status" data-status-class="${String(status).charAt(0)}">${status}</span> ${label}`, '', '</summary>', '', ...body, '</details>', ''].join('\n');
+}
+
+/** A number as the model's prose writes it: 32000 or 32,000. */
+const numberText = (n) => `(?:${n}|${Number(n).toLocaleString('en-GB')})`;
+
+/** The description without what the muted line already says: a "Defaults to 20." sentence, or a ", from 1 to 100" or
+ * ", at most 32,000 characters" phrase, when the constraint is the same. */
+function withoutRepeats(doc, { len, range, def }) {
+  let out = doc;
+  if (def !== undefined) out = out.replace(new RegExp(`\\s*Defaults? to \`?${String(def).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\`?\\.`, 'i'), '');
+  for (const c of [range, len]) {
+    if (!c) continue;
+    if (c.min !== undefined && c.max !== undefined) out = out.replace(new RegExp(`,?\\s*(?:from )?${numberText(c.min)} to ${numberText(c.max)}( characters| items)?(?=[.,;])`, 'i'), '');
+    if (c.max !== undefined) out = out.replace(new RegExp(`,?\\s*at most ${numberText(c.max)}( characters| items| entries)?(?=[.,;])`, 'i'), '');
+  }
+  return out.replace(/\s+\./g, '.').trim();
+}
+
+/** An enum member's values (through a list), or none. */
+function enumValues(ast, member) {
+  let s = ast.shapes[member.target];
+  if (s?.type === 'list') s = ast.shapes[s.member.target];
+  if (s?.type !== 'enum') return [];
+  return Object.values(s.members).map((m) => m.traits?.[T('enumValue')]);
+}
+
+/** The structure a member's members come from, through a list or a map, or null for a simple type. */
+function nestedTarget(ast, target) {
+  const s = ast.shapes[target];
+  if (!s) return null;
+  if (s.type === 'structure' || s.type === 'union') return target;
+  if (s.type === 'list') return nestedTarget(ast, s.member.target);
+  if (s.type === 'map') return nestedTarget(ast, s.value.target);
+  return null;
+}
+
+
+/** An example's response as the SDK reader sees it: its status and the body's JSON, without the HTTP framing. A
+ * stream's success has no body of its own (its events are the sample sequence). */
+function responseBody(ast, op, example) {
+  if (example.error) {
+    const err = ast.shapes[example.error.shapeId];
+    return { status: err.traits[T('httpError')], result: JSON.stringify(example.error.content, null, 2) };
+  }
+  const status = op.shape.traits?.[T('http')]?.code ?? 200;
+  if (eventsUnion(ast, op)) return { status, result: null };
+  const mems = members(ast, op.shape.output.target);
+  const body = {};
+  for (const [name, v] of Object.entries(example.output ?? {})) {
+    const b = mems[name] ? binding(mems[name]) : { in: 'body' };
+    if (b.in === 'body' || b.in === 'payload') body[b.name ?? name] = v;
+  }
+  return { status, result: JSON.stringify(body, null, 2) };
+}
+
+/** A placeholder value for a shape, for sample event bodies: enums take their first value, structures their
+ * required members (all of them when none is required), lists one item. */
+function sampleValue(ast, target, name, depth = 0) {
+  const S = ast.shapes;
+  const s = S[target];
+  const type = s?.type ?? local(target).toLowerCase();
+  if (type === 'enum') {
+    const values = Object.values(s.members).map((m) => m.traits?.[T('enumValue')]);
+    return values.includes('assistant') ? 'assistant' : (values[0] ?? '');
+  }
+  if (type === 'string') return /id$/i.test(name) ? `${name.replace(/Id$/i, '').toLowerCase() || 'id'}-1` : `<${name}>`;
+  if (['integer', 'long', 'short', 'byte'].includes(type)) return 1;
+  if (['float', 'double', 'bigdecimal'].includes(type)) return 0.5;
+  if (type === 'boolean') return false;
+  if (type === 'timestamp') return '2026-01-01T00:00:00Z';
+  if (type === 'document') return {};
+  if (depth > 3) return null;
+  if (type === 'list') return [sampleValue(ast, s.member.target, name, depth + 1)];
+  if (type === 'map') return { key: sampleValue(ast, s.value.target, name, depth + 1) };
+  if (type === 'structure' || type === 'union') {
+    const mems = Object.entries(members(ast, target));
+    const req = mems.filter(([, m]) => m.traits?.[T('required')]);
+    const use = type === 'union' ? mems.slice(0, 1) : req.length ? req : mems;
+    return Object.fromEntries(use.map(([k, m]) => [m.traits?.[T('jsonName')] ?? k, sampleValue(ast, m.target, k, depth + 1)]));
+  }
+  return null;
+}
+
+/** A typical sequence of a stream's events, as server-sent events: it starts, writes two pieces of text, cites a
+ * source and completes. Built from the event types, so its values are placeholders. */
+function sampleEvents(ast, ev) {
+  const order = ['message.started', 'phase.changed', 'text.delta', 'text.delta', 'citation.added', 'message.completed'];
+  const byName = new Map(Object.values(ev.shape.members).map((m) => [m.traits?.[T('jsonName')], m]));
+  return order
+    .filter((name) => byName.has(name))
+    .map((name, i) => `id: ${i + 1}\nevent: ${name}\ndata: ${JSON.stringify(sampleValue(ast, byName.get(name).target, name))}`)
+    .join('\n\n');
+}
+
 const CALLERS = { person: 'people (signed in, or a personal access token)', api_client: 'API clients (machine sign-in)', guest: 'guests (a guest token)' };
 
 function permissionText(op) {
@@ -225,6 +388,8 @@ function operationPage(ast, op, typePages, examples, opsUsingError) {
   const resources = [...new Set([resourceName && kebab(resourceName), kebab(singular(op.namespace))].filter(Boolean))].filter((k) => OPTIONS.resources.includes(k));
   const metadata = { pageType: 'reference', sinceVersion: sinceVersion(op.since), resources, integrations: [], operations: [op.name] };
   const out = [];
+  // The site's page swaps some Markdown blocks for richer ones (memberTree); the Markdown copy keeps them as written
+  const siteParts = new Map();
   out.push(op.doc, '');
   if (!live) out.push(NOT_YET, '');
   const calls = sdkCalls(ast, op);
@@ -242,6 +407,7 @@ function operationPage(ast, op, typePages, examples, opsUsingError) {
 
   // Request
   const inMembers = members(ast, op.shape.input.target);
+  const requestAt = out.length;
   out.push('## Request', '');
   out.push(`Member names are shown as they are in TypeScript and on the wire. Python and Rust use snake case (\`${names.python('knowledgeBaseId')}\`) and Go uses exported names (\`${names.go('knowledgeBaseId')}\`).`);
   const notes = [];
@@ -253,7 +419,9 @@ function operationPage(ast, op, typePages, examples, opsUsingError) {
   }
   if (notes.length) out.push(' ' + notes.join(' '));
   out.push('');
-  out.push(memberTable(ast, inMembers, typePages, { showWhere: true }) || 'No members.', '');
+  const reqTable = memberTable(ast, inMembers, typePages, { showWhere: true });
+  out.push(reqTable || 'No members.', '');
+  if (reqTable) siteParts.set(reqTable, memberTree(ast, inMembers, typePages, { grouped: true }));
   const filterable = t[C('filterable')];
   const sortable = t[C('sortable')];
   if (filterable) {
@@ -264,18 +432,39 @@ function operationPage(ast, op, typePages, examples, opsUsingError) {
 
   // Response
   const ev = eventsUnion(ast, op);
+  const responseAt = out.length;
+  let siteResponse = '';
   out.push('## Response', '');
   if (ev) {
     out.push(`A \`text/event-stream\` of [ConversationEvent](/${typeSlug(ev.id)}/) events. The stream ends after \`${ev.shape.members[ev.final]?.traits?.[T('jsonName')] ?? ev.final}\`, which the SDKs' \`finalMessage()\` (Python \`final_message()\`, Go \`FinalMessage()\`, Rust \`final_message()\`) returns; a failure ends it with \`message.failed\`, which the SDKs raise as the typed error. ${ev.resumeWith ? `A dropped connection is resumed with [${local(ev.resumeWith)}](/reference/${kebab(local(ev.resumeWith))}/) and \`Last-Event-ID\`, so no event is lost or repeated.` : ''} See [Streaming](/streaming/).`, '');
     const rows = Object.entries(ev.shape.members).map(([, m]) => `| \`${m.traits?.[T('jsonName')]}\` | [${local(m.target)}](/${typeSlug(m.target)}/) | ${cell(m.traits?.[T('documentation')])} |`);
-    out.push('| Event | Data | Description |', '| --- | --- | --- |', ...rows, '');
+    const eventTable = ['| Event | Data | Description |', '| --- | --- | --- |', ...rows].join('\n');
+    out.push(eventTable, '');
+    // On the site each event is a row that opens to show its data's members
     const outMembers = Object.fromEntries(Object.entries(members(ast, op.shape.output.target)).filter(([, m]) => binding(m).in === 'header'));
     if (Object.keys(outMembers).length) out.push('Response headers:', '', memberTable(ast, outMembers, typePages, { showWhere: true }), '');
+    // The site: one status row, open, with the stream's events (each opening to its data) and the headers
+    siteResponse = statusRow(200, 'Event stream', [
+      out[responseAt + 2],
+      '',
+      `<p class="caitlyn-param-group"><span class="caitlyn-icon" data-icon="events" aria-hidden="true"></span>Events</p>`,
+      '',
+      memberTree(ast, Object.fromEntries(Object.values(ev.shape.members).map((m) => [m.traits?.[T('jsonName')], m])), typePages, { wireNames: true }),
+      Object.keys(outMembers).length ? memberTree(ast, outMembers, typePages, { grouped: true }) : '',
+    ], { open: true });
   } else {
     const status = t[T('http')]?.code ?? 200;
     out.push(`Status ${status}.${t[T('paginated')] ? ' One page of results; the SDKs return the items across every page.' : ''}`, '');
-    out.push(memberTable(ast, members(ast, op.shape.output.target), typePages, { showWhere: true }), '');
+    const resTable = memberTable(ast, members(ast, op.shape.output.target), typePages, { showWhere: true });
+    out.push(resTable, '');
     out.push('Every result also keeps the JSON it was read from, unknown fields included, as `raw`, and the response metadata (HTTP status, request ID, ETag).', '');
+    // The site: one status row, open, with the result's fields grouped (headers, then the response fields)
+    siteResponse = statusRow(status, STATUS_TEXT[status] ?? '', [
+      ...(t[T('paginated')] ? ['One page of results; the SDKs return the items across every page.', ''] : []),
+      memberTree(ast, members(ast, op.shape.output.target), typePages, { grouped: true, bodyLabel: 'Response fields' }),
+      'Every result also keeps the JSON it was read from, unknown fields included, as `raw`, and the response metadata (HTTP status, request ID, ETag).',
+      '',
+    ], { open: true });
   }
 
   // Permissions
@@ -283,17 +472,29 @@ function operationPage(ast, op, typePages, examples, opsUsingError) {
   if (perm) out.push('## Permissions', '', perm, '');
 
   // Errors
+  const errorsAt = out.length;
   out.push('## Errors', '');
   out.push('The SDKs raise the error class for the response\'s HTTP status, whether or not the operation lists it ([Errors](/errors/)). The statuses this operation returns:', '');
   out.push('| Status | Error | Codes | When |', '| --- | --- | --- | --- |');
+  const siteErrors = [];
   for (const e of opsUsingError.errorsOf(op)) {
     out.push(`| ${e.status} | \`${e.name}\` | ${e.codes.map((c) => `[\`${c}\`](/errors/${c}/)`).join(', ')} | ${cell(e.doc)}${e.retryable ? ' Retried by the SDKs.' : ''} |`);
+    // The site: a status row per error class, opening to its codes (each linking to its page) and when it happens
+    siteErrors.push(statusRow(e.status, `\`${e.name}\``, [
+      `<span class="caitlyn-param-values">${e.codes.map((c) => `[\`${c}\`](/errors/${c}/)`).join(' ')}</span>`,
+      '',
+      `<span class="caitlyn-param-doc">${oneLine(e.doc ?? '')}${e.retryable ? ' Retried by the SDKs.' : ''}</span>`,
+      '',
+    ]));
   }
   out.push('');
+  const errorsEnd = out.length;
 
   // Examples
+  let examplesAt = -1;
   const exs = examples.filter((s) => s.op.id === op.id);
   if (exs.length) {
+    examplesAt = out.length;
     out.push('## Examples', '');
     for (const s of exs) {
       out.push(`### ${s.example.title}`, '');
@@ -309,7 +510,55 @@ function operationPage(ast, op, typePages, examples, opsUsingError) {
       }
     }
   }
-  return { slug: `reference/${kebab(op.name)}`, title: op.name, metadata, body: out.join('\n'), group: op.namespace, label: op.name };
+  const body = out.join('\n');
+  // The site's page (docs/site/src/components/OperationHeader.astro) shows the HTTP call and each SDK's call in a strip
+  // under the title, so its body leaves those rows out of the summary table; the Markdown copy keeps them.
+  const stripRows = new Set([`| HTTP | \`${op.http.method} /api${op.http.uri}\` |`, ...Object.entries(calls).map(([lang, call]) => `| ${lang} | \`${call}\` |`)]);
+  // The site's page shows each example's code and exchange in its code panel (src/components/OperationPanel.astro), so its
+  // Examples section keeps each example's heading and words (their anchors stay) and leaves the code out. A slot after
+  // the opening is where the panel sits when the page is one column.
+  const permissionsAt = out.indexOf('## Permissions', responseAt);
+  const siteLines = [
+    ...out.slice(0, requestAt),
+    '<div class="caitlyn-panel-slot" data-operation-panel-slot></div>',
+    '',
+    ...out.slice(requestAt, responseAt),
+    '## Response',
+    '',
+    `<div class="caitlyn-statuses">\n\n${siteResponse}\n</div>`,
+    '',
+    ...out.slice(permissionsAt < 0 ? errorsAt : permissionsAt, errorsAt),
+    ...out.slice(errorsAt, errorsAt + 3),
+    `<div class="caitlyn-statuses">\n\n${siteErrors.join('\n')}\n</div>`,
+    '',
+    ...out.slice(errorsEnd, examplesAt < 0 ? out.length : examplesAt),
+  ];
+  if (examplesAt >= 0) {
+    siteLines.push('## Examples', '', 'Each example\'s code, request and response are in the code panel, in the site\'s code language.', '');
+    for (const ex of exs) {
+      siteLines.push(`### ${ex.example.title}`, '');
+      if (ex.example.documentation) siteLines.push(ex.example.documentation, '');
+    }
+  }
+  const siteBody = siteLines.filter((line) => !stripRows.has(line)).map((line) => siteParts.get(line) ?? line).join('\n');
+  const events = eventsUnion(ast, op);
+  const panel = exs.map((ex) => ({
+    title: ex.example.title,
+    code: Object.fromEntries(Object.entries(ex.code).map(([k, v]) => [k, v.trimEnd()])),
+    // What the SDK hands back: the result's JSON (the response body), or the error's problem details
+    ...responseBody(ast, op, ex.example),
+    // A stream's examples in the model carry no event bodies, so the sequence is built from the event types and
+    // labelled as a sample
+    events: events && !ex.example.error ? sampleEvents(ast, events) : null,
+  }));
+  const operation = {
+    name: op.name,
+    method: `${op.namespace}.${op.method}`,
+    calls: Object.fromEntries(Object.entries(calls).map(([lang, call]) => [lang.toLowerCase(), call])),
+    http: { method: op.http.method, path: `/api${op.http.uri}` },
+    panel,
+  };
+  return { slug: `reference/${kebab(op.name)}`, title: op.name, metadata, body, siteBody, operation, group: op.namespace, label: op.name };
 }
 
 function typePage(ast, id, typePages, usedBy) {

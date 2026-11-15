@@ -23,11 +23,13 @@ make docs                                   # or, with Node 24 on your machine:
 | Where | What |
 | --- | --- |
 | `docs/*.md`, `docs/guides/*.md` | The hand-written pages: the landing page (`index.md`), Getting started, Authentication, Errors, Retries, Streaming, Pagination, Telemetry, the FAQ, Guides still in the app, and the guides. The file's path is the page's address. |
-| `docs/embed/`, `docs/sign-in/`, `docs/tools/` | Pages that are not about the SDKs: embedding the chat, setting up sign-in, and MCP tools and connectors. Each folder is a sidebar section, in the order `SECTIONS` in `scripts/docs-build.mjs` gives. |
+| `docs/embed/`, `docs/sign-in/`, `docs/tools/` | Pages that are not about the SDKs: embedding the chat, setting up sign-in, and MCP tools and connectors. Each folder is a group in the Guides section's sidebar, in the order `SECTIONS` in `scripts/docs-build.mjs` gives. |
 | `docs/error-codes.mjs` | What each error code means and what to do about it; the rest of each `/errors/<CODE>/` page comes from the model. |
 | `scripts/docs-reference.mjs` | The API reference from the model: a page per public operation, per type and per error code. `LIVE_OPERATIONS` lists the operations Caitlyn workspaces serve; every other operation's page says it is not available yet, and shows it as beta. A sentence of the model's documentation that talks about the model itself (a trait, `PROTOCOL.md`, code owners) is left out (`publicDoc` in `scripts/docs-model.mjs`). |
 | `scripts/docs-snippets.mjs` | The reference's runnable programs, one per `@examples` entry and language. |
-| `scripts/docs-build.mjs` | Checks every page, writes the Starlight content (`docs/site/src/content/docs/`, generated) and sidebar, runs `astro build`, then writes the Markdown copies, `llms.txt` and `pages.json`. |
+| `scripts/docs-build.mjs` | Checks every page, writes the Starlight content (`docs/site/src/content/docs/`, generated) and the sidebar's sections (`docs/site/src/generated/sidebar.json`, for starlight-sidebar-topics: Get started, Guides, How the API works and SDK reference, each with its own sidebar; a new start page lands in Get started unless `TOPIC_START` places it), runs `astro build`, then writes the Markdown copies, `llms.txt` and `pages.json`. |
+| Icons | Material Symbols Rounded (outlined, weight 400; the Caitlyn app's set) for the sections and the sidebar's groups, and Simple Icons' monochrome logos for the languages on code blocks and tabs, from the installed Iconify sets (`@iconify-json/*`). `scripts/docs-build.mjs` writes them into `src/generated/icons.css` as CSS masks in the text colour; the mapping is `TOPIC_ICONS`, `GROUP_ICONS` and `LANGUAGE_ICONS` there. Page links have none. |
+| `docs/site/src/pages/api/index.astro` | The HTTP API's reference at `/api/`: Scalar (`@scalar/astro`, `@scalar/api-reference`) renders the site's copy of `model/openapi.json` (`src/generated/openapi.json`, written by `scripts/docs-build.mjs`: operations grouped and titled as in the SDK reference, each opening with a link to the same operation there and carrying its SDK examples as `x-codeSamples`, the first one shown; each SDK's install from Getting started in the Client Libraries box (`x-scalar-sdk-installation`); and its text through the same public-wording check as the pages). Scalar's bundle is served from `/_scalar/<version>/`, never a CDN; its test requests, client button, fonts, agent, MCP and telemetry are off, and its generated snippets are curl only. |
 | `docs/site/` | The Astro Starlight project, with Astro and Starlight pinned to exact versions in `package-lock.json`. |
 
 The build fails on front matter ingestion would skip, a page whose code differs from its example, a
@@ -49,6 +51,30 @@ share (`heading-ids.json`, a copy of the ingestion repository's `pdf/topic/tests
 `:~:text=` link into a code block in a hidden tab opens that tab and highlights the text; Safari hides the
 fragment from scripts, so there the link only works for text that is already visible. The site does not change
 quotes or dashes in text (no SmartyPants), so a quote taken from the Markdown matches the page.
+
+## Theme and components
+
+The site is styled in the Caitlyn Design System: `docs/site/src/styles/caitlyn.css` maps its tokens onto
+Starlight, and `components.css` styles the site's own components. Every colour, type size and weight is a token (the type sizes are the system's, times one scale, `--caitlyn-type-scale`, 0.9, with reading text at 15px),
+named beside it; a choice the system does not cover is marked `GAP`. Shapes follow caitlyn.ai rather than the
+system's sharp corners: rounded buttons, panels, cards and code blocks (the radius values are at the top of
+`caitlyn.css`). The site's one accent colour is amber (`amber-primary`), never as text: it
+marks links' underlines, the current page, tab and contents entry, the note rule, and fills the selected tab and the
+card icons' tiles with ink on them (with the Get started button). Its tone `amber-accent-01` is the hover on an amber
+fill, and clay (`clay-primary`) takes amber's place where amber would read as a warning: the "Needs work" answer and the errors' warning tile. Code is
+coloured from the palette (`src/code-theme.mjs`). The two Euclid files are preloaded, and a local fallback face
+metric-matched to Euclid keeps text still when they arrive.
+
+| Component | What it does |
+| --- | --- |
+| `Hero.astro` | The landing page's hero: the system's Edge cover archetype on the dark cover ground, with the approved field orb (`src/assets/orb-field.png`, scaled only) entering from the right, the title, the tagline and a Get started button. Under it, the four places most readers start, as cards. |
+| `PageTitle.astro` | The page header: a kicker naming where the page sits, then the title. The page's first paragraph is styled as its lead, and a strong rule closes the opening on every page. Only a guide (`pageType: guide`) numbers its sections 01, 02 and on, because only a guide's sections are steps. |
+| `WhatsNext.astro`, `NextCards.astro` | "What's next" at the end of a page: four cards or two, two across, each with an icon, the section's label, the title and a description. The candidates are the page's own closing `## Next` (or `## Next steps`, `## What's next`) list, which the build takes out of the page body (the Markdown copies keep it), then the page's entry in `src/whats-next.json`, then the pages beside it in the sidebar; the page the Next link already shows is left out. An item in the page's list that is not a page on this site stays as a note under the cards. |
+| `Feedback.astro` | "Was this page useful?", a rounded panel with Helpful and Needs work buttons. Shown only when the build sets `PUBLIC_DOCS_FEEDBACK=on` (the live build and merge request builds do), and sent only when it also sets `PUBLIC_DOCS_FEEDBACK_ENDPOINT` (only the live build does); it sends the page's path and yes or no, nothing else. Without an endpoint it says the answer was not sent. |
+| `Pagination.astro` | Previous and next, in sidebar order, as two rounded cards. |
+| `rehype-tables.mjs` | Every table cell carries its column's label. The reference's member, event and error tables become compact rows: the name (or status) with a muted line of its type and where it is sent (or its error class), and a Required label; the codes and description beside it. Another table of four or more columns reads as an index. A cell of comma-separated codes becomes a list. |
+| `remark-lang-tabs.mjs`, `code-theme.mjs` | Language tabs, which are a code block's header bar; a code block outside tabs gets a header bar naming its language. Code sits on `cover-ground` in a rounded frame with a copy button, coloured from the palette: one token for each of keywords, strings, types, numbers, function names, property names, comments and punctuation. |
+| `rehype-landing.mjs` | On the landing page only: a list of "title: description" items becomes a numbered index, and the SDK table becomes cards. |
 
 **The Caitlyn widget** is a placeholder (`docs/site/src/components/CaitlynWidgetPlaceholder.astro`) that renders
 nothing until the v3 widget and embed work is done.

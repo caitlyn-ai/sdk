@@ -38,7 +38,7 @@ once and every page follows), the request and response members, the permission i
 and complete, runnable examples. The examples are compiled against every SDK on each change, so they match the
 SDKs you install.
 
-- Operations: [versions](/reference/get-agent-version/), [conversations](/reference/send-message/),
+- Operations: [agents](/reference/get-agent-version/), [conversations](/reference/send-message/),
   [documents](/reference/list-documents/) and [uploads](/reference/create-upload/).
 - [Types](/reference/types/agent-configuration/): the objects the operations take and return.
 - [Error codes](/errors/NOT_FOUND/): one page per code, at the address each error's `type` names.

@@ -1,0 +1,26 @@
+---
+// Previous and next, as two rounded panel cards: a muted label with its arrow, then the page title.
+const { pagination } = Astro.locals.starlightRoute;
+const { prev, next } = pagination;
+---
+
+{
+  (prev || next) && (
+    <nav class="caitlyn-pagination print:hidden" aria-label="Previous and next pages">
+      {prev ? (
+        <a href={prev.href} rel="prev" class="prev">
+          <span class="caitlyn-kicker">Previous</span>
+          <span class="title">{prev.label}</span>
+        </a>
+      ) : (
+        <span />
+      )}
+      {next && (
+        <a href={next.href} rel="next" class="next">
+          <span class="caitlyn-kicker">Next</span>
+          <span class="title">{next.label}</span>
+        </a>
+      )}
+    </nav>
+  )
+}

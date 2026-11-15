@@ -1,0 +1,2303 @@
+/*
+ * The site's components and layout in the Caitlyn Design System: the landing hero, inline code, tables, code
+ * blocks, notes, "What's next", "Was this page useful?" and previous and next. Values are the system's tokens
+ * (src/styles/caitlyn.css defines them); a multiple of a spacing token is written as one (2 x space-10). Where the
+ * system has no rule, the choice is marked GAP.
+ */
+
+/* -------------------------------------------------------------------------- shared */
+.caitlyn-kicker {
+  font-size: var(--caitlyn-text-kicker); /* kicker */
+  line-height: 1.2;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--caitlyn-ink);
+}
+.sl-markdown-content a,
+.caitlyn-hero a {
+  text-underline-offset: 4px; /* clear of underscores in linked code (VALIDATION_FAILED) */
+  text-decoration-thickness: 2px;
+  text-decoration-color: var(--caitlyn-accent-colour); /* the accent marks a link; its text stays ink */
+}
+.sl-markdown-content a:hover {
+  text-decoration-color: currentColor;
+}
+
+/* Buttons, as on caitlyn.ai: solid ink with a small radius, and a grey (panel) secondary */
+.caitlyn-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px; /* space-2 */
+  padding: 10px 18px; /* GAP: caitlyn.ai's button padding */
+  border: 0;
+  border-radius: var(--caitlyn-radius-button);
+  font: inherit;
+  font-size: var(--caitlyn-text-subhead); /* subhead */
+  font-weight: 400;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+}
+.caitlyn-button.primary {
+  background: var(--caitlyn-ink);
+  color: var(--caitlyn-ground);
+}
+.caitlyn-button.secondary {
+  background: var(--caitlyn-panel);
+  color: var(--caitlyn-ink);
+}
+.caitlyn-button.primary:hover {
+  background: var(--caitlyn-muted);
+}
+.caitlyn-button.secondary:hover {
+  background: var(--caitlyn-rule);
+}
+
+/* ------------------------------------------------------------------- landing hero */
+/* The Edge cover archetype on cover-ground: the field orb enters from the right edge, cropped by it; the title
+   and tagline hang from the left margin. Full width of the page, in both themes. */
+[data-has-hero] .content-panel:first-of-type {
+  padding-top: 0;
+}
+.caitlyn-hero {
+  position: relative;
+  overflow: hidden;
+  margin-inline: calc(50% - 50vw);
+  margin-bottom: 80px; /* 2 x space-10 */
+  background: var(--caitlyn-primary-dark-100); /* cover-ground */
+  color: var(--caitlyn-pure-white); /* cover-ink */
+  min-height: 520px;
+  display: flex;
+  align-items: flex-end;
+}
+.caitlyn-hero-orb {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: min(70vh, 640px);
+  transform: translate(38%, -50%); /* cropped by the right edge, about a third of the width visible */
+  pointer-events: none;
+}
+.caitlyn-hero-orb img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.caitlyn-hero-copy {
+  position: relative;
+  width: 100%;
+  max-width: calc(var(--sl-content-width) + 2 * var(--sl-content-pad-x));
+  margin-inline: auto;
+  padding: 120px var(--sl-content-pad-x) 80px; /* 3 x space-10 above, 2 x space-10 below */
+}
+.caitlyn-hero h1#_top {
+  margin: 0;
+  max-width: 11em;
+  font-size: var(--caitlyn-text-hero); /* cover-title, scaled up for the format */
+  line-height: 0.95;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  color: var(--caitlyn-pure-white);
+}
+.caitlyn-hero-tagline {
+  margin: 32px 0 0; /* space-8 */
+  max-width: 34em;
+  font-size: var(--caitlyn-text-subhead); /* subhead */
+  line-height: 1.55;
+  font-weight: 300;
+  color: var(--caitlyn-pure-white);
+}
+.caitlyn-hero-tagline a {
+  color: inherit;
+}
+.caitlyn-hero-tagline code {
+  background: transparent;
+  color: inherit;
+}
+.caitlyn-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px; /* space-6 */
+  margin-top: 40px; /* space-10 */
+}
+.caitlyn-hero-action {
+  font-size: var(--caitlyn-text-subhead); /* subhead */
+  font-weight: 500;
+  text-decoration: none;
+  color: var(--caitlyn-pure-white);
+}
+.caitlyn-hero-action.primary {
+  padding: 10px 18px;
+  border-radius: var(--caitlyn-radius-button);
+  background: var(--caitlyn-accent-fill); /* amber, with ink on it */
+  color: var(--caitlyn-primary-dark-100);
+}
+.caitlyn-hero-action.primary:hover {
+  background: var(--caitlyn-accent-fill-hover);
+}
+.caitlyn-hero-action.secondary {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.caitlyn-hero :focus-visible {
+  outline-color: var(--caitlyn-pure-white);
+}
+@media (max-width: 50rem) {
+  .caitlyn-hero {
+    min-height: 0;
+  }
+  .caitlyn-hero-orb {
+    top: 0;
+    width: 320px;
+    transform: translate(40%, -40%); /* the corner variant of Edge on a narrow screen */
+  }
+  .caitlyn-hero-copy {
+    padding-top: 160px;
+    padding-bottom: 40px;
+  }
+  .caitlyn-hero h1#_top {
+    font-size: var(--caitlyn-text-cover-title); /* cover-title */
+  }
+}
+
+/* ------------------------------------------------------------------------ prose */
+/* Inline code: a rounded panel tint around the text */
+.sl-markdown-content code:not(pre code) {
+  padding: 0.1em 0.35em;
+  border-radius: var(--caitlyn-radius-inline);
+  margin: 0;
+  font-size: var(--caitlyn-text-body); /* body */
+  background-color: var(--caitlyn-panel);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.sl-markdown-content h2 {
+  margin-top: 80px; /* 2 x space-10: sections open with clear air */
+}
+.sl-markdown-content h3 {
+  margin-top: 40px; /* space-10 */
+}
+.sl-markdown-content :is(h2, h3) + * {
+  margin-top: 12px; /* space-3: a heading sits close to what it heads */
+}
+
+/* --------------------------------------------------------------------------- tables */
+.sl-markdown-content table {
+  width: 100%;
+}
+/* Starlight makes a table a scrolling block, so its rows shrink to their content while its strong rule spans the
+   column. A plain table is a table again, full width, so every row's hairline ends flush with the rule; the wrapper
+   around it (rehype-tables.mjs) scrolls when it cannot fit. The wide tables and the SDK cards lay out their own rows. */
+.sl-markdown-content .caitlyn-table-scroll {
+  overflow-x: auto;
+}
+.sl-markdown-content .caitlyn-table-scroll:has(> .caitlyn-sdk-cards) {
+  overflow: visible; /* the cards' focus outlines stay whole */
+}
+.sl-markdown-content table:not(.caitlyn-table-wide, .caitlyn-sdk-cards) {
+  display: table;
+}
+.sl-markdown-content :is(th, td) {
+  padding: 12px 16px; /* space-3, space-4 */
+  vertical-align: top;
+}
+.sl-markdown-content :is(th, td) code {
+  overflow-wrap: anywhere;
+}
+.sl-markdown-content .caitlyn-code-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sl-markdown-content .caitlyn-code-list li {
+  margin: 0;
+}
+.sl-markdown-content .caitlyn-code-list li + li {
+  margin-top: 4px; /* space-1 */
+}
+
+/* A table of four or more columns (the reference's request and response members, its errors) reads as a list of
+   entries: the first column (the member, or the status) on the left, and on the right the short columns as quiet
+   metadata lines (type and where it is sent; or the error class and codes), then the description. On a narrow
+   container the two columns stack. GAP: the system has no rule for reference tables; this follows its Hairline
+   Index (hairlines between entries, no boxes). */
+.sl-markdown-content table.caitlyn-table-wide {
+  display: block;
+  overflow: visible;
+  border-top: 1px solid var(--caitlyn-strong-rule);
+}
+.sl-markdown-content table.caitlyn-table-wide tbody {
+  display: block;
+}
+.sl-markdown-content table.caitlyn-table-wide thead {
+  /* The column labels stay for screen readers; each entry's layout shows what its parts are */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.sl-markdown-content table.caitlyn-table-wide tr {
+  display: grid;
+  grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr);
+  grid-auto-rows: auto;
+  column-gap: 32px; /* space-8 */
+  row-gap: 4px; /* space-1 */
+  margin: 0;
+  padding: 16px 0; /* space-4 */
+  border-bottom: 1px solid var(--caitlyn-rule);
+}
+.sl-markdown-content table.caitlyn-table-wide :is(th, td) {
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+.sl-markdown-content table.caitlyn-table-wide td:first-child {
+  grid-column: 1;
+  grid-row: 1 / span 8;
+  font-weight: 500;
+}
+.sl-markdown-content table.caitlyn-table-wide td:not(:first-child) {
+  grid-column: 2;
+}
+.sl-markdown-content table.caitlyn-table-wide td:not(:first-child, :last-child) {
+  color: var(--caitlyn-muted); /* metadata: the type, where it is sent, the error class */
+}
+.sl-markdown-content table.caitlyn-table-wide td:not(:first-child, :last-child) code,
+.sl-markdown-content table.caitlyn-table-wide td:not(:first-child, :last-child) a {
+  color: var(--caitlyn-ink);
+}
+.sl-markdown-content table.caitlyn-table-wide td:last-child {
+  margin-top: 4px; /* space-1 */
+}
+.sl-markdown-content table.caitlyn-table-wide td:not(:last-child) code {
+  white-space: nowrap; /* a member, a class or an error code never breaks mid-name */
+  overflow-wrap: normal;
+}
+.sl-markdown-content table.caitlyn-table-wide .caitlyn-code-list ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px; /* space-1, space-4 */
+}
+.sl-markdown-content table.caitlyn-table-wide .caitlyn-code-list li + li {
+  margin-top: 0;
+}
+@media (max-width: 50rem) {
+  .sl-markdown-content table.caitlyn-table-wide tr {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sl-markdown-content table.caitlyn-table-wide td:first-child {
+    grid-row: auto;
+  }
+  .sl-markdown-content table.caitlyn-table-wide td:not(:first-child) {
+    grid-column: 1;
+  }
+  .sl-markdown-content table.caitlyn-table-wide td:not(:last-child) code {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* A table with an empty header row (a reference page's summary, an error page's facts) opens with its strong rule
+   and has no header line of its own */
+.sl-markdown-content table.caitlyn-table-headless thead {
+  display: none;
+}
+
+/* --------------------------------------------------------------------- code blocks */
+/* Code sits on cover-ground in a rounded frame under a header bar: the language (Expressive Code's frame title, or
+   the language tabs) and an always-visible rounded copy button. GAP: code colours are not in the system; see
+   astro.config.mjs. */
+/* One rounded edge round the whole block, and none inside it: Expressive Code draws no borders of its own
+   (astro.config.mjs), so a single block's frame and a tab group's wrapper each carry this one. In light the edge is
+   the block's own black; in dark it is the dark rule, so the block holds its shape on the dark page. */
+:root {
+  --caitlyn-code-edge: var(--caitlyn-primary-dark-100);
+}
+:root[data-theme='dark'] {
+  --caitlyn-code-edge: #2e3331; /* rule (dark) */
+}
+.expressive-code .frame {
+  border: 1px solid var(--caitlyn-code-edge);
+  border-radius: var(--caitlyn-radius-code);
+  overflow: hidden;
+}
+.expressive-code .frame pre {
+  border: 0;
+}
+.expressive-code .frame .header {
+  border-bottom: 1px solid #2e3331; /* rule (dark) */
+}
+.expressive-code .frame .header .title {
+  font-size: var(--caitlyn-text-kicker); /* kicker */
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #a8b0ad; /* cover-muted */
+}
+.expressive-code .copy button {
+  opacity: 1 !important;
+  border-radius: var(--caitlyn-radius-button);
+}
+.expressive-code .copy button::after {
+  border-color: #a8b0ad; /* cover-muted */
+  border-radius: var(--caitlyn-radius-button);
+}
+/* The language tabs become the code block's rounded header bar, and the frame under it continues the rounding */
+.lang-tabs-ready {
+  border-radius: var(--caitlyn-radius-code);
+  overflow: hidden;
+  background: var(--caitlyn-primary-dark-100); /* cover-ground */
+}
+.lang-tabs-ready > .lang-tab-list {
+  margin-bottom: 0;
+  border-bottom: 1px solid #2e3331; /* rule (dark) */
+  background: var(--caitlyn-primary-dark-100); /* cover-ground */
+  padding: 8px 8px 0;
+  gap: 4px;
+}
+.lang-tabs-ready > .lang-tab-list .lang-tab {
+  color: #a8b0ad; /* cover-muted */
+  font-size: var(--caitlyn-text-kicker); /* kicker */
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 8px 14px;
+  margin-bottom: 8px;
+  border: 0;
+  border-radius: var(--caitlyn-radius-button);
+}
+.lang-tabs-ready > .lang-tab-list .lang-tab:hover {
+  color: var(--caitlyn-pure-white); /* cover-ink */
+}
+.lang-tabs-ready > .lang-tab-list .lang-tab[aria-selected='true'] {
+  color: var(--caitlyn-primary-dark-100); /* ink on the accent fill */
+  background: var(--caitlyn-accent-colour); /* the selected tab as a rounded accent fill */
+}
+.lang-tabs-ready > .lang-tab-list .lang-tab:focus-visible {
+  outline-color: var(--caitlyn-pure-white);
+  outline-offset: -2px;
+}
+.lang-tabs-ready {
+  border: 1px solid var(--caitlyn-code-edge);
+}
+.lang-tabs-ready > .lang-panel .expressive-code .frame {
+  border: 0;
+  border-radius: 0;
+}
+/* On a narrow screen the four language tabs stay on one line, scrolling sideways if they must */
+@media (max-width: 30rem) {
+  .lang-tabs-ready > .lang-tab-list {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .lang-tabs-ready > .lang-tab-list .lang-tab {
+    padding: 8px 10px;
+    flex: none;
+  }
+}
+
+/* ------------------------------------------------------------------------- sidebar */
+/* Three levels: the top groups are muted kicker labels, the reference's namespaces are Medium, and pages are Regular;
+   operations, types and error codes are set in the code face, as the names they are. The current page is a rounded
+   panel fill, as the selected row of caitlyn.ai's numbered lists. GAP: navigation states. */
+.sidebar-content ul.top-level > li > details > summary .group-label > .large {
+  font-size: var(--caitlyn-text-kicker); /* kicker */
+  line-height: 1.2;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--caitlyn-muted);
+}
+.sidebar-content ul.top-level > li + li {
+  margin-top: 16px; /* space-4 */
+}
+.sidebar-content ul.top-level details details > summary .group-label > .large {
+  font-size: var(--caitlyn-text-body); /* body */
+  font-weight: 500;
+  color: var(--caitlyn-ink);
+}
+.sidebar-content ul.top-level a {
+  font-size: var(--caitlyn-text-body); /* body */
+  font-weight: 400;
+}
+.sidebar-content ul.top-level details details a {
+  font-family: var(--__sl-font-mono, ui-monospace, monospace);
+  font-size: var(--caitlyn-text-code-face); /* GAP: the code face runs larger than Euclid at one size */
+}
+.sidebar-content a {
+  border-radius: var(--caitlyn-radius-row);
+}
+/* The current page: an ink fill with the ground's colour on it (white on ink in light, ink on white in dark), as the
+   site first had it, with no accent bar. 19:1 in both themes. */
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover,
+.sidebar-content a[aria-current='page']:focus {
+  background: var(--caitlyn-ink);
+  color: var(--caitlyn-ground);
+  font-weight: 500;
+  box-shadow: none;
+}
+/* The current entry in "On this page": the accent underlines it */
+starlight-toc a[aria-current='true'],
+mobile-starlight-toc a[aria-current='true'] {
+  color: var(--caitlyn-ink);
+  text-decoration: underline 2px var(--caitlyn-accent-colour);
+  text-underline-offset: 4px;
+}
+.sidebar-content a:not([aria-current='page']):hover {
+  color: var(--caitlyn-ink);
+  background: color-mix(in srgb, var(--caitlyn-panel) 55%, transparent);
+}
+
+/* --------------------------------------------------------------------- what's next */
+/* Cards on the page ground with a hairline border, two across at most: an icon tile, the section's label, the title
+   in Euclid and the description. Long identifiers (VALIDATION_FAILED) wrap rather than overflow. On hover the border
+   and the icon tile turn ink. */
+.caitlyn-whats-next {
+  margin-top: 80px; /* 2 x space-10 */
+}
+.caitlyn-whats-next > h2,
+.caitlyn-start-band > h2 {
+  margin: 0 0 16px; /* space-4 */
+  color: var(--caitlyn-muted);
+}
+.caitlyn-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px; /* space-4 */
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (max-width: 40rem) {
+  .caitlyn-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.caitlyn-cards li {
+  margin: 0;
+  display: flex;
+  min-width: 0;
+}
+.caitlyn-cards a {
+  display: flex;
+  flex-direction: column;
+  gap: 8px; /* space-2 */
+  width: 100%;
+  min-width: 0;
+  padding: 24px; /* space-6 */
+  border: 1px solid var(--caitlyn-rule);
+  border-radius: var(--caitlyn-radius-panel);
+  background: transparent;
+  color: var(--caitlyn-ink);
+  text-decoration: none;
+}
+.caitlyn-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px; /* space-4 */
+  margin-bottom: 12px; /* space-3 */
+}
+.caitlyn-card-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px; /* space-10 */
+  height: 40px;
+  border-radius: var(--caitlyn-radius-row);
+  background: var(--caitlyn-accent-fill); /* amber, with ink on it in both themes */
+  color: var(--caitlyn-primary-dark-100);
+}
+/* A warning sign on amber reads as an alert, so the errors' tile is clay */
+.caitlyn-card-icon[data-icon='warning'] {
+  background: var(--caitlyn-caution-fill);
+}
+.caitlyn-card-section {
+  color: var(--caitlyn-muted);
+  text-align: end;
+}
+.caitlyn-card-title {
+  font-size: var(--caitlyn-text-card); /* GAP: between subhead and section-title, as caitlyn.ai's card titles */
+  line-height: 1.3;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.caitlyn-card-description {
+  font-size: var(--caitlyn-text-body); /* body */
+  line-height: 1.55;
+  font-weight: 400;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.caitlyn-cards a:hover,
+.caitlyn-cards a:focus-visible {
+  border-color: var(--caitlyn-ink);
+}
+.caitlyn-cards a:hover .caitlyn-card-icon:not([data-icon='warning']),
+.caitlyn-cards a:focus-visible .caitlyn-card-icon:not([data-icon='warning']) {
+  background: var(--caitlyn-accent-fill-hover);
+}
+.caitlyn-whats-next-notes {
+  margin: 16px 0 0; /* space-4 */
+  padding-inline-start: 1.2em;
+  font-size: var(--caitlyn-text-body); /* body */
+}
+
+/* ----------------------------------------------------------- was this page useful? */
+/* A rounded panel: the question and a line on what is captured, then the two answers as rounded buttons with
+   thumbs icons. */
+.caitlyn-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 24px; /* space-4, space-6 */
+  margin-top: 40px; /* space-10 */
+  padding: 24px 32px; /* space-6, space-8 */
+  border-radius: var(--caitlyn-radius-panel);
+  background: var(--caitlyn-panel);
+}
+.caitlyn-feedback .copy {
+  flex: 1 1 18rem;
+}
+.caitlyn-feedback .copy > p {
+  margin: 0;
+}
+.caitlyn-feedback .question {
+  font-size: var(--caitlyn-text-subhead); /* subhead */
+  font-weight: 500;
+}
+.caitlyn-feedback .copy > .note {
+  margin-top: 4px; /* space-1 */
+  font-size: var(--caitlyn-text-body); /* body */
+  font-weight: 400;
+}
+.caitlyn-feedback .answers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px; /* space-2 */
+}
+.caitlyn-feedback button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px; /* space-2 */
+  padding: 10px 18px;
+  border: 0;
+  border-radius: var(--caitlyn-radius-button);
+  background: var(--caitlyn-ground);
+  color: var(--caitlyn-ink);
+  font: inherit;
+  font-size: var(--caitlyn-text-body); /* body */
+  font-weight: 500;
+  cursor: pointer;
+}
+.caitlyn-feedback button:hover:not(:disabled) {
+  background: var(--caitlyn-ink);
+  color: var(--caitlyn-ground);
+}
+.caitlyn-feedback button[aria-pressed='true'] {
+  background: var(--caitlyn-accent-fill); /* the answer given, in amber */
+  color: var(--caitlyn-primary-dark-100);
+}
+/* "Needs work" in amber would read as a warning, so the answer given there is clay */
+.caitlyn-feedback button[data-answer='no'][aria-pressed='true'] {
+  background: var(--caitlyn-caution-fill);
+}
+.caitlyn-feedback button:disabled {
+  cursor: default;
+}
+.caitlyn-feedback button:disabled:not([aria-pressed='true']) {
+  color: var(--caitlyn-muted);
+}
+.caitlyn-feedback .status {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--caitlyn-text-body); /* body */
+}
+.caitlyn-feedback .status:empty {
+  display: none;
+}
+
+/* --------------------------------------------------------------- previous and next */
+footer .meta:empty {
+  display: none;
+}
+/* Two cards on the page ground with a hairline border, as "What's next": a muted label with its arrow, then the page
+   title in Euclid at a modest size */
+.caitlyn-pagination {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px; /* space-4 */
+  margin-top: 16px; /* space-4 */
+}
+.caitlyn-pagination a {
+  display: flex;
+  flex-direction: column;
+  gap: 8px; /* space-2 */
+  min-width: 0;
+  padding: 20px 24px; /* space-6 */
+  border: 1px solid var(--caitlyn-rule);
+  border-radius: var(--caitlyn-radius-panel);
+  background: transparent;
+  color: var(--caitlyn-ink);
+  text-decoration: none;
+}
+.caitlyn-pagination a:hover,
+.caitlyn-pagination a:focus-visible {
+  border-color: var(--caitlyn-ink);
+}
+.caitlyn-pagination .caitlyn-kicker {
+  color: var(--caitlyn-muted);
+}
+.caitlyn-pagination .next {
+  grid-column: 2;
+  text-align: end;
+}
+.caitlyn-pagination .title {
+  font-size: var(--caitlyn-text-subhead); /* subhead */
+  line-height: 1.35;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.caitlyn-pagination .prev .caitlyn-kicker::before {
+  content: '\2190\00a0'; /* a left arrow, as text */
+}
+.caitlyn-pagination .next .caitlyn-kicker::after {
+  content: '\00a0\2192'; /* a right arrow, as text */
+}
+@media (max-width: 30rem) {
+  .caitlyn-pagination a {
+    padding: 16px; /* space-4 */
+  }
+}
+
+/* ---------------------------------------------------------------- the landing band */
+/* The four places most readers start, under the hero: the same cards as "What's next", two across */
+.caitlyn-start-band {
+  margin: 0 0 40px; /* space-10 */
+  padding-top: 56px;
+}
+
+/* The landing page's lists of "<title>: <description>" items (src/plugins/rehype-landing.mjs) as a numbered index, as
+   caitlyn.ai's "01 Grounded" rows: a muted two-digit numeral, the title, and the description beneath it */
+.sl-markdown-content ul.caitlyn-index {
+  counter-reset: caitlyn-index;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--caitlyn-rule);
+}
+.sl-markdown-content ul.caitlyn-index > li {
+  counter-increment: caitlyn-index;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  column-gap: 16px;
+  row-gap: 2px;
+  margin: 0;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--caitlyn-rule);
+}
+.sl-markdown-content ul.caitlyn-index > li::before {
+  content: counter(caitlyn-index, decimal-leading-zero);
+  grid-row: 1 / span 2;
+  font-size: var(--caitlyn-text-section-title); /* section-title's size */
+  line-height: 1;
+  font-weight: 400;
+  color: var(--caitlyn-muted);
+  font-variant-numeric: tabular-nums;
+}
+.caitlyn-index-title {
+  font-size: var(--caitlyn-text-subhead); /* subhead */
+  line-height: 1.35;
+  font-weight: 500;
+}
+.caitlyn-index-title a {
+  text-decoration: none;
+}
+.caitlyn-index-title a:hover {
+  text-decoration: underline;
+}
+.caitlyn-index-description {
+  font-size: var(--caitlyn-text-body); /* body */
+  color: var(--caitlyn-ink);
+}
+
+/* The SDK table as cards: one per language, two across, the language above its package and where it runs */
+.sl-markdown-content table.caitlyn-sdk-cards {
+  display: block;
+  border: 0;
+}
+.sl-markdown-content table.caitlyn-sdk-cards thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.sl-markdown-content table.caitlyn-sdk-cards tbody {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px; /* space-4 */
+}
+.sl-markdown-content table.caitlyn-sdk-cards tr {
+  display: flex;
+  flex-direction: column;
+  gap: 8px; /* space-2 */
+  padding: 20px 24px;
+  border: 1px solid var(--caitlyn-rule);
+  border-radius: var(--caitlyn-radius-panel);
+}
+.sl-markdown-content table.caitlyn-sdk-cards :is(tr, td) {
+  margin: 0;
+}
+.sl-markdown-content table.caitlyn-sdk-cards td {
+  padding: 0;
+  border: 0;
+}
+.sl-markdown-content table.caitlyn-sdk-cards td:first-child {
+  font-size: var(--caitlyn-text-card); /* as the card titles */
+  font-weight: 500;
+}
+.sl-markdown-content table.caitlyn-sdk-cards td:last-child {
+  color: var(--caitlyn-muted);
+}
+@media (max-width: 40rem) {
+  .sl-markdown-content table.caitlyn-sdk-cards tbody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ------------------------------------------------------------------- page header */
+/* An article page opens like the system's documents: a kicker naming where it sits, the title at cover-title, then
+   the first paragraph as the lead (section-title's size in Light) above a strong rule, with air on both sides. A
+   first paragraph that is long, or that leads straight into a list, stays body text (src/plugins/rehype-lead.mjs). */
+.content-panel:has(.caitlyn-page-header) {
+  padding-bottom: 0;
+}
+.content-panel:has(.caitlyn-page-header) + .content-panel {
+  border-top: 0;
+}
+.caitlyn-page-header {
+  padding-top: 40px; /* space-10 */
+}
+.caitlyn-page-section {
+  margin: 0 0 16px; /* space-4 */
+}
+.caitlyn-page-header h1#_top {
+  margin: 0;
+  max-width: 14em;
+}
+.sl-markdown-content > p.caitlyn-lead {
+  margin: 0 0 40px; /* space-10 */
+  padding-bottom: 32px; /* space-8 */
+  border-bottom: 1px solid var(--caitlyn-strong-rule);
+  max-width: 34em;
+  font-size: var(--caitlyn-text-section-title); /* section-title's size */
+  line-height: 1.3;
+  font-weight: 300; /* Light: a lead, not a heading */
+  letter-spacing: -0.01em;
+}
+/* A page whose first paragraph is not a lead still closes its opening with the strong rule */
+main:not(:has(p.caitlyn-lead)) .caitlyn-page-header {
+  padding-bottom: 32px; /* space-8 */
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--caitlyn-strong-rule);
+}
+.sl-markdown-content > p.caitlyn-lead code {
+  font-size: 0.85em;
+}
+
+/* The SDK reference's operation and type pages: the title at the API reference's operation-heading size (section-title,
+   as /api/ sets Scalar's), so the two references match; the lead one step above body, still below the title; and the
+   opening's spacing scaled to suit. Guides and the other pages keep cover-title. */
+.caitlyn-page-header[data-reference] {
+  padding-top: 32px; /* space-8 */
+}
+.caitlyn-page-header[data-reference] .caitlyn-page-section {
+  margin-bottom: 12px; /* space-3 */
+}
+.caitlyn-page-header[data-reference] h1#_top {
+  font-size: var(--caitlyn-text-section-title);
+  line-height: 1.05;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  max-width: none;
+}
+.caitlyn-page-header[data-reference] .caitlyn-operation-strip {
+  margin-top: 12px; /* space-3 */
+}
+main:has(.caitlyn-page-header[data-reference]) .content-panel:has(.caitlyn-page-header) + .content-panel {
+  padding-top: 8px; /* space-2: the lead follows the strip closely */
+}
+main:has(.caitlyn-page-header[data-reference]) .sl-markdown-content > p.caitlyn-lead {
+  max-width: none; /* its rule spans the column, as the tables' do */
+  margin: 0 0 32px; /* space-8 */
+  padding-bottom: 24px; /* space-6 */
+  font-size: var(--caitlyn-text-card); /* one step above body */
+  line-height: 1.5;
+  font-weight: 400;
+  letter-spacing: normal;
+}
+main:has(.caitlyn-page-header[data-reference]):not(:has(p.caitlyn-lead)) .caitlyn-page-header {
+  padding-bottom: 24px; /* space-6 */
+}
+
+/* --------------------------------------------------------------- numbered sections */
+/* A guide's sections are steps, numbered as caitlyn.ai's "01 Grounded" rows: a two-digit numeral at the heading's own
+   size, in muted grey, before its title. Other pages' sections are not an order, so they are not numbered
+   (PageTitle.astro marks a guide with data-steps). */
+main:has(.caitlyn-page-header[data-steps]) .sl-markdown-content {
+  counter-reset: caitlyn-section;
+}
+main:has(.caitlyn-page-header[data-steps]) .sl-markdown-content h2 {
+  counter-increment: caitlyn-section;
+}
+main:has(.caitlyn-page-header[data-steps]) .sl-markdown-content h2::before {
+  content: counter(caitlyn-section, decimal-leading-zero);
+  display: inline-block;
+  min-width: 1.6em; /* the titles of every section start on one line */
+  margin-inline-end: calc(0.35em / var(--caitlyn-type-scale)); /* the gap it had before the type scale */
+  color: var(--caitlyn-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Starlight lists the page's top as "Overview" in "On this page"; a page with its own Overview section shows one */
+starlight-toc li:has(> a[href='#_top']):has(~ li > a[href='#overview']),
+mobile-starlight-toc li:has(> a[href='#_top']):has(~ li > a[href='#overview']) {
+  display: none;
+}
+
+/* ------------------------------------------------------------ reference rows */
+/* The reference's member, event and error tables as compact rows (src/plugins/rehype-tables.mjs): the name, or the
+   status, on the left with a muted line beneath ("string · path", the error class) and a Required label above when it
+   is required; the codes and the description on the right. Hairlines between rows, the strong rule above the first. */
+.sl-markdown-content table.caitlyn-table-rows {
+  display: block;
+  border-top: 1px solid var(--caitlyn-strong-rule);
+}
+.sl-markdown-content table.caitlyn-table-rows thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.sl-markdown-content table.caitlyn-table-rows tbody {
+  display: block;
+}
+.sl-markdown-content table.caitlyn-table-rows tr {
+  display: grid;
+  grid-template-columns: minmax(11rem, 30%) minmax(0, 1fr);
+  column-gap: 32px; /* space-8 */
+  padding: 14px 0;
+  border-bottom: 1px solid var(--caitlyn-rule);
+}
+.sl-markdown-content table.caitlyn-table-rows :is(tr, td) {
+  margin: 0;
+}
+.sl-markdown-content table.caitlyn-table-rows td {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+.sl-markdown-content table.caitlyn-table-rows td > * {
+  margin: 0;
+}
+.caitlyn-row-required,
+.caitlyn-row-name,
+.caitlyn-row-meta {
+  display: block;
+}
+.caitlyn-row-meta {
+  margin-top: 2px !important;
+}
+.caitlyn-row-required {
+  margin-bottom: 4px !important; /* space-1 */
+  font-size: var(--caitlyn-text-kicker); /* kicker */
+  line-height: 1.2;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--caitlyn-ink);
+}
+.caitlyn-row-name {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.caitlyn-row-name code {
+  font-weight: 500;
+}
+.caitlyn-row-meta {
+  color: var(--caitlyn-muted);
+  overflow-wrap: anywhere;
+}
+.sl-markdown-content .caitlyn-row-meta :is(code, a code) {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+/* An error table's status reads larger, as the row's key */
+.sl-markdown-content table.caitlyn-table-rows td[data-label='Status'] .caitlyn-row-name {
+  font-size: var(--caitlyn-text-card); /* as the card titles */
+}
+.caitlyn-row-codes {
+  margin-bottom: 6px !important;
+}
+.caitlyn-row-codes ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.caitlyn-row-codes li {
+  margin: 0 !important;
+}
+@media (max-width: 50rem) {
+  .sl-markdown-content table.caitlyn-table-rows tr {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 6px;
+  }
+}
+
+/* Code inside a link is a pill, so the link carries no underline as well; it underlines on hover */
+.sl-markdown-content a:has(> code:only-child) {
+  text-decoration: none;
+}
+.sl-markdown-content a:has(> code:only-child):hover {
+  text-decoration: underline;
+}
+
+/* --------------------------------------------------------------- sidebar names */
+/* The reference's groups are the SDK namespaces (conversations, documents); shown in sentence case */
+.sidebar-content ul ul details > summary .group-label > span {
+  display: inline-block;
+}
+.sidebar-content ul ul details > summary .group-label > span::first-letter {
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------------- screenshots */
+/* A screenshot of another product's page is mostly white, so on the white page it gets a hairline edge and the
+   code blocks' rounding, and air above and below */
+.sl-markdown-content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-block: 16px; /* space-4 */
+  border: 1px solid var(--caitlyn-rule);
+  border-radius: var(--caitlyn-radius-code);
+}
+
+/* ------------------------------------------------------------- "On this page" column */
+/* The contents column is narrower than Starlight's (which shares the left sidebar's 300px), with no rule at its edge,
+   and the main column takes the width it gives up: the content's maximum width grows by the same 60px. Starlight's
+   own two-column rules with the contents width swapped in; the column still folds into the "On this page" menu below
+   72rem, as Starlight's does. GAP: column widths are not tokens. */
+:root {
+  --caitlyn-toc-width: 15rem; /* 240px, was the sidebar's 18.75rem */
+}
+[data-has-toc] {
+  --sl-content-width: calc(45rem + 18.75rem - var(--caitlyn-toc-width)); /* Starlight's 45rem, plus what the column gave */
+}
+@media (min-width: 72rem) {
+  .right-sidebar-container {
+    width: max(
+      var(--caitlyn-toc-width),
+      calc(var(--caitlyn-toc-width) + (100% - var(--sl-content-width) - var(--caitlyn-toc-width)) / 2)
+    );
+  }
+  .right-sidebar {
+    border-inline-start: 0;
+  }
+  [data-has-sidebar][data-has-toc] .main-pane {
+    width: min(
+      calc(100% - var(--caitlyn-toc-width)),
+      calc(var(--sl-content-width) + (100% - var(--sl-content-width) - var(--caitlyn-toc-width)) / 2)
+    );
+  }
+}
+
+/* ------------------------------------------------------------------- page changes */
+/* Moving between pages, the browser's own cross-document view transition: the header and both sidebars stay still
+   and only the page's content changes, a short crossfade that rises a few pixels. No script: a browser without view
+   transitions changes pages as before, and none animates for a reader who asks for reduced motion.
+   GAP: the system has no motion tokens; 180ms and the ease-out curve are caitlyn.ai's feel. */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition {
+    navigation: auto;
+  }
+}
+header.header {
+  view-transition-name: caitlyn-header;
+}
+.sidebar-pane {
+  view-transition-name: caitlyn-sidebar;
+}
+/* Only where the right column is a fixed column: a view-transition name makes its element a stacking context, which
+   below 72rem would trap the "On this page" bar's z-index and let the page paint over it */
+@media (min-width: 72rem) {
+  .right-sidebar {
+    view-transition-name: caitlyn-contents;
+  }
+}
+main {
+  view-transition-name: caitlyn-page;
+}
+/* The frame swaps in place: no fade, no movement. */
+::view-transition-group(root),
+::view-transition-group(caitlyn-header),
+::view-transition-group(caitlyn-sidebar),
+::view-transition-group(caitlyn-contents),
+::view-transition-group(caitlyn-page) {
+  animation: none;
+}
+::view-transition-old(root),
+::view-transition-new(root),
+::view-transition-old(caitlyn-header),
+::view-transition-new(caitlyn-header),
+::view-transition-old(caitlyn-sidebar),
+::view-transition-new(caitlyn-sidebar),
+::view-transition-old(caitlyn-contents),
+::view-transition-new(caitlyn-contents) {
+  animation: none;
+}
+::view-transition-old(caitlyn-header),
+::view-transition-old(caitlyn-sidebar),
+::view-transition-old(caitlyn-contents) {
+  display: none;
+}
+/* The content: the old page fades out quickly, the new one fades in rising 6px. */
+::view-transition-old(caitlyn-page) {
+  animation: 120ms ease-out both caitlyn-page-out;
+}
+::view-transition-new(caitlyn-page) {
+  animation: 180ms cubic-bezier(0.16, 1, 0.3, 1) both caitlyn-page-in;
+}
+@keyframes caitlyn-page-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes caitlyn-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* -------------------------------------------------------------- the sections (sidebar topics) */
+/* The site's sections above the sidebar (starlight-sidebar-topics): subhead rows in Medium, each with its icon in a
+   small rounded tile on a hairline; the current section is the sidebar's current row, a panel fill with the amber
+   marker. The Beta label is a kicker on a hairline. GAP: section switcher states. */
+.starlight-sidebar-topics a {
+  font-size: var(--caitlyn-text-subhead);
+  font-weight: 500;
+  color: var(--caitlyn-ink);
+  padding: 6px 8px;
+  border-radius: var(--caitlyn-radius-row);
+}
+.starlight-sidebar-topics a:is(:hover, :focus-visible) {
+  color: var(--caitlyn-ink);
+  background: color-mix(in srgb, var(--caitlyn-panel) 55%, transparent);
+}
+.starlight-sidebar-topics a.starlight-sidebar-topics-current,
+:root[data-theme='light'] .starlight-sidebar-topics a.starlight-sidebar-topics-current {
+  color: var(--caitlyn-ink);
+  background: var(--caitlyn-panel);
+  box-shadow: inset 3px 0 0 var(--caitlyn-accent-colour);
+}
+.starlight-sidebar-topics .starlight-sidebar-topics-icon,
+.starlight-sidebar-topics a:is(.starlight-sidebar-topics-current, :hover, :focus-visible) .starlight-sidebar-topics-icon {
+  padding: 4px;
+  border: 1px solid var(--caitlyn-rule);
+  border-radius: var(--caitlyn-radius-inline);
+  background: transparent;
+  color: var(--caitlyn-ink);
+}
+.starlight-sidebar-topics .starlight-sidebar-topics-badge {
+  padding: 1px 6px;
+  border: 1px solid var(--caitlyn-rule);
+  border-radius: var(--caitlyn-radius-inline);
+  background: transparent;
+  color: var(--caitlyn-ink); /* muted falls below 4.5:1 on the current section's panel fill */
+  font-family: var(--caitlyn-sans);
+  font-size: var(--caitlyn-text-kicker);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+.starlight-sidebar-topics::after {
+  border-top-color: var(--caitlyn-rule);
+}
+
+/* ------------------------------------------------------------------ the HTTP API reference (/api/) */
+/* Scalar on the site's tokens: Euclid at the reading size, ink, muted and rule, the amber accent as a marker, the
+   panel for fills, the code ground for code, and the site's radii; the same in both themes, which follow the site's
+   own switch (src/pages/api/index.astro). The page is wide: no contents column, and the reference takes the full
+   main column. GAP: Scalar's own layout is kept; only its tokens are set. */
+[data-api-reference] {
+  margin-top: 24px; /* space-6 */
+}
+main:has([data-api-reference]) .sl-container {
+  max-width: none;
+}
+:is(.light-mode, .dark-mode) [data-api-reference] .scalar-app,
+[data-api-reference] .scalar-app,
+body:is(.light-mode, .dark-mode) [data-api-reference] {
+  --scalar-font: var(--caitlyn-sans);
+  --scalar-font-code: var(--__sl-font-mono, ui-monospace, monospace);
+  --scalar-paragraph: var(--caitlyn-text-reading);
+  --scalar-small: var(--caitlyn-text-body);
+  --scalar-mini: var(--caitlyn-text-body); /* parameter details: the site's muted metadata size */
+  --scalar-micro: var(--caitlyn-text-code-face);
+  --scalar-heading-1: var(--caitlyn-text-section-title);
+  --scalar-page-description: var(--caitlyn-text-reading);
+  --scalar-heading-2: var(--caitlyn-text-card);
+  --scalar-heading-3: var(--caitlyn-text-subhead);
+  --scalar-font-normal: 300;
+  --scalar-regular: 400;
+  --scalar-semibold: 500;
+  --scalar-bold: 500;
+  --scalar-radius: var(--caitlyn-radius-inline);
+  --scalar-radius-lg: var(--caitlyn-radius-row);
+  --scalar-radius-xl: var(--caitlyn-radius-code);
+  --scalar-color-1: var(--caitlyn-ink);
+  --scalar-color-2: var(--caitlyn-muted);
+  --scalar-color-3: var(--caitlyn-muted);
+  --scalar-color-accent: var(--caitlyn-ink);
+  --scalar-color-ghost: var(--caitlyn-muted);
+  --scalar-background-1: var(--caitlyn-ground);
+  --scalar-background-2: var(--caitlyn-ground); /* muted text stays above 4.5:1, on the ground */
+  --scalar-background-3: var(--caitlyn-panel);
+  --scalar-background-accent: color-mix(in srgb, var(--caitlyn-amber-primary) 22%, transparent);
+  --scalar-border-color: var(--caitlyn-rule);
+  --scalar-sidebar-background-1: var(--caitlyn-ground);
+  --scalar-sidebar-color-1: var(--caitlyn-ink);
+  --scalar-sidebar-color-2: var(--caitlyn-muted);
+  --scalar-sidebar-border-color: var(--caitlyn-rule);
+  --scalar-sidebar-item-hover-background: var(--caitlyn-panel);
+  --scalar-sidebar-item-hover-color: var(--caitlyn-ink);
+  --scalar-sidebar-item-active-background: var(--caitlyn-panel);
+  --scalar-sidebar-color-active: var(--caitlyn-ink);
+  --scalar-sidebar-search-background: var(--caitlyn-ground);
+  --scalar-sidebar-search-border-color: var(--caitlyn-rule);
+  --scalar-sidebar-search-color: var(--caitlyn-muted);
+  --scalar-color-green: var(--caitlyn-ink);
+  --scalar-color-red: var(--caitlyn-ink);
+  --scalar-color-yellow: var(--caitlyn-ink);
+  --scalar-color-blue: var(--caitlyn-ink);
+  --scalar-color-orange: var(--caitlyn-ink);
+  --scalar-color-purple: var(--caitlyn-ink);
+  --scalar-scrollbar-color: var(--caitlyn-rule);
+  --scalar-scrollbar-color-active: var(--caitlyn-muted);
+  --scalar-shadow-1: none;
+  --scalar-shadow-2: none;
+  --scalar-lifted-brightness: 1;
+  --scalar-backdrop-brightness: 1;
+}
+/* Code and the request and response examples sit on the code ground in both themes, as on every other page */
+[data-api-reference] :is(.scalar-card, .scalar-codeblock-pre, .request-card, .response-card) {
+  --scalar-background-1: var(--caitlyn-primary-dark-100);
+  --scalar-background-2: var(--caitlyn-primary-dark-100);
+  --scalar-background-3: #1a1d1c; /* panel (dark) */
+  --scalar-color-1: var(--caitlyn-pure-white);
+  --scalar-color-2: #a8b0ad; /* cover-muted */
+  --scalar-color-3: #a8b0ad;
+  --scalar-border-color: #2e3331; /* rule (dark) */
+  color: var(--scalar-color-1);
+  /* Syntax and method colours as the site's code (src/code-theme.mjs), all above 7:1 on the code ground */
+  --scalar-color-green: var(--caitlyn-field-accent-01); /* strings */
+  --scalar-color-blue: var(--caitlyn-clay-primary);
+  --scalar-color-orange: var(--caitlyn-amber-accent-01); /* numbers */
+  --scalar-color-yellow: var(--caitlyn-amber-primary);
+  --scalar-color-red: var(--caitlyn-clay-primary);
+  --scalar-color-purple: var(--caitlyn-clay-accent-01);
+}
+/* Inline code in Scalar's text as on the site's pages: the code face at the site's inline-code size, on the panel fill
+   with the same padding and radius; a link made of code (the "Using an SDK?" line) is underlined as a link. The
+   attribute is doubled to outweigh Scalar's own rules, which load after the site's. */
+[data-api-reference][data-api-reference] .markdown code {
+  padding: 0.1em 0.35em;
+  border: 0;
+  border-radius: var(--caitlyn-radius-inline);
+  background: var(--caitlyn-panel);
+  color: var(--caitlyn-ink);
+  font-family: var(--__sl-font-mono, ui-monospace, monospace);
+  font-size: 0.87em; /* 13px in 15px text, as the site's inline code */
+}
+.sl-markdown-content [data-api-reference][data-api-reference] .markdown a:has(> code:only-child),
+[data-api-reference][data-api-reference] .markdown a {
+  color: var(--caitlyn-ink);
+  text-decoration: underline 2px var(--caitlyn-accent-colour);
+  text-underline-offset: 4px;
+}
+/* An operation's own heading reads as the site's h2 (section-title), not Scalar's small subhead */
+[data-api-reference] h3.section-header-label {
+  font-size: var(--caitlyn-text-section-title);
+  line-height: 1.05;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+[data-api-reference] [id] {
+  scroll-margin-top: calc(var(--sl-nav-height) + 16px); /* clear of the fixed header */
+}
+
+/* ------------------------------------------------------------------------------ icons */
+/* The site's icons (src/generated/icons.css gives each its shape): 16px, in the text colour, beside the section
+   names, the sidebar's groups, code blocks' languages and the language tabs. Decorative: drawn in CSS, so a screen
+   reader reads only the text beside them. */
+.starlight-sidebar-topics .starlight-sidebar-topics-icon > svg {
+  display: none; /* the section's icon is drawn below instead */
+}
+.starlight-sidebar-topics .starlight-sidebar-topics-icon::before,
+.sidebar-content ul.top-level > li > details > summary .group-label::before,
+.expressive-code figcaption .title::before,
+.lang-tab[data-lang]::before {
+  content: '';
+  display: inline-block;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  -webkit-mask: center / contain no-repeat;
+  mask: center / contain no-repeat;
+}
+/* Only groups and code blocks given an icon draw one */
+.sidebar-content ul.top-level > li > details > summary .group-label::before,
+.expressive-code figcaption .title::before {
+  -webkit-mask-image: none;
+  mask-image: none;
+  display: none;
+}
+.sidebar-content ul.top-level > li > details > summary .group-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px; /* space-2 */
+}
+.expressive-code figcaption .title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px; /* space-2 */
+}
+.lang-tabs-ready > .lang-tab-list .lang-tab[data-lang] {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px; /* space-2 */
+}
+
+/* ------------------------------------------------------------------ the site's code language */
+/* Text for one language shows only when it is the site's (src/scripts/lang-tabs.ts sets <html data-lang>) */
+:root[data-lang='typescript'] [data-lang-only]:not([data-lang-only='typescript']),
+:root[data-lang='python'] [data-lang-only]:not([data-lang-only='python']),
+:root[data-lang='go'] [data-lang-only]:not([data-lang-only='go']),
+:root[data-lang='rust'] [data-lang-only]:not([data-lang-only='rust']),
+:root:not([data-lang]) [data-lang-only]:not([data-lang-only='typescript']) {
+  display: none;
+}
+/* An SDK reference operation's header strip: the SDK call in the site's language, the HTTP call, and the same
+   operation in the API reference, as quiet rows under the title */
+.caitlyn-operation-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 24px; /* space-2, space-6 */
+  margin: 16px 0 0; /* space-4 */
+}
+.caitlyn-operation-strip-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px; /* space-2 */
+  min-width: 0;
+}
+.caitlyn-operation-strip dt {
+  color: var(--caitlyn-muted);
+}
+.caitlyn-operation-strip dd {
+  margin: 0;
+  min-width: 0;
+}
+.caitlyn-operation-strip code {
+  font-size: var(--caitlyn-text-body);
+  overflow-wrap: anywhere;
+}
+.caitlyn-operation-strip-api a {
+  color: var(--caitlyn-ink);
+  font-size: var(--caitlyn-text-body);
+  font-weight: 500;
+  text-decoration: underline 2px var(--caitlyn-accent-colour);
+  text-underline-offset: 4px;
+}
+
+/* ------------------------------------------------------------- an operation's members, expanding in place */
+/* After Scalar's layout: rows grouped under a small heading with its icon (Path parameters, Query parameters,
+   Headers, Body or Response fields); each row the name in the code face, a wire name only where it differs, a
+   Required label in amber's tint, one muted line of type and constraints, the description, and an enum's values as
+   chips. A member with members of its own opens in place on Starlight's caret, indented on a light rule. Statuses
+   are rows too, coloured by class. GAP: the system has no rule for nested parameters. */
+.caitlyn-icon {
+  display: inline-block;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  -webkit-mask: center / contain no-repeat;
+  mask: center / contain no-repeat;
+  vertical-align: -3px;
+}
+.sl-markdown-content .caitlyn-param-group {
+  display: flex;
+  align-items: center;
+  gap: 8px; /* space-2 */
+  margin: 24px 0 4px; /* space-6, space-1 */
+  color: var(--caitlyn-ink);
+  font-size: var(--caitlyn-text-subhead);
+  font-weight: 500;
+}
+.sl-markdown-content .caitlyn-params {
+  border-top: 1px solid var(--caitlyn-rule);
+}
+.sl-markdown-content .caitlyn-params .caitlyn-param-group {
+  margin-top: 12px;
+}
+.sl-markdown-content details.caitlyn-param .caitlyn-params,
+.sl-markdown-content details.caitlyn-param > .caitlyn-param-group + .caitlyn-params {
+  margin: 8px 0 0 6px;
+  padding-left: 16px; /* space-4 */
+  border-top: 0;
+  border-left: 1px solid var(--caitlyn-rule);
+}
+.sl-markdown-content .caitlyn-param,
+.sl-markdown-content details.caitlyn-param {
+  margin: 0;
+  padding: 12px 0;
+  border: 0;
+  border-bottom: 1px solid var(--caitlyn-rule);
+  border-radius: 0;
+  background: none;
+}
+.sl-markdown-content .caitlyn-params .caitlyn-params > .caitlyn-param:last-child,
+.sl-markdown-content .caitlyn-params .caitlyn-params > details.caitlyn-param:last-child {
+  border-bottom: 0;
+}
+.sl-markdown-content .caitlyn-param > p,
+.sl-markdown-content .caitlyn-param > summary > p {
+  margin: 0;
+}
+.sl-markdown-content .caitlyn-param > p + p {
+  margin-top: 4px;
+}
+.sl-markdown-content details.caitlyn-param > summary {
+  font-weight: inherit;
+}
+.sl-markdown-content details.caitlyn-param[open] > summary {
+  margin-bottom: 4px;
+}
+/* The name: the code face, a step heavier, without the inline-code fill */
+.sl-markdown-content .caitlyn-param-name code {
+  padding: 0;
+  background: none;
+  color: var(--caitlyn-ink);
+  font-weight: 500;
+}
+/* A wire name that differs, as a small secondary chip with its icon */
+.sl-markdown-content .caitlyn-param-wire {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  color: var(--caitlyn-muted);
+}
+.sl-markdown-content .caitlyn-param-wire .caitlyn-icon {
+  width: 14px;
+  height: 14px;
+}
+.sl-markdown-content .caitlyn-param-wire code {
+  color: var(--caitlyn-ink);
+  font-size: var(--caitlyn-text-code-face);
+}
+/* Required: amber's tint with ink text (above 14:1) */
+.sl-markdown-content .caitlyn-param-required {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: var(--caitlyn-radius-inline);
+  background: color-mix(in srgb, var(--caitlyn-amber-primary) 28%, var(--caitlyn-ground));
+  color: var(--caitlyn-ink);
+  font-size: var(--caitlyn-text-kicker);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+/* The muted line: type and constraints */
+.sl-markdown-content .caitlyn-param-meta {
+  color: var(--caitlyn-muted);
+  font-size: var(--caitlyn-text-body);
+}
+.sl-markdown-content .caitlyn-param-meta a {
+  color: var(--caitlyn-ink);
+  text-decoration: underline 1px currentColor;
+  text-underline-offset: 3px;
+}
+.sl-markdown-content .caitlyn-param-meta code {
+  padding: 0;
+  background: none;
+  color: var(--caitlyn-ink);
+}
+.sl-markdown-content .caitlyn-param-doc {
+  color: var(--caitlyn-muted);
+}
+.sl-markdown-content .caitlyn-param-doc code,
+.sl-markdown-content .caitlyn-param-doc a {
+  color: var(--caitlyn-ink);
+}
+/* An enum's values, and an error's codes, as a compact row of chips */
+.sl-markdown-content .caitlyn-param-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.sl-markdown-content .caitlyn-param-values code {
+  padding: 1px 6px;
+  border: 1px solid var(--caitlyn-rule);
+  border-radius: var(--caitlyn-radius-inline);
+  background: none;
+  font-size: var(--caitlyn-text-code-face);
+}
+/* Statuses: the code by its class, then its name */
+.sl-markdown-content .caitlyn-statuses {
+  border-top: 1px solid var(--caitlyn-strong-rule);
+}
+.sl-markdown-content .caitlyn-status-row > summary .caitlyn-status {
+  margin-right: 6px;
+}
+.sl-markdown-content .caitlyn-status-row > summary code {
+  padding: 0;
+  background: none;
+  font-weight: 500;
+}
+/* ------------------------------------------------------------------ the site's code language */
+/* Text for one language shows only when it is the site's (src/scripts/lang-tabs.ts sets <html data-lang>) */
+:root[data-lang='typescript'] [data-lang-only]:not([data-lang-only='typescript']),
+:root[data-lang='python'] [data-lang-only]:not([data-lang-only='python']),
+:root[data-lang='go'] [data-lang-only]:not([data-lang-only='go']),
+:root[data-lang='rust'] [data-lang-only]:not([data-lang-only='rust']),
+:root:not([data-lang]) [data-lang-only]:not([data-lang-only='typescript']) {
+  display: none;
+}
+/* An SDK reference operation's header strip: the SDK call in the site's language, the HTTP call, and the same
+   operation in the API reference, as quiet rows under the title */
+.caitlyn-operation-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 24px; /* space-2, space-6 */
+  margin: 16px 0 0; /* space-4 */
+}
+.caitlyn-operation-strip-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px; /* space-2 */
+  min-width: 0;
+}
+.caitlyn-operation-strip dt {
+  color: var(--caitlyn-muted);
+}
+.caitlyn-operation-strip dd {
+  margin: 0;
+  min-width: 0;
+}
+.caitlyn-operation-strip code {
+  font-size: var(--caitlyn-text-body);
+  overflow-wrap: anywhere;
+}
+.caitlyn-operation-strip-api a {
+  color: var(--caitlyn-ink);
+  font-size: var(--caitlyn-text-body);
+  font-weight: 500;
+  text-decoration: underline 2px var(--caitlyn-accent-colour);
+  text-underline-offset: 4px;
+}
+
+/* ------------------------------------------------------------- an operation's members, expanding in place */
+/* One row per member: the name in the code face, its type and where it is sent as quiet facts, a Required label, then
+   its description, default and allowed values. A member with members of its own (a structure, or a list or map of
+   one) opens in place, with Starlight's disclosure caret, to show them indented on a hairline. GAP: the system has no rule for nested parameters. */
+.sl-markdown-content .caitlyn-params {
+  border-top: 1px solid var(--caitlyn-strong-rule);
+}
+.sl-markdown-content .caitlyn-params .caitlyn-params {
+  margin: 8px 0 0 4px; /* space-2 */
+  padding-left: 16px; /* space-4 */
+  border-top: 0;
+  border-left: 1px solid var(--caitlyn-rule);
+}
+.sl-markdown-content .caitlyn-param,
+.sl-markdown-content details.caitlyn-param {
+  margin: 0;
+  padding: 14px 0;
+  border: 0;
+  border-bottom: 1px solid var(--caitlyn-rule);
+  border-radius: 0;
+  background: none;
+}
+.sl-markdown-content details.caitlyn-param > summary {
+  font-weight: inherit;
+}
+.sl-markdown-content .caitlyn-params .caitlyn-params .caitlyn-param:last-child {
+  border-bottom: 0;
+}
+.sl-markdown-content .caitlyn-param > p,
+.sl-markdown-content .caitlyn-param > summary > p {
+  margin: 0;
+}
+.sl-markdown-content .caitlyn-param > p + p,
+.sl-markdown-content .caitlyn-param > summary + p {
+  margin-top: 6px;
+  color: var(--caitlyn-ink);
+}
+/* A member with members of its own opens with Starlight's disclosure caret before its name */
+.sl-markdown-content details.caitlyn-param[open] > summary {
+  margin-bottom: 6px;
+}
+.sl-markdown-content .caitlyn-param-fact {
+  margin-left: 6px;
+  color: var(--caitlyn-muted);
+  font-size: var(--caitlyn-text-body);
+}
+.sl-markdown-content .caitlyn-param-fact a {
+  color: var(--caitlyn-muted);
+}
+.sl-markdown-content .caitlyn-param-required {
+  margin-left: 6px;
+  font-size: var(--caitlyn-text-kicker);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--caitlyn-ink);
+}
+.sl-markdown-content .caitlyn-param-limits {
+  color: var(--caitlyn-muted);
+}
+/* Code in the quiet facts and limits stays ink: muted text on the code fill falls below 4.5:1 */
+.sl-markdown-content :is(.caitlyn-param-fact, .caitlyn-param-limits) code {
+  color: var(--caitlyn-ink);
+}
+
+/* ------------------------------------------------------------- an SDK reference operation's code panel */
+/* On a wide screen the panel is the right column in place of "On this page": wider than the contents column (40% of
+   the space beside the sidebar, 352px to 480px), fixed beside the page and scrolling on its own when it is taller than
+   the screen. Below 72rem it sits in the page after the opening (src/scripts/operation-panel.ts). */
+:root:has([data-operation-panel]) {
+  /* Half the space beside the sidebar, as the API reference: content and panel about equal, the panel 352px at least
+     and up to 832px. From the viewport, since Starlight's right column is fixed: the panel and its column agree. */
+  --caitlyn-toc-width: clamp(22rem, calc((100vw - var(--sl-sidebar-width)) * 0.5), 52rem);
+}
+/* The content fills the other half: no centring gap and no reading-width cap on an operation page (other pages keep
+   theirs). A small gutter keeps it off the panel. */
+@media (min-width: 72rem) {
+  :root[data-has-sidebar][data-has-toc]:has([data-operation-panel]) .main-pane {
+    width: calc(100% - var(--caitlyn-toc-width));
+  }
+  :root:has([data-operation-panel]) .main-pane .sl-container {
+    max-width: none;
+    margin-inline: 0;
+  }
+  :root:has([data-operation-panel]) .right-sidebar-container {
+    width: var(--caitlyn-toc-width);
+  }
+}
+@media (min-width: 72rem) {
+  .right-sidebar .caitlyn-op-panel {
+    width: var(--caitlyn-toc-width);
+  }
+}
+.caitlyn-op-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px; /* space-3 */
+  padding: 24px 24px 48px 0; /* space-6, 2 x space-6 */
+}
+.caitlyn-panel-slot:empty {
+  display: none;
+}
+.caitlyn-panel-slot .caitlyn-op-panel {
+  padding: 0;
+  margin: 8px 0 32px; /* space-2, space-8 */
+}
+.caitlyn-op-panel-example-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px; /* space-3 */
+}
+.caitlyn-op-panel-example-body[hidden] {
+  display: none;
+}
+.caitlyn-op-panel .expressive-code {
+  margin: 0;
+}
+.caitlyn-op-panel-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* The examples, compact: each full title as a small row; the chosen one is the ink fill */
+.caitlyn-op-panel-examples button {
+  appearance: none;
+  width: 100%;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: var(--caitlyn-radius-inline);
+  background: transparent;
+  color: var(--caitlyn-ink);
+  font: inherit;
+  font-size: var(--caitlyn-text-body);
+  line-height: 1.35;
+  text-align: start;
+  cursor: pointer;
+}
+.caitlyn-op-panel-examples button:hover {
+  background: var(--caitlyn-panel);
+}
+.caitlyn-op-panel-examples button[aria-pressed='true'] {
+  background: var(--caitlyn-ink);
+  color: var(--caitlyn-ground);
+  font-weight: 500;
+}
+/* The SDK call: one frame on the code ground, its header the language menu */
+.caitlyn-op-code {
+  border: 1px solid var(--caitlyn-code-edge, #2e3331);
+  border-radius: var(--caitlyn-radius-code);
+  background: var(--caitlyn-primary-dark-100); /* cover-ground */
+  overflow: hidden;
+}
+.caitlyn-op-code-head {
+  padding: 8px 8px 0;
+  border-bottom: 1px solid #2e3331; /* rule (dark) */
+  padding-bottom: 8px;
+}
+.caitlyn-op-code .expressive-code .frame {
+  border: 0;
+  border-radius: 0;
+}
+/* The language menu, as the language tabs' selected tab: logo and name in ink on the amber fill */
+.caitlyn-lang-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px; /* space-2 */
+  padding: 6px 10px 6px 12px;
+  border-radius: var(--caitlyn-radius-button);
+  background: var(--caitlyn-accent-fill);
+  color: var(--caitlyn-primary-dark-100);
+  cursor: pointer;
+}
+.caitlyn-lang-picker:hover {
+  background: var(--caitlyn-accent-fill-hover);
+}
+.caitlyn-lang-picker:focus-within {
+  outline: 2px solid var(--caitlyn-pure-white);
+  outline-offset: 2px;
+}
+.caitlyn-lang-picker-icon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  -webkit-mask: center / contain no-repeat;
+  mask: center / contain no-repeat;
+}
+.caitlyn-lang-picker select {
+  appearance: none;
+  padding: 0 20px 0 0;
+  margin-right: -20px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--caitlyn-text-kicker);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.caitlyn-lang-picker select:focus {
+  outline: none;
+}
+.caitlyn-lang-picker select option {
+  color: var(--caitlyn-primary-dark-100);
+  background: var(--caitlyn-pure-white);
+  text-transform: none;
+}
+.caitlyn-lang-picker-caret {
+  display: block; /* not inline: no baseline gap, so it centres on the label */
+  flex: none;
+  pointer-events: none;
+}
+.caitlyn-lang-picker select {
+  line-height: 16px; /* the logo's height, so logo, label and caret share one centre line */
+}
+/* What the call returns */
+.caitlyn-op-response {
+  display: flex;
+  flex-direction: column;
+  gap: 8px; /* space-2 */
+}
+.caitlyn-op-response[hidden] {
+  display: none;
+}
+.caitlyn-op-response-head {
+  display: flex;
+  align-items: center;
+  gap: 8px; /* space-2 */
+  margin: 0;
+}
+/* A status by its class, as a small label in ink on the class's tint: success field, client error clay, server
+   error the deeper clay. Ink on each is above 9:1. */
+.caitlyn-status {
+  padding: 2px 8px;
+  border-radius: var(--caitlyn-radius-inline);
+  color: var(--caitlyn-primary-dark-100);
+  font-family: var(--__sl-font-mono, ui-monospace, monospace);
+  font-size: var(--caitlyn-text-kicker);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.caitlyn-status[data-status-class='2'] {
+  background: var(--caitlyn-field-accent-01);
+}
+.caitlyn-status[data-status-class='4'] {
+  background: var(--caitlyn-clay-accent-01);
+}
+.caitlyn-status[data-status-class='5'] {
+  background: var(--caitlyn-clay-primary);
+}
+/* The page's contents, under the response on a wide screen; below 72rem the "On this page" menu does this */
+.caitlyn-op-toc {
+  margin-top: 16px; /* space-4 */
+  padding-top: 16px;
+  border-top: 1px solid var(--caitlyn-rule);
+}
+.caitlyn-panel-slot .caitlyn-op-toc {
+  display: none;
+}
+.caitlyn-op-panel-title {
+  margin: 0;
+  color: var(--caitlyn-muted);
+}
+.caitlyn-op-panel-note {
+  margin: 0;
+  color: var(--caitlyn-muted);
+  font-size: var(--caitlyn-text-body);
+}
+.caitlyn-op-panel [data-example][hidden] {
+  display: none;
+}
+/* The contents under the panel, as Starlight's own "On this page" column */
+.caitlyn-op-toc h2 {
+  margin: 0 0 8px;
+  color: var(--caitlyn-ink);
+  font-size: var(--caitlyn-text-subhead);
+  font-weight: 500;
+}
+.caitlyn-op-toc ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.caitlyn-op-toc ul ul {
+  padding-inline-start: 16px; /* space-4 */
+}
+.caitlyn-op-toc a {
+  display: block;
+  padding: 3px 0;
+  color: var(--caitlyn-muted);
+  font-size: var(--sl-text-xs);
+  line-height: 1.4;
+  text-decoration: none;
+}
+.caitlyn-op-toc a:hover {
+  color: var(--caitlyn-ink);
+}
+.caitlyn-op-toc a[aria-current='true'] {
+  color: var(--caitlyn-ink);
+  text-decoration: underline 2px var(--caitlyn-accent-colour);
+  text-underline-offset: 4px;
+}
+/* A lead followed straight away by a table (a type page's members) lets the table's strong rule close the opening,
+   rather than drawing two rules one above the other */
+.sl-markdown-content > p.caitlyn-lead:has(+ :is(table, .caitlyn-table-scroll)),
+main:has(.caitlyn-page-header[data-reference]) .sl-markdown-content > p.caitlyn-lead:has(+ :is(table, .caitlyn-table-scroll)) {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+/* ------------------------------------------------------------- the API reference's language picker (Scalar) */
+/* Scalar's client picker on each request card, made to match the code panel's language menu (LanguageSelect.astro):
+   the language's logo (src/generated/icons.css, keyed on the button's aria-label) and its name in capitals, in ink on
+   the amber fill, with the caret centred on the label. The attribute is doubled to outweigh Scalar's utility classes. */
+[data-api-reference][data-api-reference] [data-testid='client-picker'] {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px; /* space-2 */
+  height: auto;
+  padding: 6px 10px 6px 12px;
+  border-radius: var(--caitlyn-radius-button);
+  background: var(--caitlyn-accent-fill);
+  color: var(--caitlyn-primary-dark-100);
+  font-family: var(--caitlyn-sans);
+  font-size: var(--caitlyn-text-kicker);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+[data-api-reference][data-api-reference] [data-testid='client-picker']::before {
+  content: '';
+  display: inline-block;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  /* longhands, so the logo's mask-image (src/generated/icons.css) is not reset */
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+[data-api-reference][data-api-reference] [data-testid='client-picker']:hover {
+  background: var(--caitlyn-accent-fill-hover);
+  color: var(--caitlyn-primary-dark-100);
+}
+[data-api-reference][data-api-reference] [data-testid='client-picker']:focus-visible {
+  outline: 2px solid var(--caitlyn-pure-white);
+  outline-offset: 2px;
+}
+[data-api-reference][data-api-reference] [data-testid='client-picker'] svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  align-self: center;
+}
+/* Its open menu: the page's ground, a hairline and the panel radius, the site's type; the groups' names as kickers;
+   each option with its language's logo; the chosen one on the panel fill with an ink check. Scalar renders it outside
+   the reference, so it is found by its listbox. */
+[id^='headlessui-popover-panel']:has(> ul[role='listbox'], [role='listbox']) {
+  border: 1px solid var(--caitlyn-rule);
+  border-radius: var(--caitlyn-radius-code);
+  background: var(--caitlyn-ground);
+  box-shadow: none;
+  color: var(--caitlyn-ink);
+  font-family: var(--caitlyn-sans);
+  font-size: var(--caitlyn-text-body);
+  --tw-shadow: none;
+}
+[id^='headlessui-popover-panel']:has([role='listbox']) input[role='combobox'] {
+  background: transparent;
+  color: var(--caitlyn-ink);
+  font-family: var(--caitlyn-sans);
+  font-size: var(--caitlyn-text-body);
+}
+[id^='headlessui-popover-panel']:has([role='listbox']) ul[role='listbox'] {
+  border-top: 1px solid var(--caitlyn-rule);
+}
+[id^='headlessui-popover-panel']:has([role='listbox']) [role='group'] > div:first-child {
+  color: var(--caitlyn-muted);
+  font-size: var(--caitlyn-text-kicker);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+[id^='headlessui-popover-panel']:has([role='listbox']) li[role='option'] {
+  border-radius: var(--caitlyn-radius-inline);
+  background: transparent;
+  color: var(--caitlyn-ink);
+}
+[id^='headlessui-popover-panel']:has([role='listbox']) li[role='option']:hover,
+[id^='headlessui-popover-panel']:has([role='listbox']) li[role='option'][aria-selected='true'] {
+  background: var(--caitlyn-panel);
+}
+[id^='headlessui-popover-panel']:has([role='listbox']) li[role='option'][aria-selected='true'] > span {
+  font-weight: 500;
+}
+[id^='headlessui-popover-panel']:has([role='listbox']) li[role='option'] > div:first-child {
+  background: transparent;
+  box-shadow: none;
+  color: transparent;
+}
+[id^='headlessui-popover-panel']:has([role='listbox']) li[role='option'][aria-selected='true'] > div:first-child {
+  background: var(--caitlyn-ink);
+  color: var(--caitlyn-ground);
+}
+[id^='headlessui-popover-panel']:has([role='listbox']) li[role='option'] > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px; /* space-2 */
+  color: var(--caitlyn-ink);
+}
+[id^='headlessui-popover-panel']:has([role='listbox']) li[role='option'] > span::before {
+  content: '';
+  display: inline-block;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  /* longhands, so the logo's mask-image (src/generated/icons.css) is not reset */
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+/* ------------------------------------------------------------- the API reference, after the SDK reference */
+/* Scalar's operations made to read as the SDK reference's pages (the rows in "an operation's members" above): CSS on
+   Scalar's own classes and variables only. Scalar's utility classes carry !important in places, so these do where
+   they must. The attribute is doubled to outweigh Scalar's own rules, which load after the site's. */
+/* Group headings (Path parameters, Query parameters, Body, Responses): the SDK reference's group heading, over a strong
+   rule */
+[data-api-reference][data-api-reference] h4.section-header-label {
+  margin: 24px 0 0 !important; /* space-6 */
+  padding-bottom: 8px !important;
+  border-bottom: 1px solid var(--caitlyn-strong-rule) !important;
+  color: var(--caitlyn-ink);
+  font-size: var(--caitlyn-text-subhead) !important;
+  font-weight: 500;
+  letter-spacing: normal;
+}
+/* The Body heading's schema name (SendMessageRequestContent) is the model's, not the reader's */
+[data-api-reference][data-api-reference] [data-testid='request-body-schema-name'] {
+  display: none;
+}
+/* The Body heading: one row over the strong rule, its Required the members' amber tag, its content type a quiet chip */
+[data-api-reference][data-api-reference] .request-body-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-top: 24px; /* space-6 */
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--caitlyn-strong-rule);
+}
+[data-api-reference][data-api-reference] .request-body-header > h4.section-header-label {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+[data-api-reference][data-api-reference] .request-body-required {
+  padding: 1px 6px;
+  border-radius: var(--caitlyn-radius-inline);
+  background: color-mix(in srgb, var(--caitlyn-amber-primary) 28%, var(--caitlyn-ground));
+  color: var(--caitlyn-ink);
+  font-size: var(--caitlyn-text-kicker);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+[data-api-reference][data-api-reference] .selected-content-type {
+  border: 1px solid var(--caitlyn-rule);
+  border-radius: var(--caitlyn-radius-inline);
+  background: none;
+  color: var(--caitlyn-muted);
+  font-family: var(--__sl-font-mono, ui-monospace, monospace);
+  font-size: var(--caitlyn-text-code-face);
+}
+/* A member: a row over a hairline. Name in the code face, a step heavier; Required beside it on amber's tint; then
+   one muted line of the type and its limits, joined by middots; then the description, muted */
+[data-api-reference][data-api-reference] .property {
+  padding: 12px 0 !important;
+  border-bottom: 1px solid var(--caitlyn-rule) !important;
+}
+[data-api-reference][data-api-reference] .property-heading {
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 0;
+}
+[data-api-reference][data-api-reference] .property-heading > * {
+  order: 3;
+  margin: 0 !important;
+}
+[data-api-reference][data-api-reference] .property-heading > .property-name {
+  order: 0;
+  color: var(--caitlyn-ink);
+  font-family: var(--__sl-font-mono, ui-monospace, monospace);
+  font-size: var(--caitlyn-text-code-face);
+  font-weight: 500;
+}
+[data-api-reference][data-api-reference] .property-heading > .property-required {
+  order: 1;
+  margin-left: 8px !important;
+  padding: 1px 6px;
+  border-radius: var(--caitlyn-radius-inline);
+  background: color-mix(in srgb, var(--caitlyn-amber-primary) 28%, var(--caitlyn-ground));
+  color: var(--caitlyn-ink);
+  font-family: var(--caitlyn-sans);
+  font-size: var(--caitlyn-text-kicker);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+/* The break before the muted line */
+[data-api-reference][data-api-reference] .property-heading::after {
+  content: '';
+  order: 2;
+  flex-basis: 100%;
+}
+[data-api-reference][data-api-reference] .property-heading > .property-detail {
+  color: var(--caitlyn-muted);
+  font-family: var(--caitlyn-sans);
+  font-size: var(--caitlyn-text-body);
+}
+[data-api-reference][data-api-reference] .property-heading > .property-detail ~ .property-detail::before {
+  content: '·';
+  margin: 0 6px;
+  color: var(--caitlyn-muted);
+}
+[data-api-reference][data-api-reference] .property-detail-prefix {
+  display: inline;
+  color: var(--caitlyn-muted);
+}
+[data-api-reference][data-api-reference] .property-type-signature,
+[data-api-reference][data-api-reference] .property-type-token {
+  color: var(--caitlyn-muted);
+  font-family: var(--caitlyn-sans);
+  font-size: var(--caitlyn-text-body);
+}
+[data-api-reference][data-api-reference] .property-detail a,
+[data-api-reference][data-api-reference] .property-type-signature a {
+  color: var(--caitlyn-ink);
+  text-decoration: underline 1px currentColor;
+  text-underline-offset: 3px;
+}
+/* Scalar's "Examples" popover: the request example in the panel says the same */
+[data-api-reference][data-api-reference] .property-example {
+  display: none;
+}
+[data-api-reference][data-api-reference] .property-description {
+  margin-top: 4px;
+  color: var(--caitlyn-muted);
+}
+[data-api-reference][data-api-reference] .property-description .markdown {
+  color: var(--caitlyn-muted);
+  font-size: var(--caitlyn-text-reading);
+}
+/* An enum's values: the SDK reference's chips, without Scalar's box round them */
+[data-api-reference][data-api-reference] .property-enum {
+  margin-top: 6px;
+  border: 0 !important;
+}
+[data-api-reference][data-api-reference] .property-enum-header {
+  display: none;
+}
+[data-api-reference][data-api-reference] .property-enum-chip-list {
+  padding: 0 !important;
+  border: 0 !important;
+  gap: 4px;
+}
+[data-api-reference][data-api-reference] .property-enum-chip {
+  padding: 1px 6px;
+  border: 1px solid var(--caitlyn-rule);
+  border-radius: var(--caitlyn-radius-inline);
+  background: none;
+  color: var(--caitlyn-ink);
+  font-family: var(--__sl-font-mono, ui-monospace, monospace);
+  font-size: var(--caitlyn-text-code-face);
+}
+/* Nested members open in place, indented on a light rule */
+[data-api-reference][data-api-reference] .property--level-1,
+[data-api-reference][data-api-reference] .property--level-2,
+[data-api-reference][data-api-reference] .property--level-3 {
+  padding-left: 16px !important;
+  border-left: 1px solid var(--caitlyn-rule);
+}
+/* A status by its class, in ink on the class's tint, as the SDK reference's (success field, client error clay, server
+   error the deeper clay); Scalar's ids carry the status */
+[data-api-reference][data-api-reference] .parameter-item-name > div {
+  font-family: var(--__sl-font-mono, ui-monospace, monospace);
+}
+[data-api-reference][data-api-reference] .parameter-item-trigger[id*='.responses.'] .parameter-item-name > div {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 2px 8px;
+  border-radius: var(--caitlyn-radius-inline);
+  color: var(--caitlyn-primary-dark-100);
+  font-size: var(--caitlyn-text-kicker);
+  font-weight: 500;
+}
+[data-api-reference][data-api-reference] .parameter-item-trigger[id*='.responses.2'] .parameter-item-name > div {
+  background: var(--caitlyn-field-accent-01);
+}
+[data-api-reference][data-api-reference] .parameter-item-trigger[id*='.responses.4'] .parameter-item-name > div {
+  background: var(--caitlyn-clay-accent-01);
+}
+[data-api-reference][data-api-reference] .parameter-item-trigger[id*='.responses.5'] .parameter-item-name > div {
+  background: var(--caitlyn-clay-primary);
+}
+[data-api-reference][data-api-reference] .parameter-item {
+  border-bottom: 1px solid var(--caitlyn-rule);
+}
+[data-api-reference][data-api-reference] .parameter-item-trigger {
+  padding: 12px 0;
+  color: var(--caitlyn-ink);
+  font-size: var(--caitlyn-text-reading);
+}
+/* The intro's Server and Client Libraries boxes: the site's panels, a hairline and the panel radius, kicker headers */
+[data-api-reference][data-api-reference] .introduction-card-item {
+  border-radius: var(--caitlyn-radius-panel);
+}
+[data-api-reference][data-api-reference] .introduction-card-item > label,
+[data-api-reference][data-api-reference] .client-libraries-heading {
+  color: var(--caitlyn-muted);
+  background: transparent;
+  font-size: var(--caitlyn-text-kicker);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+/* Code: the request and response cards on the code ground with the site's header bar and padding, no line numbers */
+[data-api-reference][data-api-reference] .scalar-card {
+  border: 1px solid #2e3331; /* rule (dark) */
+  border-radius: var(--caitlyn-radius-code);
+  box-shadow: none;
+  overflow: hidden;
+}
+[data-api-reference][data-api-reference] .scalar-card-header {
+  border-bottom: 1px solid #2e3331;
+}
+[data-api-reference][data-api-reference] .scalar-code-block {
+  padding: 16px 24px; /* space-4, space-6, as the site's code blocks */
+  font-size: var(--caitlyn-text-body);
+  line-height: 1.55;
+}
+[data-api-reference][data-api-reference] .scalar-code-block .line::before,
+[data-api-reference][data-api-reference] .scalar-code-block .line-number,
+[data-api-reference][data-api-reference] .scalar-code-block [data-line-number]::before {
+  display: none !important;
+  content: none !important;
+}
+/* Scalar's Default and Pattern details join the muted line with the same middot */
+[data-api-reference][data-api-reference] .property-heading > :is(.property-default, .property-pattern) {
+  color: var(--caitlyn-muted);
+  font-family: var(--caitlyn-sans);
+  font-size: var(--caitlyn-text-body);
+}
+[data-api-reference][data-api-reference] .property-heading > :is(.property-default, .property-pattern)::before {
+  content: '·';
+  margin: 0 6px;
+}
+/* Scalar's code colours as the site's code theme (src/code-theme.mjs): keywords amber, strings field's accent, numbers
+   amber's accent, types and classes clay, function names clay's accent, property names field, comments muted */
+[data-api-reference][data-api-reference] .scalar-code-block :is(.hljs-keyword, .hljs-meta .hljs-keyword, .hljs-literal) {
+  color: var(--caitlyn-amber-primary);
+}
+[data-api-reference][data-api-reference] .scalar-code-block :is(.hljs-string, .hljs-regexp) {
+  color: var(--caitlyn-field-accent-01);
+}
+[data-api-reference][data-api-reference] .scalar-code-block .hljs-number {
+  color: var(--caitlyn-amber-accent-01);
+}
+[data-api-reference][data-api-reference] .scalar-code-block :is(.hljs-type, .hljs-title.class_, .hljs-built_in) {
+  color: var(--caitlyn-clay-primary);
+}
+[data-api-reference][data-api-reference] .scalar-code-block :is(.hljs-title.function_, .hljs-title) {
+  color: var(--caitlyn-clay-accent-01);
+}
+[data-api-reference][data-api-reference] .scalar-code-block :is(.hljs-attr, .hljs-property, .hljs-variable) {
+  color: var(--caitlyn-field-primary);
+}
+[data-api-reference][data-api-reference] .scalar-code-block .hljs-comment {
+  color: #a8b0ad; /* cover-muted */
+  font-style: italic;
+}
+[data-api-reference][data-api-reference] .scalar-code-block :is(.hljs-punctuation, .hljs-operator) {
+  color: #a8b0ad;
+}
+[data-api-reference][data-api-reference] .property-heading > :is(.property-default, .property-pattern) {
+  display: inline-flex !important;
+  align-items: baseline;
+  width: auto !important;
+}
+[data-api-reference][data-api-reference] .property-heading > :is(.property-default, .property-pattern) :is(button, .property-default-label) {
+  color: var(--caitlyn-muted);
+  font-size: var(--caitlyn-text-body);
+  text-decoration: underline dotted 1px;
+  text-underline-offset: 3px;
+}
+/* Scalar's light and dark classes on <body> (which /api/ keeps in step with the site's theme) bring their own page
+   colour; the page keeps the site's ground */
+body:is(.light-mode, .dark-mode) {
+  background-color: var(--sl-color-bg);
+}
+/* A member's first line: the name, a wire name's arrow and chip, and Required on one centre line, wrapping as a row */
+.sl-markdown-content .caitlyn-param > p:has(> .caitlyn-param-name),
+.sl-markdown-content .caitlyn-param > summary > p:has(> .caitlyn-param-name) {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  vertical-align: middle;
+}
+.sl-markdown-content .caitlyn-param > p:has(> .caitlyn-param-name) {
+  display: flex;
+}
+.sl-markdown-content .caitlyn-param-name,
+.sl-markdown-content .caitlyn-param-wire,
+.sl-markdown-content .caitlyn-param-required {
+  margin: 0;
+  line-height: 1.4;
+}
+.sl-markdown-content .caitlyn-param-required {
+  vertical-align: baseline;
+}
+.sl-markdown-content .caitlyn-param-wire .caitlyn-icon {
+  vertical-align: 0;
+}
+/* The same on the API reference's heading line */
+[data-api-reference][data-api-reference] .property-heading {
+  align-items: center;
+}
+
+/* -------------------------------------------------------------- reference links in the sidebar, on one line */
+/* An operation, type or error code stays on one line, cut with an ellipsis, the current page's ink row too; one long
+   that is cut (src/scripts/sidebar-cut.ts marks it) shows its full name in a small tooltip on hover and keyboard focus. Its text is the full name, so
+   a screen reader reads it whole. */
+.sidebar-content a[data-ref] {
+  position: relative;
+}
+.sidebar-content a[data-ref] > span {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sidebar-content a[data-cut]:is(:hover, :focus-visible)::after {
+  content: attr(data-full);
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 4px);
+  left: 8px;
+  padding: 4px 8px;
+  border-radius: var(--caitlyn-radius-inline);
+  background: var(--caitlyn-ink);
+  color: var(--caitlyn-ground);
+  font-size: var(--caitlyn-text-body);
+  font-weight: 500;
+  /* within the sidebar, which would clip it: a long name wraps */
+  max-width: calc(100% - 8px);
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}

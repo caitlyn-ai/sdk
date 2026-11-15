@@ -60,8 +60,3 @@
   background-color: color-mix(in srgb, var(--sl-color-text-accent) 30%, transparent);
   color: inherit;
 }
-
-/* Reference tables: member names stay on one line */
-.sl-markdown-content table td:first-child code {
-  white-space: nowrap;
-}

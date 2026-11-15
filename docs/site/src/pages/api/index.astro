@@ -1,0 +1,109 @@
+---
+// The HTTP API's reference: Scalar renders the site's copy of the OpenAPI document (src/generated/openapi.json,
+// written by scripts/docs-build.mjs) inside a Starlight page, so the header, the sections and the sidebar stay.
+// Scalar's own bundle is served from this site (/_scalar/, astro.config.mjs), never a CDN, with its fonts, test
+// requests, agent, MCP and telemetry off. Each operation shows our SDKs' code and links to the SDK reference.
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import { ScalarComponent } from '@scalar/astro';
+import openapi from '../../generated/openapi.json';
+import topics from '../../generated/sidebar.json';
+
+// The SDK reference's type pages, by type name, so a type Scalar names (array of ContextItem) links to its page
+const typeLinks = Object.fromEntries(
+  (topics.find((t: { label: string }) => t.label === 'SDK reference')?.items ?? [])
+    .filter((g: { label: string }) => g.label === 'Types')
+    .flatMap((g: { items: { label: string; link: string }[] }) => g.items.map((i) => [i.label, `${import.meta.env.BASE_URL.replace(/\/$/, '')}${i.link}`])),
+);
+
+// Scalar's generated snippets: curl only. Each operation's own SDK examples (x-codeSamples, scripts/docs-build.mjs) are
+// listed with it and chosen first; the Client Libraries box shows each SDK's install (x-scalar-sdk-installation).
+const TARGETS = ['c', 'r', 'go', 'rust', 'http', 'clojure', 'csharp', 'dart', 'fsharp', 'java', 'js', 'julia', 'kotlin', 'node', 'objc', 'ocaml', 'php', 'powershell', 'python', 'ruby', 'swift'];
+const hiddenClients = { ...Object.fromEntries(TARGETS.map((t) => [t, true])), shell: ['httpie', 'wget'] };
+
+const configuration = {
+  content: openapi,
+  cdn: `${import.meta.env.BASE_URL.replace(/\/$/, '')}${import.meta.env.SCALAR_BUNDLE}`,
+  theme: 'none',
+  layout: 'modern',
+  // The site's sidebar lists the operations (scripts/docs-build.mjs), so Scalar's own is off
+  showSidebar: false,
+  hideTestRequestButton: true,
+  hideClientButton: true,
+  showDeveloperTools: 'never',
+  showToolbar: 'never',
+  hideDarkModeToggle: true,
+  withDefaultFonts: false,
+  telemetry: false,
+  agent: { disabled: true },
+  mcp: { disabled: true },
+  hiddenClients,
+  // Our TypeScript example first (Scalar's custom clients are the operation's x-codeSamples, by language)
+  defaultHttpClient: { targetKey: 'custom', clientKey: 'typescript' },
+  documentDownloadType: 'json',
+  // Scalar's models list repeats the SDK reference's types; the section's sidebar links to those pages instead
+  hideModels: true,
+  defaultOpenAllTags: true,
+};
+---
+
+<StarlightPage frontmatter={{ title: 'Caitlyn v3 HTTP API', section: 'API reference', description: 'The Caitlyn v3 HTTP API: every operation, its request and response, and its errors.', tableOfContents: false, pagefind: true }}>
+  <script is:inline>
+    // Starlight writes the sidebar's operation links with a trailing slash after the anchor (#tag/.../documents/), and
+    // Scalar, which renders its sections lazily from the anchor, then leaves the operation blank on a phone. Before
+    // Scalar starts: drop the slash from the address and from the links on this page.
+    (() => {
+      const bare = (hash) => hash.replace(/\/$/, '');
+      if (location.hash.endsWith('/')) history.replaceState(history.state, '', location.pathname + location.search + bare(location.hash));
+      for (const a of document.querySelectorAll('a[href*="/api/#"]')) a.setAttribute('href', bare(a.getAttribute('href')));
+    })();
+  </script>
+  <div class="caitlyn-api-reference" data-api-reference data-type-links={JSON.stringify(typeLinks)}>
+    <ScalarComponent renderMode="client" configuration={configuration} />
+  </div>
+</StarlightPage>
+
+<script>
+  // Scalar keeps its own light and dark classes on <body>; follow the site's theme instead, now and when it changes.
+  const sync = () => {
+    const dark = document.documentElement.dataset.theme === 'dark';
+    document.body.classList.toggle('dark-mode', dark);
+    document.body.classList.toggle('light-mode', !dark);
+  };
+  sync();
+  new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  new MutationObserver(sync).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
+  // The sidebar's links name an operation by Scalar's address (#tag/documents/GET/v3/...). Scalar mounts after the
+  // page loads, so bring the operation into view once it exists, on arrival and on each link followed.
+  const reveal = () => {
+    // Starlight writes the sidebar's links with a trailing slash; Scalar's ids have none
+    const id = decodeURIComponent(location.hash.slice(1)).replace(/\/$/, '');
+    if (!id.startsWith('tag/')) return;
+    let tries = 0;
+    const find = () => {
+      const el = document.getElementById(`api-1/${id}`) ?? document.getElementById(id);
+      if (el) el.scrollIntoView();
+      else if (tries++ < 50) setTimeout(find, 100);
+    };
+    find();
+  };
+  reveal();
+  addEventListener('hashchange', reveal);
+
+  // A type Scalar names in a member's type (array of ContextItem) links to its page in the SDK reference. Scalar renders
+  // its sections as they come into view, so each new one is linked as it appears.
+  const root = document.querySelector<HTMLElement>('[data-api-reference]');
+  const types: Record<string, string> = JSON.parse(root?.dataset.typeLinks ?? '{}');
+  const link = () => {
+    for (const token of root?.querySelectorAll<HTMLElement>('.property-type-token--ident:not([data-linked])') ?? []) {
+      token.dataset.linked = '';
+      const href = types[token.textContent?.trim() ?? ''];
+      if (!href) continue;
+      const a = document.createElement('a');
+      a.href = href;
+      a.textContent = token.textContent;
+      token.replaceChildren(a);
+    }
+  };
+  if (root) new MutationObserver(link).observe(root, { childList: true, subtree: true });
+</script>
