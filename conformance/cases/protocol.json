@@ -21,6 +21,8 @@
     {"id": "sse.reconnect-backoff", "section": "5.6", "title": "Each reconnect in a row waits a longer, jittered pause (0.25-0.5 s, 0.5-1 s, 1-2 s), and the fourth fails with STREAM_LOST"},
     {"id": "sse.reconnect-without-event-id", "section": "5.6", "title": "A reconnect before any event has arrived sends no Last-Event-ID, and a watch keeps its after cursor"},
     {"id": "sse.reconnect-drops-after", "section": "5.6", "title": "A watch's reconnect sends Last-Event-ID in place of the after cursor it started from"},
+    {"id": "sse.long-connection-resets-count", "section": "5.6", "title": "A connection that stayed open at least a minute before it ended starts the reconnect count again: a quiet watch reconnects as often as the server ends it, without STREAM_LOST"},
+    {"id": "sse.short-connections-stream-lost", "section": "5.6", "title": "Three reconnects in a row whose connections each stayed open under a minute, with no new event, still end in STREAM_LOST"},
     {"id": "sse.duplicate-not-progress", "section": "5.6", "title": "A replayed duplicate is not a new event: reconnects that bring only duplicates still end in STREAM_LOST"},
     {"id": "sse.watch-failed-answer", "section": "5.5", "title": "On a watch, message.failed is delivered as an event and the watch carries on to the next answer"},
     {"id": "waiter.success", "section": "10.1", "title": "A waiter returns the output once a success acceptor matches: indexed after queued and indexing, and partially indexed"},

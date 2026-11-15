@@ -29,6 +29,15 @@ export function reconnectDelayMs(attempt: number): number {
   return Math.min(8000, 500 * 2 ** (attempt - 1)) * (0.5 + Math.random() / 2);
 }
 
+/** A connection that stayed open at least this long before it ended restarts the reconnect count (PROTOCOL.md 5.6). */
+export const LONG_CONNECTION_MS = 60_000;
+
+/**
+ * The clock that times each connection, for the rule above. Replace `now` only in tests: the conformance cases step it
+ * so that a connection lasts an hour, or under a minute, without waiting.
+ */
+export const streamClock = { now: (): number => Date.now() };
+
 export class SseStream<E extends { type: string }, F = never> implements AsyncIterable<E> {
   private finalValue?: F;
   private consumed = false;
@@ -38,6 +47,8 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
   reconnects = 0;
   /** Reconnects since the last event: at most maxReconnects in a row (PROTOCOL.md 5.6). */
   private attempts = 0;
+  /** When the current connection's response arrived, on streamClock. */
+  private openedAt = 0;
   /** The Caitlyn-Request-Id of the response that opened the stream; set once it has opened. */
   requestId?: string;
 
@@ -70,6 +81,7 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
   /** Sends the request once, however it is started: by opened() or by iterating. */
   private start(): Promise<SseOpened> {
     this.opening ??= this.open().then((opened) => {
+      this.openedAt = streamClock.now();
       this.requestId = opened.$metadata?.requestId;
       return opened;
     });
@@ -133,11 +145,15 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
         // Transport error mid-stream: resume.
       }
       if (this.signal?.aborted) throw this.aborted();
+      // A connection that stayed open a minute or more starts the count again, like a new event: the server ends
+      // every stream within an hour, and a quiet watch must outlive that (PROTOCOL.md 5.6).
+      if (streamClock.now() - this.openedAt >= LONG_CONNECTION_MS) this.attempts = 0;
       if (!this.resume || ++this.attempts > this.maxReconnects)
         throw this.spec.toError({ status: 0, code: 'STREAM_LOST', title: 'The stream dropped and could not be resumed' });
       this.reconnects++;
       await this.pause(reconnectDelayMs(this.attempts));
       body = (await this.resume(this.lastEventId)).events as Body;
+      this.openedAt = streamClock.now();
     }
   }
 

@@ -113,10 +113,10 @@ export function createUpload(client: CaitlynClient, input: Omit<CreateUploadInpu
 
 /** Deletes a named version.
  * 
- * Any named version can be deleted, including one that was published: production is its own
- * copy, so it does not change. `draft` and `production`, which every agent keeps, are refused with
- * 400 `VERSION_NOT_DELETABLE`. Production history entries copied from the version are never
- * deleted or changed, and still read as they did. Like every change, it is audited. */
+ * Any named version can be deleted, including the one production is running; production carries
+ * on unchanged. `draft` and `production`, which every agent keeps, are refused with 400
+ * `VERSION_NOT_DELETABLE`. Production history entries that name the version are never deleted or
+ * changed, and still read as they did. Like every change, it is audited. */
 export function deleteAgentVersion(client: CaitlynClient, input: DeleteAgentVersionInput, options: CallOptions = {}): Promise<WithRaw<DeleteAgentVersionOutput & __MetadataBearer>> {
   const { signal, ...rest } = options;
   return client.send(new DeleteAgentVersionCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<DeleteAgentVersionOutput & __MetadataBearer>>;
@@ -203,7 +203,7 @@ const acceptIndexed = ({ output, error }: { output?: GetDocumentOutput; error?: 
 
 /** Gets one production history entry, with the full configuration production had.
  * 
- * The entry is a copy: it reads the same whether or not the version it came from still exists. */
+ * The entry reads the same whether or not the version it came from still exists. */
 export function getProductionHistoryEntry(client: CaitlynClient, input: GetProductionHistoryEntryInput, options: CallOptions = {}): Promise<WithRaw<GetProductionHistoryEntryOutput & __MetadataBearer>> {
   const { signal, ...rest } = options;
   return client.send(new GetProductionHistoryEntryCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<GetProductionHistoryEntryOutput & __MetadataBearer>>;
@@ -264,7 +264,7 @@ export function listProductionHistoryEntries(client: CaitlynClient, input: ListP
   };
 }
 
-/** Keeps a copy of the draft as a new named version.
+/** Saves the draft as a new named version.
  * 
  * The new version is pinned: it does not change production, and the draft carries on as before.
  * Send the draft's ETag as `If-Match` to pin only the draft you tested; without it, the draft is
@@ -274,12 +274,11 @@ export function pinDraftVersion(client: CaitlynClient, agentId: string, input: O
   return client.send(new PinDraftVersionCommand({ ...input, agentId, ...rest }), { abortSignal: signal }) as Promise<WithRaw<PinDraftVersionOutput & __MetadataBearer>>;
 }
 
-/** Publishes a version: production becomes a copy of it.
+/** Publishes a version: it becomes the version production runs.
  * 
- * `version` is a version name, or `draft`. Publishing the draft first keeps a copy of it as a new
- * version named `name`, then publishes that, so production always matches a named version. The
- * version published is kept as it is; nothing is moved or deleted, and deleting it later does not
- * change production. Send production's current ETag
+ * `version` is a version name, or `draft`. Publishing the draft first saves it as a new version
+ * named `name`, then publishes that, so production always runs a named version. Deleting the
+ * published version later does not change production. Send production's current ETag
  * (from `GET /v3/agents/{agentId}/versions/production`) as `If-Match`, so two publishes cannot
  * overwrite each other; a stale ETag is refused with 412. Production before the publish is kept as
  * a production history entry (ListProductionHistoryEntries), stamped with who replaced it and
@@ -290,11 +289,11 @@ export function publishAgentVersion(client: CaitlynClient, input: Omit<PublishAg
   return client.send(new PublishAgentVersionCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<PublishAgentVersionOutput & __MetadataBearer>>;
 }
 
-/** Resets the draft to a copy of another version; `If-Match` is required.
+/** Resets the draft to another version; `If-Match` is required.
  * 
  * The draft's configuration becomes the configuration of `from`, which is a version name or
- * `production`. Nothing else changes: the version copied from is kept, and production is
- * untouched. Returns the draft and its new ETag. */
+ * `production`. Nothing else changes: `from` is kept as it is, and production is untouched.
+ * Returns the draft and its new ETag. */
 export function resetDraftVersion(client: CaitlynClient, agentId: string, input: Omit<ResetDraftVersionInput, "ifMatch" | "agentId">, options: CallOptions & { ifMatch: string }): Promise<WithRaw<ResetDraftVersionOutput & __MetadataBearer>> {
   const { signal, ...rest } = options;
   return client.send(new ResetDraftVersionCommand({ ...input, agentId, ...rest }), { abortSignal: signal }) as Promise<WithRaw<ResetDraftVersionOutput & __MetadataBearer>>;

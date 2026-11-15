@@ -81,10 +81,10 @@ func readDeleteAgentVersion(resp *core.Response) (*DeleteAgentVersionResult, err
 
 // Delete deletes a named version.
 //
-// Any named version can be deleted, including one that was published: production is its own
-// copy, so it does not change. `draft` and `production`, which every agent keeps, are refused with
-// 400 `VERSION_NOT_DELETABLE`. Production history entries copied from the version are never
-// deleted or changed, and still read as they did. Like every change, it is audited.
+// Any named version can be deleted, including the one production is running; production carries
+// on unchanged. `draft` and `production`, which every agent keeps, are refused with 400
+// `VERSION_NOT_DELETABLE`. Production history entries that name the version are never deleted or
+// changed, and still read as they did. Like every change, it is audited.
 //
 // Errors: *InternalError (500), *PermissionDeniedError (403), *ServiceUnavailableError (503),
 // *TooManyRequestsError (429), *UnauthenticatedError (401), *ValidationError (400), *NotFoundError
@@ -401,7 +401,7 @@ func readPinDraftVersion(resp *core.Response) (*PinDraftVersionResult, error) {
 	return out, nil
 }
 
-// Pin keeps a copy of the draft as a new named version.
+// Pin saves the draft as a new named version.
 //
 // The new version is pinned: it does not change production, and the draft carries on as before.
 // Send the draft's ETag as `If-Match` to pin only the draft you tested; without it, the draft is
@@ -511,12 +511,11 @@ func readPublishAgentVersion(resp *core.Response) (*AgentVersion, error) {
 	return out, nil
 }
 
-// Publish publishes a version: production becomes a copy of it.
+// Publish publishes a version: it becomes the version production runs.
 //
-// `version` is a version name, or `draft`. Publishing the draft first keeps a copy of it as a new
-// version named `name`, then publishes that, so production always matches a named version. The
-// version published is kept as it is; nothing is moved or deleted, and deleting it later does not
-// change production. Send production's current ETag
+// `version` is a version name, or `draft`. Publishing the draft first saves it as a new version
+// named `name`, then publishes that, so production always runs a named version. Deleting the
+// published version later does not change production. Send production's current ETag
 // (from `GET /v3/agents/{agentId}/versions/production`) as `If-Match`, so two publishes cannot
 // overwrite each other; a stale ETag is refused with 412. Production before the publish is kept as
 // a production history entry (ListProductionHistoryEntries), stamped with who replaced it and
@@ -548,7 +547,7 @@ func (c *AgentsVersionsClient) Publish(ctx context.Context, in *PublishAgentVers
 // ResetDraftVersionInput is the input of Agents.Versions.ResetDraft. agentId is a parameter of the
 // method. If-Match is the call option WithIfMatch (required).
 type ResetDraftVersionInput struct {
-	// The version to copy: a version name, or `production`.
+	// The version to reset the draft to: a version name, or `production`.
 	From string `json:"from"`
 }
 
@@ -614,11 +613,11 @@ func readResetDraftVersion(resp *core.Response) (*AgentVersion, error) {
 	return out, nil
 }
 
-// ResetDraft resets the draft to a copy of another version; `If-Match` is required.
+// ResetDraft resets the draft to another version; `If-Match` is required.
 //
 // The draft's configuration becomes the configuration of `from`, which is a version name or
-// `production`. Nothing else changes: the version copied from is kept, and production is
-// untouched. Returns the draft and its new ETag.
+// `production`. Nothing else changes: `from` is kept as it is, and production is untouched.
+// Returns the draft and its new ETag.
 //
 // Errors: *InternalError (500), *PermissionDeniedError (403), *ServiceUnavailableError (503),
 // *TooManyRequestsError (429), *UnauthenticatedError (401), *ValidationError (400), *NotFoundError

@@ -516,7 +516,7 @@ export interface ResetDraftVersionInput {
   ifMatch: string;
 
   /**
-   * The version to copy: a version name, or `production`.
+   * The version to reset the draft to: a version name, or `production`.
    * @public
    */
   from: string;

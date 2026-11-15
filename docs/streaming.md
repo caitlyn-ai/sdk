@@ -116,7 +116,9 @@ event, the SDK re-attaches with [WatchConversation](/reference/watch-conversatio
 of the last event it saw (`Last-Event-ID`). The server replays what came after, and the SDK drops any event it
 has already seen, so no event is lost or repeated. Before each reconnection it waits a little longer than the
 last time (a quarter to half a second, then up to one second, then up to two), and after three in a row that bring
-no new event, the stream raises `STREAM_LOST`.
+no new event, the stream raises `STREAM_LOST`. A connection that stayed open for a minute or more starts that count
+again. Caitlyn ends every stream after at most an hour, and the SDK reconnects as it does after any clean end, so a
+watch that stays quiet for hours keeps going.
 
 The answer's stream still ends at `message.completed` or `message.failed`, although the watch it re-attached
 with would carry on. If the answer finished while the connection was down, the watch sends `stream.reset`

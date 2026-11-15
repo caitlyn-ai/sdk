@@ -23,11 +23,11 @@ export interface ResetDraftVersionCommandInput extends ResetDraftVersionInput {}
 export interface ResetDraftVersionCommandOutput extends ResetDraftVersionOutput, __MetadataBearer {}
 
 /**
- * Resets the draft to a copy of another version; `If-Match` is required.
+ * Resets the draft to another version; `If-Match` is required.
  *
  * The draft's configuration becomes the configuration of `from`, which is a version name or
- * `production`. Nothing else changes: the version copied from is kept, and production is
- * untouched. Returns the draft and its new ETag.
+ * `production`. Nothing else changes: `from` is kept as it is, and production is untouched.
+ * Returns the draft and its new ETag.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript

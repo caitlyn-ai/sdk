@@ -32,7 +32,7 @@ import {
   type TokenStore,
 } from '@caitlyn-ai/sdk';
 import * as commands from '@caitlyn-ai/sdk/commands';
-import { waitUntil, DEFAULT_WAIT_LIMIT_MS } from '@caitlyn-ai/sdk-core';
+import { waitUntil, DEFAULT_WAIT_LIMIT_MS, LONG_CONNECTION_MS, streamClock } from '@caitlyn-ai/sdk-core';
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { propagation, SpanStatusCode } from '@opentelemetry/api';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
@@ -339,6 +339,44 @@ test("[sse.reconnect-drops-after] a watch's reconnect sends Last-Event-ID in pla
   assert.equal(second.headers['last-event-id'], events[0]!.eventId);
   assert.ok(!/after=/.test(second.query), 'no after cursor');
   assert.match(second.query, /type=conversation.created/);
+});
+
+/**
+ * Runs `run` with the stream clock stepping `stepMs` at each reading, so every connection lasts exactly that long
+ * (a stream reads the clock when a response arrives and when its connection ends), then puts the real clock back.
+ */
+async function withConnectionsLasting<T>(stepMs: number, run: () => Promise<T>): Promise<T> {
+  const real = streamClock.now;
+  let t = 0;
+  streamClock.now = () => (t += stepMs);
+  try {
+    return await run();
+  } finally {
+    streamClock.now = real;
+  }
+}
+
+test('[sse.long-connection-resets-count] a connection open at least a minute starts the reconnect count again', async () => {
+  const c = client();
+  await collect(c.conversations.send('c-l', { message: 'hi' }));
+  // Five quiet responses in a row (the first and four reconnects), each open just over a minute: one more than the
+  // limit, so the watch carries on only because each long connection restarts the count. The sixth carries events.
+  await faults({ watchEmptyCloses: 5 });
+  const first = await withConnectionsLasting(LONG_CONNECTION_MS + 1_000, async () => {
+    for await (const event of c.conversations.watch('c-l', {})) return event;
+    return undefined;
+  });
+  assert.equal(first?.type, 'message.started', 'the watch reached the events, with no STREAM_LOST');
+  assert.equal((await api()).filter((r) => r.method === 'GET').length, 6, 'the first request and five reconnects');
+});
+
+test('[sse.short-connections-stream-lost] three reconnects whose connections each stayed open under a minute still end in STREAM_LOST', async () => {
+  const c = client();
+  await collect(c.conversations.send('c-s', { message: 'hi' }));
+  await faults({ watchEmptyCloses: 4 });
+  const err = await withConnectionsLasting(LONG_CONNECTION_MS - 1_000, () => expectError(collect(c.conversations.watch('c-s', {}))));
+  assert.equal(err.code, 'STREAM_LOST');
+  assert.equal((await api()).filter((r) => r.method === 'GET').length, 4, 'the first request and three reconnects');
 });
 
 test('[sse.duplicate-not-progress] reconnects that bring only replayed duplicates still end in STREAM_LOST', async () => {

@@ -15,6 +15,30 @@ use crate::request::{BoxFuture, Response};
 
 const MAX_RECONNECTS: u32 = 3;
 
+/// A connection that stayed open at least this long before it ended restarts the reconnect count (PROTOCOL.md 5.6).
+pub const LONG_CONNECTION: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// A replacement for the clock that times each connection: a reading in time since any fixed start.
+type ClockFn = Box<dyn FnMut() -> std::time::Duration + Send>;
+static CLOCK: std::sync::Mutex<Option<ClockFn>> = std::sync::Mutex::new(None);
+
+/// The clock that times each connection, for the rule above: the time since the first reading, unless replaced.
+fn stream_clock() -> std::time::Duration {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    let mut clock = CLOCK.lock().unwrap_or_else(|e| e.into_inner());
+    match clock.as_mut() {
+        Some(f) => f(),
+        None => START.get_or_init(std::time::Instant::now).elapsed(),
+    }
+}
+
+/// Replaces the clock that times each stream connection, or puts the real one back with `None`. For tests only: the
+/// conformance cases step it so that a connection lasts an hour, or under a minute, without waiting.
+#[doc(hidden)]
+pub fn set_stream_clock(clock: Option<ClockFn>) {
+    *CLOCK.lock().unwrap_or_else(|e| e.into_inner()) = clock;
+}
+
 /// What a generated decoder makes of one SSE event.
 pub enum Decoded<E> {
     Event(E),
@@ -62,6 +86,8 @@ pub struct Stream<E, F, Er> {
     reconnects: u32,
     /// Reconnects since the last event: at most `MAX_RECONNECTS` in a row (PROTOCOL.md 5.6).
     attempts: u32,
+    /// When the current connection's response arrived, on the stream clock; `None` between connections.
+    opened_at: Option<std::time::Duration>,
     final_: Option<F>,
     done: bool,
     request_id: Option<String>,
@@ -92,6 +118,7 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
             last_id: None,
             reconnects: 0,
             attempts: 0,
+            opened_at: None,
             final_: None,
             done: false,
             request_id,
@@ -102,6 +129,7 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
     }
 
     fn attach(&mut self, resp: Response) {
+        self.opened_at = Some(stream_clock());
         self.body = Some(Box::pin(resp.inner.bytes_stream()));
         self.buf.clear();
     }
@@ -224,6 +252,13 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
 
     async fn reconnect(&mut self, cause: Option<reqwest::Error>) -> Result<(), Error> {
         self.body = None;
+        // A connection that stayed open a minute or more starts the count again, like a new event: the server ends every
+        // stream within an hour, and a quiet watch must outlive that (PROTOCOL.md 5.6).
+        if let Some(opened_at) = self.opened_at.take() {
+            if stream_clock().saturating_sub(opened_at) >= LONG_CONNECTION {
+                self.attempts = 0;
+            }
+        }
         let mut cause: Option<Box<dyn std::error::Error + Send + Sync>> = cause.map(|e| Box::new(e) as _);
         loop {
             if self.attempts >= MAX_RECONNECTS {

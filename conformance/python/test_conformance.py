@@ -41,6 +41,7 @@ from caitlyn import (
 from caitlyn import _operations as operations  # pyright: ignore[reportPrivateUsage]
 from caitlyn.auth import Auth, AwsCredentials, AwsIam, CaitlynAuthError, ClientCredentials, OAuth, OAuthTokens, Session, Token, WorkloadIdentity
 from caitlyn.models import AgentVersion
+from caitlyn_core import _client as core_client  # pyright: ignore[reportPrivateUsage]
 from caitlyn_core import workspace_endpoint
 from conftest import ROOT, Mock
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
@@ -304,6 +305,55 @@ async def test_sse_reconnect_drops_after(mock: Mock, case_id: str) -> None:
     assert "after=" in first["query"]
     assert second["headers"].get("last-event-id") == events[0].event_id
     assert "after=" not in second["query"] and "type=conversation.created" in second["query"]
+
+
+@contextmanager
+def connections_lasting(step: float) -> Iterator[None]:
+    """The stream clock steps `step` seconds at each reading, so every connection lasts exactly that long (a stream reads
+    the clock when a response arrives and when its connection ends); the real clock is put back afterwards."""
+    real = core_client.stream_clock
+    now = [0.0]
+
+    def stepping() -> float:
+        now[0] += step
+        return now[0]
+
+    core_client.stream_clock = stepping
+    try:
+        yield
+    finally:
+        core_client.stream_clock = real
+
+
+@case("sse.long-connection-resets-count")
+async def test_sse_long_connection_resets_count(mock: Mock, case_id: str) -> None:
+    c = client(mock)
+    async with c.conversations.send("c-l", message="hi") as stream:
+        await collect(stream)
+    # Five quiet responses in a row (the first and four reconnects), each open just over a minute: one more than the
+    # limit, so the watch carries on only because each long connection restarts the count. The sixth carries events.
+    mock.faults(watchEmptyCloses=5)
+    first: Any = None
+    with connections_lasting(core_client.LONG_CONNECTION_SECONDS + 1):
+        async with c.conversations.watch("c-l") as watch:
+            async for event in watch:
+                first = event
+                break
+    assert first is not None and first.type == "message.started"  # the watch reached the events, with no STREAM_LOST
+    assert len([r for r in mock.api() if r["method"] == "GET"]) == 6  # the first request and five reconnects
+
+
+@case("sse.short-connections-stream-lost")
+async def test_sse_short_connections_stream_lost(mock: Mock, case_id: str) -> None:
+    c = client(mock)
+    async with c.conversations.send("c-s", message="hi") as stream:
+        await collect(stream)
+    mock.faults(watchEmptyCloses=4)
+    with connections_lasting(core_client.LONG_CONNECTION_SECONDS - 1):
+        async with c.conversations.watch("c-s") as watch:
+            err = await expect_error(collect(watch))
+    assert err.code == "STREAM_LOST"
+    assert len([r for r in mock.api() if r["method"] == "GET"]) == 4  # the first request and three reconnects
 
 
 @case("sse.duplicate-not-progress")

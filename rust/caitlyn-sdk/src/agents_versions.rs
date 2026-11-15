@@ -79,10 +79,10 @@ async fn read_delete_agent_version(resp: rt::Response) -> Result<DeleteAgentVers
 impl AgentsVersionsClient {
     /// Deletes a named version.
     ///
-    /// Any named version can be deleted, including one that was published: production is its own
-    /// copy, so it does not change. `draft` and `production`, which every agent keeps, are refused with
-    /// 400 `VERSION_NOT_DELETABLE`. Production history entries copied from the version are never
-    /// deleted or changed, and still read as they did. Like every change, it is audited.
+    /// Any named version can be deleted, including the one production is running; production carries
+    /// on unchanged. `draft` and `production`, which every agent keeps, are refused with 400
+    /// `VERSION_NOT_DELETABLE`. Production history entries that name the version are never deleted or
+    /// changed, and still read as they did. Like every change, it is audited.
     ///
     /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
     /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]
@@ -354,7 +354,7 @@ async fn read_pin_draft_version(resp: rt::Response) -> Result<PinDraftVersionRes
 }
 
 impl AgentsVersionsClient {
-    /// Keeps a copy of the draft as a new named version.
+    /// Saves the draft as a new named version.
     ///
     /// The new version is pinned: it does not change production, and the draft carries on as before.
     /// Send the draft's ETag as `If-Match` to pin only the draft you tested; without it, the draft is
@@ -458,12 +458,11 @@ async fn read_publish_agent_version(resp: rt::Response) -> Result<AgentVersion, 
 }
 
 impl AgentsVersionsClient {
-    /// Publishes a version: production becomes a copy of it.
+    /// Publishes a version: it becomes the version production runs.
     ///
-    /// `version` is a version name, or `draft`. Publishing the draft first keeps a copy of it as a new
-    /// version named `name`, then publishes that, so production always matches a named version. The
-    /// version published is kept as it is; nothing is moved or deleted, and deleting it later does not
-    /// change production. Send production's current ETag
+    /// `version` is a version name, or `draft`. Publishing the draft first saves it as a new version
+    /// named `name`, then publishes that, so production always runs a named version. Deleting the
+    /// published version later does not change production. Send production's current ETag
     /// (from `GET /v3/agents/{agentId}/versions/production`) as `If-Match`, so two publishes cannot
     /// overwrite each other; a stale ETag is refused with 412. Production before the publish is kept as
     /// a production history entry (ListProductionHistoryEntries), stamped with who replaced it and
@@ -497,7 +496,7 @@ impl AgentsVersionsClient {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ResetDraftVersionInput {
-    /// The version to copy: a version name, or `production`.
+    /// The version to reset the draft to: a version name, or `production`.
     #[serde(rename = "from")]
     pub from: String,
 }
@@ -540,11 +539,11 @@ async fn read_reset_draft_version(resp: rt::Response) -> Result<AgentVersion, rt
 }
 
 impl AgentsVersionsClient {
-    /// Resets the draft to a copy of another version; `If-Match` is required.
+    /// Resets the draft to another version; `If-Match` is required.
     ///
     /// The draft's configuration becomes the configuration of `from`, which is a version name or
-    /// `production`. Nothing else changes: the version copied from is kept, and production is
-    /// untouched. Returns the draft and its new ETag.
+    /// `production`. Nothing else changes: `from` is kept as it is, and production is untouched.
+    /// Returns the draft and its new ETag.
     ///
     /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
     /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]

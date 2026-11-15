@@ -178,6 +178,27 @@ async fn send(c: &Client, conversation: &str) -> Result<ConversationEventStream,
         .await
 }
 
+/// Steps the stream clock by `step` at each reading while it lives, so every connection lasts exactly that long (a
+/// stream reads the clock when a response arrives and when its connection ends); dropping it puts the real clock back.
+struct ConnectionsLasting;
+
+impl ConnectionsLasting {
+    fn new(step: Duration) -> Self {
+        let mut now = Duration::ZERO;
+        caitlyn_sdk_core::stream::set_stream_clock(Some(Box::new(move || {
+            now += step;
+            now
+        })));
+        ConnectionsLasting
+    }
+}
+
+impl Drop for ConnectionsLasting {
+    fn drop(&mut self) {
+        caitlyn_sdk_core::stream::set_stream_clock(None);
+    }
+}
+
 async fn collect<E, F: Clone>(s: &mut caitlyn_sdk_core::Stream<E, F, Error>) -> (Vec<E>, Option<Error>) {
     let mut evs = Vec::new();
     while let Some(r) = s.next().await {
@@ -883,6 +904,43 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                     && header(&reqs[1], "last-event-id") == events[0].event_id(),
                 "requests {reqs:?}"
             );
+            Ok(())
+        }),
+        "sse.long-connection-resets-count" => Box::pin(async move {
+            let c = client(m);
+            let mut first = send(&c, "c-l").await.map_err(s)?;
+            let (_, err) = collect(&mut first).await;
+            ensure!(err.is_none(), "send: {err:?}");
+            // Five quiet responses in a row (the first and four reconnects), each open just over a minute: one more
+            // than the limit, so the watch carries on only because each long connection restarts the count. The sixth
+            // carries events.
+            m.faults(json!({"watchEmptyCloses": 5})).await;
+            let _clock = ConnectionsLasting::new(caitlyn_sdk_core::stream::LONG_CONNECTION + Duration::from_secs(1));
+            let mut watch = c.conversations().watch("c-l", WatchConversationInput::default()).await.map_err(s)?;
+            let first = watch.next().await;
+            ensure!(
+                matches!(&first, Some(Ok(e)) if e.event_type() == "message.started"),
+                "first {first:?}; want message.started, with no STREAM_LOST"
+            );
+            let gets = m.api().await.iter().filter(|r| str_at(r, "method") == "GET").count();
+            ensure!(gets == 6, "{gets} requests; want the first and five reconnects");
+            Ok(())
+        }),
+        "sse.short-connections-stream-lost" => Box::pin(async move {
+            let c = client(m);
+            let mut first = send(&c, "c-s").await.map_err(s)?;
+            let (_, err) = collect(&mut first).await;
+            ensure!(err.is_none(), "send: {err:?}");
+            m.faults(json!({"watchEmptyCloses": 4})).await;
+            let _clock = ConnectionsLasting::new(caitlyn_sdk_core::stream::LONG_CONNECTION - Duration::from_secs(1));
+            let mut watch = c.conversations().watch("c-s", WatchConversationInput::default()).await.map_err(s)?;
+            let (_, err) = collect(&mut watch).await;
+            ensure!(
+                matches!(&err, Some(e) if e.code() == Some("STREAM_LOST")),
+                "got {err:?}, want STREAM_LOST"
+            );
+            let gets = m.api().await.iter().filter(|r| str_at(r, "method") == "GET").count();
+            ensure!(gets == 4, "{gets} requests; want the first and three reconnects");
             Ok(())
         }),
         "sse.duplicate-not-progress" => Box::pin(async move {

@@ -84,7 +84,7 @@ class VersionSource(OpenEnum):
 
 
 class PinDraftVersionResult(CaitlynResult):
-    """The result: Keeps a copy of the draft as a new named version.
+    """The result: Saves the draft as a new named version.
 
     The new version is pinned: it does not change production, and the draft carries on as before.
     Send the draft's ETag as `If-Match` to pin only the draft you tested; without it, the draft is
@@ -130,7 +130,7 @@ class PinDraftVersionResult(CaitlynResult):
 class ProductionHistoryEntry(CaitlynResult):
     """The result: Gets one production history entry, with the full configuration production had.
 
-    The entry is a copy: it reads the same whether or not the version it came from still exists.
+    The entry reads the same whether or not the version it came from still exists.
     """
 
     id: str
@@ -222,10 +222,10 @@ class ClearableDraftField(OpenEnum):
 class DeleteAgentVersionResult(CaitlynResult):
     """The result: Deletes a named version.
 
-    Any named version can be deleted, including one that was published: production is its own
-    copy, so it does not change. `draft` and `production`, which every agent keeps, are refused with
-    400 `VERSION_NOT_DELETABLE`. Production history entries copied from the version are never
-    deleted or changed, and still read as they did. Like every change, it is audited.
+    Any named version can be deleted, including the one production is running; production carries
+    on unchanged. `draft` and `production`, which every agent keeps, are refused with 400
+    `VERSION_NOT_DELETABLE`. Production history entries that name the version are never deleted or
+    changed, and still read as they did. Like every change, it is audited.
     """
 
     request_id: str | None = None
