@@ -19,14 +19,14 @@ is fetched when the loop reaches it, so a `break` stops fetching.
 <!-- example: examples/typescript/concepts.ts#pagination -->
 ```ts tab="TypeScript"
 // Every document in the folder: the next page is fetched as the loop reaches it
-for await (const document of caitlyn.documents.list({ knowledgeBaseId: 'KB4T7YQ2WL', folder: 'hr/', limit: 100 })) {
+for await (const document of caitlyn.documents.list({ knowledgeBaseId: 'KB4T7YQ2WL', folder: '/policies/', limit: 100 })) {
   console.log(document.name, document.status);
 }
 ```
 <!-- example: examples/python/concepts.py#pagination -->
 ```python tab="Python"
 # Every document in the folder: the next page is fetched as the loop reaches it
-for document in caitlyn.documents.list(knowledge_base_id="KB4T7YQ2WL", folder="hr/", limit=100):
+for document in caitlyn.documents.list(knowledge_base_id="KB4T7YQ2WL", folder="/hr/", limit=100):
     print(document.name, document.status)
 
 # Or page by page
@@ -36,7 +36,7 @@ for page in caitlyn.documents.list(knowledge_base_id="KB4T7YQ2WL", limit=100).pa
 <!-- example: examples/go/concepts/concepts.go#pagination -->
 ```go tab="Go"
 // Every document in the folder: the next page is fetched as the loop reaches it
-input := &caitlyn.ListDocumentsInput{KnowledgeBaseID: "KB4T7YQ2WL", Folder: caitlyn.Ptr("hr/"), Limit: caitlyn.Ptr[int32](100)}
+input := &caitlyn.ListDocumentsInput{KnowledgeBaseID: "KB4T7YQ2WL", Folder: caitlyn.Ptr("/hr/"), Limit: caitlyn.Ptr[int32](100)}
 for document, err := range client.Documents.List(ctx, input) {
 	if err != nil {
 		return err
@@ -57,7 +57,7 @@ for page, err := range client.Documents.ListPages(ctx, input) {
 // Every document in the folder: the next page is fetched as the loop reaches it
 let input = ListDocumentsInput {
     knowledge_base_id: "KB4T7YQ2WL".into(),
-    folder: Some("hr/".into()),
+    folder: Some("/hr/".into()),
     limit: Some(100),
     ..Default::default()
 };

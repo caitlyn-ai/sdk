@@ -7,6 +7,7 @@ import asyncio
 import dataclasses
 import json
 import platform
+import random
 import time
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -407,6 +408,8 @@ class EventDecoder[E: CaitlynEvent, F]:
     """The final result carried by an event, if it is the final event."""
     error_event: type[E] | None = None
     """An event that ends the stream with a problem-details error."""
+    has_final: bool = False
+    """Whether the stream ends at a final event (SendMessage), or is open-ended (a watch)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -428,24 +431,38 @@ class _StreamState[E: CaitlynEvent, F]:
         self.final: F | None = None
         self.done = False
         self.reconnects = 0
+        """Reconnects so far, in all."""
+        self.attempts = 0
+        """Reconnects since the last event: at most max_reconnects in a row (PROTOCOL.md 5.6)."""
+        self.ended_by_reset = False
         self.request_id: str | None = None
-        self.events_on_response = 0
-        """SSE events (known or not) the current response has carried."""
+
+    def reconnecting(self) -> float:
+        """Counts a reconnect and returns how long to wait before it (PROTOCOL.md 5.6): an exponential backoff
+        with jitter, 0.25-0.5 s, then 0.5-1 s, then 1-2 s, so each pause in a row is longer than the last."""
+        self.reconnects += 1
+        self.attempts += 1
+        return min(8.0, 0.5 * 2 ** (self.attempts - 1)) * random.uniform(0.5, 1.0)
 
     def opening(self) -> tuple[OperationSpec, Mapping[str, object]]:
-        self.events_on_response = 0
         if self.reconnects == 0 or self.resume is None:
             return self.spec, self.params
         self.sse = SseDecoder()
-        return self.resume.operation, {**self.resume.params, self.resume.last_event_id_param: self.last_event_id}
+        params = dict(self.resume.params)
+        if self.last_event_id is not None:
+            # Last-Event-ID carries the position: a watch's own `after` cursor is left out (PROTOCOL.md 5.6). Before
+            # any event, the header is left out and the request is sent as it was.
+            params.pop("after", None)
+            params[self.resume.last_event_id_param] = self.last_event_id
+        return self.resume.operation, params
 
     def accept(self, message: SseMessage) -> E | None:
-        self.events_on_response += 1
         if message.own_id and message.id is not None:
             if message.id in self.seen:
                 return None
             self.seen.add(message.id)
             self.last_event_id = message.id
+            self.attempts = 0  # only a new event counts as progress (PROTOCOL.md 5.6)
         cls = self.decoder.events.get(message.event)
         if cls is None:
             return None  # an event type this SDK does not know: skipped
@@ -455,7 +472,12 @@ class _StreamState[E: CaitlynEvent, F]:
             data = {}
         event = cls.from_wire(data)
         event.event_id = message.id if message.own_id else None
-        if self.decoder.error_event is not None and isinstance(event, self.decoder.error_event):
+        if message.event == "stream.reset" and self.decoder.has_final and self.reconnects > 0:
+            # PROTOCOL.md 5.9: the answer finished while the stream was disconnected, so its final event went to
+            # the earlier connection. The stream ends at the reset, with no error and no further reconnect.
+            self.ended_by_reset = True
+        if self.decoder.has_final and self.decoder.error_event is not None and isinstance(event, self.decoder.error_event):
+            # PROTOCOL.md 5.5: a failure event ends only a stream with a final event. On a watch it is delivered.
             raise error_from_problem(self.spec, 0, event.raw)
         final = self.decoder.final(event)
         if final is not None:
@@ -463,12 +485,17 @@ class _StreamState[E: CaitlynEvent, F]:
         return event
 
     def can_resume(self) -> bool:
-        return self.resume is not None and self.reconnects < self.max_reconnects
+        return self.resume is not None and self.attempts < self.max_reconnects
+
+    def finished(self) -> bool:
+        """The stream has ended on its own: at its final event (5.4), or at a reset that took its place (5.9)."""
+        return self.final is not None or self.ended_by_reset
 
     def ended_cleanly(self) -> bool:
-        """EOF counts as the end unless the stream has a final event that has not arrived yet. A response that
-        ended cleanly without any event is the end too: the answer had already finished (PROTOCOL.md 5.6)."""
-        return self.final is not None or self.events_on_response == 0 or not self.can_resume()
+        """At a clean end of the response: whether the stream ends there. It does when it has finished, or when
+        the operation cannot resume (5.7, 5.9). Otherwise it reconnects (5.6, 5.7), or fails with STREAM_LOST
+        once can_resume() says no."""
+        return self.finished() or self.resume is None
 
     def lost(self, cause: BaseException | None) -> StreamLostError:
         return StreamLostError(
@@ -542,11 +569,17 @@ class EventStream[E: CaitlynEvent, F]:
                         event = state.accept(message)
                         if event is not None:
                             yield event
+                        if state.finished():
+                            break
+                    if state.finished():
+                        # PROTOCOL.md 5.4: the stream ends at its final event, whether or not the response does. A
+                        # resumed answer arrives on WatchConversation, which carries on after it until it is closed.
+                        break
             except httpx.TransportError as e:
                 self._release(e)
                 if not state.can_resume():
                     raise state.lost(e) from e
-                state.reconnects += 1
+                time.sleep(state.reconnecting())
                 continue
             except BaseException as e:
                 self._release(e)
@@ -554,8 +587,10 @@ class EventStream[E: CaitlynEvent, F]:
             self._release(None)
             if state.ended_cleanly():
                 state.done = True
+            elif not state.can_resume():
+                raise state.lost(None)
             else:
-                state.reconnects += 1
+                time.sleep(state.reconnecting())
 
     def final_message(self) -> F:
         """Read the rest of the stream and return its final result."""
@@ -626,11 +661,17 @@ class AsyncEventStream[E: CaitlynEvent, F]:
                         event = state.accept(message)
                         if event is not None:
                             yield event
+                        if state.finished():
+                            break
+                    if state.finished():
+                        # PROTOCOL.md 5.4: the stream ends at its final event, whether or not the response does. A
+                        # resumed answer arrives on WatchConversation, which carries on after it until it is closed.
+                        break
             except httpx.TransportError as e:
                 await self._release(e)
                 if not state.can_resume():
                     raise state.lost(e) from e
-                state.reconnects += 1
+                await asyncio.sleep(state.reconnecting())
                 continue
             except BaseException as e:
                 await self._release(e)
@@ -638,8 +679,10 @@ class AsyncEventStream[E: CaitlynEvent, F]:
             await self._release(None)
             if state.ended_cleanly():
                 state.done = True
+            elif not state.can_resume():
+                raise state.lost(None)
             else:
-                state.reconnects += 1
+                await asyncio.sleep(state.reconnecting())
 
     async def final_message(self) -> F:
         """Read the rest of the stream and return its final result."""

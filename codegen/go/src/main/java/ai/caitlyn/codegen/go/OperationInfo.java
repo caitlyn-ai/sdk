@@ -43,7 +43,12 @@ final class OperationInfo {
 
     final OperationShape op;
     final String name;
-    /** Go field on Client, for example Documents; and its type, DocumentsClient. */
+    /**
+     * The namespace's Go segments, outermost first: [Documents], or [Agents, Versions] for the dotted namespace
+     * agents.versions (PROTOCOL.md 10). namespace is the path from Client, Documents or Agents.Versions, and
+     * namespaceType the client type that holds the method, DocumentsClient or AgentsVersionsClient.
+     */
+    final List<String> path;
     final String namespace;
     final String namespaceType;
     /** Exported method name, for example List or UpdateDraft. */
@@ -83,8 +88,9 @@ final class OperationInfo {
         // Naming, shared with the TypeScript and Python generators (model-support's ClientMethod).
         ClientMethod cm = ClientMethod.of(model, op);
         String positionalMember = cm.positionalMember().orElse(null);
-        this.namespace = Names.exported(cm.namespace());
-        this.namespaceType = namespace + "Client";
+        this.path = cm.path().stream().map(Names::exported).toList();
+        this.namespace = String.join(".", path);
+        this.namespaceType = String.join("", path) + "Client";
         this.method = Names.exported(cm.method());
 
         Map<String, HttpBinding> bindings = HttpBindingIndex.of(model).getRequestBindings(op);

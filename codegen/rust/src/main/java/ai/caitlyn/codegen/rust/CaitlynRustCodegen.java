@@ -135,7 +135,7 @@ final class CaitlynRustCodegen implements DirectedCodegen<RustContext, RustSetti
                 w.l("    pub " + field + ": " + ctx.types().member(m) + ",\n");
             }
             if (event) {
-                w.l("    /// The event's SSE `id:`.\n    #[serde(skip)]\n    pub event_id: Option<String>,\n");
+                w.l("    /// The event's SSE `id:`. `None` when the value is not an event itself, such as another event's data.\n    #[serde(skip)]\n    pub event_id: Option<String>,\n");
             }
             if (result) {
                 w.l("    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).\n"
@@ -260,11 +260,11 @@ final class CaitlynRustCodegen implements DirectedCodegen<RustContext, RustSetti
             throw new CodegenException(shape.getId() + ": unions outside @sseEvents are not supported yet");
         }
         String name = Names.pascal(shape.getId().getName());
-        List<MemberShape> events = shape.getAllMembers().values().stream()
-                .filter(m -> !facts.sseErrorTargets.contains(m.getTarget())).toList();
+        List<MemberShape> events = List.copyOf(shape.getAllMembers().values());
         ctx.writerDelegator().useFileWriter("src/types.rs", "", w -> {
             w.l(Names.doc(doc(shape), ""));
-            w.l("///\n/// Event names this SDK does not know are skipped, and a failure event ends the stream with a typed error.\n");
+            w.l("///\n/// Event names this SDK does not know are skipped. On a stream with a final event, a failure event ends the\n"
+                    + "/// stream with a typed error instead; on a watch it is delivered like any other (PROTOCOL.md 5.5).\n");
             w.l("#[derive(Debug, Clone, PartialEq)]\n#[non_exhaustive]\npub enum " + name + " {\n");
             for (MemberShape m : events) {
                 String t = ctx.symbolProvider().toSymbol(ctx.model().expectShape(m.getTarget())).getName();
@@ -300,13 +300,10 @@ final class CaitlynRustCodegen implements DirectedCodegen<RustContext, RustSetti
                     + name + ">, serde_json::Error> {\n    Ok(match name {\n");
             for (MemberShape m : shape.getAllMembers().values()) {
                 String wire = Names.str(ModelFacts.wireName(m));
-                if (facts.sseErrorTargets.contains(m.getTarget())) {
-                    w.l("        " + wire + " => rt::Decoded::Failure,\n");
-                    continue;
-                }
                 String t = ctx.symbolProvider().toSymbol(ctx.model().expectShape(m.getTarget())).getName();
+                String kind = facts.sseErrorTargets.contains(m.getTarget()) ? "Failure" : "Event";
                 w.l("        " + wire + " => {\n            let mut v: " + t + " = serde_json::from_slice(data)?;\n"
-                        + "            v.event_id = id.map(str::to_owned);\n            rt::Decoded::Event(" + name + "::" + t + "(v))\n        }\n");
+                        + "            v.event_id = id.map(str::to_owned);\n            rt::Decoded::" + kind + "(" + name + "::" + t + "(v))\n        }\n");
             }
             w.l("        _ => rt::Decoded::Skip,\n    })\n}\n\n");
         });

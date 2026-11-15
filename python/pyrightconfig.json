@@ -9,6 +9,7 @@
     "../conformance/python"
   ],
   "extraPaths": [
-    "../conformance/python"
+    "../conformance/python",
+    "../examples/python"
   ]
 }

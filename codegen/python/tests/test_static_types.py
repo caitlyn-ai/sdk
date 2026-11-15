@@ -20,11 +20,11 @@ c = Caitlyn(workspace="x", auth=Token("t"))
 """
 
 CASES: dict[str, tuple[str, bool]] = {  # (code, is a type error)
-    "clear accepts a clearable member": ('c.versions.update_draft(agent_id="a", if_match="e", clear=["identity"])', False),
-    "clear rejects other members": ('c.versions.update_draft(agent_id="a", if_match="e", clear=["instructions"])', True),
-    "required member is not Optional": ('n: int = len(c.versions.get(agent_id="a", version="draft").configuration.instructions)', False),
-    "optional member is Optional": ('n: int = len(c.versions.get(agent_id="a", version="draft").configuration.identity)', True),
-    "keyword-only arguments": ('c.versions.get("a", "draft")', True),
+    "clear accepts a clearable member": ('c.agents.versions.update_draft(agent_id="a", if_match="e", clear=["identity"])', False),
+    "clear rejects other members": ('c.agents.versions.update_draft(agent_id="a", if_match="e", clear=["instructions"])', True),
+    "required member is not Optional": ('n: int = len(c.agents.versions.get(agent_id="a", version="draft").configuration.instructions)', False),
+    "optional member is Optional": ('n: int = len(c.agents.versions.get(agent_id="a", version="draft").configuration.identity)', True),
+    "keyword-only arguments": ('c.agents.versions.get("a", "draft")', True),
     "events narrow by type": (
         "with c.conversations.send('c', message='m') as s:\n"
         "    for e in s:\n"
@@ -54,7 +54,7 @@ CASES: dict[str, tuple[str, bool]] = {  # (code, is a type error)
         "    k: str = err.errors[0].pointer",
         True,
     ),
-    "misspelt attribute is an error": ('c.versions.get(agent_id="a", version="draft").configuration.instrctions', True),
+    "misspelt attribute is an error": ('c.agents.versions.get(agent_id="a", version="draft").configuration.instrctions', True),
 }
 
 

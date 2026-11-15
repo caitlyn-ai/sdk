@@ -3,21 +3,6 @@
  * @public
  * @enum
  */
-export const ClearableDraftField = {
-  /**
-   * The agent's identity statement.
-   */
-  IDENTITY: "identity",
-} as const;
-/**
- * @public
- */
-export type ClearableDraftField = (typeof ClearableDraftField)[keyof typeof ClearableDraftField];
-
-/**
- * @public
- * @enum
- */
 export const VersionSource = {
   /**
    * Created from an imported agent file.
@@ -45,13 +30,101 @@ export type VersionSource = (typeof VersionSource)[keyof typeof VersionSource];
  * @public
  * @enum
  */
+export const ClearableDraftField = {
+  /**
+   * The agent's identity statement.
+   */
+  IDENTITY: "identity",
+} as const;
+/**
+ * @public
+ */
+export type ClearableDraftField = (typeof ClearableDraftField)[keyof typeof ClearableDraftField];
+
+/**
+ * @public
+ * @enum
+ */
+export const DocumentDeleteStatus = {
+  /**
+   * The document is now `deleting`, or already was.
+   */
+  ACCEPTED: "accepted",
+  /**
+   * The document was not deleted; `code` says why.
+   */
+  FAILED: "failed",
+} as const;
+/**
+ * @public
+ */
+export type DocumentDeleteStatus = (typeof DocumentDeleteStatus)[keyof typeof DocumentDeleteStatus];
+
+/**
+ * @public
+ * @enum
+ */
+export const CredentialKind = {
+  /**
+   * An API client's own credential, acting for no person.
+   */
+  API_CLIENT: "api_client",
+  /**
+   * A person signed in through a browser: the Caitlyn app, or an SDK in its `session` sign-in mode.
+   */
+  BROWSER: "browser",
+  /**
+   * A token issued to an application that a person signed in to with OAuth; it acts for that
+   * person, limited to the scopes they approved.
+   */
+  OAUTH: "oauth",
+  /**
+   * A personal access token, acting for the person who created it.
+   */
+  PERSONAL: "personal",
+} as const;
+/**
+ * @public
+ */
+export type CredentialKind = (typeof CredentialKind)[keyof typeof CredentialKind];
+
+/**
+ * @public
+ * @enum
+ */
+export const DocumentFailureCode = {
+  /**
+   * The file could not be read: it may be damaged, password-protected or not the file type its
+   * name says. Check the file, then delete the document and add it again.
+   */
+  FILE_UNREADABLE: "file_unreadable",
+  /**
+   * Caitlyn could not finish processing the document. This is not a problem with the file;
+   * contact support with the document's identifier.
+   */
+  PROCESSING_FAILED: "processing_failed",
+  /**
+   * A temporary problem stopped the document being processed. Delete it and add it again; if it
+   * fails again, contact support.
+   */
+  PROCESSING_INTERRUPTED: "processing_interrupted",
+} as const;
+/**
+ * @public
+ */
+export type DocumentFailureCode = (typeof DocumentFailureCode)[keyof typeof DocumentFailureCode];
+
+/**
+ * @public
+ * @enum
+ */
 export const DocumentStatus = {
   /**
    * Being deleted.
    */
   DELETING: "deleting",
   /**
-   * The document's content could not be processed. Final.
+   * The document's content could not be processed; `failure` says why. Final.
    */
   FAILED: "failed",
   /**
@@ -101,7 +174,7 @@ export const OperationStatus = {
    */
   CANCELLED: "cancelled",
   /**
-   * The core work failed; see `error`. Final.
+   * The core work failed. Final.
    */
   FAILED: "failed",
   /**
@@ -117,7 +190,7 @@ export const OperationStatus = {
    */
   SUCCEEDED: "succeeded",
   /**
-   * Finished, but some enrichments did not complete; see `partialFailures`. Final.
+   * Finished, but some enrichments did not complete. Final.
    */
   SUCCEEDED_WITH_FAILURES: "succeeded_with_failures",
 } as const;

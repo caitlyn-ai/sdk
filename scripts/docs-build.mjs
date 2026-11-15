@@ -90,12 +90,23 @@ for (const p of reference.pages) {
   for (const problem of metadataProblems(p.metadata)) fail(`${p.slug} (generated)`, problem);
   pages.push({ ...p, source: 'the model', kind: p.group === 'errors' ? 'errors' : p.group === 'types' ? 'types' : 'reference' });
 }
-// A namespace's label in the sidebar, where the SDK's name is not what a reader looks for: the versions namespace
-// (caitlyn.versions.get) reads and changes agents, so its group is Agents. The SDK names in the pages stay as they are.
-const NAMESPACE_LABELS = { versions: 'Agents' };
-const namespaceLabel = (ns) => NAMESPACE_LABELS[ns] ?? ns.charAt(0).toUpperCase() + ns.slice(1);
-// An operation's address in the HTTP API's reference (/api/, Scalar's own anchors: tag, method and path)
-const apiAnchor = (group, method, path) => `/api/#tag/${group.toLowerCase()}/${method.toUpperCase()}${path}`;
+// A namespace's place in the sidebars and the HTTP API's tags follows the client: a nested namespace
+// (caitlyn.agents.versions) is a group inside its first segment's group (Agents, then Versions). A group is labelled by
+// its own segment, in words where the SDK's name is not what a reader looks for. The SDK names in the pages stay as
+// they are.
+const SEGMENT_LABELS = { productionHistory: 'Production history' };
+const segmentLabel = (s) => SEGMENT_LABELS[s] ?? s.charAt(0).toUpperCase() + s.slice(1);
+const namespaceLabel = (ns) => segmentLabel(ns.split('.').pop());
+// The order of the groups inside a parent group: versions before production history, then any other alphabetically
+const NESTED_ORDER = ['versions', 'productionHistory'];
+const nestedRank = (ns) => {
+  const i = NESTED_ORDER.indexOf(ns.split('.').pop());
+  return i < 0 ? NESTED_ORDER.length : i;
+};
+// An operation's address in the HTTP API's reference (/api/, Scalar's own anchors: tag, method and path). Scalar
+// slugs the tag as @scalar/helpers' slugify does: lower case, punctuation dropped, spaces as hyphens.
+const tagSlug = (group) => group.toLowerCase().replace(/[^\p{L}\p{M}\p{N}\s_-]/gu, '').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '');
+const apiAnchor = (group, method, path) => `/api/#tag/${tagSlug(group)}/${method.toUpperCase()}${path}`;
 // The SDK reference lives under /sdk/ (the HTTP API's reference is /api/). Its pages were /reference/, which the pages
 // and the generator still write: each slug and link moves here, and every old address redirects to its new one.
 const SDK_REFERENCE = 'sdk';
@@ -386,6 +397,19 @@ const link = (p, label = p.title) => ({ label, link: `/${p.slug ? `${p.slug}/` :
 // The full name is the link's own text either way, so a screen reader reads all of it.
 const refLink = (p, label = p.label ?? p.title) => ({ ...link(p, label), attrs: { 'data-ref': '', 'data-full': label } });
 const namespaces = [...new Set(reference.ops.map((o) => o.namespace))];
+/** The namespaces as the sidebars nest them: [{ label, ns }] for a namespace, [{ label, children }] for a parent. */
+const namespaceTree = [];
+for (const ns of namespaces) {
+  if (!ns.includes('.')) {
+    namespaceTree.push({ label: namespaceLabel(ns), ns });
+    continue;
+  }
+  const parent = segmentLabel(ns.split('.')[0]);
+  let node = namespaceTree.find((n) => n.children && n.label === parent);
+  if (!node) namespaceTree.push((node = { label: parent, children: [] }));
+  node.children.push({ label: namespaceLabel(ns), ns });
+}
+for (const node of namespaceTree) node.children?.sort((a, b) => nestedRank(a.ns) - nestedRank(b.ns) || a.label.localeCompare(b.label));
 const TOPIC_START = {
   'how-the-api-works': ['streaming', 'pagination', 'retries', 'errors', 'telemetry'],
   guides: ['guides-in-the-app'],
@@ -394,7 +418,10 @@ const placed = new Set(Object.values(TOPIC_START).flat());
 const startPagesOf = (slugs) => slugs.filter((s) => bySlug.has(s)).map((s) => bySlug.get(s));
 const getStarted = [bySlug.get(''), ...startPagesOf(START.filter((s) => !placed.has(s))), ...pages.filter((p) => p.kind === 'pages' && p.slug !== '' && !START.includes(p.slug))];
 const referenceGroups = [
-  ...namespaces.map((ns) => ({ label: namespaceLabel(ns), items: pages.filter((p) => p.kind === 'reference' && p.group === ns).map((p) => refLink(p)) })),
+  ...namespaceTree.map(function group(node) {
+    if (node.children) return { label: node.label, items: node.children.map(group) };
+    return { label: node.label, items: pages.filter((p) => p.kind === 'reference' && p.group === node.ns).map((p) => refLink(p)) };
+  }),
   { label: 'Types', collapsed: true, items: pages.filter((p) => p.kind === 'types').map((p) => refLink(p)) },
   { label: 'Error codes', collapsed: true, items: pages.filter((p) => p.kind === 'errors').map((p) => refLink(p)) },
 ];
@@ -425,8 +452,10 @@ const sidebar = [
 // public-wording check as the pages.
 const openapi = JSON.parse(fs.readFileSync(path.join(root, 'model/openapi.json'), 'utf8'));
 const opByName = new Map(reference.ops.map((o) => [o.name, o]));
-const groupOrder = namespaces.map(namespaceLabel);
-openapi.tags = groupOrder.map((name) => ({ name }));
+// Each namespace is a tag, and a nested one names its parent tag (OpenAPI 3.2's `parent`, which Scalar nests by)
+openapi.tags = namespaceTree.flatMap((node) =>
+  node.children ? [{ name: node.label }, ...node.children.map((c) => ({ name: c.label, parent: node.label }))] : [{ name: node.label }],
+);
 for (const methods of Object.values(openapi.paths ?? {})) {
   for (const operation of Object.values(methods)) {
     const op = opByName.get(operation.operationId);
@@ -482,14 +511,17 @@ const apiTopic = {
   icon: 'seti:json',
   items: [
     { label: 'Overview', link: '/api/' },
-    ...groupOrder.map((group) => ({
-      label: group,
-      items: Object.entries(openapi.paths).flatMap(([route, methods]) =>
-        Object.entries(methods)
-          .filter(([, o]) => o.tags?.[0] === group)
-          .map(([method, o]) => ({ label: o.summary, link: apiAnchor(group, method, route) })),
-      ),
-    })),
+    ...namespaceTree.map(function group(node) {
+      if (node.children) return { label: node.label, items: node.children.map(group) };
+      return {
+        label: node.label,
+        items: Object.entries(openapi.paths).flatMap(([route, methods]) =>
+          Object.entries(methods)
+            .filter(([, o]) => o.tags?.[0] === node.label)
+            .map(([method, o]) => ({ label: o.summary, link: apiAnchor(node.label, method, route) })),
+        ),
+      };
+    }),
     // The types and error codes are the SDK reference's pages (Scalar's own models list is off): shortcuts to them
     ...referenceGroups.filter((g) => g.label === 'Types' || g.label === 'Error codes'),
   ],
@@ -513,7 +545,9 @@ const iconUrl = (id) => {
 };
 const TOPIC_ICONS = { 'Get started': 'rocket-launch-outline-rounded', Guides: 'menu-book-outline-rounded', 'How the API works': 'extension-outline-rounded', 'SDK reference': 'code-outline-rounded', 'API reference': 'api-outline-rounded' };
 const GROUP_ICONS = {
-  Conversations: 'chat-bubble-outline-rounded', Documents: 'description-outline-rounded', Uploads: 'upload-outline-rounded', Agents: 'smart-toy-outline-rounded',
+  Conversations: 'chat-bubble-outline-rounded', Documents: 'description-outline-rounded', Uploads: 'upload-outline-rounded',
+  Agents: 'smart-toy-outline-rounded', Versions: 'stacks-outline-rounded', 'Production history': 'history-rounded', Callers: 'badge-outline-rounded',
+  Events: 'notifications-outline-rounded',
   Types: 'data-object-outline-rounded', 'Error codes': 'warning-outline-rounded', 'Sign-in and identity': 'key-outline-rounded', Embed: 'web-outline-rounded',
   'Tools and connectors': 'power-outline-rounded',
 };
@@ -556,11 +590,15 @@ for (const topic of sidebar) {
   const key = topicKey(topic.label);
   topic.attrs = { ...(topic.attrs ?? {}), 'data-topic': key };
   if (TOPIC_ICONS[topic.label]) iconRules.push(masked(`.starlight-sidebar-topics a[data-topic='${key}'] .starlight-sidebar-topics-icon::before`, `material-symbols:${TOPIC_ICONS[topic.label]}`));
-  // A group's icon by its place in its section's sidebar (Starlight's groups take no attributes)
-  topic.items.forEach((item, i) => {
-    if (!item.items || !GROUP_ICONS[item.label]) return;
-    iconRules.push(masked(`.sidebar-content:has(a.starlight-sidebar-topics-current[data-topic='${key}']) ul.top-level > li:nth-child(${i + 1}) > details > summary .group-label::before`, `material-symbols:${GROUP_ICONS[item.label]}`));
-  });
+  // A group's icon by its place in its section's sidebar (Starlight's groups take no attributes), nested groups included
+  (function groupIcons(items, path) {
+    items.forEach((item, i) => {
+      if (!item.items) return;
+      const at = `${path} > li:nth-child(${i + 1}) > details`;
+      if (GROUP_ICONS[item.label]) iconRules.push(masked(`${at} > summary .group-label::before`, `material-symbols:${GROUP_ICONS[item.label]}`));
+      groupIcons(item.items, `${at} > ul`);
+    });
+  })(topic.items, `.sidebar-content:has(a.starlight-sidebar-topics-current[data-topic='${key}']) ul.top-level`);
 }
 for (const [lang, icon] of Object.entries(CODE_ICONS)) {
   iconRules.push(masked(`.expressive-code:has(pre[data-language='${lang}']) figcaption .title::before`, icon));

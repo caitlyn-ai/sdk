@@ -6,6 +6,16 @@ from datetime import datetime
 from caitlyn_core import CaitlynModel, CaitlynResult, FieldError as FieldError, OpenEnum
 from pydantic import JsonValue
 
+class Actor(CaitlynModel):
+    """A person or an API client that made a change."""
+
+    user_id: str | None = None
+    """The person, when a person made the change."""
+    api_client_id: str | None = None
+    """The API client, when one made the change or a person made it through one."""
+    display_name: str
+    """The person's or API client's name, as people saw it when the change was made."""
+
 
 class AttachmentSettings(CaitlynModel):
     """Chat attachment settings."""
@@ -14,16 +24,6 @@ class AttachmentSettings(CaitlynModel):
     """Whether people may attach files in chat. Defaults to false."""
     max_files: int | None = None
     """The most files one message may carry, from 1 to 20."""
-
-
-class ClearableDraftField(OpenEnum):
-    """The draft members that can be cleared. Open: an older SDK may send a newer value as a string.
-
-    Open enum: a value this SDK version does not know is kept (its `is_known` is False).
-    """
-
-    IDENTITY = "identity"
-    """The agent's identity statement."""
 
 
 class ContentSafety(CaitlynModel):
@@ -83,6 +83,161 @@ class VersionSource(OpenEnum):
     """Created from an imported agent file."""
 
 
+class PinDraftVersionResult(CaitlynResult):
+    """The result: Keeps a copy of the draft as a new named version.
+
+    The new version is pinned: it does not change production, and the draft carries on as before.
+    Send the draft's ETag as `If-Match` to pin only the draft you tested; without it, the draft is
+    pinned as it is now. Returns the new version, and `Location` names it.
+    """
+
+    agent_id: str
+    """The agent the version belongs to."""
+    name: str
+    """`draft`, `production` or the version's name."""
+    source: VersionSource | None = None
+    """How a pinned or published version was made. Absent on the draft."""
+    based_on: str | None = None
+    """The version this one was made from, where there is one."""
+    matches_production: bool | None = None
+    """True when this version's configuration is the one production currently answers with.
+    Defaults to false.
+    """
+    created_at: datetime
+    """When the version was made; for the draft, when it was first created."""
+    published_at: datetime | None = None
+    """When this configuration became production. Present only on `production`."""
+    published_by: Actor | None = None
+    """Who made this configuration production. Present only on `production`."""
+    note: str | None = None
+    """The note written when the version was pinned or published."""
+    configuration: AgentConfiguration
+    """The version's configuration."""
+    request_id: str | None = None
+    """The request's identifier. The same value is in every error body; quote it to support. From the `Caitlyn-Request-Id` response header."""
+    api_version: str | None = None
+    """The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    seen and refuse to call operations or send members newer than it.
+
+    From the `Caitlyn-Api-Version` response header.
+    """
+    etag: str
+    """The version's current ETag; send it as `If-Match` to change it. From the `ETag` response header."""
+    location: str | None = None
+    """The new version, as `/api/v3/agents/{agentId}/versions/{name}`. From the `Location` response header."""
+
+
+class ProductionHistoryEntry(CaitlynResult):
+    """The result: Gets one production history entry, with the full configuration production had.
+
+    The entry is a copy: it reads the same whether or not the version it came from still exists.
+    """
+
+    id: str
+    """The entry's identifier."""
+    agent_id: str
+    """The agent whose production this was."""
+    version_name: str | None = None
+    """The name of the version production was published from, kept even if that version has since
+    been deleted. Absent when production did not come from a named version.
+    """
+    published_at: datetime
+    """When this configuration became production."""
+    published_by: Actor
+    """Who made it production."""
+    unpublished_at: datetime
+    """When a publish replaced it."""
+    unpublished_by: Actor
+    """Who published the version that replaced it."""
+    note: str | None = None
+    """The note written when it was published."""
+    configuration: AgentConfiguration
+    """The configuration production had."""
+    request_id: str | None = None
+    """The request's identifier. The same value is in every error body; quote it to support. From the `Caitlyn-Request-Id` response header."""
+    api_version: str | None = None
+    """The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    seen and refuse to call operations or send members newer than it.
+
+    From the `Caitlyn-Api-Version` response header.
+    """
+
+
+class ProductionHistorySummary(CaitlynModel):
+    """A production history entry, without its configuration (read that with GetProductionHistoryEntry)."""
+
+    id: str
+    """The entry's identifier."""
+    agent_id: str
+    """The agent whose production this was."""
+    version_name: str | None = None
+    """The name of the version production was published from, kept even if that version has since
+    been deleted. Absent when production did not come from a named version.
+    """
+    published_at: datetime
+    """When this configuration became production."""
+    published_by: Actor
+    """Who made it production."""
+    unpublished_at: datetime
+    """When a publish replaced it."""
+    unpublished_by: Actor
+    """Who published the version that replaced it."""
+    note: str | None = None
+    """The note written when it was published."""
+
+
+class ListProductionHistoryEntriesPage(CaitlynResult):
+    """One page of results. Lists an agent's production history, newest first: what production was before each publish.
+
+    Each entry says which version production came from, who published it and when, and who replaced
+    it and when. Read an entry's full configuration with GetProductionHistoryEntry. Entries are never
+    edited or deleted, and production at any point in time is the entry whose published and
+    unpublished times span it (or current production, if none does).
+    """
+
+    items: list[ProductionHistorySummary]
+    """This page of entries, newest first."""
+    next_cursor: str | None = None
+    """The cursor for the next page. Absent on the last page."""
+    request_id: str | None = None
+    """The request's identifier. The same value is in every error body; quote it to support. From the `Caitlyn-Request-Id` response header."""
+    api_version: str | None = None
+    """The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    seen and refuse to call operations or send members newer than it.
+
+    From the `Caitlyn-Api-Version` response header.
+    """
+
+
+class ClearableDraftField(OpenEnum):
+    """The draft members that can be cleared. Open: an older SDK may send a newer value as a string.
+
+    Open enum: a value this SDK version does not know is kept (its `is_known` is False).
+    """
+
+    IDENTITY = "identity"
+    """The agent's identity statement."""
+
+
+class DeleteAgentVersionResult(CaitlynResult):
+    """The result: Deletes a named version.
+
+    Any named version can be deleted, including one that was published: production is its own
+    copy, so it does not change. `draft` and `production`, which every agent keeps, are refused with
+    400 `VERSION_NOT_DELETABLE`. Production history entries copied from the version are never
+    deleted or changed, and still read as they did. Like every change, it is audited.
+    """
+
+    request_id: str | None = None
+    """The request's identifier. The same value is in every error body; quote it to support. From the `Caitlyn-Request-Id` response header."""
+    api_version: str | None = None
+    """The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    seen and refuse to call operations or send members newer than it.
+
+    From the `Caitlyn-Api-Version` response header.
+    """
+
+
 class AgentVersion(CaitlynResult):
     """The result: Gets one version of an agent, with its full configuration and its ETag.
 
@@ -105,6 +260,10 @@ class AgentVersion(CaitlynResult):
     """
     created_at: datetime
     """When the version was made; for the draft, when it was first created."""
+    published_at: datetime | None = None
+    """When this configuration became production. Present only on `production`."""
+    published_by: Actor | None = None
+    """Who made this configuration production. Present only on `production`."""
     note: str | None = None
     """The note written when the version was pinned or published."""
     configuration: AgentConfiguration
@@ -121,6 +280,194 @@ class AgentVersion(CaitlynResult):
     """The version's current ETag; send it as `If-Match` to change it. From the `ETag` response header."""
 
 
+class AgentVersionSummary(CaitlynModel):
+    """A named version, without its configuration (read that with GetAgentVersion)."""
+
+    name: str
+    """The version's name."""
+    source: VersionSource | None = None
+    """How the version was made."""
+    based_on: str | None = None
+    """The version this one was made from, where there is one."""
+    matches_production: bool | None = None
+    """True when production's configuration is this version's. Defaults to false."""
+    created_at: datetime
+    """When the version was made."""
+    note: str | None = None
+    """The note written when the version was pinned or published."""
+
+
+class ListAgentVersionsPage(CaitlynResult):
+    """One page of results. Lists an agent's named versions in the order they were made, oldest first.
+
+    Each entry says how the version was made and whether production currently matches it. The
+    draft and production are not entries: read them with `draft` and `production`. Needs the agent's
+    version access grant, as reading any version other than production does.
+    """
+
+    items: list[AgentVersionSummary]
+    """This page of versions, oldest first."""
+    next_cursor: str | None = None
+    """The cursor for the next page. Absent on the last page."""
+    request_id: str | None = None
+    """The request's identifier. The same value is in every error body; quote it to support. From the `Caitlyn-Request-Id` response header."""
+    api_version: str | None = None
+    """The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    seen and refuse to call operations or send members newer than it.
+
+    From the `Caitlyn-Api-Version` response header.
+    """
+
+
+class DocumentDeleteStatus(OpenEnum):
+    """Whether a document's delete was accepted. Open: new values may be added.
+
+    Open enum: a value this SDK version does not know is kept (its `is_known` is False).
+    """
+
+    ACCEPTED = "accepted"
+    """The document is now `deleting`, or already was."""
+    FAILED = "failed"
+    """The document was not deleted; `code` says why."""
+
+
+class DocumentDeleteResult(CaitlynModel):
+    """The result of deleting one document in a batch."""
+
+    document_id: str
+    """The document the result is for."""
+    status: DocumentDeleteStatus
+    """Whether the delete was accepted."""
+    code: str | None = None
+    """Why it failed, as a stable code, for example `NOT_FOUND` or `CONFLICT`. Present only when
+    `failed`.
+    """
+    detail: str | None = None
+    """What went wrong, written for the integrator. Present only when `failed`."""
+
+
+class BatchDeleteDocumentsResult(CaitlynResult):
+    """The result: Deletes up to 100 documents in one call, with a result for each.
+
+    Each document is deleted as DeleteDocument deletes one. The call returns 200 even when every
+    item fails: `results` has one entry per identifier, always in request order, each either
+    `accepted` (the document is now `deleting`, or already was) or `failed` with a code: `NOT_FOUND`
+    for a document that is gone or that the caller may not see, and `CONFLICT` for a document still
+    being processed (`pending` or `processing`), which cannot be deleted until it is `indexed`,
+    `partially_indexed` or `failed`. One failed item never stops the others. More than 100 identifiers, none, or the same identifier twice is refused with 400
+    `VALIDATION_FAILED` for the whole call. Safe to repeat: a repeat gives the same results, apart
+    from `NOT_FOUND` for documents that finished deleting in between.
+    """
+
+    results: list[DocumentDeleteResult]
+    """One result per identifier, in request order."""
+    request_id: str | None = None
+    """The request's identifier. The same value is in every error body; quote it to support. From the `Caitlyn-Request-Id` response header."""
+    api_version: str | None = None
+    """The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    seen and refuse to call operations or send members newer than it.
+
+    From the `Caitlyn-Api-Version` response header.
+    """
+
+
+class CredentialKind(OpenEnum):
+    """What kind of credential made a request. Open: new values may be added.
+
+    Open enum: a value this SDK version does not know is kept (its `is_known` is False).
+    """
+
+    BROWSER = "browser"
+    """A person signed in through a browser: the Caitlyn app, or an SDK in its `session` sign-in mode."""
+    PERSONAL = "personal"
+    """A personal access token, acting for the person who created it."""
+    OAUTH = "oauth"
+    """A token issued to an application that a person signed in to with OAuth; it acts for that
+    person, limited to the scopes they approved.
+    """
+    API_CLIENT = "api_client"
+    """An API client's own credential, acting for no person."""
+
+
+class OrganisationSummary(CaitlynModel):
+    """The identifier and name of an organisation."""
+
+    id: str
+    """The organisation's identifier."""
+    name: str
+    """The organisation's name."""
+
+
+class Caller(CaitlynResult):
+    """The result: Describes the caller: who the credential belongs to, what kind of credential it is, its scopes
+    and its organisation.
+
+    Any valid credential may call it, with no particular scope, so an integration can check its
+    credential before doing anything else. It only describes the credential that made the request;
+    it never reads another person's or client's record.
+    """
+
+    user_id: str | None = None
+    """The person the credential acts for. Absent for an API client's own credential, which
+    acts for no person.
+    """
+    api_client_id: str | None = None
+    """The API client the credential was issued to: an API client's own credential, or an
+    application a person signed in to with OAuth. Absent otherwise.
+    """
+    display_name: str
+    """The person's name, or the API client's name when no person is involved."""
+    credential: CredentialKind
+    """What kind of credential made the request."""
+    scopes: list[str]
+    """The scopes the credential was granted, in no particular order. Empty for a browser
+    sign-in, which scopes do not limit; what the caller may do still depends on its roles.
+    """
+    organisation: OrganisationSummary
+    """The organisation the credential belongs to."""
+    request_id: str | None = None
+    """The request's identifier. The same value is in every error body; quote it to support. From the `Caitlyn-Request-Id` response header."""
+    api_version: str | None = None
+    """The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    seen and refuse to call operations or send members newer than it.
+
+    From the `Caitlyn-Api-Version` response header.
+    """
+
+
+class Conversation(CaitlynResult):
+    """The result: Starts a conversation with one version of an agent.
+
+    Send messages to it with `SendMessage`, and watch it with `WatchConversation`. The conversation
+    belongs to the caller that created it: the person, or the API client's own credential.
+
+    `version` names the agent version that answers. Today only `draft` can be used: `production`
+    and named versions arrive with agent versions, and asking for one before then is refused with
+    400 `VALIDATION_FAILED`, naming the versions that can be used.
+    """
+
+    id: str
+    """The conversation's identifier."""
+    agent_id: str
+    """The agent the conversation is with."""
+    version: str
+    """The version of the agent that answers."""
+    title: str | None = None
+    """The conversation's title, when it has one yet."""
+    created_at: datetime
+    """When the conversation was created."""
+    request_id: str | None = None
+    """The request's identifier. The same value is in every error body; quote it to support. From the `Caitlyn-Request-Id` response header."""
+    api_version: str | None = None
+    """The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    seen and refuse to call operations or send members newer than it.
+
+    From the `Caitlyn-Api-Version` response header.
+    """
+    location: str | None = None
+    """The conversation, as `/api/v3/conversations/{conversationId}`. From the `Location` response header."""
+
+
 class ContextItem(CaitlynModel):
     """One item of structured context, for example the page or record the person is looking at."""
 
@@ -132,6 +479,37 @@ class ContextItem(CaitlynModel):
     """Where the item lives, when it has an address."""
     data: JsonValue | None = None
     """The item's data, as JSON. Counts towards the 16 KB limit."""
+
+
+class DocumentFailureCode(OpenEnum):
+    """Why a document failed. Open: new values may be added.
+
+    Open enum: a value this SDK version does not know is kept (its `is_known` is False).
+    """
+
+    FILE_UNREADABLE = "file_unreadable"
+    """The file could not be read: it may be damaged, password-protected or not the file type its
+    name says. Check the file, then delete the document and add it again.
+    """
+    PROCESSING_INTERRUPTED = "processing_interrupted"
+    """A temporary problem stopped the document being processed. Delete it and add it again; if it
+    fails again, contact support.
+    """
+    PROCESSING_FAILED = "processing_failed"
+    """Caitlyn could not finish processing the document. This is not a problem with the file;
+    contact support with the document's identifier.
+    """
+
+
+class DocumentFailure(CaitlynModel):
+    """Why a document failed, as a stable code and a message telling the caller what to do."""
+
+    code: DocumentFailureCode
+    """What went wrong."""
+    message: str
+    """What went wrong and what to do, written for the integrator. The same for every document
+    with the same code.
+    """
 
 
 class PartialFailure(CaitlynModel):
@@ -161,7 +539,7 @@ class DocumentStatus(OpenEnum):
     PARTIALLY_INDEXED = "partially_indexed"
     """Searchable, but some enrichments did not complete; see `partialFailures`. Final."""
     FAILED = "failed"
-    """The document's content could not be processed. Final."""
+    """The document's content could not be processed; `failure` says why. Final."""
     DELETING = "deleting"
     """Being deleted."""
 
@@ -195,6 +573,12 @@ class Document(CaitlynModel):
     """Enrichments that did not complete (a picture description, metadata extraction, a table).
     They never fail the document. At most the first 100.
     """
+    failure: DocumentFailure | None = None
+    """Why the document could not be made searchable. Present only when `status` is `failed`; a
+    document that is searchable with gaps lists them in `partialFailures` instead.
+
+    Added in Caitlyn 5.115.0.
+    """
 
 
 class OperationKind(OpenEnum):
@@ -222,9 +606,9 @@ class OperationStatus(OpenEnum):
     SUCCEEDED = "succeeded"
     """Finished with no failures. Final."""
     SUCCEEDED_WITH_FAILURES = "succeeded_with_failures"
-    """Finished, but some enrichments did not complete; see `partialFailures`. Final."""
+    """Finished, but some enrichments did not complete. Final."""
     FAILED = "failed"
-    """The core work failed; see `error`. Final."""
+    """The core work failed. Final."""
     CANCELLED = "cancelled"
     """Cancelled before it finished. Final."""
 
@@ -248,7 +632,8 @@ class CreateDocumentResult(CaitlynResult):
     """The result: Creates a document from an upload; ingestion continues after the response.
 
     Returns 202 with the document in its initial state and the Operation that tracks ingestion, and
-    `Location` names the Operation. Needs the files permission, read access to the knowledge base and
+    `Location` names the document: read it with GetDocument, or wait for it with the SDKs'
+    `waitUntilIndexed`. Needs the files permission, read access to the knowledge base and
     access to the folder; it does not need update access to the knowledge base, which is for the
     knowledge base's own configuration.
     """
@@ -266,16 +651,123 @@ class CreateDocumentResult(CaitlynResult):
     From the `Caitlyn-Api-Version` response header.
     """
     location: str | None = None
-    """The Operation that tracks ingestion, as `/api/v3/operations/{operationId}`. From the `Location` response header."""
+    """The document, as `/api/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}`. From the `Location` response header."""
+
+
+class DeleteDocumentResult(CaitlynResult):
+    """The result: Deletes a document; removing it from search continues after the response.
+
+    Returns 202 with the document in `deleting`; wait for it to be gone with the SDKs'
+    `waitUntilDeleted`. Repeating the call while the document is still `deleting` returns 202 again;
+    once it is gone, 404, as for any record that does not exist.
+
+    A document still being processed (`pending` or `processing`) cannot be deleted yet: the call is
+    refused with 409 `CONFLICT`. Wait until it is `indexed`, `partially_indexed` or `failed`, for
+    example with the SDKs' `waitUntilIndexed`, then delete it.
+
+    Needs the files delete permission, read access to the knowledge base and access to the
+    document's folder.
+    """
+
+    id: str
+    """The document's identifier."""
+    knowledge_base_id: str
+    """The knowledge base the document is in."""
+    name: str
+    """The document's name, as people see it."""
+    folder: str
+    """The folder the document is in."""
+    status: DocumentStatus
+    """Where the document is in its lifecycle."""
+    stage: str | None = None
+    """While `processing`, what the server is doing, for display only."""
+    content_type: str | None = None
+    """The media type of the current bytes."""
+    byte_size: int | None = None
+    """The size of the current bytes, in bytes."""
+    sha256: str | None = None
+    """The base64-encoded SHA-256 of the current bytes."""
+    created_at: datetime
+    """When the document was created."""
+    updated_at: datetime
+    """When the document or its bytes last changed."""
+    partial_failures: list[PartialFailure] | None = None
+    """Enrichments that did not complete (a picture description, metadata extraction, a table).
+    They never fail the document. At most the first 100.
+    """
+    failure: DocumentFailure | None = None
+    """Why the document could not be made searchable. Present only when `status` is `failed`; a
+    document that is searchable with gaps lists them in `partialFailures` instead.
+
+    Added in Caitlyn 5.115.0.
+    """
+    request_id: str | None = None
+    """The request's identifier. The same value is in every error body; quote it to support. From the `Caitlyn-Request-Id` response header."""
+    api_version: str | None = None
+    """The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    seen and refuse to call operations or send members newer than it.
+
+    From the `Caitlyn-Api-Version` response header.
+    """
+
+
+class GetDocumentResult(CaitlynResult):
+    """The result: Gets one document in a knowledge base, with its status.
+
+    `status` says where the document is in its lifecycle; `indexed`, `partially_indexed` and `failed`
+    are final. A document in a folder the caller may not see is 404, as one that does not exist is.
+    The SDKs' `waitUntilIndexed` waiter calls this operation until the document is searchable, and
+    `waitUntilDeleted` until it is gone.
+    """
+
+    id: str
+    """The document's identifier."""
+    knowledge_base_id: str
+    """The knowledge base the document is in."""
+    name: str
+    """The document's name, as people see it."""
+    folder: str
+    """The folder the document is in."""
+    status: DocumentStatus
+    """Where the document is in its lifecycle."""
+    stage: str | None = None
+    """While `processing`, what the server is doing, for display only."""
+    content_type: str | None = None
+    """The media type of the current bytes."""
+    byte_size: int | None = None
+    """The size of the current bytes, in bytes."""
+    sha256: str | None = None
+    """The base64-encoded SHA-256 of the current bytes."""
+    created_at: datetime
+    """When the document was created."""
+    updated_at: datetime
+    """When the document or its bytes last changed."""
+    partial_failures: list[PartialFailure] | None = None
+    """Enrichments that did not complete (a picture description, metadata extraction, a table).
+    They never fail the document. At most the first 100.
+    """
+    failure: DocumentFailure | None = None
+    """Why the document could not be made searchable. Present only when `status` is `failed`; a
+    document that is searchable with gaps lists them in `partialFailures` instead.
+
+    Added in Caitlyn 5.115.0.
+    """
+    request_id: str | None = None
+    """The request's identifier. The same value is in every error body; quote it to support. From the `Caitlyn-Request-Id` response header."""
+    api_version: str | None = None
+    """The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    seen and refuse to call operations or send members newer than it.
+
+    From the `Caitlyn-Api-Version` response header.
+    """
 
 
 class ListDocumentsPage(CaitlynResult):
     """One page of results. Lists the documents in a knowledge base, one page at a time.
 
     Documents are returned in a stable order that does not change between pages. Filters combine
-    with AND. Unlike v2, an unknown filter is refused with 400 `UNKNOWN_FILTER` instead of being
-    ignored, and the list can be sorted by `name`, `updatedAt` (when the document last changed) and
-    `byteSize` on the server; v2 sorts on the client only.
+    with AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. The list can be sorted by
+    `name`, `updatedAt` (when the document last changed) and `byteSize`.
     """
 
     items: list[Document]
@@ -339,7 +831,44 @@ class Upload(CaitlynResult):
     From the `Caitlyn-Api-Version` response header.
     """
     location: str | None = None
-    """The upload, as `/api/v3/uploads/{uploadId}`. From the `Location` response header."""
+    """The upload, as `/api/v3/uploads/{uploadId}`: read its status with GetUpload. From the `Location` response header."""
+
+
+class GetUploadResult(CaitlynResult):
+    """The result: Gets an upload's status and when its upload URL expires.
+
+    Use it to check that the bytes arrived before passing the upload's `id` to the operation that
+    uses it. Only the person or client that reserved the upload can read it; anyone else gets 404.
+    """
+
+    id: str
+    """The upload's identifier."""
+    status: UploadStatus
+    """Where the upload is in its lifecycle."""
+    expires_at: datetime
+    """When the upload URL stops working. An upload not used by then becomes `expired`."""
+    request_id: str | None = None
+    """The request's identifier. The same value is in every error body; quote it to support. From the `Caitlyn-Request-Id` response header."""
+    api_version: str | None = None
+    """The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    seen and refuse to call operations or send members newer than it.
+
+    From the `Caitlyn-Api-Version` response header.
+    """
+
+
+class ActorType(OpenEnum):
+    """The kind of caller that caused an event. Open: new values may be added.
+
+    Open enum: a value this SDK version does not know is kept (its `is_known` is False).
+    """
+
+    PERSON = "person"
+    """A person, signed in through a browser or acting through a token."""
+    API_CLIENT = "api_client"
+    """An API client acting for no person."""
+    GUEST = "guest"
+    """A widget guest."""
 
 
 class Citation(CaitlynModel):
@@ -355,6 +884,44 @@ class Citation(CaitlynModel):
     """The cited document's name."""
     page_number: int | None = None
     """The page the passage is on, starting at 1, for paged documents."""
+
+
+class ConversationCreated(CaitlynModel):
+    """The data of `conversation.created`."""
+
+    id: str
+    """The conversation's identifier."""
+    agent_id: str
+    """The agent it is with."""
+    version: str
+    """The version of the agent that answers."""
+
+
+class EventActor(CaitlynModel):
+    """Who caused an event."""
+
+    type: ActorType
+    """The kind of caller."""
+    user_id: str | None = None
+    """The person, shown only to the owner of the event's subject."""
+    api_client_id: str | None = None
+    """The API client, shown only to the owner of the event's subject."""
+
+
+class EventSubject(CaitlynModel):
+    """What an event is about."""
+
+    type: str
+    """The kind of thing. Open: `conversation` today."""
+    id: str
+    """Its identifier."""
+
+
+class InputRequested(CaitlynModel):
+    """The data of `input.requested`."""
+
+    widget: JsonValue | None = None
+    """The widget the agent asks the person to fill in."""
 
 
 class MessageRole(OpenEnum):
@@ -386,6 +953,42 @@ class Message(CaitlynModel):
     """When the message was written."""
 
 
+class MessageCompleted(CaitlynModel):
+    """The data of `message.completed`."""
+
+    message: Message
+    """The complete answer message."""
+
+
+class MessageFailed(CaitlynModel):
+    """The data of `message.failed`: a problem details object, exactly as an error response body."""
+
+    type: str
+    """A stable URI for the code: its page in the public error reference,
+    `https://build.caitlyn.ai/errors/{code}`.
+    """
+    title: str
+    """A short, human-readable summary of the problem, the same for every occurrence of the code."""
+    status: int
+    """The HTTP status code, repeated from the response."""
+    code: str
+    """The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never
+    renamed; callers match on it.
+    """
+    detail: str | None = None
+    """What went wrong in this occurrence, written for the integrator. Never holds stack traces,
+    storage keys or another person's data.
+    """
+    request_id: str
+    """The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to
+    support.
+    """
+    errors: list[FieldError] | None = None
+    """Field-level problems, one per member or parameter at fault. Present only on 400
+    `VALIDATION_FAILED`.
+    """
+
+
 class ProgressStatus(OpenEnum):
     """A progress step's status. Open: new values may be added. `succeeded` and `failed` are final.
 
@@ -410,3 +1013,18 @@ class ToolStatus(OpenEnum):
     """The call succeeded."""
     FAILED = "failed"
     """The call failed."""
+
+
+class ToolFinished(CaitlynModel):
+    """The data of `tool.finished`."""
+
+    tool_call_id: str
+    """The tool call's identifier."""
+    tool_name: str
+    """The tool called."""
+    status: ToolStatus
+    """How the call ended."""
+    result: JsonValue | None = None
+    """The call's result. Present only when the caller may read it."""
+    duration_ms: int | None = None
+    """How long the call took, in milliseconds."""

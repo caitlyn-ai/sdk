@@ -8,6 +8,7 @@
 //   POST /__mock/reset              clear state, faults, the request log and any primed example
 //   POST /__mock/faults             merge a fault configuration (see DEFAULT_FAULTS)
 //   GET  /__mock/requests           the request log (method, path, selected headers, body)
+//   POST /__mock/drop               cut the stream that dropOnSignal is holding (see DEFAULT_FAULTS)
 //   POST /__mock/example            prime the next request with an example case from
 //                                   conformance/cases/examples.json: {"id": "<case id>"}
 //   GET  /__mock/example            the primed case's result: {"id", "served", "mismatches": [...]}
@@ -37,6 +38,9 @@ const DEFAULT_FAULTS = {
   status: {},
   // Close the SSE connection (without a final event) after this many events on the first stream only.
   dropAfterEvents: null,
+  // With dropAfterEvents, wait for POST /__mock/drop before closing, so the client has read the events sent before
+  // the cut (the harness posts once it has seen them). Held for at most 10 seconds.
+  dropOnSignal: false,
   // End the first stream cleanly, without the final event, after this many events (a proxy cutting it).
   endAfterEvents: null,
   // Insert an event type the model does not define.
@@ -51,6 +55,24 @@ const DEFAULT_FAULTS = {
   awsErrorTypeHeader: false,
   // Delay between SSE events, for cancellation tests.
   streamDelayMs: 0,
+  // The answer finished while the SDK was disconnected: WatchConversation answers a Last-Event-ID inside it with
+  // stream.reset (PROTOCOL.md 5.9).
+  finishWhileAway: false,
+  // End this many watch responses cleanly, as a server shutting down does, each after one event
+  // (PROTOCOL.md 5.7). Applies to WatchConversation and WatchWorkspaceEvents.
+  watchCloses: 0,
+  // End this many watch responses cleanly at once, with no event (PROTOCOL.md 5.6: the backoff, and no
+  // Last-Event-ID before any event).
+  watchEmptyCloses: 0,
+  // End this many watch responses cleanly after sending one event again: the one Last-Event-ID names (a duplicate),
+  // or the first event when it names none (PROTOCOL.md 5.6: only a new event resets the reconnect count).
+  watchReplayCloses: 0,
+  // GetDocument's status over successive reads, per document: { "<documentId>": ["queued", "indexing", "indexed"] }.
+  // Each read takes the next status and the last one repeats (for the Indexed waiter, PROTOCOL.md 10.1).
+  documentStatus: {},
+  // How many GetDocument reads still find a deleted document `deleting` before it is gone (404), for the Deleted
+  // waiter (PROTOCOL.md 10.1). DeleteDocument and BatchDeleteDocuments mark it `deleting`.
+  deletingReads: 1,
   // Caitlyn-Api-Version the server reports.
   apiVersion: API_VERSION_DEFAULT,
 };
@@ -72,12 +94,14 @@ const ERRORS = {
 };
 
 let faults;
+let dropSignalled = false; // POST /__mock/drop: see dropOnSignal
 let log;
 let state;
 let primed;
 
 function reset() {
   faults = structuredClone(DEFAULT_FAULTS);
+  dropSignalled = false;
   log = [];
   primed = null;
   state = {
@@ -239,6 +263,8 @@ function checkExampleRequest(c, req, url, body) {
   if (url.pathname !== want.path) out.push(`path: expected ${want.path}, got ${url.pathname}`);
   const query = {};
   for (const [k, v] of url.searchParams) query[k] = k in query ? [].concat(query[k], v) : v;
+  // A list parameter with one value is one `key=value` on the wire, so it compares as a list of one.
+  for (const [k, v] of Object.entries(want.query ?? {})) if (Array.isArray(v) && typeof query[k] === 'string') query[k] = [query[k]];
   compareJson(want.query, query, 'query', out);
   for (const [h, v] of Object.entries(want.headers)) {
     const got = req.headers[h];
@@ -270,6 +296,24 @@ async function serveExample(req, res, url, body) {
     return problem(res, rid, 400, 'EXAMPLE_REQUEST_MISMATCH', primed.mismatches.join('; '));
   }
   if (r.body?.type && r.status >= 400) return sendProblem(res, rid, r.body);
+  if (r.stream && c.operation === 'WatchWorkspaceEvents') {
+    const id = crypto.randomUUID();
+    const events = [
+      {
+        id,
+        type: 'conversation.created',
+        data: {
+          id,
+          type: 'conversation.created',
+          occurredAt: '2026-11-10T00:00:00.000Z',
+          subject: { type: 'conversation', id: 'example' },
+          actor: { type: 'person' },
+          data: { id: 'example', agentId: 'GHT7YRWXPL', version: 'draft' },
+        },
+      },
+    ];
+    return streamEvents(req, res, rid, 'example', events, 0, false);
+  }
   if (r.stream) {
     const id = crypto.randomUUID();
     const events = [
@@ -333,7 +377,7 @@ function chatEvents() {
   return ev.map(([type, data]) => (type === 'keep-alive' ? { comment: 'keep-alive' } : { id: `${messageId}:${++n}`, type, data }));
 }
 
-async function streamEvents(req, res, rid, conversationId, events, startIndex, firstStream) {
+async function streamEvents(req, res, rid, conversationId, events, startIndex, firstStream, holdOpen = false) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -362,6 +406,11 @@ async function streamEvents(req, res, rid, conversationId, events, startIndex, f
     sent++;
     if (firstStream && faults.dropAfterEvents != null && sent >= faults.dropAfterEvents) {
       faults.dropAfterEvents = null; // drop only once
+      if (faults.dropOnSignal) {
+        const until = Date.now() + 10_000;
+        while (!dropSignalled && !closed && Date.now() < until) await new Promise((r) => setTimeout(r, 10));
+        dropSignalled = false;
+      }
       log.push({ event: 'server-dropped-stream', conversationId, afterEventId: e.id, at: Date.now() });
       await new Promise((r) => setTimeout(r, 20));
       res.socket?.destroy();
@@ -373,6 +422,11 @@ async function streamEvents(req, res, rid, conversationId, events, startIndex, f
       return res.end();
     }
   }
+  if (holdOpen && !closed) {
+    const until = Date.now() + 10_000;
+    while (!closed && Date.now() < until) await new Promise((r) => setTimeout(r, 20));
+    if (closed) return;
+  }
   res.end();
 }
 
@@ -383,15 +437,91 @@ async function streamEvents(req, res, rid, conversationId, events, startIndex, f
 const routes = [
   ['GET', /^\/v3\/knowledge-bases\/([^/]+)\/documents$/, listDocuments],
   ['POST', /^\/v3\/conversations\/([^/]+)\/send$/, sendMessage],
-  ['GET', /^\/v3\/conversations\/([^/]+)\/stream$/, resumeStream],
+  ['GET', /^\/v3\/conversations\/([^/]+)\/stream$/, watchConversation],
+  ['GET', /^\/v3\/events\/stream$/, watchWorkspaceEvents],
   ['POST', /^\/v3\/uploads$/, createUpload],
+  ['GET', /^\/v3\/uploads\/([^/]+)$/, getUpload],
   ['PUT', /^\/__s3\/([^/]+)$/, putUploadBytes],
   ['POST', /^\/v3\/knowledge-bases\/([^/]+)\/documents$/, createDocument],
+  ['GET', /^\/v3\/knowledge-bases\/([^/]+)\/documents\/([^/]+)$/, getDocument],
+  ['DELETE', /^\/v3\/knowledge-bases\/([^/]+)\/documents\/([^/]+)$/, deleteDocument],
+  ['POST', /^\/v3\/knowledge-bases\/([^/]+)\/documents:batch-delete$/, batchDeleteDocuments],
   ['GET', /^\/v3\/agents\/([^/]+)\/versions\/([^/]+)$/, getAgentVersion],
   ['PATCH', /^\/v3\/agents\/([^/]+)\/versions\/draft$/, updateDraft],
 ];
 
+// FolderPath (the model's pattern): a folder starts and ends in `/`; the root is `/`.
+const FOLDER_PATH = /^\/([^/]+\/)*$/;
+const FOLDER_DETAIL = 'Expected a folder path in a knowledge base, starting and ending in `/`, for example `/hr/leave/`. The root is `/`.';
+// The file types a knowledge base ingests, as the server's list has them: PDF, images, audio, video, Markdown and Word.
+const INGESTIBLE = new Set(['pdf', 'png', 'jpeg', 'jpg', 'gif', 'flac', 'ogg', 'mp3', 'm4a', 'mp4', 'webm', 'md', 'markdown', 'docx']);
+
 const LIST_PARAMS = ['limit', 'cursor', 'sort', 'filter[status][eq]', 'filter[folder][eq]', 'filter[name][startsWith]'];
+
+// GetDocument: a document in the knowledge base, 404 otherwise. With the documentStatus fault, the status moves on
+// with each read.
+async function getDocument(req, res, rid, [kb, documentId]) {
+  if (statusFault('GetDocument', res, rid)) return;
+  const docs = state.knowledgeBases.get(decodeURIComponent(kb));
+  const id = decodeURIComponent(documentId);
+  const doc = docs?.find((d) => d.id === id);
+  if (!doc) return problem(res, rid, 404, 'NOT_FOUND', `No document ${id}`);
+  const left = readsBeforeGone.get(doc);
+  if (left !== undefined) readsBeforeGone.set(doc, left - 1);
+  if (left !== undefined && left <= 0) {
+    docs.splice(docs.indexOf(doc), 1);
+    return problem(res, rid, 404, 'NOT_FOUND', `No document ${id}`);
+  }
+  const statuses = faults.documentStatus?.[id];
+  const body = { ...doc };
+  if (Array.isArray(statuses) && statuses.length) {
+    body.status = statuses.length > 1 ? statuses.shift() : statuses[0];
+  }
+  sendJson(res, rid, 200, body);
+}
+
+// A deleted document's GetDocument reads left before it is gone, kept off the document so no response shows it.
+const readsBeforeGone = new WeakMap();
+
+// Marks a document `deleting`; GetDocument finds it gone after faults.deletingReads more reads.
+function markDeleting(doc) {
+  if (doc.status !== 'deleting') {
+    doc.status = 'deleting';
+    doc.updatedAt = new Date().toISOString();
+    readsBeforeGone.set(doc, faults.deletingReads ?? 1);
+  }
+}
+
+// DeleteDocument: 202 with the document `deleting` (again while it still is); 404 once it is gone.
+async function deleteDocument(req, res, rid, [kb, documentId]) {
+  if (statusFault('DeleteDocument', res, rid)) return;
+  const docs = state.knowledgeBases.get(decodeURIComponent(kb));
+  const id = decodeURIComponent(documentId);
+  const doc = docs?.find((d) => d.id === id);
+  if (!doc) return problem(res, rid, 404, 'NOT_FOUND', `No document ${id}`);
+  markDeleting(doc);
+  sendJson(res, rid, 202, doc);
+}
+
+// BatchDeleteDocuments: 1 to 100 distinct identifiers, one result each in request order; 200 even when all fail.
+async function batchDeleteDocuments(req, res, rid, [kb], url, body) {
+  if (statusFault('BatchDeleteDocuments', res, rid)) return;
+  const ids = parseJson(body)?.documentIds;
+  const docs = state.knowledgeBases.get(decodeURIComponent(kb));
+  if (!docs) return problem(res, rid, 404, 'NOT_FOUND', `No knowledge base ${kb}`);
+  if (!Array.isArray(ids) || ids.length < 1 || ids.length > 100 || new Set(ids).size !== ids.length) {
+    return problem(res, rid, 400, 'VALIDATION_FAILED', 'documentIds must hold 1 to 100 identifiers, each at most once', {
+      fieldErrors: [{ field: 'documentIds', code: 'VALIDATION_FAILED' }],
+    });
+  }
+  const results = ids.map((id) => {
+    const doc = docs.find((d) => d.id === id);
+    if (!doc) return { documentId: id, status: 'failed', code: 'NOT_FOUND', detail: `No document ${id}` };
+    markDeleting(doc);
+    return { documentId: id, status: 'accepted' };
+  });
+  sendJson(res, rid, 200, { results });
+}
 
 async function listDocuments(req, res, rid, [kb], url) {
   if (statusFault('ListDocuments', res, rid)) return;
@@ -399,6 +529,10 @@ async function listDocuments(req, res, rid, [kb], url) {
   if (!docs) return problem(res, rid, 404, 'NOT_FOUND', `No knowledge base ${kb}`);
   for (const key of url.searchParams.keys()) {
     if (!LIST_PARAMS.includes(key)) return problem(res, rid, 400, 'UNKNOWN_FILTER', `Unknown query parameter ${key}`, { fieldErrors: [{ parameter: key, code: 'UNKNOWN_FILTER' }] });
+  }
+  const folder = url.searchParams.get('filter[folder][eq]');
+  if (folder !== null && !FOLDER_PATH.test(folder)) {
+    return problem(res, rid, 400, 'VALIDATION_FAILED', FOLDER_DETAIL, { fieldErrors: [{ parameter: 'filter[folder][eq]', code: 'VALIDATION_FAILED' }] });
   }
   const limit = Math.min(Number(url.searchParams.get('limit') ?? 20), 100);
   const cursor = url.searchParams.get('cursor');
@@ -432,13 +566,98 @@ async function sendMessage(req, res, rid, [conversationId], url, body) {
   await streamEvents(req, res, rid, conversationId, events, 0, true);
 }
 
-async function resumeStream(req, res, rid, [conversationId]) {
-  if (statusFault('ResumeConversationStream', res, rid)) return;
-  const events = state.conversations.get(decodeURIComponent(conversationId));
+// WatchConversation, as the real server behaves: open-ended (it stays open after an answer, for the next one, until
+// the caller closes it), and a Last-Event-ID it cannot carry on from is answered with stream.reset (PROTOCOL.md 5.11):
+// one naming an answer that has ended, or, with finishWhileAway, any event of the answer. After the reset comes the
+// next answer. A Last-Event-ID naming no event of the answer (a reset's own cursor) is "from now": nothing yet.
+async function watchConversation(req, res, rid, [conversationId]) {
+  if (statusFault('WatchConversation', res, rid)) return;
+  const id = decodeURIComponent(conversationId);
+  const events = state.conversations.get(id);
   if (!events) return problem(res, rid, 404, 'NOT_FOUND', `No conversation ${conversationId}`);
   const last = req.headers['last-event-id'];
-  const idx = last ? events.findIndex((e) => e.id === last) + 1 : 0;
-  await streamEvents(req, res, rid, conversationId, events, idx, false);
+  const at = last ? events.findIndex((e) => e.id === last) : -1;
+  const finalId = [...events].reverse().find((e) => e.id)?.id;
+  if (last && at >= 0 && (last === finalId || faults.finishWhileAway)) {
+    const cursor = `reset-${crypto.randomUUID()}`;
+    const next = chatEvents();
+    state.conversations.set(id, next);
+    return streamEvents(req, res, rid, conversationId, [{ id: cursor, type: 'stream.reset', data: { cursor } }, ...next], 0, false, true);
+  }
+  if (last && at < 0) return streamEvents(req, res, rid, conversationId, [], 0, false, true);
+  // After a failed answer the watch carries on (PROTOCOL.md 5.5): the next answer follows.
+  if (events.at(-1)?.type === 'message.failed') {
+    const failStream = faults.failStream;
+    faults.failStream = false;
+    events.push(...chatEvents());
+    faults.failStream = failStream;
+  }
+  await watchResponse(req, res, rid, conversationId, events.slice(at + 1), events);
+}
+
+/**
+ * A watch response: with watchEmptyCloses, closes cleanly at once; with watchReplayCloses, sends the event
+ * Last-Event-ID names again (or the first) and closes; with watchCloses, closes cleanly after one event; else
+ * sends them all and stays open. `all` is the whole list the cursor indexes into.
+ */
+async function watchResponse(req, res, rid, subject, events, all = events) {
+  if (faults.watchEmptyCloses > 0) {
+    faults.watchEmptyCloses--;
+    log.push({ event: 'server-closed-watch', subject, at: Date.now() });
+    return streamEvents(req, res, rid, subject, [], 0, false, false);
+  }
+  if (faults.watchReplayCloses > 0) {
+    faults.watchReplayCloses--;
+    const named = all.find((e) => e.id && e.id === req.headers['last-event-id']);
+    log.push({ event: 'server-closed-watch', subject, at: Date.now() });
+    return streamEvents(req, res, rid, subject, [named ?? all.find((e) => e.id)], 0, false, false);
+  }
+  if (faults.watchCloses > 0) {
+    faults.watchCloses--;
+    const sent = [];
+    for (const e of events) {
+      sent.push(e);
+      if (sent.filter((x) => !x.comment).length === 1) break;
+    }
+    log.push({ event: 'server-closed-watch', subject, at: Date.now() });
+    return streamEvents(req, res, rid, subject, sent, 0, false, false);
+  }
+  return streamEvents(req, res, rid, subject, events, 0, false, true);
+}
+
+// WatchWorkspaceEvents. A cursor the server cannot carry on from (STALE_CURSOR) is answered with stream.reset
+// and a new cursor, then the events after it (PROTOCOL.md 5.11). The stream then ends cleanly.
+const STALE_CURSOR = '0190d2a1-0000-7000-8000-000000000001';
+const RESET_CURSOR = '0193a6f3-0a1b-7c2d-8e3f-000000000010';
+
+async function watchWorkspaceEvents(req, res, rid, _m, url) {
+  if (statusFault('WatchWorkspaceEvents', res, rid)) return;
+  // Last-Event-ID wins over after, as on the real server.
+  const cursor = req.headers['last-event-id'] ?? url.searchParams.get('after');
+  const all = [];
+  if (cursor === STALE_CURSOR) all.push({ id: RESET_CURSOR, type: 'stream.reset', data: { cursor: RESET_CURSOR } });
+  for (const [n, type] of [
+    [11, 'conversation.created'],
+    [12, 'conversation.created'],
+    [13, 'conversation.created'],
+  ]) {
+    const id = `0193a6f3-0a1b-7c2d-8e3f-0000000000${n}`;
+    all.push({
+      id,
+      type,
+      data: {
+        id,
+        type,
+        occurredAt: '2026-11-13T01:02:03.000Z',
+        subject: { type: 'conversation', id: `c-${n}` },
+        actor: { type: 'person', userId: '3c9e2f4a-6b1d-4e8f-a2c7-5d0b9e1f3a64' },
+        data: { id: `c-${n}`, agentId: 'GHT7YRWXPL', version: 'draft' },
+      },
+    });
+  }
+  // Carry on after the cursor when it names one of these events.
+  const at = all.findIndex((e) => e.id === cursor);
+  await watchResponse(req, res, rid, 'workspace', all.slice(at + 1), all);
 }
 
 async function createUpload(req, res, rid, _m, url, body) {
@@ -464,6 +683,14 @@ async function createUpload(req, res, rid, _m, url, body) {
   sendJson(res, rid, result.status, result.body, { Location: `/api/v3/uploads/${result.body.id}`, ...(result.replayed ? { 'Idempotent-Replayed': 'true' } : {}) });
 }
 
+// GetUpload: the upload's status and when its upload URL expires; 404 for one never reserved.
+async function getUpload(req, res, rid, [id]) {
+  if (statusFault('GetUpload', res, rid)) return;
+  const up = state.uploads.get(decodeURIComponent(id));
+  if (!up) return problem(res, rid, 404, 'NOT_FOUND', `No upload ${id}`);
+  sendJson(res, rid, 200, { id: up.id, status: up.status, expiresAt: up.expiresAt });
+}
+
 async function putUploadBytes(req, res, rid, [id], url, body) {
   const up = state.uploads.get(id);
   if (!up) {
@@ -487,6 +714,14 @@ async function createDocument(req, res, rid, [kb], url, body) {
   const input = parseJson(body);
   const docs = state.knowledgeBases.get(decodeURIComponent(kb));
   if (!docs) return problem(res, rid, 404, 'NOT_FOUND', `No knowledge base ${kb}`);
+  if (input?.folder !== undefined && !FOLDER_PATH.test(input.folder)) {
+    return problem(res, rid, 400, 'VALIDATION_FAILED', FOLDER_DETAIL, { fieldErrors: [{ field: 'folder', code: 'VALIDATION_FAILED' }] });
+  }
+  const named = input?.name ?? state.uploads.get(input?.uploadId)?.input?.fileName ?? '';
+  const extension = named.includes('.') ? named.split('.').pop().toLowerCase() : '';
+  if (extension && !INGESTIBLE.has(extension)) {
+    return problem(res, rid, 400, 'VALIDATION_FAILED', `A knowledge base cannot ingest .${extension} files.`, { fieldErrors: [{ field: 'name', code: 'VALIDATION_FAILED' }] });
+  }
   const result = idempotent(key, `CreateDocument:${kb}`, () => {
     const up = state.uploads.get(input.uploadId);
     if (!up) return { status: 404, problem: ['NOT_FOUND', `No upload ${input.uploadId}`] };
@@ -603,6 +838,11 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/__mock/reset' && req.method === 'POST') {
       reset();
       resetAuth();
+      res.writeHead(204);
+      return res.end();
+    }
+    if (url.pathname === '/__mock/drop' && req.method === 'POST') {
+      dropSignalled = true;
       res.writeHead(204);
       return res.end();
     }

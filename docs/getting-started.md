@@ -7,6 +7,7 @@ resources:
 integrations: []
 operations:
   - GetAgentVersion
+  - GetCaller
 ---
 
 # Getting started
@@ -59,7 +60,7 @@ const caitlyn = new Caitlyn({
 });
 
 // Read the draft of an agent: its configuration and its ETag
-const draft = await caitlyn.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+const draft = await caitlyn.agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
 console.log(draft.configuration.instructions);
 ```
 <!-- example: examples/python/getting_started.py#first-call -->
@@ -72,7 +73,7 @@ from caitlyn.auth import Token
 caitlyn = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token(os.environ["CAITLYN_TOKEN"]))
 
 # Read the draft of an agent: its configuration and its ETag
-draft = caitlyn.versions.get(agent_id="GHT7YRWXPL", version="draft")
+draft = caitlyn.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
 print(draft.configuration.instructions)
 ```
 <!-- example: examples/go/gettingstarted/main.go#first-call -->
@@ -94,7 +95,7 @@ func main() {
 	}
 
 	// Read the draft of an agent: its configuration and its ETag
-	draft, err := client.Versions.Get(ctx, &caitlyn.GetAgentVersionInput{AgentID: "GHT7YRWXPL", Version: "draft"})
+	draft, err := client.Agents.Versions.Get(ctx, &caitlyn.GetAgentVersionInput{AgentID: "GHT7YRWXPL", Version: "draft"})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -115,6 +116,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Read the draft of an agent: its configuration and its ETag
     let draft = client
+        .agents()
         .versions()
         .get(GetAgentVersionInput {
             agent_id: "GHT7YRWXPL".into(),
@@ -127,6 +129,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 [GetAgentVersion](/reference/get-agent-version/) has the whole result, and what each error means.
+
+## Check who you are
+
+[GetCaller](/reference/get-caller/) returns who the client is signed in as: the person or API client, the kind
+of credential, its scopes and the organisation. It needs no permission, so it is the quickest way to check that
+a token works.
+
+<!-- example: examples/typescript/conversations.ts#get-caller -->
+```ts tab="TypeScript"
+// Check the credential before doing anything else: any valid credential may call this
+const me = await caitlyn.callers.get({});
+console.log(`${me.displayName} (${me.credential}) in ${me.organisation.name}; scopes: ${me.scopes.join(' ')}`);
+```
+<!-- example: examples/python/conversations.py#get-caller -->
+```python tab="Python"
+me = caitlyn.callers.get()
+print(me.display_name, me.credential, me.scopes)  # who this credential belongs to, and what it may do
+```
+<!-- example: examples/go/conversations/conversations.go#get-caller -->
+```go tab="Go"
+caller, err := client.Callers.Get(ctx, &caitlyn.GetCallerInput{})
+if err != nil {
+	return nil, err
+}
+fmt.Println(caller.DisplayName, caller.Credential, caller.Organisation.Name, caller.Scopes)
+```
+<!-- example: examples/rust/src/conversations.rs#get-caller -->
+```rust tab="Rust"
+let caller = client.callers().get(GetCallerInput {}).await?;
+println!("{} ({:?}) in {}", caller.display_name, caller.credential, caller.organisation.name);
+println!("scopes: {}", caller.scopes.join(" "));
+```
 
 ## The workspace
 

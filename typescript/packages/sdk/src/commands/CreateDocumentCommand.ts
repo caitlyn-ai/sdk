@@ -26,7 +26,8 @@ export interface CreateDocumentCommandOutput extends CreateDocumentOutput, __Met
  * Creates a document from an upload; ingestion continues after the response.
  *
  * Returns 202 with the document in its initial state and the Operation that tracks ingestion, and
- * `Location` names the Operation. Needs the files permission, read access to the knowledge base and
+ * `Location` names the document: read it with GetDocument, or wait for it with the SDKs'
+ * `waitUntilIndexed`. Needs the files permission, read access to the knowledge base and
  * access to the folder; it does not need update access to the knowledge base, which is for the
  * knowledge base's own configuration.
  * @example
@@ -69,6 +70,10 @@ export interface CreateDocumentCommandOutput extends CreateDocumentOutput, __Met
  * //         detail: "STRING_VALUE",
  * //       },
  * //     ],
+ * //     failure: { // DocumentFailure
+ * //       code: "file_unreadable" || "processing_interrupted" || "processing_failed", // required
+ * //       message: "STRING_VALUE", // required
+ * //     },
  * //   },
  * //   operation: { // Operation
  * //     id: "STRING_VALUE", // required
@@ -117,7 +122,8 @@ export interface CreateDocumentCommandOutput extends CreateDocumentOutput, __Met
  *
  * @throws {@link ValidationError} (client fault)
  *  The request is malformed: a member is missing, the wrong type or out of range; it has a member,
- * filter or sort field the operation does not define; or its cursor is not valid for this list.
+ * filter or sort field the operation does not define; its cursor is not valid for this list; or it
+ * asks to delete `draft` or `production`, which every agent keeps.
  *
  * @throws {@link CaitlynServiceException}
  * <p>Base exception class for all service exceptions from Caitlyn service.</p>
@@ -127,7 +133,7 @@ export interface CreateDocumentCommandOutput extends CreateDocumentOutput, __Met
  * ```javascript
  * //
  * const input = {
- *   folder: "hr/",
+ *   folder: "/hr/",
  *   idempotencyKey: "3f0c9a1e-5d2b-4f7a-9c1e-2b8d4a6f0e13",
  *   knowledgeBaseId: "KB4T7YQ2WL",
  *   name: "Leave policy",
@@ -139,14 +145,14 @@ export interface CreateDocumentCommandOutput extends CreateDocumentOutput, __Met
  * {
  *   document: {
  *     createdAt: "2026-11-10T01:02:03.000Z",
- *     folder: "hr/",
+ *     folder: "/hr/",
  *     id: "doc-3b7f9e21",
  *     knowledgeBaseId: "KB4T7YQ2WL",
- *     name: "Leave policy",
+ *     name: "Leave policy.pdf",
  *     status: "pending",
  *     updatedAt: "2026-11-10T01:02:03.000Z"
  *   },
- *   location: "/api/v3/operations/0193a6f2-2222-7b3c-9d4e-5f6071829304",
+ *   location: "/api/v3/knowledge-bases/KB4T7YQ2WL/documents/doc-3b7f9e21",
  *   operation: {
  *     createdAt: "2026-11-10T01:02:03.000Z",
  *     id: "0193a6f2-2222-7b3c-9d4e-5f6071829304",
@@ -161,7 +167,7 @@ export interface CreateDocumentCommandOutput extends CreateDocumentOutput, __Met
  * ```javascript
  * //
  * const input = {
- *   folder: "hr/",
+ *   folder: "/hr/",
  *   knowledgeBaseId: "KB4T7YQ2WL",
  *   uploadId: "0193a6f2-1111-7a2b-8c3d-4e5f60718293"
  * };

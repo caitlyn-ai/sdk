@@ -13,7 +13,8 @@ use caitlyn_sdk_core as rt;
 pub enum Error {
     /// HTTP 400 (`ValidationError` in the model). The request is malformed: a member is missing, the wrong
     /// type or out of range; it has a member,
-    /// filter or sort field the operation does not define; or its cursor is not valid for this list.
+    /// filter or sort field the operation does not define; its cursor is not valid for this list; or it
+    /// asks to delete `draft` or `production`, which every agent keeps.
     Validation(Box<rt::ApiError>),
     /// HTTP 401 (`UnauthenticatedError` in the model). No credential was sent, or it is expired or not
     /// valid.
@@ -65,6 +66,9 @@ pub enum Error {
     Connection(rt::ConnectionError),
     /// The call's cancellation token fired.
     Cancelled,
+    /// A waiter (`wait_until_…`) reached a failure state or ran out of time (PROTOCOL.md 10.1). It names the waiter
+    /// and carries the reason, the number of reads and the last read's output or error.
+    Waiter(Box<rt::WaiterError<Error>>),
 }
 
 impl Error {
@@ -186,6 +190,7 @@ impl std::fmt::Display for Error {
             Error::Auth(e) => e.fmt(f),
             Error::Connection(e) => e.fmt(f),
             Error::Cancelled => f.write_str("caitlyn: the call was cancelled"),
+            Error::Waiter(e) => e.fmt(f),
             other => other.api().expect("a problem variant").fmt(f),
         }
     }
@@ -195,6 +200,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Connection(e) => Some(e),
+            Error::Waiter(e) => Some(e.as_ref()),
             other => other.api().and_then(|e| e.source.as_deref()).map(|s| s as _),
         }
     }

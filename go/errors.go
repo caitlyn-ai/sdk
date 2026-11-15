@@ -6,6 +6,15 @@ import (
 	"github.com/caitlyn-ai/caitlyn-go/core"
 )
 
+// ConflictError is returned for HTTP 409 (ConflictError in the model). The resource's state does not
+// allow the request, a unique name is taken, or a request with the
+// same idempotency key is still in progress. It embeds *Error, so errors.As works with either type,
+// and its fields (Status, Code, RequestID…) read directly.
+type ConflictError struct{ *core.APIError }
+
+// Unwrap returns the embedded *Error.
+func (e *ConflictError) Unwrap() error { return e.APIError }
+
 // InternalError is returned for HTTP 500 (InternalError in the model). An unexpected server failure.
 // Not retried by the SDKs. It embeds *Error, so errors.As works with either type, and its fields
 // (Status, Code, RequestID…) read directly.
@@ -41,14 +50,6 @@ type PreconditionFailedError struct{ *core.APIError }
 // Unwrap returns the embedded *Error.
 func (e *PreconditionFailedError) Unwrap() error { return e.APIError }
 
-// PreconditionRequiredError is returned for HTTP 428 (PreconditionRequiredError in the model). The
-// update sent no `If-Match` header; read the resource and send its ETag. It embeds *Error, so
-// errors.As works with either type, and its fields (Status, Code, RequestID…) read directly.
-type PreconditionRequiredError struct{ *core.APIError }
-
-// Unwrap returns the embedded *Error.
-func (e *PreconditionRequiredError) Unwrap() error { return e.APIError }
-
 // ServiceUnavailableError is returned for HTTP 503 (ServiceUnavailableError in the model). A
 // dependency is briefly unavailable, or the request's audit event could not be recorded; wait for
 // `Retry-After` and try again. It embeds *Error, so errors.As works with either type, and its fields
@@ -74,24 +75,31 @@ type UnauthenticatedError struct{ *core.APIError }
 // Unwrap returns the embedded *Error.
 func (e *UnauthenticatedError) Unwrap() error { return e.APIError }
 
+// UnprocessableContentError is returned for HTTP 422 (UnprocessableContentError in the model). The
+// idempotency key was already used with a different request body. It embeds *Error, so errors.As works
+// with either type, and its fields (Status, Code, RequestID…) read directly.
+type UnprocessableContentError struct{ *core.APIError }
+
+// Unwrap returns the embedded *Error.
+func (e *UnprocessableContentError) Unwrap() error { return e.APIError }
+
 // ValidationError is returned for HTTP 400 (ValidationError in the model). The request is malformed: a
 // member is missing, the wrong type or out of range; it has a member,
-// filter or sort field the operation does not define; or its cursor is not valid for this list. It
-// embeds *Error, so errors.As works with either type, and its fields (Status, Code, RequestID…) read
-// directly.
+// filter or sort field the operation does not define; its cursor is not valid for this list; or it
+// asks to delete `draft` or `production`, which every agent keeps. It embeds *Error, so errors.As
+// works with either type, and its fields (Status, Code, RequestID…) read directly.
 type ValidationError struct{ *core.APIError }
 
 // Unwrap returns the embedded *Error.
 func (e *ValidationError) Unwrap() error { return e.APIError }
 
-// ConflictError is returned for HTTP 409 (ConflictError in the model). The resource's state does not
-// allow the request, a unique name is taken, or a request with the
-// same idempotency key is still in progress. It embeds *Error, so errors.As works with either type,
-// and its fields (Status, Code, RequestID…) read directly.
-type ConflictError struct{ *core.APIError }
+// PreconditionRequiredError is returned for HTTP 428 (PreconditionRequiredError in the model). The
+// update sent no `If-Match` header; read the resource and send its ETag. It embeds *Error, so
+// errors.As works with either type, and its fields (Status, Code, RequestID…) read directly.
+type PreconditionRequiredError struct{ *core.APIError }
 
 // Unwrap returns the embedded *Error.
-func (e *ConflictError) Unwrap() error { return e.APIError }
+func (e *PreconditionRequiredError) Unwrap() error { return e.APIError }
 
 // PayloadTooLargeError is returned for HTTP 413 (PayloadTooLargeError in the model). The body, a file
 // or the send `context` is over its documented limit. It embeds *Error, so errors.As works with either
@@ -100,11 +108,3 @@ type PayloadTooLargeError struct{ *core.APIError }
 
 // Unwrap returns the embedded *Error.
 func (e *PayloadTooLargeError) Unwrap() error { return e.APIError }
-
-// UnprocessableContentError is returned for HTTP 422 (UnprocessableContentError in the model). The
-// idempotency key was already used with a different request body. It embeds *Error, so errors.As works
-// with either type, and its fields (Status, Code, RequestID…) read directly.
-type UnprocessableContentError struct{ *core.APIError }
-
-// Unwrap returns the embedded *Error.
-func (e *UnprocessableContentError) Unwrap() error { return e.APIError }

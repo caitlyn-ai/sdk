@@ -23,7 +23,7 @@ conversation_id = "0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47"
 def errors() -> None:
     # #region errors
     try:
-        caitlyn.versions.get(agent_id=agent_id, version="v99")
+        caitlyn.agents.versions.get(agent_id=agent_id, version="v99")
     except NotFoundError:
         print("No such version")
     except ValidationError as err:
@@ -78,7 +78,7 @@ def streaming() -> None:
 def pagination() -> None:
     # #region pagination
     # Every document in the folder: the next page is fetched as the loop reaches it
-    for document in caitlyn.documents.list(knowledge_base_id="KB4T7YQ2WL", folder="hr/", limit=100):
+    for document in caitlyn.documents.list(knowledge_base_id="KB4T7YQ2WL", folder="/hr/", limit=100):
         print(document.name, document.status)
 
     # Or page by page

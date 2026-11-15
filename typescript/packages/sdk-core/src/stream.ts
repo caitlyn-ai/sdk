@@ -21,13 +21,24 @@ export interface SseOpened {
   readonly $metadata?: { readonly requestId?: string };
 }
 
+/**
+ * The pause before the nth reconnect in a row (PROTOCOL.md 5.6): an exponential backoff with jitter, 0.25-0.5 s,
+ * then 0.5-1 s, then 1-2 s, so each pause is longer than the last.
+ */
+export function reconnectDelayMs(attempt: number): number {
+  return Math.min(8000, 500 * 2 ** (attempt - 1)) * (0.5 + Math.random() / 2);
+}
+
 export class SseStream<E extends { type: string }, F = never> implements AsyncIterable<E> {
   private finalValue?: F;
   private consumed = false;
   private readonly seen = new Set<string>();
   lastEventId?: string;
+  /** Reconnects so far, in all. */
   reconnects = 0;
-  /** The Caitlyn-Request-Id of the response that opened the stream; set once iteration has started. */
+  /** Reconnects since the last event: at most maxReconnects in a row (PROTOCOL.md 5.6). */
+  private attempts = 0;
+  /** The Caitlyn-Request-Id of the response that opened the stream; set once it has opened. */
   requestId?: string;
 
   constructor(
@@ -38,6 +49,42 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
     private readonly maxReconnects = 3,
   ) {}
 
+  /** Waits `ms`, or until the signal aborts, then throws its reason. */
+  private pause(ms: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (this.signal?.aborted) return reject(this.aborted());
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(this.aborted());
+      };
+      const timer = setTimeout(() => {
+        this.signal?.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+      this.signal?.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
+  private opening?: Promise<SseOpened>;
+
+  /** Sends the request once, however it is started: by opened() or by iterating. */
+  private start(): Promise<SseOpened> {
+    this.opening ??= this.open().then((opened) => {
+      this.requestId = opened.$metadata?.requestId;
+      return opened;
+    });
+    return this.opening;
+  }
+
+  /**
+   * Opens the stream now, rather than when iteration starts, and resolves once the response headers (2xx) have
+   * arrived; rejects with the call's error. To wait for something your own call causes, await this, then make the
+   * call, then iterate. Iterating afterwards reads this same response.
+   */
+  async opened(): Promise<void> {
+    await this.start();
+  }
+
   private aborted(): unknown {
     return this.signal?.reason ?? new DOMException('Aborted', 'AbortError');
   }
@@ -45,23 +92,24 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
   async *[Symbol.asyncIterator](): AsyncGenerator<E> {
     if (this.consumed) throw new Error('SseStream can only be iterated once');
     this.consumed = true;
-    const opened = await this.open();
-    this.requestId = opened.$metadata?.requestId;
+    const opened = await this.start();
     let body = opened.events as Body;
     for (;;) {
       let ended = false;
-      let onResponse = 0; // SSE events (known or not) this response has carried
       try {
         for await (const msg of parseSse(body)) {
-          onResponse++;
+          // WebKit can keep delivering a body after its fetch was aborted: cancelling ends the stream here regardless.
+          if (this.signal?.aborted) throw this.aborted();
           if (msg.id) {
             if (this.seen.has(msg.id)) continue;
             this.seen.add(msg.id);
             this.lastEventId = msg.id;
+            this.attempts = 0; // only a new event counts as progress (PROTOCOL.md 5.6)
           }
           if (!this.spec.known.has(msg.event)) continue;
           const data = JSON.parse(msg.data) as Record<string, unknown>;
-          if (msg.event === this.spec.errorEvent) throw this.spec.toError(data);
+          // PROTOCOL.md 5.5: a failure event ends only a stream with a final event. On a watch it is delivered.
+          if (msg.event === this.spec.errorEvent && this.spec.final) throw this.spec.toError(data);
           const event = { ...data, type: msg.event, eventId: msg.id } as unknown as E;
           yield event;
           if (msg.event === this.spec.final?.event) {
@@ -69,18 +117,26 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
             ended = true;
             return;
           }
+          // PROTOCOL.md 5.9: a resumed stream with a final event that gets stream.reset ends there, with no error:
+          // the answer finished while it was disconnected, and its final event went to the earlier connection.
+          if (msg.event === 'stream.reset' && this.spec.final && this.reconnects > 0) {
+            ended = true;
+            return;
+          }
         }
-        // A clean end of stream. Without a final event declared, that is the end; with one, a proxy cut us off,
-        // unless the response carried no event at all: then the answer had already finished (PROTOCOL.md 5.6).
-        if (!this.spec.final || onResponse === 0) return;
+        // A clean end of stream: the end, unless the operation resumes. Then it reconnects, whether a proxy cut a
+        // stream short of its final event or a server shutting down ended a watch (PROTOCOL.md 5.6, 5.7).
+        if (!this.resume) return;
       } catch (err) {
         if (this.signal?.aborted) throw this.aborted(); // Node surfaces a mid-body abort as Error('aborted')
         if (ended || (err as Error)?.name === 'AbortError' || err === undefined || (err as { $fault?: unknown }).$fault || err instanceof SyntaxError) throw err;
         // Transport error mid-stream: resume.
       }
       if (this.signal?.aborted) throw this.aborted();
-      if (!this.resume || ++this.reconnects > this.maxReconnects)
+      if (!this.resume || ++this.attempts > this.maxReconnects)
         throw this.spec.toError({ status: 0, code: 'STREAM_LOST', title: 'The stream dropped and could not be resumed' });
+      this.reconnects++;
+      await this.pause(reconnectDelayMs(this.attempts));
       body = (await this.resume(this.lastEventId)).events as Body;
     }
   }

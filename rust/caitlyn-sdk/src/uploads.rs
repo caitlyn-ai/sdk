@@ -81,7 +81,7 @@ impl UploadsClient {
     /// (422); another status the API models has its own variant too ([`Error::NotFound`] for 404), and any
     /// other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.115.0.
+    /// Since Caitlyn 5.115.0; beta.
     pub fn reserve(&self, input: CreateUploadInput) -> rt::Call<Upload, Error> {
         let core = self.core.clone();
         rt::Call::new(move |opts| {
@@ -89,6 +89,75 @@ impl UploadsClient {
                 let req = build_create_upload(&input).map_err(errors_create_upload)?;
                 let resp = core.send(&OP_CREATE_UPLOAD, req, &opts).await.map_err(errors_create_upload)?;
                 read_create_upload(resp).await.map_err(errors_create_upload)
+            })
+        })
+    }
+}
+
+/// The input of `uploads().get`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GetUploadInput {
+    /// The upload to read.
+    ///
+    /// Sent in the path.
+    #[serde(skip)]
+    pub upload_id: String,
+}
+
+fn errors_get_upload(e: rt::Error) -> Error {
+    Error::from(e)
+}
+
+static OP_GET_UPLOAD: rt::Operation = rt::Operation {
+    name: "GetUpload",
+    method: "GET",
+    since: Some("5.115.0"),
+    retry_safe: true,
+    sse: false,
+    idempotency_header: None,
+    if_match_required: false,
+    retryable: &[503, 429],
+};
+
+fn build_get_upload(input: &GetUploadInput) -> Result<rt::Request, rt::Error> {
+    if input.upload_id.is_empty() {
+        return Err(rt::Error::missing_input("GetUpload", "uploadId"));
+    }
+    let req = rt::Request::new(["/v3/uploads/", &rt::path_label(&input.upload_id)].concat());
+    Ok(req)
+}
+
+async fn read_get_upload(resp: rt::Response) -> Result<GetUploadResult, rt::Error> {
+    let api_version = resp.header("caitlyn-api-version");
+    let request_id = resp.header("caitlyn-request-id");
+    let metadata = resp.metadata();
+    let mut out: GetUploadResult = resp.json().await?;
+    out.api_version = api_version;
+    out.request_id = request_id;
+    out.response_metadata = metadata;
+    Ok(out)
+}
+
+impl UploadsClient {
+    /// Gets an upload's status and when its upload URL expires.
+    ///
+    /// Use it to check that the bytes arrived before passing the upload's `id` to the operation that
+    /// uses it. Only the person or client that reserved the upload can read it; anyone else gets 404.
+    ///
+    /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
+    /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]
+    /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
+    /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
+    ///
+    /// Since Caitlyn 5.115.0; beta.
+    pub fn get(&self, input: GetUploadInput) -> rt::Call<GetUploadResult, Error> {
+        let core = self.core.clone();
+        rt::Call::new(move |opts| {
+            Box::pin(async move {
+                let req = build_get_upload(&input).map_err(errors_get_upload)?;
+                let resp = core.send(&OP_GET_UPLOAD, req, &opts).await.map_err(errors_get_upload)?;
+                read_get_upload(resp).await.map_err(errors_get_upload)
             })
         })
     }

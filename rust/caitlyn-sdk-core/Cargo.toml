@@ -37,4 +37,4 @@ hmac = "0.12"
 base64 = "0.22"
 
 [dev-dependencies]
-tokio = { version = "1.40", features = ["full"] }
+tokio = { version = "1.40", features = ["full", "test-util"] }

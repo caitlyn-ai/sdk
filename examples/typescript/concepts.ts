@@ -10,7 +10,7 @@ const conversationId = '0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47';
 export async function errors(): Promise<void> {
   // #region errors
   try {
-    await caitlyn.versions.get({ agentId, version: 'v99' });
+    await caitlyn.agents.versions.get({ agentId, version: 'v99' });
   } catch (err) {
     if (err instanceof NotFoundError) {
       console.log('No such version');
@@ -81,7 +81,7 @@ export async function cancelling(): Promise<void> {
 export async function pagination(): Promise<void> {
   // #region pagination
   // Every document in the folder: the next page is fetched as the loop reaches it
-  for await (const document of caitlyn.documents.list({ knowledgeBaseId: 'KB4T7YQ2WL', folder: 'hr/', limit: 100 })) {
+  for await (const document of caitlyn.documents.list({ knowledgeBaseId: 'KB4T7YQ2WL', folder: '/policies/', limit: 100 })) {
     console.log(document.name, document.status);
   }
   // #endregion

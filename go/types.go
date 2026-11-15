@@ -9,6 +9,34 @@ import (
 	"github.com/caitlyn-ai/caitlyn-go/core"
 )
 
+// Actor is a person or an API client that made a change.
+type Actor struct {
+	// The person, when a person made the change.
+	UserID *string `json:"userId,omitempty"`
+	// The API client, when one made the change or a person made it through one.
+	APIClientID *string `json:"apiClientId,omitempty"`
+	// The person's or API client's name, as people saw it when the change was made.
+	DisplayName string `json:"displayName"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *Actor) UnmarshalJSON(b []byte) error {
+	type plain Actor
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *Actor) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *Actor) RawJSON() json.RawMessage { return v.raw.JSON() }
+
 // FieldError: One problem with one request member or query parameter.
 type FieldError struct {
 	// A JSON Pointer (RFC 6901) into the request body, for example `/context/0/label`. Absent when
@@ -66,26 +94,6 @@ func (v *AttachmentSettings) Raw() map[string]any { return v.raw.Map() }
 
 // RawJSON returns that object's bytes as received.
 func (v *AttachmentSettings) RawJSON() json.RawMessage { return v.raw.JSON() }
-
-// ClearableDraftField is the draft members that can be cleared. Open: an older SDK may send a newer
-// value as a string.
-//
-// ClearableDraftField is open: a value this SDK does not know yet is kept as it is.
-type ClearableDraftField string
-
-// ClearableDraftField values known to this SDK.
-const (
-	ClearableDraftFieldIdentity ClearableDraftField = "identity"
-)
-
-// Known reports whether v is one of the values known to this SDK.
-func (v ClearableDraftField) Known() bool {
-	switch v {
-	case ClearableDraftFieldIdentity:
-		return true
-	}
-	return false
-}
 
 // ContentSafety is the content safety setting on a version.
 type ContentSafety struct {
@@ -199,7 +207,267 @@ func (v VersionSource) Known() bool {
 	return false
 }
 
-// AgentVersion: Headers every v3 response carries. Every operation output uses this mixin.
+// PinDraftVersionResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type PinDraftVersionResult struct {
+	// The request's identifier. The same value is in every error body; quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The version's current ETag; send it as `If-Match` to change it.
+	// From the ETag response header.
+	ETag string `json:"-"`
+	// The agent the version belongs to.
+	AgentID string `json:"agentId"`
+	// `draft`, `production` or the version's name.
+	Name string `json:"name"`
+	// How a pinned or published version was made. Absent on the draft.
+	Source *VersionSource `json:"source,omitempty"`
+	// The version this one was made from, where there is one.
+	BasedOn *string `json:"basedOn,omitempty"`
+	// True when this version's configuration is the one production currently answers with.
+	// Defaults to false.
+	MatchesProduction *bool `json:"matchesProduction,omitempty"`
+	// When the version was made; for the draft, when it was first created.
+	CreatedAt time.Time `json:"createdAt"`
+	// When this configuration became production. Present only on `production`.
+	PublishedAt *time.Time `json:"publishedAt,omitempty"`
+	// Who made this configuration production. Present only on `production`.
+	PublishedBy *Actor `json:"publishedBy,omitempty"`
+	// The note written when the version was pinned or published.
+	Note *string `json:"note,omitempty"`
+	// The version's configuration.
+	Configuration AgentConfiguration `json:"configuration"`
+	// The new version, as `/api/v3/agents/{agentId}/versions/{name}`.
+	// From the Location response header.
+	Location *string `json:"-"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *PinDraftVersionResult) UnmarshalJSON(b []byte) error {
+	type plain PinDraftVersionResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *PinDraftVersionResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *PinDraftVersionResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// (the zero value for a result built in code).
+func (v *PinDraftVersionResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ProductionHistoryEntry is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ProductionHistoryEntry struct {
+	// The request's identifier. The same value is in every error body; quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The entry's identifier.
+	ID string `json:"id"`
+	// The agent whose production this was.
+	AgentID string `json:"agentId"`
+	// The name of the version production was published from, kept even if that version has since
+	// been deleted. Absent when production did not come from a named version.
+	VersionName *string `json:"versionName,omitempty"`
+	// When this configuration became production.
+	PublishedAt time.Time `json:"publishedAt"`
+	// Who made it production.
+	PublishedBy Actor `json:"publishedBy"`
+	// When a publish replaced it.
+	UnpublishedAt time.Time `json:"unpublishedAt"`
+	// Who published the version that replaced it.
+	UnpublishedBy Actor `json:"unpublishedBy"`
+	// The note written when it was published.
+	Note *string `json:"note,omitempty"`
+	// The configuration production had.
+	Configuration AgentConfiguration `json:"configuration"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ProductionHistoryEntry) UnmarshalJSON(b []byte) error {
+	type plain ProductionHistoryEntry
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ProductionHistoryEntry) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ProductionHistoryEntry) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ProductionHistoryEntry) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ProductionHistorySummary is a production history entry, without its configuration (read that with
+// GetProductionHistoryEntry).
+type ProductionHistorySummary struct {
+	// The entry's identifier.
+	ID string `json:"id"`
+	// The agent whose production this was.
+	AgentID string `json:"agentId"`
+	// The name of the version production was published from, kept even if that version has since
+	// been deleted. Absent when production did not come from a named version.
+	VersionName *string `json:"versionName,omitempty"`
+	// When this configuration became production.
+	PublishedAt time.Time `json:"publishedAt"`
+	// Who made it production.
+	PublishedBy Actor `json:"publishedBy"`
+	// When a publish replaced it.
+	UnpublishedAt time.Time `json:"unpublishedAt"`
+	// Who published the version that replaced it.
+	UnpublishedBy Actor `json:"unpublishedBy"`
+	// The note written when it was published.
+	Note *string `json:"note,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ProductionHistorySummary) UnmarshalJSON(b []byte) error {
+	type plain ProductionHistorySummary
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ProductionHistorySummary) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ProductionHistorySummary) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ListProductionHistoryEntriesPage is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ListProductionHistoryEntriesPage struct {
+	// The request's identifier. The same value is in every error body; quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// This page of entries, newest first.
+	Items []ProductionHistorySummary `json:"items"`
+	// The cursor for the next page. Absent on the last page.
+	NextCursor *string `json:"nextCursor,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ListProductionHistoryEntriesPage) UnmarshalJSON(b []byte) error {
+	type plain ListProductionHistoryEntriesPage
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ListProductionHistoryEntriesPage) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ListProductionHistoryEntriesPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ListProductionHistoryEntriesPage) ResponseMetadata() core.ResponseMetadata {
+	return v.metadata
+}
+
+// ClearableDraftField is the draft members that can be cleared. Open: an older SDK may send a newer
+// value as a string.
+//
+// ClearableDraftField is open: a value this SDK does not know yet is kept as it is.
+type ClearableDraftField string
+
+// ClearableDraftField values known to this SDK.
+const (
+	ClearableDraftFieldIdentity ClearableDraftField = "identity"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v ClearableDraftField) Known() bool {
+	switch v {
+	case ClearableDraftFieldIdentity:
+		return true
+	}
+	return false
+}
+
+// DeleteAgentVersionResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type DeleteAgentVersionResult struct {
+	// The request's identifier. The same value is in every error body; quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *DeleteAgentVersionResult) UnmarshalJSON(b []byte) error {
+	type plain DeleteAgentVersionResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *DeleteAgentVersionResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *DeleteAgentVersionResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// (the zero value for a result built in code).
+func (v *DeleteAgentVersionResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// AgentVersion is generated from the Caitlyn model.
 //
 // Header-bound members are filled from the response headers; Raw holds the body as received.
 type AgentVersion struct {
@@ -226,6 +494,10 @@ type AgentVersion struct {
 	MatchesProduction *bool `json:"matchesProduction,omitempty"`
 	// When the version was made; for the draft, when it was first created.
 	CreatedAt time.Time `json:"createdAt"`
+	// When this configuration became production. Present only on `production`.
+	PublishedAt *time.Time `json:"publishedAt,omitempty"`
+	// Who made this configuration production. Present only on `production`.
+	PublishedBy *Actor `json:"publishedBy,omitempty"`
 	// The note written when the version was pinned or published.
 	Note *string `json:"note,omitempty"`
 	// The version's configuration.
@@ -255,6 +527,321 @@ func (v *AgentVersion) RawJSON() json.RawMessage { return v.raw.JSON() }
 // ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
 // (the zero value for a result built in code).
 func (v *AgentVersion) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// AgentVersionSummary is a named version, without its configuration (read that with GetAgentVersion).
+type AgentVersionSummary struct {
+	// The version's name.
+	Name string `json:"name"`
+	// How the version was made.
+	Source *VersionSource `json:"source,omitempty"`
+	// The version this one was made from, where there is one.
+	BasedOn *string `json:"basedOn,omitempty"`
+	// True when production's configuration is this version's. Defaults to false.
+	MatchesProduction *bool `json:"matchesProduction,omitempty"`
+	// When the version was made.
+	CreatedAt time.Time `json:"createdAt"`
+	// The note written when the version was pinned or published.
+	Note *string `json:"note,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *AgentVersionSummary) UnmarshalJSON(b []byte) error {
+	type plain AgentVersionSummary
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *AgentVersionSummary) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *AgentVersionSummary) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ListAgentVersionsPage is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ListAgentVersionsPage struct {
+	// The request's identifier. The same value is in every error body; quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// This page of versions, oldest first.
+	Items []AgentVersionSummary `json:"items"`
+	// The cursor for the next page. Absent on the last page.
+	NextCursor *string `json:"nextCursor,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ListAgentVersionsPage) UnmarshalJSON(b []byte) error {
+	type plain ListAgentVersionsPage
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ListAgentVersionsPage) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ListAgentVersionsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ListAgentVersionsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// DocumentDeleteStatus: Whether a document's delete was accepted. Open: new values may be added.
+//
+// DocumentDeleteStatus is open: a value this SDK does not know yet is kept as it is.
+type DocumentDeleteStatus string
+
+// DocumentDeleteStatus values known to this SDK.
+const (
+	DocumentDeleteStatusAccepted DocumentDeleteStatus = "accepted"
+	DocumentDeleteStatusFailed   DocumentDeleteStatus = "failed"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v DocumentDeleteStatus) Known() bool {
+	switch v {
+	case DocumentDeleteStatusAccepted, DocumentDeleteStatusFailed:
+		return true
+	}
+	return false
+}
+
+// DocumentDeleteResult is the result of deleting one document in a batch.
+type DocumentDeleteResult struct {
+	// The document the result is for.
+	DocumentID string `json:"documentId"`
+	// Whether the delete was accepted.
+	Status DocumentDeleteStatus `json:"status"`
+	// Why it failed, as a stable code, for example `NOT_FOUND` or `CONFLICT`. Present only when
+	// `failed`.
+	Code *string `json:"code,omitempty"`
+	// What went wrong, written for the integrator. Present only when `failed`.
+	Detail *string `json:"detail,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *DocumentDeleteResult) UnmarshalJSON(b []byte) error {
+	type plain DocumentDeleteResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *DocumentDeleteResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *DocumentDeleteResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// BatchDeleteDocumentsResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type BatchDeleteDocumentsResult struct {
+	// The request's identifier. The same value is in every error body; quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// One result per identifier, in request order.
+	Results []DocumentDeleteResult `json:"results"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *BatchDeleteDocumentsResult) UnmarshalJSON(b []byte) error {
+	type plain BatchDeleteDocumentsResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *BatchDeleteDocumentsResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *BatchDeleteDocumentsResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// (the zero value for a result built in code).
+func (v *BatchDeleteDocumentsResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// CredentialKind: What kind of credential made a request. Open: new values may be added.
+//
+// CredentialKind is open: a value this SDK does not know yet is kept as it is.
+type CredentialKind string
+
+// CredentialKind values known to this SDK.
+const (
+	CredentialKindBrowser   CredentialKind = "browser"
+	CredentialKindPersonal  CredentialKind = "personal"
+	CredentialKindOAuth     CredentialKind = "oauth"
+	CredentialKindAPIClient CredentialKind = "api_client"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v CredentialKind) Known() bool {
+	switch v {
+	case CredentialKindBrowser, CredentialKindPersonal, CredentialKindOAuth, CredentialKindAPIClient:
+		return true
+	}
+	return false
+}
+
+// OrganisationSummary is the identifier and name of an organisation.
+type OrganisationSummary struct {
+	// The organisation's identifier.
+	ID string `json:"id"`
+	// The organisation's name.
+	Name string `json:"name"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *OrganisationSummary) UnmarshalJSON(b []byte) error {
+	type plain OrganisationSummary
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *OrganisationSummary) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *OrganisationSummary) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// Caller is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type Caller struct {
+	// The request's identifier. The same value is in every error body; quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The person the credential acts for. Absent for an API client's own credential, which
+	// acts for no person.
+	UserID *string `json:"userId,omitempty"`
+	// The API client the credential was issued to: an API client's own credential, or an
+	// application a person signed in to with OAuth. Absent otherwise.
+	APIClientID *string `json:"apiClientId,omitempty"`
+	// The person's name, or the API client's name when no person is involved.
+	DisplayName string `json:"displayName"`
+	// What kind of credential made the request.
+	Credential CredentialKind `json:"credential"`
+	// The scopes the credential was granted, in no particular order. Empty for a browser
+	// sign-in, which scopes do not limit; what the caller may do still depends on its roles.
+	Scopes []string `json:"scopes"`
+	// The organisation the credential belongs to.
+	Organisation OrganisationSummary `json:"organisation"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *Caller) UnmarshalJSON(b []byte) error {
+	type plain Caller
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *Caller) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *Caller) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// (the zero value for a result built in code).
+func (v *Caller) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// Conversation is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type Conversation struct {
+	// The request's identifier. The same value is in every error body; quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The conversation, as `/api/v3/conversations/{conversationId}`.
+	// From the Location response header.
+	Location *string `json:"-"`
+	// The conversation's identifier.
+	ID string `json:"id"`
+	// The agent the conversation is with.
+	AgentID string `json:"agentId"`
+	// The version of the agent that answers.
+	Version string `json:"version"`
+	// The conversation's title, when it has one yet.
+	Title *string `json:"title,omitempty"`
+	// When the conversation was created.
+	CreatedAt time.Time `json:"createdAt"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *Conversation) UnmarshalJSON(b []byte) error {
+	type plain Conversation
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *Conversation) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *Conversation) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// (the zero value for a result built in code).
+func (v *Conversation) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
 // ContextItem: One item of structured context, for example the page or record the person is looking
 // at.
@@ -286,6 +873,55 @@ func (v *ContextItem) Raw() map[string]any { return v.raw.Map() }
 
 // RawJSON returns that object's bytes as received.
 func (v *ContextItem) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// DocumentFailureCode: Why a document failed. Open: new values may be added.
+//
+// DocumentFailureCode is open: a value this SDK does not know yet is kept as it is.
+type DocumentFailureCode string
+
+// DocumentFailureCode values known to this SDK.
+const (
+	DocumentFailureCodeFileUnreadable        DocumentFailureCode = "file_unreadable"
+	DocumentFailureCodeProcessingInterrupted DocumentFailureCode = "processing_interrupted"
+	DocumentFailureCodeProcessingFailed      DocumentFailureCode = "processing_failed"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v DocumentFailureCode) Known() bool {
+	switch v {
+	case DocumentFailureCodeFileUnreadable, DocumentFailureCodeProcessingInterrupted, DocumentFailureCodeProcessingFailed:
+		return true
+	}
+	return false
+}
+
+// DocumentFailure: Why a document failed, as a stable code and a message telling the caller what to
+// do.
+type DocumentFailure struct {
+	// What went wrong.
+	Code DocumentFailureCode `json:"code"`
+	// What went wrong and what to do, written for the integrator. The same for every document
+	// with the same code.
+	Message string `json:"message"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *DocumentFailure) UnmarshalJSON(b []byte) error {
+	type plain DocumentFailure
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *DocumentFailure) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *DocumentFailure) RawJSON() json.RawMessage { return v.raw.JSON() }
 
 // PartialFailure is an enrichment that did not complete. It never fails the document.
 type PartialFailure struct {
@@ -367,6 +1003,9 @@ type Document struct {
 	// Enrichments that did not complete (a picture description, metadata extraction, a table).
 	// They never fail the document. At most the first 100.
 	PartialFailures []PartialFailure `json:"partialFailures,omitempty"`
+	// Why the document could not be made searchable. Present only when `status` is `failed`; a
+	// document that is searchable with gaps lists them in `partialFailures` instead.
+	Failure *DocumentFailure `json:"failure,omitempty"`
 
 	raw core.Raw
 }
@@ -466,7 +1105,7 @@ func (v *Operation) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *Operation) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// CreateDocumentResult: Headers every v3 response carries. Every operation output uses this mixin.
+// CreateDocumentResult is generated from the Caitlyn model.
 //
 // Header-bound members are filled from the response headers; Raw holds the body as received.
 type CreateDocumentResult struct {
@@ -477,7 +1116,7 @@ type CreateDocumentResult struct {
 	// seen and refuse to call operations or send members newer than it.
 	// From the Caitlyn-Api-Version response header.
 	APIVersion *string `json:"-"`
-	// The Operation that tracks ingestion, as `/api/v3/operations/{operationId}`.
+	// The document, as `/api/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}`.
 	// From the Location response header.
 	Location *string `json:"-"`
 	// The document in its initial state.
@@ -510,7 +1149,137 @@ func (v *CreateDocumentResult) RawJSON() json.RawMessage { return v.raw.JSON() }
 // (the zero value for a result built in code).
 func (v *CreateDocumentResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
-// ListDocumentsPage: Headers every v3 response carries. Every operation output uses this mixin.
+// DeleteDocumentResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type DeleteDocumentResult struct {
+	// The request's identifier. The same value is in every error body; quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The document's identifier.
+	ID string `json:"id"`
+	// The knowledge base the document is in.
+	KnowledgeBaseID string `json:"knowledgeBaseId"`
+	// The document's name, as people see it.
+	Name string `json:"name"`
+	// The folder the document is in.
+	Folder string `json:"folder"`
+	// Where the document is in its lifecycle.
+	Status DocumentStatus `json:"status"`
+	// While `processing`, what the server is doing, for display only.
+	Stage *string `json:"stage,omitempty"`
+	// The media type of the current bytes.
+	ContentType *string `json:"contentType,omitempty"`
+	// The size of the current bytes, in bytes.
+	ByteSize *int64 `json:"byteSize,omitempty"`
+	// The base64-encoded SHA-256 of the current bytes.
+	SHA256 *string `json:"sha256,omitempty"`
+	// When the document was created.
+	CreatedAt time.Time `json:"createdAt"`
+	// When the document or its bytes last changed.
+	UpdatedAt time.Time `json:"updatedAt"`
+	// Enrichments that did not complete (a picture description, metadata extraction, a table).
+	// They never fail the document. At most the first 100.
+	PartialFailures []PartialFailure `json:"partialFailures,omitempty"`
+	// Why the document could not be made searchable. Present only when `status` is `failed`; a
+	// document that is searchable with gaps lists them in `partialFailures` instead.
+	Failure *DocumentFailure `json:"failure,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *DeleteDocumentResult) UnmarshalJSON(b []byte) error {
+	type plain DeleteDocumentResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *DeleteDocumentResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *DeleteDocumentResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// (the zero value for a result built in code).
+func (v *DeleteDocumentResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// GetDocumentResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type GetDocumentResult struct {
+	// The request's identifier. The same value is in every error body; quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The document's identifier.
+	ID string `json:"id"`
+	// The knowledge base the document is in.
+	KnowledgeBaseID string `json:"knowledgeBaseId"`
+	// The document's name, as people see it.
+	Name string `json:"name"`
+	// The folder the document is in.
+	Folder string `json:"folder"`
+	// Where the document is in its lifecycle.
+	Status DocumentStatus `json:"status"`
+	// While `processing`, what the server is doing, for display only.
+	Stage *string `json:"stage,omitempty"`
+	// The media type of the current bytes.
+	ContentType *string `json:"contentType,omitempty"`
+	// The size of the current bytes, in bytes.
+	ByteSize *int64 `json:"byteSize,omitempty"`
+	// The base64-encoded SHA-256 of the current bytes.
+	SHA256 *string `json:"sha256,omitempty"`
+	// When the document was created.
+	CreatedAt time.Time `json:"createdAt"`
+	// When the document or its bytes last changed.
+	UpdatedAt time.Time `json:"updatedAt"`
+	// Enrichments that did not complete (a picture description, metadata extraction, a table).
+	// They never fail the document. At most the first 100.
+	PartialFailures []PartialFailure `json:"partialFailures,omitempty"`
+	// Why the document could not be made searchable. Present only when `status` is `failed`; a
+	// document that is searchable with gaps lists them in `partialFailures` instead.
+	Failure *DocumentFailure `json:"failure,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *GetDocumentResult) UnmarshalJSON(b []byte) error {
+	type plain GetDocumentResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *GetDocumentResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *GetDocumentResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// (the zero value for a result built in code).
+func (v *GetDocumentResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ListDocumentsPage is generated from the Caitlyn model.
 //
 // Header-bound members are filled from the response headers; Raw holds the body as received.
 type ListDocumentsPage struct {
@@ -575,7 +1344,7 @@ func (v UploadStatus) Known() bool {
 	return false
 }
 
-// Upload: Headers every v3 response carries. Every operation output uses this mixin.
+// Upload is generated from the Caitlyn model.
 //
 // Header-bound members are filled from the response headers; Raw holds the body as received.
 type Upload struct {
@@ -586,7 +1355,7 @@ type Upload struct {
 	// seen and refuse to call operations or send members newer than it.
 	// From the Caitlyn-Api-Version response header.
 	APIVersion *string `json:"-"`
-	// The upload, as `/api/v3/uploads/{uploadId}`.
+	// The upload, as `/api/v3/uploads/{uploadId}`: read its status with GetUpload.
 	// From the Location response header.
 	Location *string `json:"-"`
 	// The upload's identifier, passed to the operation that uses it.
@@ -626,6 +1395,70 @@ func (v *Upload) RawJSON() json.RawMessage { return v.raw.JSON() }
 // ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
 // (the zero value for a result built in code).
 func (v *Upload) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// GetUploadResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type GetUploadResult struct {
+	// The request's identifier. The same value is in every error body; quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The upload's identifier.
+	ID string `json:"id"`
+	// Where the upload is in its lifecycle.
+	Status UploadStatus `json:"status"`
+	// When the upload URL stops working. An upload not used by then becomes `expired`.
+	ExpiresAt time.Time `json:"expiresAt"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *GetUploadResult) UnmarshalJSON(b []byte) error {
+	type plain GetUploadResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *GetUploadResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *GetUploadResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// (the zero value for a result built in code).
+func (v *GetUploadResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ActorType is the kind of caller that caused an event. Open: new values may be added.
+//
+// ActorType is open: a value this SDK does not know yet is kept as it is.
+type ActorType string
+
+// ActorType values known to this SDK.
+const (
+	ActorTypePerson    ActorType = "person"
+	ActorTypeAPIClient ActorType = "api_client"
+	ActorTypeGuest     ActorType = "guest"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v ActorType) Known() bool {
+	switch v {
+	case ActorTypePerson, ActorTypeAPIClient, ActorTypeGuest:
+		return true
+	}
+	return false
+}
 
 // Citation is a passage the answer cites.
 type Citation struct {
@@ -685,13 +1518,139 @@ func (v *CitationAdded) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *CitationAdded) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// EventID returns the event's SSE id.
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
 func (v *CitationAdded) EventID() string { return v.eventID }
 
 // EventType returns the event's SSE event name, "citation.added".
 func (*CitationAdded) EventType() string { return "citation.added" }
 
 func (*CitationAdded) isConversationEvent() {}
+
+// ConversationCreated is the data of `conversation.created`.
+type ConversationCreated struct {
+	// The conversation's identifier.
+	ID string `json:"id"`
+	// The agent it is with.
+	AgentID string `json:"agentId"`
+	// The version of the agent that answers.
+	Version string `json:"version"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ConversationCreated) UnmarshalJSON(b []byte) error {
+	type plain ConversationCreated
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ConversationCreated) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ConversationCreated) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventActor: Who caused an event.
+type EventActor struct {
+	// The kind of caller.
+	Type ActorType `json:"type"`
+	// The person, shown only to the owner of the event's subject.
+	UserID *string `json:"userId,omitempty"`
+	// The API client, shown only to the owner of the event's subject.
+	APIClientID *string `json:"apiClientId,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *EventActor) UnmarshalJSON(b []byte) error {
+	type plain EventActor
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *EventActor) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *EventActor) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventSubject: What an event is about.
+type EventSubject struct {
+	// The kind of thing. Open: `conversation` today.
+	Type string `json:"type"`
+	// Its identifier.
+	ID string `json:"id"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *EventSubject) UnmarshalJSON(b []byte) error {
+	type plain EventSubject
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *EventSubject) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *EventSubject) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ConversationCreatedEvent: `conversation.created`.
+type ConversationCreatedEvent struct {
+	// The event's identifier: a cursor, sent back as `after` or `Last-Event-ID`.
+	ID string `json:"id"`
+	// The event's type, the same as its SSE `event:` name.
+	Type string `json:"type"`
+	// When it happened.
+	OccurredAt time.Time `json:"occurredAt"`
+	// What the event is about.
+	Subject EventSubject `json:"subject"`
+	// Who caused it. Named only to the owner of the subject; everyone else sees only its type.
+	Actor EventActor `json:"actor"`
+	// The conversation.
+	Data ConversationCreated `json:"data"`
+
+	eventID string
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ConversationCreatedEvent) UnmarshalJSON(b []byte) error {
+	type plain ConversationCreatedEvent
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ConversationCreatedEvent) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ConversationCreatedEvent) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
+func (v *ConversationCreatedEvent) EventID() string { return v.eventID }
+
+// EventType returns the event's SSE event name, "conversation.created".
+func (*ConversationCreatedEvent) EventType() string { return "conversation.created" }
+
+func (*ConversationCreatedEvent) isWorkspaceEvent() {}
 
 // InputRequested is the data of `input.requested`.
 type InputRequested struct {
@@ -719,7 +1678,7 @@ func (v *InputRequested) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *InputRequested) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// EventID returns the event's SSE id.
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
 func (v *InputRequested) EventID() string { return v.eventID }
 
 // EventType returns the event's SSE event name, "input.requested".
@@ -807,13 +1766,65 @@ func (v *MessageCompleted) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *MessageCompleted) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// EventID returns the event's SSE id.
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
 func (v *MessageCompleted) EventID() string { return v.eventID }
 
 // EventType returns the event's SSE event name, "message.completed".
 func (*MessageCompleted) EventType() string { return "message.completed" }
 
 func (*MessageCompleted) isConversationEvent() {}
+
+// MessageFailed is the data of `message.failed`: a problem details object, exactly as an error
+// response body.
+type MessageFailed struct {
+	// A stable URI for the code: its page in the public error reference,
+	// `https://build.caitlyn.ai/errors/{code}`.
+	Type string `json:"type"`
+	// A short, human-readable summary of the problem, the same for every occurrence of the code.
+	Title string `json:"title"`
+	// The HTTP status code, repeated from the response.
+	Status int32 `json:"status"`
+	// The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never
+	// renamed; callers match on it.
+	Code string `json:"code"`
+	// What went wrong in this occurrence, written for the integrator. Never holds stack traces,
+	// storage keys or another person's data.
+	Detail *string `json:"detail,omitempty"`
+	// The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to
+	// support.
+	RequestID string `json:"requestId"`
+	// Field-level problems, one per member or parameter at fault. Present only on 400
+	// `VALIDATION_FAILED`.
+	Errors []FieldError `json:"errors,omitempty"`
+
+	eventID string
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *MessageFailed) UnmarshalJSON(b []byte) error {
+	type plain MessageFailed
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *MessageFailed) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *MessageFailed) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
+func (v *MessageFailed) EventID() string { return v.eventID }
+
+// EventType returns the event's SSE event name, "message.failed".
+func (*MessageFailed) EventType() string { return "message.failed" }
+
+func (*MessageFailed) isConversationEvent() {}
 
 // MessageStarted is the data of `message.started`.
 type MessageStarted struct {
@@ -845,7 +1856,7 @@ func (v *MessageStarted) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *MessageStarted) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// EventID returns the event's SSE id.
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
 func (v *MessageStarted) EventID() string { return v.eventID }
 
 // EventType returns the event's SSE event name, "message.started".
@@ -881,7 +1892,7 @@ func (v *PhaseChanged) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *PhaseChanged) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// EventID returns the event's SSE id.
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
 func (v *PhaseChanged) EventID() string { return v.eventID }
 
 // EventType returns the event's SSE event name, "phase.changed".
@@ -945,13 +1956,49 @@ func (v *ProgressUpdated) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *ProgressUpdated) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// EventID returns the event's SSE id.
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
 func (v *ProgressUpdated) EventID() string { return v.eventID }
 
 // EventType returns the event's SSE event name, "progress.updated".
 func (*ProgressUpdated) EventType() string { return "progress.updated" }
 
 func (*ProgressUpdated) isConversationEvent() {}
+
+// StreamReset: `stream.reset`: where the stream carries on from. Its SSE `id` is the same cursor.
+type StreamReset struct {
+	// The new cursor. Send it back as `Last-Event-ID` on a reconnect.
+	Cursor string `json:"cursor"`
+
+	eventID string
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *StreamReset) UnmarshalJSON(b []byte) error {
+	type plain StreamReset
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *StreamReset) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *StreamReset) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
+func (v *StreamReset) EventID() string { return v.eventID }
+
+// EventType returns the event's SSE event name, "stream.reset".
+func (*StreamReset) EventType() string { return "stream.reset" }
+
+func (*StreamReset) isConversationEvent() {}
+
+func (*StreamReset) isWorkspaceEvent() {}
 
 // TextDelta is the data of `text.delta`.
 type TextDelta struct {
@@ -979,7 +2026,7 @@ func (v *TextDelta) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *TextDelta) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// EventID returns the event's SSE id.
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
 func (v *TextDelta) EventID() string { return v.eventID }
 
 // EventType returns the event's SSE event name, "text.delta".
@@ -1041,7 +2088,7 @@ func (v *ToolFinished) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *ToolFinished) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// EventID returns the event's SSE id.
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
 func (v *ToolFinished) EventID() string { return v.eventID }
 
 // EventType returns the event's SSE event name, "tool.finished".
@@ -1079,7 +2126,7 @@ func (v *ToolStarted) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *ToolStarted) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// EventID returns the event's SSE id.
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
 func (v *ToolStarted) EventID() string { return v.eventID }
 
 // EventType returns the event's SSE event name, "tool.started".
@@ -1087,14 +2134,15 @@ func (*ToolStarted) EventType() string { return "tool.started" }
 
 func (*ToolStarted) isConversationEvent() {}
 
-// ConversationEvent: The events on a conversation's answer stream. The SSE `event:` name is each
-// member's
-// `@jsonName`. Clients skip event names they do not know.
+// ConversationEvent: The events on a conversation's answer stream, each named by its SSE `event:`
+// line. Clients skip
+// event names they do not know.
 //
 // ConversationEvent is one of*MessageStarted, *PhaseChanged, *ProgressUpdated, *TextDelta,
-// *CitationAdded, *ToolStarted, *ToolFinished, *InputRequested, *MessageCompleted. Switch on its type;
-// event names this SDK does not know are skipped, and an error event ends the stream with a typed
-// error.
+// *CitationAdded, *ToolStarted, *ToolFinished, *InputRequested, *MessageCompleted, *MessageFailed,
+// *StreamReset. Switch on its type; event names this SDK does not know are skipped. On a stream with a
+// final event, an error event ends the stream with a typed error instead; on a watch it is delivered
+// like any other.
 //
 //	switch e := ev.(type) {
 //	case *MessageStarted:
@@ -1108,8 +2156,9 @@ type ConversationEvent interface {
 	isConversationEvent()
 }
 
-// decodeConversationEvent decodes one SSE event; ok is false for an event name this SDK does not know.
-func decodeConversationEvent(errorFor core.ErrorFor) func(name, id string, data []byte) (ConversationEvent, bool, error) {
+// decodeConversationEvent decodes one SSE event; ok is false for an event name this SDK does not know. With raise,
+// an error event is returned as its typed error (a stream with a final event, PROTOCOL.md 5.5).
+func decodeConversationEvent(errorFor core.ErrorFor, raise bool) func(name, id string, data []byte) (ConversationEvent, bool, error) {
 	return func(name, id string, data []byte) (ConversationEvent, bool, error) {
 		switch name {
 		case "message.started":
@@ -1167,7 +2216,263 @@ func decodeConversationEvent(errorFor core.ErrorFor) func(name, id string, data 
 			}
 			return v, true, nil
 		case "message.failed":
-			return nil, false, core.ProblemFromEvent(data, errorFor)
+			if raise {
+				return nil, false, core.ProblemFromEvent(data, errorFor)
+			}
+			v := &MessageFailed{eventID: id}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		case "stream.reset":
+			v := &StreamReset{eventID: id}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		}
+		return nil, false, nil
+	}
+}
+
+// InputRequestedEvent: `input.requested`.
+type InputRequestedEvent struct {
+	// The event's identifier: a cursor, sent back as `after` or `Last-Event-ID`.
+	ID string `json:"id"`
+	// The event's type, the same as its SSE `event:` name.
+	Type string `json:"type"`
+	// When it happened.
+	OccurredAt time.Time `json:"occurredAt"`
+	// What the event is about.
+	Subject EventSubject `json:"subject"`
+	// Who caused it. Named only to the owner of the subject; everyone else sees only its type.
+	Actor EventActor `json:"actor"`
+	// The widget, as `input.requested` on the conversation's own stream.
+	Data InputRequested `json:"data"`
+
+	eventID string
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *InputRequestedEvent) UnmarshalJSON(b []byte) error {
+	type plain InputRequestedEvent
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *InputRequestedEvent) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *InputRequestedEvent) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
+func (v *InputRequestedEvent) EventID() string { return v.eventID }
+
+// EventType returns the event's SSE event name, "input.requested".
+func (*InputRequestedEvent) EventType() string { return "input.requested" }
+
+func (*InputRequestedEvent) isWorkspaceEvent() {}
+
+// MessageCompletedEvent: `message.completed`.
+type MessageCompletedEvent struct {
+	// The event's identifier: a cursor, sent back as `after` or `Last-Event-ID`.
+	ID string `json:"id"`
+	// The event's type, the same as its SSE `event:` name.
+	Type string `json:"type"`
+	// When it happened.
+	OccurredAt time.Time `json:"occurredAt"`
+	// What the event is about.
+	Subject EventSubject `json:"subject"`
+	// Who caused it. Named only to the owner of the subject; everyone else sees only its type.
+	Actor EventActor `json:"actor"`
+	// The answer, as `message.completed` on the conversation's own stream.
+	Data MessageCompleted `json:"data"`
+
+	eventID string
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *MessageCompletedEvent) UnmarshalJSON(b []byte) error {
+	type plain MessageCompletedEvent
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *MessageCompletedEvent) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *MessageCompletedEvent) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
+func (v *MessageCompletedEvent) EventID() string { return v.eventID }
+
+// EventType returns the event's SSE event name, "message.completed".
+func (*MessageCompletedEvent) EventType() string { return "message.completed" }
+
+func (*MessageCompletedEvent) isWorkspaceEvent() {}
+
+// MessageFailedEvent: `message.failed`.
+type MessageFailedEvent struct {
+	// The event's identifier: a cursor, sent back as `after` or `Last-Event-ID`.
+	ID string `json:"id"`
+	// The event's type, the same as its SSE `event:` name.
+	Type string `json:"type"`
+	// When it happened.
+	OccurredAt time.Time `json:"occurredAt"`
+	// What the event is about.
+	Subject EventSubject `json:"subject"`
+	// Who caused it. Named only to the owner of the subject; everyone else sees only its type.
+	Actor EventActor `json:"actor"`
+	// The problem, as `message.failed` on the conversation's own stream.
+	Data MessageFailed `json:"data"`
+
+	eventID string
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *MessageFailedEvent) UnmarshalJSON(b []byte) error {
+	type plain MessageFailedEvent
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *MessageFailedEvent) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *MessageFailedEvent) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
+func (v *MessageFailedEvent) EventID() string { return v.eventID }
+
+// EventType returns the event's SSE event name, "message.failed".
+func (*MessageFailedEvent) EventType() string { return "message.failed" }
+
+func (*MessageFailedEvent) isWorkspaceEvent() {}
+
+// ToolFinishedEvent: `tool.finished`.
+type ToolFinishedEvent struct {
+	// The event's identifier: a cursor, sent back as `after` or `Last-Event-ID`.
+	ID string `json:"id"`
+	// The event's type, the same as its SSE `event:` name.
+	Type string `json:"type"`
+	// When it happened.
+	OccurredAt time.Time `json:"occurredAt"`
+	// What the event is about.
+	Subject EventSubject `json:"subject"`
+	// Who caused it. Named only to the owner of the subject; everyone else sees only its type.
+	Actor EventActor `json:"actor"`
+	// The tool call, as `tool.finished` on the conversation's own stream.
+	Data ToolFinished `json:"data"`
+
+	eventID string
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ToolFinishedEvent) UnmarshalJSON(b []byte) error {
+	type plain ToolFinishedEvent
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ToolFinishedEvent) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ToolFinishedEvent) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
+func (v *ToolFinishedEvent) EventID() string { return v.eventID }
+
+// EventType returns the event's SSE event name, "tool.finished".
+func (*ToolFinishedEvent) EventType() string { return "tool.finished" }
+
+func (*ToolFinishedEvent) isWorkspaceEvent() {}
+
+// WorkspaceEvent: The events on the workspace stream, each named by its SSE `event:` line, which
+// equals the
+// event's `type`. Clients skip event names they do not know.
+//
+// WorkspaceEvent is one of*ConversationCreatedEvent, *MessageCompletedEvent, *MessageFailedEvent,
+// *ToolFinishedEvent, *InputRequestedEvent, *StreamReset. Switch on its type; event names this SDK
+// does not know are skipped. On a stream with a final event, an error event ends the stream with a
+// typed error instead; on a watch it is delivered like any other.
+//
+//	switch e := ev.(type) {
+//	case *ConversationCreatedEvent:
+//		…
+//	}
+type WorkspaceEvent interface {
+	// EventID returns the event's SSE id.
+	EventID() string
+	// EventType returns the event's SSE event name, for example "text.delta".
+	EventType() string
+	isWorkspaceEvent()
+}
+
+// decodeWorkspaceEvent decodes one SSE event; ok is false for an event name this SDK does not know. With raise,
+// an error event is returned as its typed error (a stream with a final event, PROTOCOL.md 5.5).
+func decodeWorkspaceEvent(errorFor core.ErrorFor, raise bool) func(name, id string, data []byte) (WorkspaceEvent, bool, error) {
+	return func(name, id string, data []byte) (WorkspaceEvent, bool, error) {
+		switch name {
+		case "conversation.created":
+			v := &ConversationCreatedEvent{eventID: id}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		case "message.completed":
+			v := &MessageCompletedEvent{eventID: id}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		case "message.failed":
+			v := &MessageFailedEvent{eventID: id}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		case "tool.finished":
+			v := &ToolFinishedEvent{eventID: id}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		case "input.requested":
+			v := &InputRequestedEvent{eventID: id}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		case "stream.reset":
+			v := &StreamReset{eventID: id}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
 		}
 		return nil, false, nil
 	}

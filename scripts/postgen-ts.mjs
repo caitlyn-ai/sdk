@@ -92,6 +92,35 @@ for (const file of fs.readdirSync(dir, { recursive: true }).filter((f) => f.ends
 }
 console.log('postgen-ts: removed the rules-engine endpoint resolver (endpoint/endpointResolver.ts, endpoint/bdd.ts)');
 
+// smithy-typescript writes its own waiters (src/waiters/, on @smithy/core's createWaiter) from @waitable. The SDK's
+// waiters are the facade's waitUntil…() functions, on sdk-core's waitUntil (PROTOCOL.md 10.1: an unexpected error
+// is a waiter failure, and the default limit is the waiter's @waitLimits entry), so smithy-typescript's are removed.
+{
+  const waitersDir = new URL('waiters/', dir);
+  if (fs.existsSync(waitersDir)) {
+    fs.rmSync(waitersDir, { recursive: true });
+    const indexUrl = new URL('index.ts', dir);
+    const index = fs.readFileSync(indexUrl, 'utf8');
+    const line = 'export * from "./waiters";\n';
+    if (index.split(line).length - 1 !== 1) throw new Error('postgen-ts: expected exactly one waiters export in index.ts');
+    fs.writeFileSync(indexUrl, index.replace(line, ''));
+    // The aggregated client (src/Caitlyn.ts) lists them too: its imports, the waiters object, the methods it
+    // declares for them, and the waiter types those methods use.
+    const aggregatedUrl = new URL('Caitlyn.ts', dir);
+    const before = fs.readFileSync(aggregatedUrl, 'utf8');
+    const after = before
+      .replace(/^import \{ waitUntil\w+ \} from "\.\/waiters\/\w+";\n/gm, '')
+      .replace(/^const waiters = \{\n(?:  waitUntil\w+,\n)+\};\n/m, '')
+      .replace(/\n  \/\*\*\n   \* @see \{@link \w+Command\}\n   \* @param args - command input\.\n   \* @param waiterConfig[^\n]*\n   \*\/\n  waitUntil\w+\([\s\S]*?\): Promise<WaiterResult<\w+>>;\n/g, '\n')
+      .replace('{ paginators, waiters }', '{ paginators }')
+      .replace('import { type WaiterResult, createAggregatedClient } from "@smithy/core/client";', 'import { createAggregatedClient } from "@smithy/core/client";')
+      .replace(/^  WaiterConfiguration,\n/m, '');
+    if (/[Ww]aiter/.test(after)) throw new Error('postgen-ts: Caitlyn.ts still refers to a waiter after removing smithy-typescript\'s');
+    fs.writeFileSync(aggregatedUrl, after);
+    console.log('postgen-ts: removed smithy-typescript\'s waiters (src/waiters/, and from index.ts and Caitlyn.ts); the facade has waitUntil…()');
+  }
+}
+
 // The generated error classes reset their prototype with a reference to themselves
 // (Object.setPrototypeOf(this, NotFoundError.prototype)). A bundler then has to rename the class (`var
 // NotFoundError = class _NotFoundError`), and constructor.name becomes "_NotFoundError". new.target.prototype does

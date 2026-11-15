@@ -10,7 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { T, binding, callOption, eventsUnion, loadModel, local, names, operations, root } from './docs-model.mjs';
+import { T, binding, callOption, eventsUnion, loadModel, local, names, namespacePath, operations, root } from './docs-model.mjs';
 
 export const LANGUAGES = [
   { key: 'typescript', label: 'TypeScript', fence: 'ts' },
@@ -149,7 +149,7 @@ function typescript(ast, op, example) {
   const items = p.fields.map((f) => `${f.name}: ${literal(ast, 'typescript', f.member.target, f.value)}`);
   const opts = Object.entries(p.options).map(([k, v]) => `${k}: ${literal(ast, 'typescript', 'smithy.api#String', v)}`);
   const after = opts.length ? [`{ ${opts.join(', ')} }`] : [];
-  const call = hug(`caitlyn.${op.namespace}.${op.method}`, before, items, { open: '{ ', close: ' }', empty: '{}', indent: '  ', comma: ',' }, after);
+  const call = hug(`caitlyn.${namespacePath('typescript', op.namespace)}.${op.method}`, before, items, { open: '{ ', close: ' }', empty: '{}', indent: '  ', comma: ',' }, after);
   let body;
   const k = kind(ast, op);
   if (k === 'stream') {
@@ -177,7 +177,7 @@ function python(ast, op, example) {
   if (p.positional) args.push(literal(ast, 'python', p.positional.member.target, p.positional.value));
   for (const [k, v] of Object.entries(p.options)) args.push(`${names.python(k)}=${pyStr(v)}`);
   for (const f of p.fields) args.push(`${names.python(f.name)}=${literal(ast, 'python', f.member.target, f.value)}`);
-  const head = `caitlyn.${names.python(op.namespace)}.${names.python(op.method)}`;
+  const head = `caitlyn.${namespacePath('python', op.namespace)}.${names.python(op.method)}`;
   const inline = `${head}(${args.join(', ')})`;
   const call = inline.length <= 80 ? inline : `${head}(\n${args.map((a) => `    ${a},`).join('\n')}\n)`;
   const imports = new Set(['Caitlyn']);
@@ -214,7 +214,7 @@ function go(ast, op, example) {
   const items = p.fields.map((f) => `${`${names.go(f.name)}:`.padEnd(width + 1)} ${literal(ast, 'go', f.member.target, f.value, { optional: !required(f.member) })}`);
   const before = ['ctx', ...(p.positional ? [literal(ast, 'go', p.positional.member.target, p.positional.value)] : [])];
   const after = Object.entries(p.options).map(([k, v]) => `caitlyn.With${k === 'ifMatch' ? 'IfMatch' : 'IdempotencyKey'}(${JSON.stringify(v)})`);
-  const call = hug(`client.${names.go(op.namespace)}.${names.go(op.method)}`, before, items.map((i) => i.replace(/ {2,}/, ' ')), { open: `&caitlyn.${inputType}{`, close: '}', empty: `&caitlyn.${inputType}{}`, indent: '\t', comma: ',', multiline: items }, after);
+  const call = hug(`client.${namespacePath('go', op.namespace)}.${names.go(op.method)}`, before, items.map((i) => i.replace(/ {2,}/, ' ')), { open: `&caitlyn.${inputType}{`, close: '}', empty: `&caitlyn.${inputType}{}`, indent: '\t', comma: ',', multiline: items }, after);
   const imports = ['context', 'fmt', 'log', 'os'];
   const handle = error
     ? `var apiErr *caitlyn.${error}\nif errors.As(err, &apiErr) {\n\tfmt.Println(apiErr.Status, apiErr.Code, apiErr.Detail, apiErr.RequestID)\n\treturn\n}\nlog.Fatal(err)`
@@ -271,7 +271,7 @@ function rust(ast, op, example) {
   // Every field the program does not set comes from Default; clippy refuses `..Default::default()` when none is left.
   args.push(`${inputType} {\n${[...fields.map((f) => `    ${f},`), ...(p.unset.length ? ['    ..Default::default()'] : [])].join('\n')}\n}`);
   const opts = Object.entries(p.options).map(([k, v]) => `.${names.rust(k)}(${JSON.stringify(v)})`).join('');
-  const call = `client\n    .${names.rust(op.namespace)}()\n    .${names.rust(op.method)}(${indent(args.join(', '), 4).trimStart()})${opts ? `\n    ${opts}` : ''}`;
+  const call = `client\n    .${namespacePath('rust', op.namespace).split('.').join('\n    .')}\n    .${names.rust(op.method)}(${indent(args.join(', '), 4).trimStart()})${opts ? `\n    ${opts}` : ''}`;
   let body;
   const k = kind(ast, op);
   if (k === 'stream') {

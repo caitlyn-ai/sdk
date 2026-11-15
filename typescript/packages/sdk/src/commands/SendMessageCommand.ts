@@ -28,7 +28,7 @@ export interface SendMessageCommandOutput extends Omit<SendMessageOutput, "event
  * Sends a message and streams the answer as server-sent events.
  *
  * The stream ends with exactly one `message.completed` or `message.failed`. If the connection
- * drops, the SDK re-attaches with `ResumeConversationStream` and `Last-Event-ID`, so no event is
+ * drops, the SDK re-attaches with `WatchConversation` and `Last-Event-ID`, so no event is
  * lost or repeated. Not retried automatically: a send that fails before the stream starts is
  * reported to the caller.
  * @example
@@ -103,7 +103,8 @@ export interface SendMessageCommandOutput extends Omit<SendMessageOutput, "event
  *
  * @throws {@link ValidationError} (client fault)
  *  The request is malformed: a member is missing, the wrong type or out of range; it has a member,
- * filter or sort field the operation does not define; or its cursor is not valid for this list.
+ * filter or sort field the operation does not define; its cursor is not valid for this list; or it
+ * asks to delete `draft` or `production`, which every agent keeps.
  *
  * @throws {@link CaitlynServiceException}
  * <p>Base exception class for all service exceptions from Caitlyn service.</p>

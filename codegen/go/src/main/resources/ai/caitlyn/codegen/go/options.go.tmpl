@@ -103,7 +103,11 @@ func WithIfMatch(etag string) CallOption { return core.WithIfMatch(etag) }
 // WithIdempotencyKey sends this Idempotency-Key instead of a generated one (kept across retries either way).
 func WithIdempotencyKey(key string) CallOption { return core.WithIdempotencyKey(key) }
 
-// WithMaxWait bounds a WaitUntil… call (default 5 minutes).
+// DefaultMaxWait is the time limit of a waiter the model gives no limit of its own: 5 minutes.
+const DefaultMaxWait = core.DefaultMaxWait
+
+// WithMaxWait bounds a WaitUntil… call, in place of the waiter's own limit (its method's documentation
+// gives it; 5 minutes unless the model sets another).
 func WithMaxWait(d time.Duration) WaiterOption { return core.WithMaxWait(d) }
 
 // WithWaitDelays overrides the model's polling delays for a WaitUntil… call.

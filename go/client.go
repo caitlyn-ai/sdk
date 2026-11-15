@@ -7,12 +7,14 @@ import (
 )
 
 // Client is the Caitlyn API client. Create one with NewClient and share it: it is safe for concurrent
-// use. Operations are grouped by resource, for example client.Conversations.Resume.
+// use. Operations are grouped by resource, for example client.Agents.ProductionHistory.Get.
 type Client struct {
+	Agents        *AgentsClient
+	Callers       *CallersClient
 	Conversations *ConversationsClient
 	Documents     *DocumentsClient
+	Events        *EventsClient
 	Uploads       *UploadsClient
-	Versions      *VersionsClient
 
 	core *core.Client
 }
@@ -28,10 +30,14 @@ func NewClient(workspace string, auth Auth, opts ...Option) (*Client, error) {
 		return nil, err
 	}
 	c := &Client{core: cc}
+	c.Agents = &AgentsClient{}
+	c.Agents.ProductionHistory = &AgentsProductionHistoryClient{c: c}
+	c.Agents.Versions = &AgentsVersionsClient{c: c}
+	c.Callers = &CallersClient{c: c}
 	c.Conversations = &ConversationsClient{c: c}
 	c.Documents = &DocumentsClient{c: c}
+	c.Events = &EventsClient{c: c}
 	c.Uploads = &UploadsClient{c: c}
-	c.Versions = &VersionsClient{c: c}
 	return c, nil
 }
 
@@ -45,14 +51,33 @@ func (c *Client) Endpoint() string { return c.core.Endpoint() }
 // HandleCallback, SignOut).
 func (c *Client) Auth() *AuthSession { return c.core.Auth() }
 
-// ConversationsClient holds the conversations operations (Resume, Send). Use Client.Conversations.
+// AgentsClient groups ProductionHistory and Versions. Use Client.Agents.
+type AgentsClient struct {
+	ProductionHistory *AgentsProductionHistoryClient
+	Versions          *AgentsVersionsClient
+}
+
+// AgentsProductionHistoryClient holds the agents production history operations (Get, List). Use
+// Client.Agents.ProductionHistory.
+type AgentsProductionHistoryClient struct{ c *Client }
+
+// AgentsVersionsClient holds the agents versions operations (Delete, Get, List, Pin, Publish,
+// ResetDraft, UpdateDraft). Use Client.Agents.Versions.
+type AgentsVersionsClient struct{ c *Client }
+
+// CallersClient holds the callers operations (Get). Use Client.Callers.
+type CallersClient struct{ c *Client }
+
+// ConversationsClient holds the conversations operations (Create, Send, Watch). Use
+// Client.Conversations.
 type ConversationsClient struct{ c *Client }
 
-// DocumentsClient holds the documents operations (Create, List). Use Client.Documents.
+// DocumentsClient holds the documents operations (BatchDelete, Create, Delete, Get, List). Use
+// Client.Documents.
 type DocumentsClient struct{ c *Client }
 
-// UploadsClient holds the uploads operations (Reserve). Use Client.Uploads.
-type UploadsClient struct{ c *Client }
+// EventsClient holds the events operations (Subscribe). Use Client.Events.
+type EventsClient struct{ c *Client }
 
-// VersionsClient holds the versions operations (Get, UpdateDraft). Use Client.Versions.
-type VersionsClient struct{ c *Client }
+// UploadsClient holds the uploads operations (Reserve, Get). Use Client.Uploads.
+type UploadsClient struct{ c *Client }

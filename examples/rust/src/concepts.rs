@@ -16,7 +16,7 @@ pub async fn errors(client: &Client) -> Result<(), Error> {
         agent_id: "GHT7YRWXPL".into(),
         version: "v99".into(),
     };
-    match client.versions().get(input).await {
+    match client.agents().versions().get(input).await {
         Ok(version) => println!("{}", version.name),
         Err(Error::NotFound(_)) => println!("No such version"),
         Err(Error::Validation(err)) => {
@@ -94,7 +94,7 @@ pub async fn pagination(client: &Client) -> Result<(), Error> {
     // Every document in the folder: the next page is fetched as the loop reaches it
     let input = ListDocumentsInput {
         knowledge_base_id: "KB4T7YQ2WL".into(),
-        folder: Some("hr/".into()),
+        folder: Some("/hr/".into()),
         limit: Some(100),
         ..Default::default()
     };

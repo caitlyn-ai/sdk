@@ -1,6 +1,7 @@
 package ai.caitlyn.codegen.model;
 
 import java.util.Optional;
+import software.amazon.smithy.codegen.core.CodegenException;
 import software.amazon.smithy.model.node.Node;
 import software.amazon.smithy.model.node.ObjectNode;
 import software.amazon.smithy.model.shapes.Shape;
@@ -21,6 +22,10 @@ public final class CaitlynTraits {
     public static final ShapeId UPLOAD_TARGET = ShapeId.from("ai.caitlyn.traits#uploadTarget");
     public static final ShapeId CLEARABLE = ShapeId.from("ai.caitlyn.traits#clearable");
     public static final ShapeId ERROR_CODES = ShapeId.from("ai.caitlyn.traits#errorCodes");
+    /** {@code @waitLimits}: the default time limit of each of an operation's waiters, in seconds, by waiter name. */
+    public static final ShapeId WAIT_LIMITS = ShapeId.from("ai.caitlyn.traits#waitLimits");
+    /** The limit of a waiter without a {@code @waitLimits} entry (PROTOCOL.md 10.1): five minutes. */
+    public static final int DEFAULT_WAIT_LIMIT_SECONDS = 300;
 
     private CaitlynTraits() {}
 
@@ -44,5 +49,23 @@ public final class CaitlynTraits {
 
     public static Optional<String> stringMember(Shape shape, ShapeId trait, String member) {
         return object(shape, trait).flatMap(o -> o.getStringMember(member)).map(s -> s.getValue());
+    }
+
+    private static final ShapeId WAITABLE = ShapeId.from("smithy.waiters#waitable");
+
+    /**
+     * A waiter's default time limit in seconds: its {@code @waitLimits} entry, else five minutes. Fails when the
+     * operation's {@code @waitLimits} names a waiter its {@code @waitable} does not have, so a misspelt or removed
+     * waiter cannot quietly fall back to five minutes.
+     */
+    public static int waitLimitSeconds(Shape operation, String waiter) {
+        Optional<ObjectNode> waiters = object(operation, WAITABLE);
+        for (String limited : object(operation, WAIT_LIMITS).map(o -> o.getStringMap().keySet()).orElse(java.util.Set.of())) {
+            if (waiters.flatMap(w -> w.getMember(limited)).isEmpty()) {
+                throw new CodegenException(operation.getId() + ": @waitLimits names " + limited + ", which is not one of its waiters");
+            }
+        }
+        return object(operation, WAIT_LIMITS).flatMap(o -> o.getNumberMember(waiter)).map(n -> n.getValue().intValue())
+                .orElse(DEFAULT_WAIT_LIMIT_SECONDS);
     }
 }

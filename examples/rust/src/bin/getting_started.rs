@@ -11,6 +11,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Read the draft of an agent: its configuration and its ETag
     let draft = client
+        .agents()
         .versions()
         .get(GetAgentVersionInput {
             agent_id: "GHT7YRWXPL".into(),

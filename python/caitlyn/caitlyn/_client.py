@@ -23,49 +23,107 @@ from caitlyn_core import (
     SyncAuthSession,
     SyncClientCore,
     read_upload,
+    wait_async,
+    wait_sync,
 )
 from opentelemetry.trace import TracerProvider
 
 from caitlyn import _operations
 from caitlyn._version import SDK_MODEL, __version__
-from caitlyn.events import ConversationEvent
+from caitlyn.events import ConversationEvent, WorkspaceEvent
 from caitlyn.models import (
     AgentVersion,
+    AgentVersionSummary,
     AttachmentSettings,
+    BatchDeleteDocumentsResult,
+    Caller,
     ClearableDraftField,
     ContentSafety,
     ContextItem,
+    Conversation,
     CreateDocumentResult,
+    DeleteAgentVersionResult,
+    DeleteDocumentResult,
     Document,
     DocumentStatus,
+    GetDocumentResult,
+    GetUploadResult,
     KnowledgeBaseBinding,
+    ListAgentVersionsPage,
     ListDocumentsPage,
+    ListProductionHistoryEntriesPage,
     Message,
+    PinDraftVersionResult,
+    ProductionHistoryEntry,
+    ProductionHistorySummary,
     Upload,
 )
 
-class ConversationsResource:
-    """`conversations`: resume, send."""
+class AgentsResource:
+    """`agents`: production_history, versions."""
+
+    production_history: AgentsProductionHistoryResource
+    versions: AgentsVersionsResource
+
+    def __init__(self, core: SyncClientCore) -> None:
+        self._core = core
+        self.production_history = AgentsProductionHistoryResource(core)
+        self.versions = AgentsVersionsResource(core)
+
+
+class AgentsProductionHistoryResource:
+    """`agents.production_history`: get, list."""
 
     def __init__(self, core: SyncClientCore) -> None:
         self._core = core
 
-    def resume(
-        self,
-        conversation_id: str,
-        *,
-        last_event_id: str | None = None,
-    ) -> EventStream[ConversationEvent, Message]:
-        """Re-attaches to the answer that is being written, from the event after `Last-Event-ID`.
+    def get(self, *, agent_id: str, history_entry_id: str) -> ProductionHistoryEntry:
+        """Gets one production history entry, with the full configuration production had.
 
-        Used by the SDKs after a dropped connection; callers rarely need it directly. When no answer is
-        being written, the stream ends at once.
+        The entry is a copy: it reads the same whether or not the version it came from still exists.
 
-        Added in Caitlyn 5.115.0. `GET /v3/conversations/{conversationId}/stream`.
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/production-history-entries/{historyEntryId}`.
 
         Args:
-            conversation_id: The conversation whose answer to re-attach to.
-            last_event_id: The `id` of the last event received. Absent means from the start of the answer.
+            agent_id: The agent the entry belongs to.
+            history_entry_id: The entry to get.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return self._core.request(
+            _operations.GET_PRODUCTION_HISTORY_ENTRY,
+            {"agent_id": agent_id, "history_entry_id": history_entry_id},
+            ProductionHistoryEntry,
+        )
+
+    def list(
+        self,
+        *,
+        agent_id: str,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> Paginator[ListProductionHistoryEntriesPage, ProductionHistorySummary]:
+        """Lists an agent's production history, newest first: what production was before each publish.
+
+        Each entry says which version production came from, who published it and when, and who replaced
+        it and when. Read an entry's full configuration with GetProductionHistoryEntry. Entries are never
+        edited or deleted, and production at any point in time is the entry whose published and
+        unpublished times span it (or current production, if none does).
+
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/production-history-entries`.
+
+        Args:
+            agent_id: The agent whose production history to list.
+            limit: The most entries to return, from 1 to 100. Defaults to 20.
+            cursor: The `nextCursor` from the previous page. Absent for the first page.
 
         Raises:
             NotFoundError: HTTP 404.
@@ -78,12 +136,384 @@ class ConversationsResource:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            The event stream: `with` it, iterate it, then `final_message()`. Unknown event types are skipped; a dropped connection is resumed with Last-Event-ID.
+            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
         """
-        return self._core.stream(
-            _operations.RESUME_CONVERSATION_STREAM,
-            {"conversation_id": conversation_id, "last_event_id": last_event_id},
-            _operations.RESUME_CONVERSATION_STREAM_EVENTS,
+        params: dict[str, object] = {"agent_id": agent_id, "limit": limit}
+
+        def fetch(token: str | None) -> ListProductionHistoryEntriesPage:
+            return self._core.request(_operations.LIST_PRODUCTION_HISTORY_ENTRIES, {**params, "cursor": token}, ListProductionHistoryEntriesPage)
+
+        return Paginator(fetch, lambda page: page.items, lambda page: page.next_cursor, cursor)
+
+
+class AgentsVersionsResource:
+    """`agents.versions`: delete, get, list, pin, publish, reset_draft, update_draft."""
+
+    def __init__(self, core: SyncClientCore) -> None:
+        self._core = core
+
+    def delete(self, *, agent_id: str, version: str) -> DeleteAgentVersionResult:
+        """Deletes a named version.
+
+        Any named version can be deleted, including one that was published: production is its own
+        copy, so it does not change. `draft` and `production`, which every agent keeps, are refused with
+        400 `VERSION_NOT_DELETABLE`. Production history entries copied from the version are never
+        deleted or changed, and still read as they did. Like every change, it is audited.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/agents/{agentId}/versions/{version}`.
+
+        Args:
+            agent_id: The agent whose version is deleted.
+            version: The version to delete: a version name.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return self._core.request(
+            _operations.DELETE_AGENT_VERSION,
+            {"agent_id": agent_id, "version": version},
+            DeleteAgentVersionResult,
+        )
+
+    def get(self, *, agent_id: str, version: str) -> AgentVersion:
+        """Gets one version of an agent, with its full configuration and its ETag.
+
+        `version` is `draft`, `production` or the name of a pinned or published version. Production is
+        readable by everyone with access to the agent; the draft and pinned versions only by the people
+        and groups on the agent's version access grant, and anyone else gets 404.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}`.
+
+        Args:
+            agent_id: The agent's identifier.
+            version: `draft`, `production` or a version name.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return self._core.request(
+            _operations.GET_AGENT_VERSION,
+            {"agent_id": agent_id, "version": version},
+            AgentVersion,
+        )
+
+    def list(
+        self,
+        *,
+        agent_id: str,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> Paginator[ListAgentVersionsPage, AgentVersionSummary]:
+        """Lists an agent's named versions in the order they were made, oldest first.
+
+        Each entry says how the version was made and whether production currently matches it. The
+        draft and production are not entries: read them with `draft` and `production`. Needs the agent's
+        version access grant, as reading any version other than production does.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/versions`.
+
+        Args:
+            agent_id: The agent whose versions to list.
+            limit: The most versions to return, from 1 to 100. Defaults to 20.
+            cursor: The `nextCursor` from the previous page. Absent for the first page.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+
+        Returns:
+            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+        """
+        params: dict[str, object] = {"agent_id": agent_id, "limit": limit}
+
+        def fetch(token: str | None) -> ListAgentVersionsPage:
+            return self._core.request(_operations.LIST_AGENT_VERSIONS, {**params, "cursor": token}, ListAgentVersionsPage)
+
+        return Paginator(fetch, lambda page: page.items, lambda page: page.next_cursor, cursor)
+
+    def pin(
+        self,
+        agent_id: str,
+        *,
+        name: str,
+        idempotency_key: str | None = None,
+        if_match: str | None = None,
+        note: str | None = None,
+    ) -> PinDraftVersionResult:
+        """Keeps a copy of the draft as a new named version.
+
+        The new version is pinned: it does not change production, and the draft carries on as before.
+        Send the draft's ETag as `If-Match` to pin only the draft you tested; without it, the draft is
+        pinned as it is now. Returns the new version, and `Location` names it.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/draft/pin`.
+
+        Args:
+            agent_id: The agent whose draft is pinned.
+            name: The new version's name, unique within the agent, and never `draft`, `production` or
+                `latest`. A name already used is refused with 409 `ALREADY_EXISTS`.
+            idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
+                supply one.
+            if_match: The draft's ETag. When given, a draft that has changed since is refused with 412.
+            note: Why it was pinned, at most 2,000 characters.
+
+        Raises:
+            ConflictError: HTTP 409.
+            NotFoundError: HTTP 404.
+            PreconditionFailedError: HTTP 412.
+            UnprocessableContentError: HTTP 422.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return self._core.request(
+            _operations.PIN_DRAFT_VERSION,
+            {"agent_id": agent_id, "name": name, "idempotency_key": idempotency_key, "if_match": if_match, "note": note},
+            PinDraftVersionResult,
+        )
+
+    def publish(
+        self,
+        *,
+        agent_id: str,
+        version: str,
+        if_match: str,
+        name: str | None = None,
+        note: str | None = None,
+    ) -> AgentVersion:
+        """Publishes a version: production becomes a copy of it.
+
+        `version` is a version name, or `draft`. Publishing the draft first keeps a copy of it as a new
+        version named `name`, then publishes that, so production always matches a named version. The
+        version published is kept as it is; nothing is moved or deleted, and deleting it later does not
+        change production. Send production's current ETag
+        (from `GET /v3/agents/{agentId}/versions/production`) as `If-Match`, so two publishes cannot
+        overwrite each other; a stale ETag is refused with 412. Production before the publish is kept as
+        a production history entry (ListProductionHistoryEntries), stamped with who replaced it and
+        when; the new production carries `publishedAt` and `publishedBy`. Rolling back is publishing an
+        earlier version.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/publish`.
+
+        Args:
+            agent_id: The agent whose version is published.
+            version: The version to publish: a version name, or `draft`.
+            if_match: Production's current ETag. A stale value is refused with 412; a missing one with 428. For
+                an agent's first publish, when it has no production yet, send `*`: that publish creates
+                production only where none exists, so two first publishes cannot both succeed. With
+                production present, `*` publishes without comparing.
+            name: When publishing `draft`: the name of the new version the draft is kept as. Required then,
+                and refused with 400 `VALIDATION_FAILED` for any other version. A name already used by
+                this agent is refused with 409 `ALREADY_EXISTS`.
+            note: Why it was published, recorded with the production change, at most 2,000 characters.
+
+        Raises:
+            ConflictError: HTTP 409.
+            NotFoundError: HTTP 404.
+            PreconditionFailedError: HTTP 412.
+            PreconditionRequiredError: HTTP 428.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return self._core.request(
+            _operations.PUBLISH_AGENT_VERSION,
+            {"agent_id": agent_id, "version": version, "if_match": if_match, "name": name, "note": note},
+            AgentVersion,
+        )
+
+    def reset_draft(self, agent_id: str, *, if_match: str, from_: str) -> AgentVersion:
+        """Resets the draft to a copy of another version; `If-Match` is required.
+
+        The draft's configuration becomes the configuration of `from`, which is a version name or
+        `production`. Nothing else changes: the version copied from is kept, and production is
+        untouched. Returns the draft and its new ETag.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/draft/reset`.
+
+        Args:
+            agent_id: The agent whose draft is reset.
+            if_match: The draft's current ETag. A stale value is refused with 412; a missing one with 428.
+            from_: The version to copy: a version name, or `production`.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            PreconditionFailedError: HTTP 412.
+            PreconditionRequiredError: HTTP 428.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return self._core.request(
+            _operations.RESET_DRAFT_VERSION,
+            {"agent_id": agent_id, "if_match": if_match, "from_": from_},
+            AgentVersion,
+        )
+
+    def update_draft(
+        self,
+        agent_id: str,
+        *,
+        if_match: str,
+        identity: str | None = None,
+        instructions: str | None = None,
+        model: str | None = None,
+        knowledge_bases: Sequence[KnowledgeBaseBinding] | None = None,
+        attachments: AttachmentSettings | None = None,
+        content_safety: ContentSafety | None = None,
+        denied_documents: bool | None = None,
+        clear: Sequence[Literal["identity"] | ClearableDraftField] | None = None,
+    ) -> AgentVersion:
+        """Edits the draft with a partial update of its configuration; `If-Match` is required.
+
+        Members that are absent stay unchanged, nested objects are merged and lists are replaced whole.
+        To return a member to its default, name it in `clear`; naming a member that is not clearable, or
+        one the same request also sets, is refused with 400 `VALIDATION_FAILED`. Returns the whole draft
+        and its new ETag.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `PATCH /v3/agents/{agentId}/versions/draft`.
+
+        Args:
+            agent_id: The agent whose draft is edited.
+            if_match: The draft's current ETag, from a Get or an earlier update. A stale value is refused with
+                412; a missing one with 428.
+            identity: The agent's identity statement, at most 4,000 characters.
+            instructions: The agent's instructions, at most 100,000 characters.
+            model: The model the agent answers with, from the agent models list.
+            knowledge_bases: The knowledge bases the agent searches. Replaces the whole list.
+            attachments: Whether people may attach files in chat, and how many.
+            content_safety: The content safety setting applied to uploads and answers.
+            denied_documents: When true, the answer stream tells the caller which documents were withheld from them.
+                Defaults to false.
+            clear: Draft members to return to their default.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            PreconditionFailedError: HTTP 412.
+            PreconditionRequiredError: HTTP 428.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return self._core.request(
+            _operations.UPDATE_DRAFT_VERSION,
+            {"agent_id": agent_id, "if_match": if_match, "identity": identity, "instructions": instructions, "model": model, "knowledge_bases": knowledge_bases, "attachments": attachments, "content_safety": content_safety, "denied_documents": denied_documents, "clear": clear},
+            AgentVersion,
+        )
+
+
+class CallersResource:
+    """`callers`: get."""
+
+    def __init__(self, core: SyncClientCore) -> None:
+        self._core = core
+
+    def get(self) -> Caller:
+        """Describes the caller: who the credential belongs to, what kind of credential it is, its scopes
+        and its organisation.
+
+        Any valid credential may call it, with no particular scope, so an integration can check its
+        credential before doing anything else. It only describes the credential that made the request;
+        it never reads another person's or client's record.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/me`.
+
+        Raises:
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return self._core.request(_operations.GET_CALLER, {}, Caller)
+
+
+class ConversationsResource:
+    """`conversations`: create, send, watch."""
+
+    def __init__(self, core: SyncClientCore) -> None:
+        self._core = core
+
+    def create(
+        self,
+        *,
+        agent_id: str,
+        version: str,
+        idempotency_key: str | None = None,
+        title: str | None = None,
+    ) -> Conversation:
+        """Starts a conversation with one version of an agent.
+
+        Send messages to it with `SendMessage`, and watch it with `WatchConversation`. The conversation
+        belongs to the caller that created it: the person, or the API client's own credential.
+
+        `version` names the agent version that answers. Today only `draft` can be used: `production`
+        and named versions arrive with agent versions, and asking for one before then is refused with
+        400 `VALIDATION_FAILED`, naming the versions that can be used.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/conversations`.
+
+        Args:
+            agent_id: The agent to talk to.
+            version: The version of the agent that answers. Today only `draft`.
+            idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
+                supply one.
+            title: A title for the conversation. Absent means the app titles it from the first message.
+
+        Raises:
+            ConflictError: HTTP 409.
+            NotFoundError: HTTP 404.
+            UnprocessableContentError: HTTP 422.
+            ValidationError: HTTP 400.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return self._core.request(
+            _operations.CREATE_CONVERSATION,
+            {"agent_id": agent_id, "version": version, "idempotency_key": idempotency_key, "title": title},
+            Conversation,
         )
 
     def send(
@@ -96,11 +526,11 @@ class ConversationsResource:
         """Sends a message and streams the answer as server-sent events.
 
         The stream ends with exactly one `message.completed` or `message.failed`. If the connection
-        drops, the SDK re-attaches with `ResumeConversationStream` and `Last-Event-ID`, so no event is
+        drops, the SDK re-attaches with `WatchConversation` and `Last-Event-ID`, so no event is
         lost or repeated. Not retried automatically: a send that fails before the stream starts is
         reported to the caller.
 
-        Added in Caitlyn 5.115.0. `POST /v3/conversations/{conversationId}/send`.
+        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/conversations/{conversationId}/send`.
 
         Args:
             conversation_id: The conversation to send to.
@@ -127,15 +557,92 @@ class ConversationsResource:
             _operations.SEND_MESSAGE,
             {"conversation_id": conversation_id, "message": message, "context": context},
             _operations.SEND_MESSAGE_EVENTS,
-            Resume(_operations.RESUME_CONVERSATION_STREAM, {"conversation_id": conversation_id}, "last_event_id"),
+            Resume(_operations.WATCH_CONVERSATION, {"conversation_id": conversation_id}, "last_event_id"),
+        )
+
+    def watch(
+        self,
+        conversation_id: str,
+        *,
+        last_event_id: str | None = None,
+    ) -> EventStream[ConversationEvent, None]:
+        """Watches a conversation: the answer being written, if any, then every answer after it, until the
+        caller closes the stream. An answer whose stream ended moments before the watch opened may still
+        be delivered, from its `message.started` event; match answers on your own message ID.
+
+        With `Last-Event-ID`, it resumes from the event after that one, so a dropped connection loses
+        nothing; the SDKs use this to re-attach to `SendMessage`, and to reconnect a dropped watch. When
+        the answer that event belongs to has ended, or can no longer be replayed, the watch sends
+        `stream.reset` with a new cursor instead, then carries on. Each answer ends with
+        `message.completed` or `message.failed`, which end that answer but not the stream, so
+        `waitUntil`-style helpers watch for the event they need and then close.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/conversations/{conversationId}/stream`.
+
+        Args:
+            conversation_id: The conversation whose answer to re-attach to.
+            last_event_id: The `id` of the last event received. Absent means from the start of the answer.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+
+        Returns:
+            The event stream: `with` it, iterate it, then `final_message()`. Unknown event types are skipped; a dropped connection is resumed with Last-Event-ID.
+        """
+        return self._core.stream(
+            _operations.WATCH_CONVERSATION,
+            {"conversation_id": conversation_id, "last_event_id": last_event_id},
+            _operations.WATCH_CONVERSATION_EVENTS,
+            Resume(_operations.WATCH_CONVERSATION, {"conversation_id": conversation_id}, "last_event_id"),
         )
 
 
 class DocumentsResource:
-    """`documents`: create, list."""
+    """`documents`: batch_delete, create, delete, get, list."""
 
     def __init__(self, core: SyncClientCore) -> None:
         self._core = core
+
+    def batch_delete(self, *, knowledge_base_id: str, document_ids: Sequence[str]) -> BatchDeleteDocumentsResult:
+        """Deletes up to 100 documents in one call, with a result for each.
+
+        Each document is deleted as DeleteDocument deletes one. The call returns 200 even when every
+        item fails: `results` has one entry per identifier, always in request order, each either
+        `accepted` (the document is now `deleting`, or already was) or `failed` with a code: `NOT_FOUND`
+        for a document that is gone or that the caller may not see, and `CONFLICT` for a document still
+        being processed (`pending` or `processing`), which cannot be deleted until it is `indexed`,
+        `partially_indexed` or `failed`. One failed item never stops the others. More than 100 identifiers, none, or the same identifier twice is refused with 400
+        `VALIDATION_FAILED` for the whole call. Safe to repeat: a repeat gives the same results, apart
+        from `NOT_FOUND` for documents that finished deleting in between.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents:batch-delete`.
+
+        Args:
+            knowledge_base_id: The knowledge base the documents are in.
+            document_ids: The documents to delete: 1 to 100 identifiers, each at most once.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return self._core.request(
+            _operations.BATCH_DELETE_DOCUMENTS,
+            {"knowledge_base_id": knowledge_base_id, "document_ids": document_ids},
+            BatchDeleteDocumentsResult,
+        )
 
     def create(
         self,
@@ -149,19 +656,24 @@ class DocumentsResource:
         """Creates a document from an upload; ingestion continues after the response.
 
         Returns 202 with the document in its initial state and the Operation that tracks ingestion, and
-        `Location` names the Operation. Needs the files permission, read access to the knowledge base and
+        `Location` names the document: read it with GetDocument, or wait for it with the SDKs'
+        `waitUntilIndexed`. Needs the files permission, read access to the knowledge base and
         access to the folder; it does not need update access to the knowledge base, which is for the
         knowledge base's own configuration.
 
-        Added in Caitlyn 5.115.0. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents`.
+        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents`.
 
         Args:
             knowledge_base_id: The knowledge base to add the document to.
-            upload_id: The upload holding the document's bytes. Each upload can be used once.
+            upload_id: The upload holding the document's bytes. Each upload can be used once. Refused with 400
+                `VALIDATION_FAILED` when the bytes are not the file type the document's name says.
             folder: The folder to put the document in.
             idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
                 supply one.
-            name: The document's name. Absent means the uploaded file's name.
+            name: The document's name. Absent means the uploaded file's name. A name without an extension is
+                given the one the upload's content type maps to, because ingestion reads the file type
+                from it. Refused with 400 `VALIDATION_FAILED` when the type maps to no extension, or when
+                the extension is one a knowledge base cannot ingest.
 
         Raises:
             ConflictError: HTTP 409.
@@ -181,6 +693,121 @@ class DocumentsResource:
             CreateDocumentResult,
         )
 
+    def delete(self, *, knowledge_base_id: str, document_id: str) -> DeleteDocumentResult:
+        """Deletes a document; removing it from search continues after the response.
+
+        Returns 202 with the document in `deleting`; wait for it to be gone with the SDKs'
+        `waitUntilDeleted`. Repeating the call while the document is still `deleting` returns 202 again;
+        once it is gone, 404, as for any record that does not exist.
+
+        A document still being processed (`pending` or `processing`) cannot be deleted yet: the call is
+        refused with 409 `CONFLICT`. Wait until it is `indexed`, `partially_indexed` or `failed`, for
+        example with the SDKs' `waitUntilIndexed`, then delete it.
+
+        Needs the files delete permission, read access to the knowledge base and access to the
+        document's folder.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}`.
+
+        Args:
+            knowledge_base_id: The knowledge base the document is in.
+            document_id: The document to delete.
+
+        Raises:
+            ConflictError: HTTP 409.
+            NotFoundError: HTTP 404.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return self._core.request(
+            _operations.DELETE_DOCUMENT,
+            {"knowledge_base_id": knowledge_base_id, "document_id": document_id},
+            DeleteDocumentResult,
+        )
+
+    def get(self, *, knowledge_base_id: str, document_id: str) -> GetDocumentResult:
+        """Gets one document in a knowledge base, with its status.
+
+        `status` says where the document is in its lifecycle; `indexed`, `partially_indexed` and `failed`
+        are final. A document in a folder the caller may not see is 404, as one that does not exist is.
+        The SDKs' `waitUntilIndexed` waiter calls this operation until the document is searchable, and
+        `waitUntilDeleted` until it is gone.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}`.
+
+        Args:
+            knowledge_base_id: The knowledge base the document is in.
+            document_id: The document to get.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return self._core.request(
+            _operations.GET_DOCUMENT,
+            {"knowledge_base_id": knowledge_base_id, "document_id": document_id},
+            GetDocumentResult,
+        )
+
+    def wait_until_deleted(
+        self,
+        *,
+        knowledge_base_id: str,
+        document_id: str,
+        max_wait: float = 900,
+        min_delay: float = 2,
+        max_delay: float = 30,
+    ) -> None:
+        """Waits until the document is gone, after DeleteDocument or BatchDeleteDocuments accepted it: the wait ends when reading it returns 404. Waits up to 15 minutes by default.
+
+        Calls `documents.get` at once, then again after 2 to 30 seconds, the pauses growing, until it
+        reaches a success state, which returns None, or a failure state, which raises `WaiterError`.
+        Gives up with `WaiterError` (reason `timeout`) after `max_wait` seconds, by default 15 minutes.
+        """
+        wait_sync(
+            "Deleted",
+            lambda: self.get(knowledge_base_id=knowledge_base_id, document_id=document_id),
+            _operations.accept_get_document_deleted,
+            min_delay=min_delay,
+            max_delay=max_delay,
+            max_wait=max_wait,
+        )
+
+    def wait_until_indexed(
+        self,
+        *,
+        knowledge_base_id: str,
+        document_id: str,
+        max_wait: float = 3600,
+        min_delay: float = 2,
+        max_delay: float = 30,
+    ) -> GetDocumentResult:
+        """Waits until the document is searchable: `indexed`, or `partially_indexed` when some enrichments did not complete. Fails when it is `failed`, being deleted, or gone. Waits up to 60 minutes by default.
+
+        Calls `documents.get` at once, then again after 2 to 30 seconds, the pauses growing, until it
+        reaches a success state, which returns the output, or a failure state, which raises `WaiterError`.
+        Gives up with `WaiterError` (reason `timeout`) after `max_wait` seconds, by default 60 minutes.
+        """
+        return wait_sync(
+            "Indexed",
+            lambda: self.get(knowledge_base_id=knowledge_base_id, document_id=document_id),
+            _operations.accept_get_document_indexed,
+            min_delay=min_delay,
+            max_delay=max_delay,
+            max_wait=max_wait,
+        )
+
     def list(
         self,
         *,
@@ -195,11 +822,10 @@ class DocumentsResource:
         """Lists the documents in a knowledge base, one page at a time.
 
         Documents are returned in a stable order that does not change between pages. Filters combine
-        with AND. Unlike v2, an unknown filter is refused with 400 `UNKNOWN_FILTER` instead of being
-        ignored, and the list can be sorted by `name`, `updatedAt` (when the document last changed) and
-        `byteSize` on the server; v2 sorts on the client only.
+        with AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. The list can be sorted by
+        `name`, `updatedAt` (when the document last changed) and `byteSize`.
 
-        Added in Caitlyn 5.115.0. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents`.
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents`.
 
         Args:
             knowledge_base_id: The knowledge base to list.
@@ -252,7 +878,8 @@ class DocumentsResource:
         """Uploads a file, then calls `create`: Creates a document from an upload; ingestion continues after the response.
 
         Returns 202 with the document in its initial state and the Operation that tracks ingestion, and
-        `Location` names the Operation. Needs the files permission, read access to the knowledge base and
+        `Location` names the document: read it with GetDocument, or wait for it with the SDKs'
+        `waitUntilIndexed`. Needs the files permission, read access to the knowledge base and
         access to the folder; it does not need update access to the knowledge base, which is for the
         knowledge base's own configuration.
 
@@ -274,8 +901,68 @@ class DocumentsResource:
         )
 
 
+class EventsResource:
+    """`events`: subscribe."""
+
+    def __init__(self, core: SyncClientCore) -> None:
+        self._core = core
+
+    def subscribe(
+        self,
+        *,
+        types: Sequence[str] | None = None,
+        conversation_ids: Sequence[str] | None = None,
+        after: str | None = None,
+        last_event_id: str | None = None,
+    ) -> EventStream[WorkspaceEvent, None]:
+        """Streams the workspace's events the caller asks for, from a cursor or from now.
+
+        A stream listens to what it names and nothing else: give `type`, `conversationId`, or both.
+        Every event is about a subject (a conversation, for now), and the caller receives it only when
+        it may read that subject, decided per event as a read of the subject would be: the same
+        permission and, for a token, the same scope. An answer, a tool call or an input request needs
+        what `WatchConversation` needs; a token whose scopes leave out conversation transcripts receives
+        none of them.
+
+        Each event's `id` is a cursor. Send it back as `after` (or `Last-Event-ID` on a reconnect) to
+        carry on from it without missing or repeating an event; without either, the stream starts now.
+        A cursor the stream cannot carry on from is answered with `stream.reset` and a new cursor, not
+        an error. To wait for something your own call will cause, open the stream first, then make the
+        call.
+
+        Catching up after a cursor covers activity through the v3 API. A conversation event comes
+        with its content, in the same structures as the conversation's own stream.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/events/stream`.
+
+        Args:
+            types: The event types to receive.
+            conversation_ids: The conversations to receive events about.
+            after: Carry on after this event. Absent means from now.
+            last_event_id: The `id` of the last event received, sent by a reconnecting client in place of `after`.
+
+        Raises:
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+
+        Returns:
+            The event stream: `with` it, iterate it, then `final_message()`. Unknown event types are skipped; a dropped connection is resumed with Last-Event-ID.
+        """
+        return self._core.stream(
+            _operations.WATCH_WORKSPACE_EVENTS,
+            {"types": types, "conversation_ids": conversation_ids, "after": after, "last_event_id": last_event_id},
+            _operations.WATCH_WORKSPACE_EVENTS_EVENTS,
+            Resume(_operations.WATCH_WORKSPACE_EVENTS, {"types": types, "conversation_ids": conversation_ids, "after": after}, "last_event_id"),
+        )
+
+
 class UploadsResource:
-    """`uploads`: reserve."""
+    """`uploads`: reserve, get."""
 
     def __init__(self, core: SyncClientCore) -> None:
         self._core = core
@@ -296,7 +983,7 @@ class UploadsResource:
         before `expiresAt`; then pass the upload's `id` to the operation that uses it. The SDKs'
         `uploads.create(file)` does all of this.
 
-        Added in Caitlyn 5.115.0. `POST /v3/uploads`.
+        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/uploads`.
 
         Args:
             file_name: The file's name on the caller's machine.
@@ -324,6 +1011,29 @@ class UploadsResource:
             Upload,
         )
 
+    def get(self, *, upload_id: str) -> GetUploadResult:
+        """Gets an upload's status and when its upload URL expires.
+
+        Use it to check that the bytes arrived before passing the upload's `id` to the operation that
+        uses it. Only the person or client that reserved the upload can read it; anyone else gets 404.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/uploads/{uploadId}`.
+
+        Args:
+            upload_id: The upload to read.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return self._core.request(_operations.GET_UPLOAD, {"upload_id": upload_id}, GetUploadResult)
+
     def create(
         self,
         *,
@@ -350,20 +1060,137 @@ class UploadsResource:
         return reservation
 
 
-class VersionsResource:
-    """`versions`: get, update_draft."""
+class AsyncAgentsResource:
+    """`agents`: production_history, versions."""
 
-    def __init__(self, core: SyncClientCore) -> None:
+    production_history: AsyncAgentsProductionHistoryResource
+    versions: AsyncAgentsVersionsResource
+
+    def __init__(self, core: AsyncClientCore) -> None:
+        self._core = core
+        self.production_history = AsyncAgentsProductionHistoryResource(core)
+        self.versions = AsyncAgentsVersionsResource(core)
+
+
+class AsyncAgentsProductionHistoryResource:
+    """`agents.production_history`: get, list."""
+
+    def __init__(self, core: AsyncClientCore) -> None:
         self._core = core
 
-    def get(self, *, agent_id: str, version: str) -> AgentVersion:
+    async def get(self, *, agent_id: str, history_entry_id: str) -> ProductionHistoryEntry:
+        """Gets one production history entry, with the full configuration production had.
+
+        The entry is a copy: it reads the same whether or not the version it came from still exists.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/production-history-entries/{historyEntryId}`.
+
+        Args:
+            agent_id: The agent the entry belongs to.
+            history_entry_id: The entry to get.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return await self._core.request(
+            _operations.GET_PRODUCTION_HISTORY_ENTRY,
+            {"agent_id": agent_id, "history_entry_id": history_entry_id},
+            ProductionHistoryEntry,
+        )
+
+    def list(
+        self,
+        *,
+        agent_id: str,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> AsyncPaginator[ListProductionHistoryEntriesPage, ProductionHistorySummary]:
+        """Lists an agent's production history, newest first: what production was before each publish.
+
+        Each entry says which version production came from, who published it and when, and who replaced
+        it and when. Read an entry's full configuration with GetProductionHistoryEntry. Entries are never
+        edited or deleted, and production at any point in time is the entry whose published and
+        unpublished times span it (or current production, if none does).
+
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/production-history-entries`.
+
+        Args:
+            agent_id: The agent whose production history to list.
+            limit: The most entries to return, from 1 to 100. Defaults to 20.
+            cursor: The `nextCursor` from the previous page. Absent for the first page.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+
+        Returns:
+            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+        """
+        params: dict[str, object] = {"agent_id": agent_id, "limit": limit}
+
+        async def fetch(token: str | None) -> ListProductionHistoryEntriesPage:
+            return await self._core.request(_operations.LIST_PRODUCTION_HISTORY_ENTRIES, {**params, "cursor": token}, ListProductionHistoryEntriesPage)
+
+        return AsyncPaginator(fetch, lambda page: page.items, lambda page: page.next_cursor, cursor)
+
+
+class AsyncAgentsVersionsResource:
+    """`agents.versions`: delete, get, list, pin, publish, reset_draft, update_draft."""
+
+    def __init__(self, core: AsyncClientCore) -> None:
+        self._core = core
+
+    async def delete(self, *, agent_id: str, version: str) -> DeleteAgentVersionResult:
+        """Deletes a named version.
+
+        Any named version can be deleted, including one that was published: production is its own
+        copy, so it does not change. `draft` and `production`, which every agent keeps, are refused with
+        400 `VERSION_NOT_DELETABLE`. Production history entries copied from the version are never
+        deleted or changed, and still read as they did. Like every change, it is audited.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/agents/{agentId}/versions/{version}`.
+
+        Args:
+            agent_id: The agent whose version is deleted.
+            version: The version to delete: a version name.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return await self._core.request(
+            _operations.DELETE_AGENT_VERSION,
+            {"agent_id": agent_id, "version": version},
+            DeleteAgentVersionResult,
+        )
+
+    async def get(self, *, agent_id: str, version: str) -> AgentVersion:
         """Gets one version of an agent, with its full configuration and its ETag.
 
         `version` is `draft`, `production` or the name of a pinned or published version. Production is
         readable by everyone with access to the agent; the draft and pinned versions only by the people
         and groups on the agent's version access grant, and anyone else gets 404.
 
-        Added in Caitlyn 5.115.0. `GET /v3/agents/{agentId}/versions/{version}`.
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}`.
 
         Args:
             agent_id: The agent's identifier.
@@ -379,13 +1206,184 @@ class VersionsResource:
             ValidationError: HTTP 400.
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
         """
-        return self._core.request(
+        return await self._core.request(
             _operations.GET_AGENT_VERSION,
             {"agent_id": agent_id, "version": version},
             AgentVersion,
         )
 
-    def update_draft(
+    def list(
+        self,
+        *,
+        agent_id: str,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> AsyncPaginator[ListAgentVersionsPage, AgentVersionSummary]:
+        """Lists an agent's named versions in the order they were made, oldest first.
+
+        Each entry says how the version was made and whether production currently matches it. The
+        draft and production are not entries: read them with `draft` and `production`. Needs the agent's
+        version access grant, as reading any version other than production does.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/versions`.
+
+        Args:
+            agent_id: The agent whose versions to list.
+            limit: The most versions to return, from 1 to 100. Defaults to 20.
+            cursor: The `nextCursor` from the previous page. Absent for the first page.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+
+        Returns:
+            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+        """
+        params: dict[str, object] = {"agent_id": agent_id, "limit": limit}
+
+        async def fetch(token: str | None) -> ListAgentVersionsPage:
+            return await self._core.request(_operations.LIST_AGENT_VERSIONS, {**params, "cursor": token}, ListAgentVersionsPage)
+
+        return AsyncPaginator(fetch, lambda page: page.items, lambda page: page.next_cursor, cursor)
+
+    async def pin(
+        self,
+        agent_id: str,
+        *,
+        name: str,
+        idempotency_key: str | None = None,
+        if_match: str | None = None,
+        note: str | None = None,
+    ) -> PinDraftVersionResult:
+        """Keeps a copy of the draft as a new named version.
+
+        The new version is pinned: it does not change production, and the draft carries on as before.
+        Send the draft's ETag as `If-Match` to pin only the draft you tested; without it, the draft is
+        pinned as it is now. Returns the new version, and `Location` names it.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/draft/pin`.
+
+        Args:
+            agent_id: The agent whose draft is pinned.
+            name: The new version's name, unique within the agent, and never `draft`, `production` or
+                `latest`. A name already used is refused with 409 `ALREADY_EXISTS`.
+            idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
+                supply one.
+            if_match: The draft's ETag. When given, a draft that has changed since is refused with 412.
+            note: Why it was pinned, at most 2,000 characters.
+
+        Raises:
+            ConflictError: HTTP 409.
+            NotFoundError: HTTP 404.
+            PreconditionFailedError: HTTP 412.
+            UnprocessableContentError: HTTP 422.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return await self._core.request(
+            _operations.PIN_DRAFT_VERSION,
+            {"agent_id": agent_id, "name": name, "idempotency_key": idempotency_key, "if_match": if_match, "note": note},
+            PinDraftVersionResult,
+        )
+
+    async def publish(
+        self,
+        *,
+        agent_id: str,
+        version: str,
+        if_match: str,
+        name: str | None = None,
+        note: str | None = None,
+    ) -> AgentVersion:
+        """Publishes a version: production becomes a copy of it.
+
+        `version` is a version name, or `draft`. Publishing the draft first keeps a copy of it as a new
+        version named `name`, then publishes that, so production always matches a named version. The
+        version published is kept as it is; nothing is moved or deleted, and deleting it later does not
+        change production. Send production's current ETag
+        (from `GET /v3/agents/{agentId}/versions/production`) as `If-Match`, so two publishes cannot
+        overwrite each other; a stale ETag is refused with 412. Production before the publish is kept as
+        a production history entry (ListProductionHistoryEntries), stamped with who replaced it and
+        when; the new production carries `publishedAt` and `publishedBy`. Rolling back is publishing an
+        earlier version.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/publish`.
+
+        Args:
+            agent_id: The agent whose version is published.
+            version: The version to publish: a version name, or `draft`.
+            if_match: Production's current ETag. A stale value is refused with 412; a missing one with 428. For
+                an agent's first publish, when it has no production yet, send `*`: that publish creates
+                production only where none exists, so two first publishes cannot both succeed. With
+                production present, `*` publishes without comparing.
+            name: When publishing `draft`: the name of the new version the draft is kept as. Required then,
+                and refused with 400 `VALIDATION_FAILED` for any other version. A name already used by
+                this agent is refused with 409 `ALREADY_EXISTS`.
+            note: Why it was published, recorded with the production change, at most 2,000 characters.
+
+        Raises:
+            ConflictError: HTTP 409.
+            NotFoundError: HTTP 404.
+            PreconditionFailedError: HTTP 412.
+            PreconditionRequiredError: HTTP 428.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return await self._core.request(
+            _operations.PUBLISH_AGENT_VERSION,
+            {"agent_id": agent_id, "version": version, "if_match": if_match, "name": name, "note": note},
+            AgentVersion,
+        )
+
+    async def reset_draft(self, agent_id: str, *, if_match: str, from_: str) -> AgentVersion:
+        """Resets the draft to a copy of another version; `If-Match` is required.
+
+        The draft's configuration becomes the configuration of `from`, which is a version name or
+        `production`. Nothing else changes: the version copied from is kept, and production is
+        untouched. Returns the draft and its new ETag.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/draft/reset`.
+
+        Args:
+            agent_id: The agent whose draft is reset.
+            if_match: The draft's current ETag. A stale value is refused with 412; a missing one with 428.
+            from_: The version to copy: a version name, or `production`.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            PreconditionFailedError: HTTP 412.
+            PreconditionRequiredError: HTTP 428.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return await self._core.request(
+            _operations.RESET_DRAFT_VERSION,
+            {"agent_id": agent_id, "if_match": if_match, "from_": from_},
+            AgentVersion,
+        )
+
+    async def update_draft(
         self,
         agent_id: str,
         *,
@@ -406,7 +1404,7 @@ class VersionsResource:
         one the same request also sets, is refused with 400 `VALIDATION_FAILED`. Returns the whole draft
         and its new ETag.
 
-        Added in Caitlyn 5.115.0. `PATCH /v3/agents/{agentId}/versions/draft`.
+        Added in Caitlyn 5.115.0. Stability: beta. `PATCH /v3/agents/{agentId}/versions/draft`.
 
         Args:
             agent_id: The agent whose draft is edited.
@@ -434,38 +1432,30 @@ class VersionsResource:
             ValidationError: HTTP 400.
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
         """
-        return self._core.request(
+        return await self._core.request(
             _operations.UPDATE_DRAFT_VERSION,
             {"agent_id": agent_id, "if_match": if_match, "identity": identity, "instructions": instructions, "model": model, "knowledge_bases": knowledge_bases, "attachments": attachments, "content_safety": content_safety, "denied_documents": denied_documents, "clear": clear},
             AgentVersion,
         )
 
 
-class AsyncConversationsResource:
-    """`conversations`: resume, send."""
+class AsyncCallersResource:
+    """`callers`: get."""
 
     def __init__(self, core: AsyncClientCore) -> None:
         self._core = core
 
-    def resume(
-        self,
-        conversation_id: str,
-        *,
-        last_event_id: str | None = None,
-    ) -> AsyncEventStream[ConversationEvent, Message]:
-        """Re-attaches to the answer that is being written, from the event after `Last-Event-ID`.
+    async def get(self) -> Caller:
+        """Describes the caller: who the credential belongs to, what kind of credential it is, its scopes
+        and its organisation.
 
-        Used by the SDKs after a dropped connection; callers rarely need it directly. When no answer is
-        being written, the stream ends at once.
+        Any valid credential may call it, with no particular scope, so an integration can check its
+        credential before doing anything else. It only describes the credential that made the request;
+        it never reads another person's or client's record.
 
-        Added in Caitlyn 5.115.0. `GET /v3/conversations/{conversationId}/stream`.
-
-        Args:
-            conversation_id: The conversation whose answer to re-attach to.
-            last_event_id: The `id` of the last event received. Absent means from the start of the answer.
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/me`.
 
         Raises:
-            NotFoundError: HTTP 404.
             InternalError: HTTP 500.
             PermissionDeniedError: HTTP 403.
             ServiceUnavailableError: HTTP 503.
@@ -473,14 +1463,58 @@ class AsyncConversationsResource:
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
-
-        Returns:
-            The event stream: `with` it, iterate it, then `final_message()`. Unknown event types are skipped; a dropped connection is resumed with Last-Event-ID.
         """
-        return self._core.stream(
-            _operations.RESUME_CONVERSATION_STREAM,
-            {"conversation_id": conversation_id, "last_event_id": last_event_id},
-            _operations.RESUME_CONVERSATION_STREAM_EVENTS,
+        return await self._core.request(_operations.GET_CALLER, {}, Caller)
+
+
+class AsyncConversationsResource:
+    """`conversations`: create, send, watch."""
+
+    def __init__(self, core: AsyncClientCore) -> None:
+        self._core = core
+
+    async def create(
+        self,
+        *,
+        agent_id: str,
+        version: str,
+        idempotency_key: str | None = None,
+        title: str | None = None,
+    ) -> Conversation:
+        """Starts a conversation with one version of an agent.
+
+        Send messages to it with `SendMessage`, and watch it with `WatchConversation`. The conversation
+        belongs to the caller that created it: the person, or the API client's own credential.
+
+        `version` names the agent version that answers. Today only `draft` can be used: `production`
+        and named versions arrive with agent versions, and asking for one before then is refused with
+        400 `VALIDATION_FAILED`, naming the versions that can be used.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/conversations`.
+
+        Args:
+            agent_id: The agent to talk to.
+            version: The version of the agent that answers. Today only `draft`.
+            idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
+                supply one.
+            title: A title for the conversation. Absent means the app titles it from the first message.
+
+        Raises:
+            ConflictError: HTTP 409.
+            NotFoundError: HTTP 404.
+            UnprocessableContentError: HTTP 422.
+            ValidationError: HTTP 400.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return await self._core.request(
+            _operations.CREATE_CONVERSATION,
+            {"agent_id": agent_id, "version": version, "idempotency_key": idempotency_key, "title": title},
+            Conversation,
         )
 
     def send(
@@ -493,11 +1527,11 @@ class AsyncConversationsResource:
         """Sends a message and streams the answer as server-sent events.
 
         The stream ends with exactly one `message.completed` or `message.failed`. If the connection
-        drops, the SDK re-attaches with `ResumeConversationStream` and `Last-Event-ID`, so no event is
+        drops, the SDK re-attaches with `WatchConversation` and `Last-Event-ID`, so no event is
         lost or repeated. Not retried automatically: a send that fails before the stream starts is
         reported to the caller.
 
-        Added in Caitlyn 5.115.0. `POST /v3/conversations/{conversationId}/send`.
+        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/conversations/{conversationId}/send`.
 
         Args:
             conversation_id: The conversation to send to.
@@ -524,15 +1558,97 @@ class AsyncConversationsResource:
             _operations.SEND_MESSAGE,
             {"conversation_id": conversation_id, "message": message, "context": context},
             _operations.SEND_MESSAGE_EVENTS,
-            Resume(_operations.RESUME_CONVERSATION_STREAM, {"conversation_id": conversation_id}, "last_event_id"),
+            Resume(_operations.WATCH_CONVERSATION, {"conversation_id": conversation_id}, "last_event_id"),
+        )
+
+    def watch(
+        self,
+        conversation_id: str,
+        *,
+        last_event_id: str | None = None,
+    ) -> AsyncEventStream[ConversationEvent, None]:
+        """Watches a conversation: the answer being written, if any, then every answer after it, until the
+        caller closes the stream. An answer whose stream ended moments before the watch opened may still
+        be delivered, from its `message.started` event; match answers on your own message ID.
+
+        With `Last-Event-ID`, it resumes from the event after that one, so a dropped connection loses
+        nothing; the SDKs use this to re-attach to `SendMessage`, and to reconnect a dropped watch. When
+        the answer that event belongs to has ended, or can no longer be replayed, the watch sends
+        `stream.reset` with a new cursor instead, then carries on. Each answer ends with
+        `message.completed` or `message.failed`, which end that answer but not the stream, so
+        `waitUntil`-style helpers watch for the event they need and then close.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/conversations/{conversationId}/stream`.
+
+        Args:
+            conversation_id: The conversation whose answer to re-attach to.
+            last_event_id: The `id` of the last event received. Absent means from the start of the answer.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+
+        Returns:
+            The event stream: `with` it, iterate it, then `final_message()`. Unknown event types are skipped; a dropped connection is resumed with Last-Event-ID.
+        """
+        return self._core.stream(
+            _operations.WATCH_CONVERSATION,
+            {"conversation_id": conversation_id, "last_event_id": last_event_id},
+            _operations.WATCH_CONVERSATION_EVENTS,
+            Resume(_operations.WATCH_CONVERSATION, {"conversation_id": conversation_id}, "last_event_id"),
         )
 
 
 class AsyncDocumentsResource:
-    """`documents`: create, list."""
+    """`documents`: batch_delete, create, delete, get, list."""
 
     def __init__(self, core: AsyncClientCore) -> None:
         self._core = core
+
+    async def batch_delete(
+        self,
+        *,
+        knowledge_base_id: str,
+        document_ids: Sequence[str],
+    ) -> BatchDeleteDocumentsResult:
+        """Deletes up to 100 documents in one call, with a result for each.
+
+        Each document is deleted as DeleteDocument deletes one. The call returns 200 even when every
+        item fails: `results` has one entry per identifier, always in request order, each either
+        `accepted` (the document is now `deleting`, or already was) or `failed` with a code: `NOT_FOUND`
+        for a document that is gone or that the caller may not see, and `CONFLICT` for a document still
+        being processed (`pending` or `processing`), which cannot be deleted until it is `indexed`,
+        `partially_indexed` or `failed`. One failed item never stops the others. More than 100 identifiers, none, or the same identifier twice is refused with 400
+        `VALIDATION_FAILED` for the whole call. Safe to repeat: a repeat gives the same results, apart
+        from `NOT_FOUND` for documents that finished deleting in between.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents:batch-delete`.
+
+        Args:
+            knowledge_base_id: The knowledge base the documents are in.
+            document_ids: The documents to delete: 1 to 100 identifiers, each at most once.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return await self._core.request(
+            _operations.BATCH_DELETE_DOCUMENTS,
+            {"knowledge_base_id": knowledge_base_id, "document_ids": document_ids},
+            BatchDeleteDocumentsResult,
+        )
 
     async def create(
         self,
@@ -546,19 +1662,24 @@ class AsyncDocumentsResource:
         """Creates a document from an upload; ingestion continues after the response.
 
         Returns 202 with the document in its initial state and the Operation that tracks ingestion, and
-        `Location` names the Operation. Needs the files permission, read access to the knowledge base and
+        `Location` names the document: read it with GetDocument, or wait for it with the SDKs'
+        `waitUntilIndexed`. Needs the files permission, read access to the knowledge base and
         access to the folder; it does not need update access to the knowledge base, which is for the
         knowledge base's own configuration.
 
-        Added in Caitlyn 5.115.0. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents`.
+        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents`.
 
         Args:
             knowledge_base_id: The knowledge base to add the document to.
-            upload_id: The upload holding the document's bytes. Each upload can be used once.
+            upload_id: The upload holding the document's bytes. Each upload can be used once. Refused with 400
+                `VALIDATION_FAILED` when the bytes are not the file type the document's name says.
             folder: The folder to put the document in.
             idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
                 supply one.
-            name: The document's name. Absent means the uploaded file's name.
+            name: The document's name. Absent means the uploaded file's name. A name without an extension is
+                given the one the upload's content type maps to, because ingestion reads the file type
+                from it. Refused with 400 `VALIDATION_FAILED` when the type maps to no extension, or when
+                the extension is one a knowledge base cannot ingest.
 
         Raises:
             ConflictError: HTTP 409.
@@ -578,6 +1699,123 @@ class AsyncDocumentsResource:
             CreateDocumentResult,
         )
 
+    async def delete(self, *, knowledge_base_id: str, document_id: str) -> DeleteDocumentResult:
+        """Deletes a document; removing it from search continues after the response.
+
+        Returns 202 with the document in `deleting`; wait for it to be gone with the SDKs'
+        `waitUntilDeleted`. Repeating the call while the document is still `deleting` returns 202 again;
+        once it is gone, 404, as for any record that does not exist.
+
+        A document still being processed (`pending` or `processing`) cannot be deleted yet: the call is
+        refused with 409 `CONFLICT`. Wait until it is `indexed`, `partially_indexed` or `failed`, for
+        example with the SDKs' `waitUntilIndexed`, then delete it.
+
+        Needs the files delete permission, read access to the knowledge base and access to the
+        document's folder.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}`.
+
+        Args:
+            knowledge_base_id: The knowledge base the document is in.
+            document_id: The document to delete.
+
+        Raises:
+            ConflictError: HTTP 409.
+            NotFoundError: HTTP 404.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return await self._core.request(
+            _operations.DELETE_DOCUMENT,
+            {"knowledge_base_id": knowledge_base_id, "document_id": document_id},
+            DeleteDocumentResult,
+        )
+
+    async def get(self, *, knowledge_base_id: str, document_id: str) -> GetDocumentResult:
+        """Gets one document in a knowledge base, with its status.
+
+        `status` says where the document is in its lifecycle; `indexed`, `partially_indexed` and `failed`
+        are final. A document in a folder the caller may not see is 404, as one that does not exist is.
+        The SDKs' `waitUntilIndexed` waiter calls this operation until the document is searchable, and
+        `waitUntilDeleted` until it is gone.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}`.
+
+        Args:
+            knowledge_base_id: The knowledge base the document is in.
+            document_id: The document to get.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return await self._core.request(
+            _operations.GET_DOCUMENT,
+            {"knowledge_base_id": knowledge_base_id, "document_id": document_id},
+            GetDocumentResult,
+        )
+
+    async def wait_until_deleted(
+        self,
+        *,
+        knowledge_base_id: str,
+        document_id: str,
+        max_wait: float = 900,
+        min_delay: float = 2,
+        max_delay: float = 30,
+    ) -> None:
+        """Waits until the document is gone, after DeleteDocument or BatchDeleteDocuments accepted it: the wait ends when reading it returns 404. Waits up to 15 minutes by default.
+
+        Calls `documents.get` at once, then again after 2 to 30 seconds, the pauses growing, until it
+        reaches a success state, which returns None, or a failure state, which raises `WaiterError`.
+        Gives up with `WaiterError` (reason `timeout`) after `max_wait` seconds, by default 15 minutes.
+        Cancelling the task stops the wait.
+        """
+        await wait_async(
+            "Deleted",
+            lambda: self.get(knowledge_base_id=knowledge_base_id, document_id=document_id),
+            _operations.accept_get_document_deleted,
+            min_delay=min_delay,
+            max_delay=max_delay,
+            max_wait=max_wait,
+        )
+
+    async def wait_until_indexed(
+        self,
+        *,
+        knowledge_base_id: str,
+        document_id: str,
+        max_wait: float = 3600,
+        min_delay: float = 2,
+        max_delay: float = 30,
+    ) -> GetDocumentResult:
+        """Waits until the document is searchable: `indexed`, or `partially_indexed` when some enrichments did not complete. Fails when it is `failed`, being deleted, or gone. Waits up to 60 minutes by default.
+
+        Calls `documents.get` at once, then again after 2 to 30 seconds, the pauses growing, until it
+        reaches a success state, which returns the output, or a failure state, which raises `WaiterError`.
+        Gives up with `WaiterError` (reason `timeout`) after `max_wait` seconds, by default 60 minutes.
+        Cancelling the task stops the wait.
+        """
+        return await wait_async(
+            "Indexed",
+            lambda: self.get(knowledge_base_id=knowledge_base_id, document_id=document_id),
+            _operations.accept_get_document_indexed,
+            min_delay=min_delay,
+            max_delay=max_delay,
+            max_wait=max_wait,
+        )
+
     def list(
         self,
         *,
@@ -592,11 +1830,10 @@ class AsyncDocumentsResource:
         """Lists the documents in a knowledge base, one page at a time.
 
         Documents are returned in a stable order that does not change between pages. Filters combine
-        with AND. Unlike v2, an unknown filter is refused with 400 `UNKNOWN_FILTER` instead of being
-        ignored, and the list can be sorted by `name`, `updatedAt` (when the document last changed) and
-        `byteSize` on the server; v2 sorts on the client only.
+        with AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. The list can be sorted by
+        `name`, `updatedAt` (when the document last changed) and `byteSize`.
 
-        Added in Caitlyn 5.115.0. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents`.
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents`.
 
         Args:
             knowledge_base_id: The knowledge base to list.
@@ -649,7 +1886,8 @@ class AsyncDocumentsResource:
         """Uploads a file, then calls `create`: Creates a document from an upload; ingestion continues after the response.
 
         Returns 202 with the document in its initial state and the Operation that tracks ingestion, and
-        `Location` names the Operation. Needs the files permission, read access to the knowledge base and
+        `Location` names the document: read it with GetDocument, or wait for it with the SDKs'
+        `waitUntilIndexed`. Needs the files permission, read access to the knowledge base and
         access to the folder; it does not need update access to the knowledge base, which is for the
         knowledge base's own configuration.
 
@@ -671,8 +1909,68 @@ class AsyncDocumentsResource:
         )
 
 
+class AsyncEventsResource:
+    """`events`: subscribe."""
+
+    def __init__(self, core: AsyncClientCore) -> None:
+        self._core = core
+
+    def subscribe(
+        self,
+        *,
+        types: Sequence[str] | None = None,
+        conversation_ids: Sequence[str] | None = None,
+        after: str | None = None,
+        last_event_id: str | None = None,
+    ) -> AsyncEventStream[WorkspaceEvent, None]:
+        """Streams the workspace's events the caller asks for, from a cursor or from now.
+
+        A stream listens to what it names and nothing else: give `type`, `conversationId`, or both.
+        Every event is about a subject (a conversation, for now), and the caller receives it only when
+        it may read that subject, decided per event as a read of the subject would be: the same
+        permission and, for a token, the same scope. An answer, a tool call or an input request needs
+        what `WatchConversation` needs; a token whose scopes leave out conversation transcripts receives
+        none of them.
+
+        Each event's `id` is a cursor. Send it back as `after` (or `Last-Event-ID` on a reconnect) to
+        carry on from it without missing or repeating an event; without either, the stream starts now.
+        A cursor the stream cannot carry on from is answered with `stream.reset` and a new cursor, not
+        an error. To wait for something your own call will cause, open the stream first, then make the
+        call.
+
+        Catching up after a cursor covers activity through the v3 API. A conversation event comes
+        with its content, in the same structures as the conversation's own stream.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/events/stream`.
+
+        Args:
+            types: The event types to receive.
+            conversation_ids: The conversations to receive events about.
+            after: Carry on after this event. Absent means from now.
+            last_event_id: The `id` of the last event received, sent by a reconnecting client in place of `after`.
+
+        Raises:
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+
+        Returns:
+            The event stream: `with` it, iterate it, then `final_message()`. Unknown event types are skipped; a dropped connection is resumed with Last-Event-ID.
+        """
+        return self._core.stream(
+            _operations.WATCH_WORKSPACE_EVENTS,
+            {"types": types, "conversation_ids": conversation_ids, "after": after, "last_event_id": last_event_id},
+            _operations.WATCH_WORKSPACE_EVENTS_EVENTS,
+            Resume(_operations.WATCH_WORKSPACE_EVENTS, {"types": types, "conversation_ids": conversation_ids, "after": after}, "last_event_id"),
+        )
+
+
 class AsyncUploadsResource:
-    """`uploads`: reserve."""
+    """`uploads`: reserve, get."""
 
     def __init__(self, core: AsyncClientCore) -> None:
         self._core = core
@@ -693,7 +1991,7 @@ class AsyncUploadsResource:
         before `expiresAt`; then pass the upload's `id` to the operation that uses it. The SDKs'
         `uploads.create(file)` does all of this.
 
-        Added in Caitlyn 5.115.0. `POST /v3/uploads`.
+        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/uploads`.
 
         Args:
             file_name: The file's name on the caller's machine.
@@ -721,6 +2019,29 @@ class AsyncUploadsResource:
             Upload,
         )
 
+    async def get(self, *, upload_id: str) -> GetUploadResult:
+        """Gets an upload's status and when its upload URL expires.
+
+        Use it to check that the bytes arrived before passing the upload's `id` to the operation that
+        uses it. Only the person or client that reserved the upload can read it; anyone else gets 404.
+
+        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/uploads/{uploadId}`.
+
+        Args:
+            upload_id: The upload to read.
+
+        Raises:
+            NotFoundError: HTTP 404.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+        """
+        return await self._core.request(_operations.GET_UPLOAD, {"upload_id": upload_id}, GetUploadResult)
+
     async def create(
         self,
         *,
@@ -745,97 +2066,6 @@ class AsyncUploadsResource:
         )
         await self._core.put_presigned(reservation.upload_method, reservation.upload_url, reservation.required_headers, upload.data)
         return reservation
-
-
-class AsyncVersionsResource:
-    """`versions`: get, update_draft."""
-
-    def __init__(self, core: AsyncClientCore) -> None:
-        self._core = core
-
-    async def get(self, *, agent_id: str, version: str) -> AgentVersion:
-        """Gets one version of an agent, with its full configuration and its ETag.
-
-        `version` is `draft`, `production` or the name of a pinned or published version. Production is
-        readable by everyone with access to the agent; the draft and pinned versions only by the people
-        and groups on the agent's version access grant, and anyone else gets 404.
-
-        Added in Caitlyn 5.115.0. `GET /v3/agents/{agentId}/versions/{version}`.
-
-        Args:
-            agent_id: The agent's identifier.
-            version: `draft`, `production` or a version name.
-
-        Raises:
-            NotFoundError: HTTP 404.
-            InternalError: HTTP 500.
-            PermissionDeniedError: HTTP 403.
-            ServiceUnavailableError: HTTP 503.
-            TooManyRequestsError: HTTP 429.
-            UnauthenticatedError: HTTP 401.
-            ValidationError: HTTP 400.
-            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
-        """
-        return await self._core.request(
-            _operations.GET_AGENT_VERSION,
-            {"agent_id": agent_id, "version": version},
-            AgentVersion,
-        )
-
-    async def update_draft(
-        self,
-        agent_id: str,
-        *,
-        if_match: str,
-        identity: str | None = None,
-        instructions: str | None = None,
-        model: str | None = None,
-        knowledge_bases: Sequence[KnowledgeBaseBinding] | None = None,
-        attachments: AttachmentSettings | None = None,
-        content_safety: ContentSafety | None = None,
-        denied_documents: bool | None = None,
-        clear: Sequence[Literal["identity"] | ClearableDraftField] | None = None,
-    ) -> AgentVersion:
-        """Edits the draft with a partial update of its configuration; `If-Match` is required.
-
-        Members that are absent stay unchanged, nested objects are merged and lists are replaced whole.
-        To return a member to its default, name it in `clear`; naming a member that is not clearable, or
-        one the same request also sets, is refused with 400 `VALIDATION_FAILED`. Returns the whole draft
-        and its new ETag.
-
-        Added in Caitlyn 5.115.0. `PATCH /v3/agents/{agentId}/versions/draft`.
-
-        Args:
-            agent_id: The agent whose draft is edited.
-            if_match: The draft's current ETag, from a Get or an earlier update. A stale value is refused with
-                412; a missing one with 428.
-            identity: The agent's identity statement, at most 4,000 characters.
-            instructions: The agent's instructions, at most 100,000 characters.
-            model: The model the agent answers with, from the agent models list.
-            knowledge_bases: The knowledge bases the agent searches. Replaces the whole list.
-            attachments: Whether people may attach files in chat, and how many.
-            content_safety: The content safety setting applied to uploads and answers.
-            denied_documents: When true, the answer stream tells the caller which documents were withheld from them.
-                Defaults to false.
-            clear: Draft members to return to their default.
-
-        Raises:
-            NotFoundError: HTTP 404.
-            PreconditionFailedError: HTTP 412.
-            PreconditionRequiredError: HTTP 428.
-            InternalError: HTTP 500.
-            PermissionDeniedError: HTTP 403.
-            ServiceUnavailableError: HTTP 503.
-            TooManyRequestsError: HTTP 429.
-            UnauthenticatedError: HTTP 401.
-            ValidationError: HTTP 400.
-            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
-        """
-        return await self._core.request(
-            _operations.UPDATE_DRAFT_VERSION,
-            {"agent_id": agent_id, "if_match": if_match, "identity": identity, "instructions": instructions, "model": model, "knowledge_bases": knowledge_bases, "attachments": attachments, "content_safety": content_safety, "denied_documents": denied_documents, "clear": clear},
-            AgentVersion,
-        )
 
 
 class Caitlyn:
@@ -865,10 +2095,12 @@ class Caitlyn:
 
     auth: SyncAuthSession
     """The client's sign-in: the `OAuth` mode's `authorization_url`, `handle_callback` and `sign_out`, and the current token."""
+    agents: AgentsResource
+    callers: CallersResource
     conversations: ConversationsResource
     documents: DocumentsResource
+    events: EventsResource
     uploads: UploadsResource
-    versions: VersionsResource
 
     def __init__(
         self,
@@ -903,10 +2135,12 @@ class Caitlyn:
         )
         self._core = SyncClientCore(config, http_client)
         self.auth = self._core.auth
+        self.agents = AgentsResource(self._core)
+        self.callers = CallersResource(self._core)
         self.conversations = ConversationsResource(self._core)
         self.documents = DocumentsResource(self._core)
+        self.events = EventsResource(self._core)
         self.uploads = UploadsResource(self._core)
-        self.versions = VersionsResource(self._core)
 
     @property
     def server_api_version(self) -> str | None:
@@ -951,10 +2185,12 @@ class AsyncCaitlyn:
 
     auth: AsyncAuthSession
     """The client's sign-in: the `OAuth` mode's `authorization_url`, `handle_callback` and `sign_out`, and the current token."""
+    agents: AsyncAgentsResource
+    callers: AsyncCallersResource
     conversations: AsyncConversationsResource
     documents: AsyncDocumentsResource
+    events: AsyncEventsResource
     uploads: AsyncUploadsResource
-    versions: AsyncVersionsResource
 
     def __init__(
         self,
@@ -989,10 +2225,12 @@ class AsyncCaitlyn:
         )
         self._core = AsyncClientCore(config, http_client)
         self.auth = self._core.auth
+        self.agents = AsyncAgentsResource(self._core)
+        self.callers = AsyncCallersResource(self._core)
         self.conversations = AsyncConversationsResource(self._core)
         self.documents = AsyncDocumentsResource(self._core)
+        self.events = AsyncEventsResource(self._core)
         self.uploads = AsyncUploadsResource(self._core)
-        self.versions = AsyncVersionsResource(self._core)
 
     @property
     def server_api_version(self) -> str | None:

@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Final
 
 from caitlyn_core import EventDecoder, Member, OperationSpec
+from caitlyn_core._waiter import WaitState
 
 from caitlyn.errors import (
     ConflictError,
@@ -21,8 +22,49 @@ from caitlyn.errors import (
     UnprocessableContentError,
     ValidationError,
 )
-from caitlyn.events import CONVERSATION_EVENT_TYPES, ConversationEvent, MessageCompletedEvent, MessageFailedEvent
-from caitlyn.models import Message
+from caitlyn.events import (
+    CONVERSATION_EVENT_TYPES,
+    ConversationEvent,
+    MessageCompletedEvent,
+    MessageFailedEvent,
+    WORKSPACE_EVENT_TYPES,
+    WorkspaceEvent,
+)
+from caitlyn.models import GetDocumentResult, Message
+
+BATCH_DELETE_DOCUMENTS: Final = OperationSpec(
+    name="BatchDeleteDocuments",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/documents:batch-delete",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("document_ids", "documentIds", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+CREATE_CONVERSATION: Final = OperationSpec(
+    name="CreateConversation",
+    method="POST",
+    uri="/v3/conversations",
+    code=201,
+    members=(
+        Member("agent_id", "agentId", "body"),
+        Member("version", "version", "body"),
+        Member("idempotency_key", "Idempotency-Key", "header", idempotency_token=True),
+        Member("title", "title", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("location", "Location"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
 
 CREATE_DOCUMENT: Final = OperationSpec(
     name="CreateDocument",
@@ -40,7 +82,7 @@ CREATE_DOCUMENT: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
-    stability="ga",
+    stability="beta",
 )
 
 CREATE_UPLOAD: Final = OperationSpec(
@@ -59,7 +101,39 @@ CREATE_UPLOAD: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
-    stability="ga",
+    stability="beta",
+)
+
+DELETE_AGENT_VERSION: Final = OperationSpec(
+    name="DeleteAgentVersion",
+    method="DELETE",
+    uri="/v3/agents/{agentId}/versions/{version}",
+    code=204,
+    members=(
+        Member("agent_id", "agentId", "label"),
+        Member("version", "version", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+DELETE_DOCUMENT: Final = OperationSpec(
+    name="DeleteDocument",
+    method="DELETE",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}",
+    code=202,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("document_id", "documentId", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
 )
 
 GET_AGENT_VERSION: Final = OperationSpec(
@@ -75,7 +149,85 @@ GET_AGENT_VERSION: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
-    stability="ga",
+    stability="beta",
+)
+
+GET_CALLER: Final = OperationSpec(
+    name="GetCaller",
+    method="GET",
+    uri="/v3/me",
+    code=200,
+    members=(
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+GET_DOCUMENT: Final = OperationSpec(
+    name="GetDocument",
+    method="GET",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("document_id", "documentId", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+GET_PRODUCTION_HISTORY_ENTRY: Final = OperationSpec(
+    name="GetProductionHistoryEntry",
+    method="GET",
+    uri="/v3/agents/{agentId}/production-history-entries/{historyEntryId}",
+    code=200,
+    members=(
+        Member("agent_id", "agentId", "label"),
+        Member("history_entry_id", "historyEntryId", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+GET_UPLOAD: Final = OperationSpec(
+    name="GetUpload",
+    method="GET",
+    uri="/v3/uploads/{uploadId}",
+    code=200,
+    members=(
+        Member("upload_id", "uploadId", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+LIST_AGENT_VERSIONS: Final = OperationSpec(
+    name="ListAgentVersions",
+    method="GET",
+    uri="/v3/agents/{agentId}/versions",
+    code=200,
+    members=(
+        Member("agent_id", "agentId", "label"),
+        Member("limit", "limit", "query"),
+        Member("cursor", "cursor", "query"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
 )
 
 LIST_DOCUMENTS: Final = OperationSpec(
@@ -96,24 +248,79 @@ LIST_DOCUMENTS: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
-    stability="ga",
+    stability="beta",
 )
 
-RESUME_CONVERSATION_STREAM: Final = OperationSpec(
-    name="ResumeConversationStream",
+LIST_PRODUCTION_HISTORY_ENTRIES: Final = OperationSpec(
+    name="ListProductionHistoryEntries",
     method="GET",
-    uri="/v3/conversations/{conversationId}/stream",
+    uri="/v3/agents/{agentId}/production-history-entries",
     code=200,
     members=(
-        Member("conversation_id", "conversationId", "label"),
-        Member("last_event_id", "Last-Event-ID", "header"),
+        Member("agent_id", "agentId", "label"),
+        Member("limit", "limit", "query"),
+        Member("cursor", "cursor", "query"),
     ),
     response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
-    stability="ga",
-    streaming=True,
+    stability="beta",
+)
+
+PIN_DRAFT_VERSION: Final = OperationSpec(
+    name="PinDraftVersion",
+    method="POST",
+    uri="/v3/agents/{agentId}/versions/draft/pin",
+    code=201,
+    members=(
+        Member("agent_id", "agentId", "label"),
+        Member("name", "name", "body"),
+        Member("idempotency_key", "Idempotency-Key", "header", idempotency_token=True),
+        Member("if_match", "If-Match", "header"),
+        Member("note", "note", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"), ("location", "Location"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+PUBLISH_AGENT_VERSION: Final = OperationSpec(
+    name="PublishAgentVersion",
+    method="POST",
+    uri="/v3/agents/{agentId}/versions/{version}/publish",
+    code=200,
+    members=(
+        Member("agent_id", "agentId", "label"),
+        Member("version", "version", "label"),
+        Member("if_match", "If-Match", "header"),
+        Member("name", "name", "body"),
+        Member("note", "note", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=False,
+    since="5.115.0",
+    stability="beta",
+)
+
+RESET_DRAFT_VERSION: Final = OperationSpec(
+    name="ResetDraftVersion",
+    method="POST",
+    uri="/v3/agents/{agentId}/versions/draft/reset",
+    code=200,
+    members=(
+        Member("agent_id", "agentId", "label"),
+        Member("if_match", "If-Match", "header"),
+        Member("from_", "from", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=False,
+    since="5.115.0",
+    stability="beta",
 )
 
 SEND_MESSAGE: Final = OperationSpec(
@@ -130,7 +337,7 @@ SEND_MESSAGE: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=False,
     since="5.115.0",
-    stability="ga",
+    stability="beta",
     streaming=True,
 )
 
@@ -155,31 +362,121 @@ UPDATE_DRAFT_VERSION: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
-    stability="ga",
+    stability="beta",
 )
 
+WATCH_CONVERSATION: Final = OperationSpec(
+    name="WatchConversation",
+    method="GET",
+    uri="/v3/conversations/{conversationId}/stream",
+    code=200,
+    members=(
+        Member("conversation_id", "conversationId", "label"),
+        Member("last_event_id", "Last-Event-ID", "header"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    streaming=True,
+)
 
-def _resume_conversation_stream_final(event: ConversationEvent) -> Message | None:
-    return event.message if isinstance(event, MessageCompletedEvent) else None
-
-
-RESUME_CONVERSATION_STREAM_EVENTS: Final = EventDecoder[ConversationEvent, Message](CONVERSATION_EVENT_TYPES, _resume_conversation_stream_final, MessageFailedEvent)
+WATCH_WORKSPACE_EVENTS: Final = OperationSpec(
+    name="WatchWorkspaceEvents",
+    method="GET",
+    uri="/v3/events/stream",
+    code=200,
+    members=(
+        Member("types", "type", "query"),
+        Member("conversation_ids", "conversationId", "query"),
+        Member("after", "after", "query"),
+        Member("last_event_id", "Last-Event-ID", "header"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    streaming=True,
+)
 
 
 def _send_message_final(event: ConversationEvent) -> Message | None:
     return event.message if isinstance(event, MessageCompletedEvent) else None
 
 
-SEND_MESSAGE_EVENTS: Final = EventDecoder[ConversationEvent, Message](CONVERSATION_EVENT_TYPES, _send_message_final, MessageFailedEvent)
+SEND_MESSAGE_EVENTS: Final = EventDecoder[ConversationEvent, Message](CONVERSATION_EVENT_TYPES, _send_message_final, MessageFailedEvent, has_final=True)
 
+
+def _watch_conversation_final(event: ConversationEvent) -> None:
+    return None
+
+
+WATCH_CONVERSATION_EVENTS: Final = EventDecoder[ConversationEvent, None](CONVERSATION_EVENT_TYPES, _watch_conversation_final, MessageFailedEvent, has_final=False)
+
+
+def _watch_workspace_events_final(event: WorkspaceEvent) -> None:
+    return None
+
+
+WATCH_WORKSPACE_EVENTS_EVENTS: Final = EventDecoder[WorkspaceEvent, None](WORKSPACE_EVENT_TYPES, _watch_workspace_events_final, None, has_final=False)
+
+
+def accept_get_document_deleted(output: GetDocumentResult | None, error: Exception | None) -> WaitState | None:
+    """The `Deleted` waiter's acceptors on GetDocument, in order."""
+    if isinstance(error, NotFoundError):
+        return "success"
+    return None
+
+
+def accept_get_document_indexed(output: GetDocumentResult | None, error: Exception | None) -> WaitState | None:
+    """The `Indexed` waiter's acceptors on GetDocument, in order."""
+    def _p0(out: GetDocumentResult) -> bool:
+        v1 = out.status
+        return str(v1) == "indexed"
+    if output is not None and _p0(output):
+        return "success"
+    def _p1(out: GetDocumentResult) -> bool:
+        v1 = out.status
+        return str(v1) == "partially_indexed"
+    if output is not None and _p1(output):
+        return "success"
+    def _p2(out: GetDocumentResult) -> bool:
+        v1 = out.status
+        return str(v1) == "failed"
+    if output is not None and _p2(output):
+        return "failure"
+    def _p3(out: GetDocumentResult) -> bool:
+        v1 = out.status
+        return str(v1) == "deleting"
+    if output is not None and _p3(output):
+        return "failure"
+    if isinstance(error, NotFoundError):
+        return "failure"
+    return None
 
 METHODS: Final[dict[str, tuple[str, str]]] = {
+    "BatchDeleteDocuments": ("documents", "batch_delete"),
+    "CreateConversation": ("conversations", "create"),
     "CreateDocument": ("documents", "create"),
     "CreateUpload": ("uploads", "reserve"),
-    "GetAgentVersion": ("versions", "get"),
+    "DeleteAgentVersion": ("agents.versions", "delete"),
+    "DeleteDocument": ("documents", "delete"),
+    "GetAgentVersion": ("agents.versions", "get"),
+    "GetCaller": ("callers", "get"),
+    "GetDocument": ("documents", "get"),
+    "GetProductionHistoryEntry": ("agents.production_history", "get"),
+    "GetUpload": ("uploads", "get"),
+    "ListAgentVersions": ("agents.versions", "list"),
     "ListDocuments": ("documents", "list"),
-    "ResumeConversationStream": ("conversations", "resume"),
+    "ListProductionHistoryEntries": ("agents.production_history", "list"),
+    "PinDraftVersion": ("agents.versions", "pin"),
+    "PublishAgentVersion": ("agents.versions", "publish"),
+    "ResetDraftVersion": ("agents.versions", "reset_draft"),
     "SendMessage": ("conversations", "send"),
-    "UpdateDraftVersion": ("versions", "update_draft"),
+    "UpdateDraftVersion": ("agents.versions", "update_draft"),
+    "WatchConversation": ("conversations", "watch"),
+    "WatchWorkspaceEvents": ("events", "subscribe"),
 }
 """Operation name to (client attribute, method name)."""

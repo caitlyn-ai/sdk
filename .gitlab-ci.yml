@@ -46,6 +46,7 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "pipeline" # triggered by an app release (regenerate)
     - if: $CI_PIPELINE_SOURCE == "schedule"
     - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_PIPELINE_SOURCE == "api" # a pipeline started through the API, such as examples:live (below)
     # A v* tag (made by the release job) runs release:version, and the tag-driven release:* placeholders once
     # RELEASES_ENABLED is "true". Nothing else: npm releases from the tag on the GitHub mirror.
     - if: $CI_COMMIT_TAG
@@ -202,6 +203,34 @@ conformance:
   rules: !reference [.mr-and-main, rules]
 
 # ---------------------------------------------------------------------------- the model
+
+# Runs every SDK's developer docs examples against a real workspace (make examples-live, CONTRIBUTING.md). Manual:
+# it needs a deployed server. The workspace and agent default to the review environment of the app's v3 server and
+# can be overridden per pipeline; the token is the masked variable CAITLYN_TOKEN_MR2062, never echoed (the runner
+# masks it in what the examples print). The results table is in the job log.
+examples:live:
+  extends: .toolchain
+  stage: test
+  needs: []
+  # One run at a time: every run changes the same agents' drafts and versions.
+  resource_group: examples-live
+  # Each language waits up to 15 to 21 minutes for a document to index, then deletes what it made; the project's
+  # one-hour default would stop the job part way, before the last languages' clean-up.
+  timeout: 2h
+  variables:
+    CAITLYN_WORKSPACE: caitlyn.mr-2062.labs.customd.com
+    CAITLYN_AGENT_ID: 988D468D
+    # Set for a pipeline when the workspace has them: a knowledge base the document checks may add to, an agent the
+    # publish check may publish, and CAITLYN_PUBLIC_ROLE_ONLY=1 while the workspace's role setup has not run.
+    CAITLYN_KNOWLEDGE_BASE_ID: ''
+    CAITLYN_PUBLISH_AGENT_ID: ''
+    CAITLYN_PUBLIC_ROLE_ONLY: ''
+  script:
+    - CAITLYN_TOKEN="$CAITLYN_TOKEN_MR2062" node scripts/examples-live.mjs
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "api" || $CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual
+      allow_failure: true
 
 model:snapshot-only:
   extends: .toolchain

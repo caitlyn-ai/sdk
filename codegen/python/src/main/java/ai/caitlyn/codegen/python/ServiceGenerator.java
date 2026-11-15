@@ -18,6 +18,7 @@ import software.amazon.smithy.model.knowledge.HttpBinding;
 import software.amazon.smithy.model.knowledge.HttpBindingIndex;
 import software.amazon.smithy.model.knowledge.PaginationInfo;
 import software.amazon.smithy.model.knowledge.TopDownIndex;
+import software.amazon.smithy.model.node.Node;
 import software.amazon.smithy.model.node.ObjectNode;
 import software.amazon.smithy.model.shapes.ListShape;
 import software.amazon.smithy.model.shapes.MemberShape;
@@ -100,6 +101,9 @@ final class ServiceGenerator {
                 if (o.kind == OperationInfo.Kind.STREAM) {
                     writeDecoder(w, o);
                 }
+            }
+            for (OperationInfo o : ops) {
+                writeAcceptors(w, o);
             }
             // Where each operation lives on the client: tools that call operations by name (the conformance
             // harness's example cases, later the CLI's `caitlyn api`) read this rather than guess.
@@ -220,8 +224,8 @@ final class ServiceGenerator {
         String types = Names.upperSnake(t.unionName) + "_TYPES";
         w.importFrom(eventsModule, types);
         t.errorEvent.ifPresent(e -> w.importFrom(eventsModule, e));
-        w.write("$L_EVENTS: Final = EventDecoder[$L, $L]($L, $L$L)\n", o.constant, t.unionName, t.finalType, types, fn,
-                t.errorEvent.map(e -> ", " + e).orElse(""));
+        w.write("$L_EVENTS: Final = EventDecoder[$L, $L]($L, $L, $L, has_final=$L)\n", o.constant, t.unionName, t.finalType, types, fn,
+                t.errorEvent.orElse("None"), t.finalMember.isPresent() ? "True" : "False");
     }
 
     // ------------------------------------------------------------------ _client.py
@@ -259,41 +263,69 @@ final class ServiceGenerator {
     }
 
     private void writeClient() {
+        // Every namespace and every namespace that holds one (agents.versions needs agents), each with its own
+        // operations, which may be none.
         Map<String, List<OperationInfo>> namespaces = new TreeMap<>();
         for (OperationInfo o : ops) {
-            namespaces.computeIfAbsent(o.namespace, k -> new ArrayList<>()).add(o);
+            String[] parts = o.namespace.split("\\.");
+            for (int i = 1; i <= parts.length; i++) {
+                namespaces.computeIfAbsent(String.join(".", java.util.Arrays.copyOf(parts, i)), k -> new ArrayList<>());
+            }
+            namespaces.get(o.namespace).add(o);
         }
+        java.util.Set<String> top = new java.util.TreeSet<>();
+        namespaces.keySet().stream().filter(ns -> !ns.contains(".")).forEach(top::add);
         Optional<Upload> upload = uploads();
         ctx.writerDelegator().useFileWriter(settings.file("_client"), module("_client"), w -> {
             w.write("$D\n", "The " + title + " clients: `Caitlyn` (synchronous) and `AsyncCaitlyn`.");
             w.importModule("httpx");
             for (boolean async : new boolean[] {false, true}) {
                 for (Map.Entry<String, List<OperationInfo>> ns : namespaces.entrySet()) {
-                    writeResource(w, ns.getKey(), ns.getValue(), async, upload);
+                    writeResource(w, ns.getKey(), ns.getValue(), children(namespaces.keySet(), ns.getKey()), async, upload);
                 }
             }
-            writeClientClass(w, namespaces.keySet(), false);
-            writeClientClass(w, namespaces.keySet(), true);
+            writeClientClass(w, top, false);
+            writeClientClass(w, top, true);
         });
     }
 
+    /** The class for a namespace: its segments in PascalCase, joined (agents.production_changes: AgentsProductionChangesResource). */
     private static String resourceClass(String namespace, boolean async) {
-        String pascal = java.util.Arrays.stream(namespace.split("_")).map(p -> p.isEmpty() ? p : Character.toUpperCase(p.charAt(0)) + p.substring(1)).collect(Collectors.joining());
+        String pascal = java.util.Arrays.stream(namespace.split("[._]")).map(p -> p.isEmpty() ? p : Character.toUpperCase(p.charAt(0)) + p.substring(1)).collect(Collectors.joining());
         return (async ? "Async" : "") + pascal + "Resource";
     }
 
-    private void writeResource(PythonWriter w, String namespace, List<OperationInfo> list, boolean async, Optional<Upload> upload) {
+    /** The namespaces directly inside one, by their last segment. */
+    private static List<String> children(java.util.Set<String> all, String namespace) {
+        return all.stream().filter(ns -> ns.startsWith(namespace + ".") && !ns.substring(namespace.length() + 1).contains(".")).sorted().toList();
+    }
+
+    private void writeResource(PythonWriter w, String namespace, List<OperationInfo> list, List<String> nested, boolean async, Optional<Upload> upload) {
         String core = async ? "AsyncClientCore" : "SyncClientCore";
         w.importFrom(CORE, core);
         w.importFrom(settings.packageName(), "_operations");
         w.write("class $L:", resourceClass(namespace, async));
         w.indent();
-        w.write("$D\n", "`" + namespace + "`: " + list.stream().map(o -> o.method).collect(Collectors.joining(", ")) + ".");
+        List<String> members = new ArrayList<>();
+        nested.forEach(n -> members.add(n.substring(namespace.length() + 1)));
+        list.forEach(o -> members.add(o.method));
+        w.write("$D\n", "`" + namespace + "`: " + String.join(", ", members) + ".");
+        for (String n : nested) {
+            w.write("$L: $L", n.substring(namespace.length() + 1), resourceClass(n, async));
+        }
+        if (!nested.isEmpty()) {
+            w.write("");
+        }
         w.write("def __init__(self, core: $L) -> None:", core);
-        w.indent().write("self._core = core").dedent();
+        w.indent().write("self._core = core");
+        for (String n : nested) {
+            w.write("self.$L = $L(core)", n.substring(namespace.length() + 1), resourceClass(n, async));
+        }
+        w.dedent();
         for (OperationInfo o : list) {
             w.write("");
             writeMethod(w, o, async);
+            writeWaiters(w, o, async);
         }
         if (upload.isPresent()) {
             if (upload.get().presigned.namespace.equals(namespace)) {
@@ -369,6 +401,193 @@ final class ServiceGenerator {
                 + " models elsewhere, raises that status's class (NotFoundError for 404).");
         doc.append("\n\nRaises:\n").append(String.join("\n", raises));
         return doc.toString();
+    }
+
+    // ------------------------------------------------------------------ waiters (smithy.waiters#waitable)
+
+    private static final ShapeId WAITABLE = ShapeId.from("smithy.waiters#waitable");
+
+    /** The operation's waiters, by name, in name order; empty without @waitable. */
+    private Map<String, ObjectNode> waitersOf(OperationInfo o) {
+        Map<String, ObjectNode> out = new TreeMap<>();
+        o.op.findTrait(WAITABLE).ifPresent(t -> {
+            if (o.kind != OperationInfo.Kind.UNARY) {
+                throw new CodegenException(o.op.getId() + ": waiters on list or stream operations are not supported yet");
+            }
+            t.toNode().expectObjectNode().getStringMap().forEach((k, v) -> out.put(k, v.expectObjectNode()));
+        });
+        return out;
+    }
+
+    private static String acceptorName(OperationInfo o, String waiter) {
+        return "accept_" + o.constant.toLowerCase(java.util.Locale.ROOT) + "_" + Names.snake(waiter);
+    }
+
+    /** One acceptor function per waiter in _operations.py: the state of the first acceptor that matches, else None. */
+    private void writeAcceptors(PythonWriter w, OperationInfo o) {
+        for (Map.Entry<String, ObjectNode> e : waitersOf(o).entrySet()) {
+            String result = typeOf(o.output, w);
+            w.importFrom(CORE + "._waiter", "WaitState");
+            w.write("");
+            w.write("");
+            w.write("def $L(output: $L | None, error: Exception | None) -> WaitState | None:", acceptorName(o, e.getKey()), result);
+            w.indent();
+            w.write("$D", "The `" + e.getKey() + "` waiter's acceptors on " + o.name + ", in order.");
+            int i = 0;
+            for (Node a : e.getValue().expectArrayMember("acceptors").getElements()) {
+                ObjectNode acceptor = a.expectObjectNode();
+                String state = acceptor.expectStringMember("state").getValue();
+                if (!List.of("success", "failure", "retry").contains(state)) {
+                    throw new CodegenException(o.op.getId() + ": unknown waiter state " + state);
+                }
+                ObjectNode matcher = acceptor.expectObjectMember("matcher");
+                String cond;
+                boolean onError;
+                if (matcher.getBooleanMember("success").isPresent()) {
+                    onError = !matcher.expectBooleanMember("success").getValue();
+                    cond = onError ? "error is not None" : "error is None";
+                } else if (matcher.getStringMember("errorType").isPresent()) {
+                    onError = true;
+                    String type = matcher.expectStringMember("errorType").getValue();
+                    StructureShape err = OperationIndex.of(model).getErrors(service, o.op).stream()
+                            .filter(x -> x.getId().getName().equals(type)).findFirst()
+                            .orElseThrow(() -> new CodegenException(o.op.getId() + ": waiter errorType " + type + " is not an error of the operation"));
+                    Symbol sym = symbols.toSymbol(err);
+                    w.importFrom(sym.getNamespace(), sym.getName());
+                    cond = "isinstance(error, " + sym.getName() + ")";
+                } else if (matcher.getObjectMember("output").isPresent()) {
+                    onError = false;
+                    ObjectNode m = matcher.expectObjectMember("output");
+                    String fn = "_p" + i;
+                    pathPredicate(w, fn, o.output, result, m.expectStringMember("path").getValue(),
+                            m.expectStringMember("comparator").getValue(), m.expectStringMember("expected").getValue(), o);
+                    cond = "output is not None and " + fn + "(output)";
+                } else {
+                    throw new CodegenException(o.op.getId() + ": only success, errorType and output waiter matchers are supported yet");
+                }
+                w.write("if $L:", cond);
+                w.indent().write("return $S", state).dedent();
+                i++;
+            }
+            w.write("return None");
+            w.dedent();
+        }
+    }
+
+    /**
+     * A nested predicate for a waiter's JMESPath: field chains ("a.b.c") with at most one list projection
+     * ("a.list[].c"), checked against the model so a wrong path fails generation, not a wait.
+     */
+    private void pathPredicate(PythonWriter w, String fn, StructureShape root, String rootType, String path, String comparator, String expected,
+            OperationInfo op) {
+        if (!path.matches("[A-Za-z0-9_]+(\\[\\])?(\\.[A-Za-z0-9_]+(\\[\\])?)*") || path.chars().filter(ch -> ch == '[').count() > 1) {
+            throw new CodegenException(op.op.getId() + ": waiter path " + path + " uses JMESPath beyond field chains and one [] projection");
+        }
+        boolean projection = path.contains("[]");
+        if (projection && !comparator.equals("allStringEquals") && !comparator.equals("anyStringEquals")) {
+            throw new CodegenException(op.op.getId() + ": comparator " + comparator + " on a projection");
+        }
+        if (!projection && !comparator.equals("stringEquals") && !comparator.equals("booleanEquals")) {
+            throw new CodegenException(op.op.getId() + ": comparator " + comparator + " without a projection");
+        }
+        w.write("def $L(out: $L) -> bool:", fn, rootType);
+        w.indent();
+        String var = "out";
+        Shape current = root;
+        int n = 0;
+        int depth = 0;
+        String skip = "return False";
+        for (String raw : path.split("\\.")) {
+            boolean flatten = raw.endsWith("[]");
+            String seg = flatten ? raw.substring(0, raw.length() - 2) : raw;
+            if (!(current instanceof StructureShape st)) {
+                throw new CodegenException(op.op.getId() + ": waiter path " + path + " walks into a non-structure");
+            }
+            MemberShape m = st.getMember(seg).orElseThrow(() -> new CodegenException(op.op.getId() + ": waiter path " + path + ": no member " + seg));
+            Shape t = model.expectShape(m.getTarget());
+            String next = "v" + (++n);
+            w.write("$L = $L.$L", next, var, Names.field(m.getMemberName()));
+            if (!m.isRequired()) {
+                w.write("if $L is None:", next);
+                w.indent().write("$L", skip).dedent();
+            }
+            var = next;
+            current = t;
+            if (flatten) {
+                if (!(t instanceof ListShape list)) {
+                    throw new CodegenException(op.op.getId() + ": waiter path " + path + ": [] on a non-list");
+                }
+                w.write("vals: list[str] = []");
+                w.write("for it in $L:", var);
+                w.indent();
+                depth++;
+                var = "it";
+                skip = "continue";
+                current = model.expectShape(list.getMember().getTarget());
+            }
+        }
+        String leaf = switch (current.getType()) {
+            case STRING -> var;
+            case ENUM -> "str(" + var + ")";
+            case BOOLEAN -> var;
+            default -> throw new CodegenException(op.op.getId() + ": waiter path " + path + " ends on " + current.getType());
+        };
+        if (projection) {
+            w.write("vals.append($L)", leaf);
+            for (; depth > 0; depth--) {
+                w.dedent();
+            }
+            if (comparator.equals("anyStringEquals")) {
+                w.write("return any(v == $S for v in vals)", expected);
+            } else {
+                w.write("return bool(vals) and all(v == $S for v in vals)", expected);
+            }
+        } else if (current.isBooleanShape()) {
+            if (!comparator.equals("booleanEquals")) {
+                throw new CodegenException(op.op.getId() + ": waiter path " + path + " is a boolean; use booleanEquals");
+            }
+            w.write("return $L is $L", leaf, expected.equals("true") ? "True" : "False");
+        } else {
+            w.write("return $L == $S", leaf, expected);
+        }
+        w.dedent();
+    }
+
+    /** {@code wait_until_<name>()} for each waiter: the operation's own parameters, then the wait's. */
+    private void writeWaiters(PythonWriter w, OperationInfo o, boolean async) {
+        for (Map.Entry<String, ObjectNode> e : waitersOf(o).entrySet()) {
+            String name = e.getKey();
+            ObjectNode waiter = e.getValue();
+            Number min = waiter.getNumberMemberOrDefault("minDelay", 2);
+            Number max = waiter.getNumberMemberOrDefault("maxDelay", 120);
+            // A waiter that succeeds on an error (Deleted on a 404) has no output: its method returns None.
+            boolean noOutput = ai.caitlyn.codegen.model.Waiters.succeedsOnError(o.op.getId(), name, waiter);
+            String result = noOutput ? "None" : typeOf(o.output, w);
+            String runner = async ? "wait_async" : "wait_sync";
+            w.importFrom(CORE, runner);
+            List<String> sig = new ArrayList<>(signature(o, w, List.of()));
+            if (!sig.contains("*")) {
+                sig.add("*");
+            }
+            int limit = CaitlynTraits.waitLimitSeconds(o.op, name);
+            sig.add("max_wait: float = " + limit);
+            sig.add("min_delay: float = " + min);
+            sig.add("max_delay: float = " + max);
+            w.write("");
+            writeDef(w, async, "wait_until_" + Names.snake(name), sig, result);
+            w.indent();
+            String text = waiter.getStringMemberOrDefault("documentation", "Waits for " + name + ".").strip();
+            w.write("$D", text + "\n\nCalls `" + o.namespace + "." + o.method + "` at once, then again after " + min + " to " + max
+                    + " seconds, the pauses growing, until it\nreaches a success state, which returns " + (noOutput ? "None" : "the output")
+                    + ", or a failure state, which raises"
+                    + " `WaiterError`.\nGives up with `WaiterError` (reason `timeout`) after `max_wait` seconds, by default "
+                    + (limit % 60 == 0 ? limit / 60 + (limit == 60 ? " minute" : " minutes") : limit + " seconds") + "."
+                    + (async ? "\nCancelling the task stops the wait." : ""));
+            String args = o.params.stream().map(p -> p.name() + "=" + p.name()).collect(Collectors.joining(", "));
+            call(w, (noOutput ? "" : "return ") + (async ? "await " : "") + runner, List.of(Names.pyString(name), "lambda: self." + o.method + "(" + args + ")",
+                    "_operations." + acceptorName(o, name), "min_delay=min_delay", "max_delay=max_delay", "max_wait=max_wait"));
+            w.dedent();
+        }
     }
 
     private void writeMethod(PythonWriter w, OperationInfo o, boolean async) {
@@ -748,7 +967,7 @@ final class ServiceGenerator {
                 names.add(n);
             }
             for (String n : List.of("AsyncEventStream", "AsyncPaginator", "CaitlynAuthError", "CaitlynConnectionError", "CaitlynError", "CallContext", "EventStream",
-                    "Interceptor", "NotSupportedByServer", "Paginator", "ResponseMetadata", "RetryPolicy", "StreamLostError")) {
+                    "Interceptor", "NotSupportedByServer", "Paginator", "ResponseMetadata", "RetryPolicy", "StreamLostError", "WaiterError")) {
                 w.importFrom(CORE, n);
                 names.add(n);
             }

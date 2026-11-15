@@ -27,7 +27,7 @@ every SDK raises it as a typed error you can tell apart by HTTP status and by co
 <!-- example: examples/typescript/concepts.ts#errors -->
 ```ts tab="TypeScript"
 try {
-  await caitlyn.versions.get({ agentId, version: 'v99' });
+  await caitlyn.agents.versions.get({ agentId, version: 'v99' });
 } catch (err) {
   if (err instanceof NotFoundError) {
     console.log('No such version');
@@ -47,7 +47,7 @@ try {
 <!-- example: examples/python/concepts.py#errors -->
 ```python tab="Python"
 try:
-    caitlyn.versions.get(agent_id=agent_id, version="v99")
+    caitlyn.agents.versions.get(agent_id=agent_id, version="v99")
 except NotFoundError:
     print("No such version")
 except ValidationError as err:
@@ -63,7 +63,7 @@ except CaitlynError as err:
 ```
 <!-- example: examples/go/concepts/concepts.go#errors -->
 ```go tab="Go"
-_, err := client.Versions.Get(ctx, &caitlyn.GetAgentVersionInput{AgentID: "GHT7YRWXPL", Version: "v99"})
+_, err := client.Agents.Versions.Get(ctx, &caitlyn.GetAgentVersionInput{AgentID: "GHT7YRWXPL", Version: "v99"})
 var notFound *caitlyn.NotFoundError
 var invalid *caitlyn.ValidationError
 var noResponse *caitlyn.ConnectionError
@@ -94,7 +94,7 @@ let input = GetAgentVersionInput {
     agent_id: "GHT7YRWXPL".into(),
     version: "v99".into(),
 };
-match client.versions().get(input).await {
+match client.agents().versions().get(input).await {
     Ok(version) => println!("{}", version.name),
     Err(Error::NotFound(_)) => println!("No such version"),
     Err(Error::Validation(err)) => {

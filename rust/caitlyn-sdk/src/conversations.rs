@@ -14,94 +14,83 @@ use crate::client::*;
 use crate::error::Error;
 use crate::types::*;
 
-/// The input of `conversations().resume`. `conversationId` is a parameter of the method.
+/// The input of `conversations().create`. The idempotency key is generated, or set with
+/// `.idempotency_key(key)`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub struct ResumeConversationStreamInput {
-    /// The `id` of the last event received. Absent means from the start of the answer.
-    ///
-    /// Sent as the `Last-Event-ID` header.
-    #[serde(skip)]
-    pub last_event_id: Option<String>,
+pub struct CreateConversationInput {
+    /// The agent to talk to.
+    #[serde(rename = "agentId")]
+    pub agent_id: String,
+    /// The version of the agent that answers. Today only `draft`.
+    #[serde(rename = "version")]
+    pub version: String,
+    /// A title for the conversation. Absent means the app titles it from the first message.
+    #[serde(rename = "title", skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
-fn errors_resume_conversation_stream(e: rt::Error) -> Error {
+fn errors_create_conversation(e: rt::Error) -> Error {
     Error::from(e)
 }
 
-static OP_RESUME_CONVERSATION_STREAM: rt::Operation = rt::Operation {
-    name: "ResumeConversationStream",
-    method: "GET",
+static OP_CREATE_CONVERSATION: rt::Operation = rt::Operation {
+    name: "CreateConversation",
+    method: "POST",
     since: Some("5.115.0"),
     retry_safe: true,
-    sse: true,
-    idempotency_header: None,
+    sse: false,
+    idempotency_header: Some("Idempotency-Key"),
     if_match_required: false,
     retryable: &[503, 429],
 };
 
-fn build_resume_conversation_stream(conversation_id: &str, input: &ResumeConversationStreamInput) -> Result<rt::Request, rt::Error> {
-    if conversation_id.is_empty() {
-        return Err(rt::Error::missing_input("ResumeConversationStream", "conversationId"));
-    }
-    let mut req = rt::Request::new(["/v3/conversations/", &rt::path_label(conversation_id), "/stream"].concat());
-    if let Some(v) = &input.last_event_id {
-        req.header("Last-Event-ID", v.to_string());
-    }
+fn build_create_conversation(input: &CreateConversationInput) -> Result<rt::Request, rt::Error> {
+    let mut req = rt::Request::new(["/v3/conversations"].concat());
+    req.json_body(input)?;
     Ok(req)
 }
 
-fn final_conversation_event_message_completed(ev: &ConversationEvent) -> Option<Message> {
-    match ev {
-        ConversationEvent::MessageCompleted(v) => Some(v.message.clone()),
-        _ => None,
-    }
+async fn read_create_conversation(resp: rt::Response) -> Result<Conversation, rt::Error> {
+    let api_version = resp.header("caitlyn-api-version");
+    let request_id = resp.header("caitlyn-request-id");
+    let location = resp.header("location");
+    let metadata = resp.metadata();
+    let mut out: Conversation = resp.json().await?;
+    out.api_version = api_version;
+    out.request_id = request_id;
+    out.location = location;
+    out.response_metadata = metadata;
+    Ok(out)
 }
 
-/// A stream of [`ConversationEvent`] events. Call `next().await` until it returns `None`, then
-/// `final_message().await` for the [`Message`] (it drains the stream if needed). A dropped connection
-/// is resumed with `Last-Event-ID` where the model allows; dropping the stream closes the connection.
-pub type ConversationEventStream = rt::Stream<ConversationEvent, Message, Error>;
-
 impl ConversationsClient {
-    /// Re-attaches to the answer that is being written, from the event after `Last-Event-ID`.
+    /// Starts a conversation with one version of an agent.
     ///
-    /// Used by the SDKs after a dropped connection; callers rarely need it directly. When no answer is
-    /// being written, the stream ends at once.
+    /// Send messages to it with `SendMessage`, and watch it with `WatchConversation`. The conversation
+    /// belongs to the caller that created it: the person, or the API client's own credential.
     ///
-    /// Awaiting the call returns the stream once the response starts, or the error for a failed request at
-    /// once; errors during the stream (a failure event, a connection that could not be resumed,
-    /// cancellation) end it with that error.
+    /// `version` names the agent version that answers. Today only `draft` can be used: `production`
+    /// and named versions arrive with agent versions, and asking for one before then is refused with
+    /// 400 `VALIDATION_FAILED`, naming the versions that can be used.
     ///
     /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
     /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]
-    /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
-    /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
+    /// (400), [`Error::Conflict`] (409), [`Error::NotFound`] (404), [`Error::UnprocessableContent`] (422);
+    /// another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other
+    /// status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.115.0.
-    pub fn resume(
-        &self,
-        conversation_id: impl Into<String>,
-        input: ResumeConversationStreamInput,
-    ) -> rt::Call<ConversationEventStream, Error> {
+    /// Since Caitlyn 5.115.0; beta.
+    pub fn create(&self, input: CreateConversationInput) -> rt::Call<Conversation, Error> {
         let core = self.core.clone();
-        let conversation_id: String = conversation_id.into();
         rt::Call::new(move |opts| {
             Box::pin(async move {
-                let req = build_resume_conversation_stream(&conversation_id, &input).map_err(errors_resume_conversation_stream)?;
+                let req = build_create_conversation(&input).map_err(errors_create_conversation)?;
                 let resp = core
-                    .send(&OP_RESUME_CONVERSATION_STREAM, req, &opts)
+                    .send(&OP_CREATE_CONVERSATION, req, &opts)
                     .await
-                    .map_err(errors_resume_conversation_stream)?;
-                Ok(rt::Stream::open(
-                    resp,
-                    rt::StreamSpec {
-                        decode: decode_conversation_event,
-                        final_of: Some(final_conversation_event_message_completed),
-                        map_err: errors_resume_conversation_stream,
-                        resume: None,
-                    },
-                ))
+                    .map_err(errors_create_conversation)?;
+                read_create_conversation(resp).await.map_err(errors_create_conversation)
             })
         })
     }
@@ -144,11 +133,23 @@ fn build_send_message(conversation_id: &str, input: &SendMessageInput) -> Result
     Ok(req)
 }
 
+fn final_conversation_event_message_completed(ev: &ConversationEvent) -> Option<Message> {
+    match ev {
+        ConversationEvent::MessageCompleted(v) => Some(v.message.clone()),
+        _ => None,
+    }
+}
+
+/// A stream of [`ConversationEvent`] events. Call `next().await` until it returns `None`, then
+/// `final_message().await` for the [`Message`] (it drains the stream if needed). A dropped connection
+/// is resumed with `Last-Event-ID` where the model allows; dropping the stream closes the connection.
+pub type ConversationEventStream = rt::Stream<ConversationEvent, Message, Error>;
+
 impl ConversationsClient {
     /// Sends a message and streams the answer as server-sent events.
     ///
     /// The stream ends with exactly one `message.completed` or `message.failed`. If the connection
-    /// drops, the SDK re-attaches with `ResumeConversationStream` and `Last-Event-ID`, so no event is
+    /// drops, the SDK re-attaches with `WatchConversation` and `Last-Event-ID`, so no event is
     /// lost or repeated. Not retried automatically: a send that fails before the stream starts is
     /// reported to the caller.
     ///
@@ -162,7 +163,7 @@ impl ConversationsClient {
     /// another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other
     /// status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.115.0.
+    /// Since Caitlyn 5.115.0; beta.
     pub fn send(&self, conversation_id: impl Into<String>, input: SendMessageInput) -> rt::Call<ConversationEventStream, Error> {
         let core = self.core.clone();
         let conversation_id: String = conversation_id.into();
@@ -178,10 +179,12 @@ impl ConversationsClient {
                     let opts = resume_opts.clone();
                     let label_conversation_id = label_conversation_id.clone();
                     Box::pin(async move {
-                        let mut rin = ResumeConversationStreamInput::default();
-                        rin.last_event_id = Some(last_event_id);
-                        let rreq = build_resume_conversation_stream(&label_conversation_id, &rin)?;
-                        core.send(&OP_RESUME_CONVERSATION_STREAM, rreq, &opts).await
+                        let mut rin = WatchConversationInput::default();
+                        if !last_event_id.is_empty() {
+                            rin.last_event_id = Some(last_event_id);
+                        }
+                        let rreq = build_watch_conversation(&label_conversation_id, &rin)?;
+                        core.send(&OP_WATCH_CONVERSATION, rreq, &opts).await
                     })
                 });
                 Ok(rt::Stream::open(
@@ -190,6 +193,112 @@ impl ConversationsClient {
                         decode: decode_conversation_event,
                         final_of: Some(final_conversation_event_message_completed),
                         map_err: errors_send_message,
+                        resume: Some(resume),
+                    },
+                ))
+            })
+        })
+    }
+}
+
+/// The input of `conversations().watch`. `conversationId` is a parameter of the method.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WatchConversationInput {
+    /// The `id` of the last event received. Absent means from the start of the answer.
+    ///
+    /// Sent as the `Last-Event-ID` header.
+    #[serde(skip)]
+    pub last_event_id: Option<String>,
+}
+
+fn errors_watch_conversation(e: rt::Error) -> Error {
+    Error::from(e)
+}
+
+static OP_WATCH_CONVERSATION: rt::Operation = rt::Operation {
+    name: "WatchConversation",
+    method: "GET",
+    since: Some("5.115.0"),
+    retry_safe: true,
+    sse: true,
+    idempotency_header: None,
+    if_match_required: false,
+    retryable: &[503, 429],
+};
+
+fn build_watch_conversation(conversation_id: &str, input: &WatchConversationInput) -> Result<rt::Request, rt::Error> {
+    if conversation_id.is_empty() {
+        return Err(rt::Error::missing_input("WatchConversation", "conversationId"));
+    }
+    let mut req = rt::Request::new(["/v3/conversations/", &rt::path_label(conversation_id), "/stream"].concat());
+    if let Some(v) = &input.last_event_id {
+        req.header("Last-Event-ID", v.to_string());
+    }
+    Ok(req)
+}
+
+/// A stream of [`ConversationEvent`] events. Call `next().await` until you have what you need, then
+/// drop the stream: it has no final event. A dropped connection is resumed with `Last-Event-ID` where
+/// the model allows; dropping the stream closes the connection.
+pub type WatchConversationStream = rt::Stream<ConversationEvent, (), Error>;
+
+impl ConversationsClient {
+    /// Watches a conversation: the answer being written, if any, then every answer after it, until the
+    /// caller closes the stream. An answer whose stream ended moments before the watch opened may still
+    /// be delivered, from its `message.started` event; match answers on your own message ID.
+    ///
+    /// With `Last-Event-ID`, it resumes from the event after that one, so a dropped connection loses
+    /// nothing; the SDKs use this to re-attach to `SendMessage`, and to reconnect a dropped watch. When
+    /// the answer that event belongs to has ended, or can no longer be replayed, the watch sends
+    /// `stream.reset` with a new cursor instead, then carries on. Each answer ends with
+    /// `message.completed` or `message.failed`, which end that answer but not the stream, so
+    /// `waitUntil`-style helpers watch for the event they need and then close.
+    ///
+    /// Awaiting the call returns the stream once the response starts, or the error for a failed request at
+    /// once; errors during the stream (a failure event, a connection that could not be resumed,
+    /// cancellation) end it with that error.
+    ///
+    /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
+    /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]
+    /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
+    /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
+    ///
+    /// Since Caitlyn 5.115.0; beta.
+    pub fn watch(&self, conversation_id: impl Into<String>, input: WatchConversationInput) -> rt::Call<WatchConversationStream, Error> {
+        let core = self.core.clone();
+        let conversation_id: String = conversation_id.into();
+        rt::Call::new(move |opts| {
+            Box::pin(async move {
+                let req = build_watch_conversation(&conversation_id, &input).map_err(errors_watch_conversation)?;
+                let resp = core
+                    .send(&OP_WATCH_CONVERSATION, req, &opts)
+                    .await
+                    .map_err(errors_watch_conversation)?;
+                let label_conversation_id = conversation_id.clone();
+                let resume_input = input.clone();
+                let resume_core = core.clone();
+                let resume_opts = opts.cancellation_only();
+                let resume: rt::stream::Resume = Box::new(move |last_event_id: String| {
+                    let core = resume_core.clone();
+                    let opts = resume_opts.clone();
+                    let label_conversation_id = label_conversation_id.clone();
+                    let resume_input = resume_input.clone();
+                    Box::pin(async move {
+                        let mut rin = resume_input.clone();
+                        if !last_event_id.is_empty() {
+                            rin.last_event_id = Some(last_event_id);
+                        }
+                        let rreq = build_watch_conversation(&label_conversation_id, &rin)?;
+                        core.send(&OP_WATCH_CONVERSATION, rreq, &opts).await
+                    })
+                });
+                Ok(rt::Stream::open(
+                    resp,
+                    rt::StreamSpec {
+                        decode: decode_conversation_event,
+                        final_of: None,
+                        map_err: errors_watch_conversation,
                         resume: Some(resume),
                     },
                 ))

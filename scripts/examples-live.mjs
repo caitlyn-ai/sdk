@@ -10,16 +10,22 @@
 // secret reference this script reads with `op read`. The token is passed to each language's runner by name
 // in the environment, never on a command line, and is never printed.
 //
-// Each language's examples run in the toolchain image (scripts/docker.sh) with:
+// Each language's examples run in the toolchain image (through scripts/docker.sh locally; in CI, where the job
+// already runs in that image, directly) with:
 //
 //   CAITLYN_ENDPOINT   the API address, for the client's `endpoint` option
 //   CAITLYN_WORKSPACE  the workspace hostname
 //   CAITLYN_TOKEN      the personal access token (the token sign-in mode)
 //   CAITLYN_AGENT_ID   an agent whose draft can answer
 //
-// A language's runner is scripts/examples-live/<language>.sh. It prints one line per check, `ok <check>` or
-// `fail <check>: <why>`, for the checks below, and exits non-zero if any failed. This script prints the table
-// and fails if any check failed or was never reported.
+// A language's runner is scripts/examples-live/<language>.sh. It prints one line per check, `ok <check>`,
+// `fail <check>: <why>` or `skip <check>: <reason>`, for the checks below, and exits non-zero if any failed. A
+// runner may skip only for one of the reasons in SKIP_REASONS, which the reason must start with; any other skip
+// counts as a failure. A check refused with 403 PERMISSION_DENIED reports `fail <check>: 403 PERMISSION_DENIED: …`;
+// this script alone turns that into `skip …: public role only`, and only when CAITLYN_PUBLIC_ROLE_ONLY=1 says the
+// workspace's role setup has not run, because a 403 does not say which role the caller has. The script prints the
+// table, every skip with its reason and how many there were, and fails if any check failed or was never reported.
+// A skipped check does not fail the run, but it is not a pass.
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -32,8 +38,35 @@ const CHECKS = [
   'WatchConversation',
   'WatchWorkspaceEvents',
   'stream.reset', // a cursor from two days ago is answered with stream.reset, delivered as an event
+  'CreateUpload',
+  'GetUpload',
+  'CreateDocument',
+  'DeleteDocument.processing', // a document still being processed: 409 CONFLICT (or accepted, if it already finished)
+  'GetDocument',
+  'WaitUntilIndexed',
+  'ListDocuments',
+  'DeleteDocument',
+  'BatchDeleteDocuments',
+  'WaitUntilDeleted',
+  'UpdateDraftVersion',
+  'PinDraftVersion',
+  'ListAgentVersions',
+  'PublishAgentVersion',
+  'ListProductionHistory',
+  'GetProductionHistory',
+  'ResetDraftVersion',
+  'DeleteAgentVersion',
 ];
 const LANGUAGES = ['typescript', 'python', 'go', 'rust'];
+// The only reasons a check may be skipped: the workspace lacks what it needs, by a setting the run states.
+const SKIP_REASONS = [
+  'no knowledge base configured', // CAITLYN_KNOWLEDGE_BASE_ID is not set
+  'publishing turned off', // CAITLYN_PUBLISH_AGENT_ID is not set: no agent the checks may publish
+];
+// The workspace's caller has only the "public" role (its role setup has not run): a permission refusal is then
+// expected, and is a skip rather than a failure. Set only while that is so.
+const PUBLIC_ROLE_ONLY = process.env.CAITLYN_PUBLIC_ROLE_ONLY === '1';
+const PERMISSION_REFUSAL = /^403 PERMISSION_DENIED\b/;
 
 const root = path.resolve(import.meta.dirname, '..');
 const fail = (message) => {
@@ -67,27 +100,42 @@ for (const language of languages) {
     continue;
   }
   console.log(`${language}: running ${runner} against ${endpoint}`);
-  const child = spawn(path.join(root, 'scripts', 'docker.sh'), [runner], { cwd: root, env, stdio: ['ignore', 'pipe', 'inherit'] });
+  const [command, args] = process.env.CI ? ['bash', [runner]] : [path.join(root, 'scripts', 'docker.sh'), [runner]];
+  const child = spawn(command, args, { cwd: root, env, stdio: ['ignore', 'pipe', 'inherit'] });
   let buffer = '';
   child.stdout.on('data', (d) => {
     buffer += d;
     let i;
     while ((i = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, i).split(token).join('[token]');
+      const line = token.length >= 8 ? buffer.slice(0, i).split(token).join('[token]') : buffer.slice(0, i); // a real token is long; a short one would mask ordinary text
       buffer = buffer.slice(i + 1);
       process.stdout.write(`  ${line}\n`);
-      const m = /^(ok|fail) ([\w.]+)(?:: (.*))?$/.exec(line.trim());
-      if (m && CHECKS.includes(m[2])) results[language][m[2]] = m[1] === 'ok' ? 'ok' : `fail: ${m[3] ?? ''}`;
+      const m = /^(ok|fail|skip) ([\w.]+)(?:: (.*))?$/.exec(line.trim());
+      if (m && CHECKS.includes(m[2])) {
+        const why = m[3] ?? '';
+        const allowed = m[1] !== 'skip' || SKIP_REASONS.some((r) => why.startsWith(r));
+        results[language][m[2]] =
+          m[1] === 'ok' ? 'ok'
+          : m[1] === 'fail' && PUBLIC_ROLE_ONLY && PERMISSION_REFUSAL.test(why) ? `skip: public role only (${why})`
+          : allowed ? `${m[1]}: ${why}`
+          : `fail: skipped without an allowed reason (${why})`;
+      }
     }
   });
   const code = await new Promise((resolve) => child.on('close', resolve));
   if (code !== 0) console.log(`${language}: exited with ${code}`);
 }
 
-const cell = (r) => (r === undefined ? 'not run' : r === 'ok' ? 'ok' : 'FAIL');
-console.log(`\n${['check'.padEnd(22), ...languages.map((l) => l.padEnd(11))].join('')}`);
-for (const check of CHECKS) console.log([check.padEnd(22), ...languages.map((l) => cell(results[l][check]).padEnd(11))].join(''));
-const failed = languages.flatMap((l) => CHECKS.filter((c) => results[l][c] !== 'ok').map((c) => `${l} ${c}: ${results[l][c] ?? 'not run'}`));
+if (PUBLIC_ROLE_ONLY) {
+  console.log('\nCAITLYN_PUBLIC_ROLE_ONLY=1: a 403 PERMISSION_DENIED counts as a skip, not a failure, in this run.');
+}
+const cell = (r) => (r === undefined ? 'not run' : r === 'ok' ? 'ok' : r.startsWith('skip') ? 'skipped' : 'FAIL');
+const width = Math.max(...CHECKS.map((c) => c.length)) + 2; // the longest check's name, and a gap
+console.log(`\n${['check'.padEnd(width), ...languages.map((l) => l.padEnd(11))].join('')}`);
+for (const check of CHECKS) console.log([check.padEnd(width), ...languages.map((l) => cell(results[l][check]).padEnd(11))].join(''));
+const failed = languages.flatMap((l) => CHECKS.filter((c) => results[l][c] !== 'ok' && !results[l][c]?.startsWith('skip')).map((c) => `${l} ${c}: ${results[l][c] ?? 'not run'}`));
+const skipped = languages.flatMap((l) => CHECKS.filter((c) => results[l][c]?.startsWith('skip')).map((c) => `${l} ${c}: ${results[l][c]}`));
+console.log(`\n${skipped.length} skipped${skipped.length ? `:\n${skipped.join('\n')}` : ''}`);
 if (failed.length) {
   console.log(`\n${failed.join('\n')}`);
   process.exit(1);

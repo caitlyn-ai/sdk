@@ -84,7 +84,7 @@ func signedIn(t *testing.T, m mock, auth caitlyn.Auth, ws ...string) *caitlyn.Cl
 }
 
 func read(c *caitlyn.Client) (*caitlyn.AgentVersion, error) {
-	return c.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+	return c.Agents.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
 }
 
 func mustRead(t *testing.T, c *caitlyn.Client) *caitlyn.AgentVersion {
@@ -571,7 +571,7 @@ var authCases = map[string]func(t *testing.T, m mock){
 		signInRequired(t, m)
 		c := signedIn(t, m, caitlyn.Session{Cookie: mockSessionCookie, Origin: "https://caitlyn.lndo.site"})
 		v := mustRead(t, c)
-		if _, err := c.Versions.UpdateDraft(context.Background(), agent, &caitlyn.UpdateDraftVersionInput{Instructions: caitlyn.Ptr("Cite clause numbers.")}, caitlyn.WithIfMatch(v.ETag)); err != nil {
+		if _, err := c.Agents.Versions.UpdateDraft(context.Background(), agent, &caitlyn.UpdateDraftVersionInput{Instructions: caitlyn.Ptr("Cite clause numbers.")}, caitlyn.WithIfMatch(v.ETag)); err != nil {
 			t.Fatal(err)
 		}
 		api := m.api(t)
@@ -602,7 +602,7 @@ func TestGoSignInCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancelled := make(chan error, 1)
 	go func() {
-		_, err := c.Versions.Get(ctx, &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+		_, err := c.Agents.Versions.Get(ctx, &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
 		cancelled <- err
 	}()
 	waiting := make(chan error, 1)

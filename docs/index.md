@@ -11,9 +11,8 @@ operations: []
 Build on Caitlyn from your own code: ask an agent a question and stream its cited answer, load documents into a
 knowledge base, and change an agent safely, through the Caitlyn v3 API and its SDKs.
 
-> **Preview.** The v3 API is being built. The SDKs and this reference describe the whole of it, but a Caitlyn
-> release serves only [GetAgentVersion](/reference/get-agent-version/) so far; every other operation's page says
-> it is not available yet. Expect changes before version 1.0.
+> **Preview.** The v3 API is being built. The SDKs and this reference describe the whole of it, but Caitlyn
+> workspaces do not serve it yet, and each operation's page says so. Expect changes before version 1.0.
 
 ## Start here
 
@@ -38,7 +37,9 @@ once and every page follows), the request and response members, the permission i
 and complete, runnable examples. The examples are compiled against every SDK on each change, so they match the
 SDKs you install.
 
-- Operations: [agents](/reference/get-agent-version/), [conversations](/reference/send-message/),
+- Operations: [the caller](/reference/get-caller/), [agents](/reference/get-agent-version/),
+  [production history](/reference/list-production-history-entries/), [conversations](/reference/send-message/),
+  [workspace events](/reference/watch-workspace-events/),
   [documents](/reference/list-documents/) and [uploads](/reference/create-upload/).
 - [Types](/reference/types/agent-configuration/): the objects the operations take and return.
 - [Error codes](/errors/NOT_FOUND/): one page per code, at the address each error's `type` names.

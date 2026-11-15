@@ -344,6 +344,8 @@ final class CaitlynPythonCodegen implements DirectedCodegen<GenerationContext, P
         union(directive.context(), directive.shape());
     }
 
+    private final java.util.Set<String> writtenEventClasses = new java.util.HashSet<>();
+
     private void union(GenerationContext ctx, UnionShape union) {
         if (!facts.sseUnions.contains(union.getId())) {
             throw new CodegenException("Only unions named by @sseEvents are supported yet: " + union.getId());
@@ -360,6 +362,9 @@ final class CaitlynPythonCodegen implements DirectedCodegen<GenerationContext, P
                 StructureShape target = model.expectShape(m.getTarget(), StructureShape.class);
                 classes.add(cls);
                 table.add(Names.pyString(wire) + ": " + cls);
+                if (!writtenEventClasses.add(cls)) {
+                    continue; // the same event on another stream (stream.reset): written once
+                }
                 w.write("class $L(CaitlynEvent):", cls);
                 w.indent();
                 StringBuilder doc = new StringBuilder("The `" + wire + "` event.");

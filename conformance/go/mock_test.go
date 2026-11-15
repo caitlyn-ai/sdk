@@ -74,6 +74,7 @@ type logged struct {
 	HeaderNames []string          `json:"headerNames"`
 	Body        string            `json:"body"`
 	RequestID   string            `json:"requestId"`
+	At          int64             `json:"at"`
 }
 
 func (m mock) requests(t *testing.T) []logged {

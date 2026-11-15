@@ -1255,13 +1255,13 @@ body:is(.light-mode, .dark-mode) [data-api-reference] {
 
 /* ------------------------------------------------------------------------------ icons */
 /* The site's icons (src/generated/icons.css gives each its shape): 16px, in the text colour, beside the section
-   names, the sidebar's groups, code blocks' languages and the language tabs. Decorative: drawn in CSS, so a screen
+   names, the sidebar's groups (nested ones too), code blocks' languages and the language tabs. Decorative: drawn in CSS, so a screen
    reader reads only the text beside them. */
 .starlight-sidebar-topics .starlight-sidebar-topics-icon > svg {
   display: none; /* the section's icon is drawn below instead */
 }
 .starlight-sidebar-topics .starlight-sidebar-topics-icon::before,
-.sidebar-content ul.top-level > li > details > summary .group-label::before,
+.sidebar-content ul.top-level details > summary .group-label::before,
 .expressive-code figcaption .title::before,
 .lang-tab[data-lang]::before {
   content: '';
@@ -1274,13 +1274,13 @@ body:is(.light-mode, .dark-mode) [data-api-reference] {
   mask: center / contain no-repeat;
 }
 /* Only groups and code blocks given an icon draw one */
-.sidebar-content ul.top-level > li > details > summary .group-label::before,
+.sidebar-content ul.top-level details > summary .group-label::before,
 .expressive-code figcaption .title::before {
   -webkit-mask-image: none;
   mask-image: none;
   display: none;
 }
-.sidebar-content ul.top-level > li > details > summary .group-label {
+.sidebar-content ul.top-level details > summary .group-label {
   display: inline-flex;
   align-items: center;
   gap: 8px; /* space-2 */

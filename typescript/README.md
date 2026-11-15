@@ -133,6 +133,8 @@ const draft = await getAgentVersion(client, { agentId: 'GHT7YRWXPL', version: 'd
 - **Lists** are async iterables that fetch the next page as you go: `for await (const doc of caitlyn.documents.list({knowledgeBaseId}))`.
 - **Streams** (`conversations.send`) are async iterables of typed events. If the connection drops, the
   client re-attaches from the last event it saw, so no event is lost or repeated. `await stream.finalMessage()` returns the finished answer.
+  A stream sends its request when you start iterating it; `await stream.opened()` sends it now and resolves once
+  the response headers have arrived, so you can open a stream, make the call whose events you want, then iterate.
 - **Updates** take `ifMatch` (the ETag you read) as a call option, and `clear: [...]` to return members to their defaults.
 - **Creates** take an `idempotencyKey` call option; without one the client makes one per call and reuses it on retries.
 - **Cancellation and timeouts:** every call takes `signal`. Use `AbortSignal.timeout(ms)` for a deadline.
@@ -160,7 +162,7 @@ A result's `$metadata` has the response's `httpStatusCode` and `requestId`.
 
 ```ts
 try {
-  await caitlyn.versions.updateDraft('GHT7YRWXPL', { instructions }, { ifMatch: etag });
+  await caitlyn.agents.versions.updateDraft('GHT7YRWXPL', { instructions }, { ifMatch: etag });
 } catch (err) {
   if (err instanceof PreconditionFailedError) { /* someone else changed it: read again and reapply */ }
   else if (err instanceof ValidationError) for (const e of err.errors ?? []) console.error(e.pointer, e.code, e.detail);
@@ -171,8 +173,11 @@ try {
 ## Waiting
 
 `waitUntil…()` methods poll until the resource reaches a final state, and take `signal` and `maxWaitMs`. A
-failure state throws `WaiterError`. They are generated from the model's `@waitable` traits, so they appear as
-operations gain them.
+wait is limited by default to the waiter's own limit (60 minutes for a document to be indexed, say), or 5 minutes;
+`maxWaitMs` sets another. A failure state, an error the waiter does not expect, or running out of time throws
+`WaiterError`, with the waiter's name, the reason (`failure` or `timeout`), the last output or error, and the
+number of reads; cancelling with `signal` throws the signal's own reason. They are generated from the model's
+`@waitable` traits, so they appear as operations gain them.
 
 ## Your own HTTP handler
 

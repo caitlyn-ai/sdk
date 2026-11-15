@@ -26,9 +26,8 @@ export interface ListDocumentsCommandOutput extends ListDocumentsOutput, __Metad
  * Lists the documents in a knowledge base, one page at a time.
  *
  * Documents are returned in a stable order that does not change between pages. Filters combine
- * with AND. Unlike v2, an unknown filter is refused with 400 `UNKNOWN_FILTER` instead of being
- * ignored, and the list can be sorted by `name`, `updatedAt` (when the document last changed) and
- * `byteSize` on the server; v2 sorts on the client only.
+ * with AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. The list can be sorted by
+ * `name`, `updatedAt` (when the document last changed) and `byteSize`.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript
@@ -71,6 +70,10 @@ export interface ListDocumentsCommandOutput extends ListDocumentsOutput, __Metad
  * //           detail: "STRING_VALUE",
  * //         },
  * //       ],
+ * //       failure: { // DocumentFailure
+ * //         code: "file_unreadable" || "processing_interrupted" || "processing_failed", // required
+ * //         message: "STRING_VALUE", // required
+ * //       },
  * //     },
  * //   ],
  * //   nextCursor: "STRING_VALUE",
@@ -108,7 +111,8 @@ export interface ListDocumentsCommandOutput extends ListDocumentsOutput, __Metad
  *
  * @throws {@link ValidationError} (client fault)
  *  The request is malformed: a member is missing, the wrong type or out of range; it has a member,
- * filter or sort field the operation does not define; or its cursor is not valid for this list.
+ * filter or sort field the operation does not define; its cursor is not valid for this list; or it
+ * asks to delete `draft` or `production`, which every agent keeps.
  *
  * @throws {@link CaitlynServiceException}
  * <p>Base exception class for all service exceptions from Caitlyn service.</p>
@@ -118,7 +122,7 @@ export interface ListDocumentsCommandOutput extends ListDocumentsOutput, __Metad
  * ```javascript
  * //
  * const input = {
- *   folder: "hr/",
+ *   folder: "/hr/",
  *   knowledgeBaseId: "KB4T7YQ2WL",
  *   limit: 2,
  *   status: "indexed"
@@ -132,10 +136,10 @@ export interface ListDocumentsCommandOutput extends ListDocumentsOutput, __Metad
  *       byteSize: 482113,
  *       contentType: "application/pdf",
  *       createdAt: "2026-10-01T22:10:00.000Z",
- *       folder: "hr/",
+ *       folder: "/hr/",
  *       id: "doc-3b7f9e21",
  *       knowledgeBaseId: "KB4T7YQ2WL",
- *       name: "Leave policy",
+ *       name: "Leave policy.pdf",
  *       status: "indexed",
  *       updatedAt: "2026-10-01T22:14:31.000Z"
  *     }

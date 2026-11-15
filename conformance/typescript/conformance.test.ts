@@ -25,12 +25,14 @@ import {
   ServiceUnavailableError,
   ValidationError,
   CaitlynAuthError,
+  WaiterError,
   type AuthOptions,
   type CaitlynErrorFields,
   type OAuthTokens,
   type TokenStore,
 } from '@caitlyn-ai/sdk';
 import * as commands from '@caitlyn-ai/sdk/commands';
+import { waitUntil, DEFAULT_WAIT_LIMIT_MS } from '@caitlyn-ai/sdk-core';
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { propagation, SpanStatusCode } from '@opentelemetry/api';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
@@ -141,7 +143,7 @@ test('[retry.429-retry-after] a 429 with Retry-After 2 waits at least 2 s, then 
 test('[retry.503-retry-after] a 503 with Retry-After 1 waits at least 1 s, then succeeds', async () => {
   await faults({ status: { GetAgentVersion: [{ status: 503, retryAfter: 1 }] } });
   const t0 = Date.now();
-  const v = await client().versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+  const v = await client().agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
   assert.equal(v.name, 'draft');
   assert.ok(Date.now() - t0 >= 1000);
 });
@@ -149,22 +151,22 @@ test('[retry.503-retry-after] a 503 with Retry-After 1 waits at least 1 s, then 
 test('[retry.long-retry-after] a long Retry-After (7 s) is honoured in full', async () => {
   await faults({ status: { GetAgentVersion: [{ status: 503, retryAfter: 7 }] } });
   const t0 = Date.now();
-  await client().versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+  await client().agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
   assert.ok(Date.now() - t0 >= 7000, `waited ${Date.now() - t0} ms`);
 });
 
 const fault503 = (n: number) => Array.from({ length: n }, () => ({ status: 503, retryAfter: 0 }));
-const getDraft = (c: Caitlyn) => c.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+const getDraft = (c: Caitlyn) => c.agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
 
 test('[retry.budget-drains] two retries spend a budget of 10; the next 503 fails at once; no response costs 10', async () => {
   const c = client({ retryBudget: 10 });
   await faults({ status: { GetAgentVersion: fault503(4) } });
-  assert.ok((await expectError(getDraft(c))) instanceof ServiceUnavailableError);
-  assert.equal((await api()).length, 3); // two retries, 5 tokens each
-  const t0 = Date.now();
-  assert.ok((await expectError(getDraft(c))) instanceof ServiceUnavailableError);
-  assert.equal((await api()).length, 4); // spent: no retry, no wait
-  assert.ok(Date.now() - t0 < 1000);
+  assert.ok((await expectError(getDraft(c))) instanceof ServiceUnavailableError, 'the first call ends with the 503');
+  assert.equal((await api()).length, 3, 'two retries, 5 tokens each');
+  const spent = await expectError(getDraft(c));
+  assert.ok(spent instanceof ServiceUnavailableError, `the second call ends with the 503, not ${spent?.constructor?.name}`);
+  assert.equal(spent.$metadata.attempts, 1, 'the budget is spent: no retry');
+  assert.equal((await api()).length, 4, 'exactly one more request');
   // A retry after no response costs 10: a budget of 9 pays for a 503's retry but not this one. A browser resends a
   // request whose connection closed before any response by itself, so in a page the mock closes it every time
   // (as in errors.connection). The SDK's own attempts are counted wherever it runs; the requests the server saw
@@ -172,9 +174,9 @@ test('[retry.budget-drains] two retries spend a budget of 10; the next 503 fails
   await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
   await faults({ status: { GetAgentVersion: IN_PAGE ? Array.from({ length: 10 }, () => ({ close: true })) : [{ close: true }] } });
   const lost = await expectError(getDraft(client({ retryBudget: 9 })));
-  assert.ok(lost instanceof CaitlynConnectionError);
+  assert.ok(lost instanceof CaitlynConnectionError, `a connection error, not ${(lost as Error)?.constructor?.name}`);
   assert.equal(lost.$metadata.attempts, 1, 'no retry: the budget of 9 cannot pay 10');
-  if (IN_PAGE) assert.ok((await api()).length >= 1);
+  if (IN_PAGE) assert.ok((await api()).length >= 1, 'the server saw the request');
   else assert.equal((await api()).length, 1);
 });
 
@@ -215,7 +217,7 @@ test('[retry.unsafe-not-retried] an operation that is not retry-safe (SendMessag
 test('[retry.above-max-retry-delay] a Retry-After above maxRetryDelay fails at once with the typed error', async () => {
   await faults({ status: { GetAgentVersion: [{ status: 429, retryAfter: 120 }] } });
   const t0 = Date.now();
-  const err = await expectError(client().versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }));
+  const err = await expectError(client().agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }));
   assert.equal(err.status, 429);
   assert.equal(err.retryAfterSeconds, 120);
   assert.ok(Date.now() - t0 < 1000);
@@ -235,12 +237,138 @@ test('[pagination.to-last-page] a list runs to the last page, following nextCurs
 
 // ---------------------------------------------------------------- SSE
 
-test('[sse.resume-finished] resuming an answer that has already finished ends at once, with no events and no error', async () => {
+test('[sse.resumed-answer-reset] a stream with a final event, resumed after its answer finished, yields stream.reset and ends with no error', async () => {
+  // The mock cuts the stream only once the SDK has yielded the two events before the cut, so it always has an
+  // event ID to resume from (a browser can lose events it had buffered when a connection is cut).
+  await faults({ dropAfterEvents: 2, dropOnSignal: true, finishWhileAway: true });
+  const stream = client().conversations.send('c-away', { message: 'hi' });
+  const events: { type: string }[] = [];
+  for await (const event of stream) {
+    events.push(event);
+    if (events.length === 2) await fetch(`${BASE}/__mock/drop`, { method: 'POST' });
+  }
+  assert.equal(events.at(-1)?.type, 'stream.reset');
+  assert.equal(events.length, 3, 'two events, then the reset');
+  assert.equal((await api()).filter((r) => r.method === 'GET').length, 1, 'one reconnect, and none after the reset');
+  assert.equal((await expectError(stream.finalMessage())).code, 'NO_FINAL_EVENT');
+});
+
+test('[sse.watch-reconnects] a watch the server ends cleanly reconnects with Last-Event-ID, as often as each reconnect carries events', async () => {
   const c = client();
-  const first: { eventId?: string }[] = await collect(c.conversations.send('c-done', { message: 'hi' }));
-  const resumed = c.conversations.resume('c-done', { lastEventId: first.at(-1)!.eventId });
-  assert.deepEqual(await collect(resumed), []);
-  assert.equal((await api()).filter((r) => r.method === 'GET').length, 1, 'one resume request, no reconnects');
+  await collect(c.conversations.send('c-w', { message: 'hi' }));
+  await faults({ watchCloses: 7 });
+  const events: { type: string; eventId?: string }[] = [];
+  for await (const event of c.conversations.watch('c-w', {})) {
+    events.push(event);
+    if (event.type === 'message.completed') break;
+  }
+  assert.deepEqual(events.map((e) => e.type), ['message.started', 'progress.updated', 'tool.started', 'tool.finished', 'text.delta', 'citation.added', 'text.delta', 'message.completed']);
+  const gets = (await api()).filter((r) => r.method === 'GET' && r.path === '/v3/conversations/c-w/stream');
+  assert.equal(gets.length, 8, 'seven reconnects, more than three, because each carried an event');
+  gets.slice(1).forEach((g, i) => assert.equal(g.headers['last-event-id'], events[i]!.eventId));
+});
+
+test('[sse.watch-resends-request] a watch reconnects with its whole request, what it listens to included, and Last-Event-ID', async () => {
+  await faults({ watchCloses: 1 });
+  const events: { type: string; eventId?: string }[] = [];
+  for await (const event of client().events.subscribe({ types: ['conversation.created'], conversationIds: ['c-11', 'c-12'] })) {
+    events.push(event);
+    if (events.length === 2) break;
+  }
+  const [first, second] = (await api()).filter((r) => r.path === '/v3/events/stream');
+  assert.ok(first && second, 'a reconnect after the clean end');
+  assert.equal(second.query, first.query, 'the same query');
+  assert.match(second.query, /type=conversation.created/);
+  assert.match(second.query, /conversationId=c-11/);
+  assert.equal(second.headers['last-event-id'], events[0]!.eventId);
+});
+
+test('[sse.conversation-reset] stream.reset on a conversation watch is delivered with its cursor as its id, and the watch carries on', async () => {
+  const c = client();
+  const answer = await collect(c.conversations.send('c-r', { message: 'hi' }));
+  const events: any[] = [];
+  for await (const event of c.conversations.watch('c-r', { lastEventId: answer.at(-1)!.eventId })) {
+    events.push(event);
+    if (event.type === 'message.completed') break;
+  }
+  const [reset] = events;
+  assert.equal(reset.type, 'stream.reset');
+  assert.equal(reset.cursor, reset.eventId);
+  assert.equal(events.at(-1).type, 'message.completed', 'the next answer follows the reset');
+  assert.equal((await api()).filter((r) => r.method === 'GET').length, 1, 'a reset is not an error and is never retried');
+});
+
+const ID_11 = '0193a6f3-0a1b-7c2d-8e3f-000000000011';
+
+test('[sse.reconnect-backoff] each reconnect in a row waits a longer, jittered pause, and the fourth fails with STREAM_LOST', async () => {
+  const c = client();
+  await collect(c.conversations.send('c-b', { message: 'hi' }));
+  await faults({ watchEmptyCloses: 4 });
+  const err = await expectError(collect(c.conversations.watch('c-b', {})));
+  assert.equal(err.code, 'STREAM_LOST');
+  const at = (await api()).filter((r) => r.method === 'GET').map((r) => r.at as number);
+  assert.equal(at.length, 4, 'the first request and three reconnects');
+  const [g1, g2, g3] = [at[1]! - at[0]!, at[2]! - at[1]!, at[3]! - at[2]!];
+  // The bands (0.25-0.5 s, 0.5-1 s, 1-2 s) do not overlap, so their lower bounds show the pause grows; a slow
+  // runtime only lengthens a pause. The upper bounds, three times each band's top, catch a broken cap.
+  assert.ok(g1 >= 200 && g2 >= 450 && g3 >= 950, `pauses ${g1}, ${g2}, ${g3} ms: at least 0.25, 0.5 and 1 s`);
+  assert.ok(g1 <= 1500 && g2 <= 3000 && g3 <= 6000, `pauses ${g1}, ${g2}, ${g3} ms: at most 1.5, 3 and 6 s`);
+});
+
+test('[sse.reconnect-without-event-id] a reconnect before any event sends no Last-Event-ID, and a watch keeps its after cursor', async () => {
+  await faults({ watchEmptyCloses: 1 });
+  for await (const event of client().events.subscribe({ types: ['conversation.created'], after: ID_11 })) {
+    void event;
+    break;
+  }
+  const [first, second] = (await api()).filter((r) => r.path === '/v3/events/stream');
+  assert.ok(first && second, 'a reconnect after the empty response');
+  assert.equal(second.headers['last-event-id'], undefined);
+  assert.equal(second.query, first.query, 'the same request, after cursor included');
+});
+
+test("[sse.reconnect-drops-after] a watch's reconnect sends Last-Event-ID in place of the after cursor it started from", async () => {
+  await faults({ watchCloses: 1 });
+  const events: { eventId?: string }[] = [];
+  for await (const event of client().events.subscribe({ types: ['conversation.created'], after: ID_11 })) {
+    events.push(event);
+    if (events.length === 2) break;
+  }
+  const [first, second] = (await api()).filter((r) => r.path === '/v3/events/stream');
+  assert.match(first.query, /after=/);
+  assert.equal(second.headers['last-event-id'], events[0]!.eventId);
+  assert.ok(!/after=/.test(second.query), 'no after cursor');
+  assert.match(second.query, /type=conversation.created/);
+});
+
+test('[sse.duplicate-not-progress] reconnects that bring only replayed duplicates still end in STREAM_LOST', async () => {
+  const c = client();
+  await collect(c.conversations.send('c-d', { message: 'hi' }));
+  await faults({ watchReplayCloses: 10 });
+  const seen: string[] = [];
+  const err = await expectError(
+    (async () => {
+      for await (const event of c.conversations.watch('c-d', {})) seen.push(event.type);
+    })(),
+  );
+  assert.equal(err.code, 'STREAM_LOST');
+  assert.deepEqual(seen, ['message.started'], 'the duplicates were dropped');
+  assert.equal((await api()).filter((r) => r.method === 'GET').length, 4, 'the first request and three reconnects');
+});
+
+test('[sse.watch-failed-answer] on a watch, message.failed is delivered as an event and the watch carries on', async () => {
+  const c = client();
+  await faults({ failStream: true });
+  await expectError(collect(c.conversations.send('c-f', { message: 'hi' })));
+  const types: string[] = [];
+  let failed: any;
+  for await (const event of c.conversations.watch('c-f', {})) {
+    types.push(event.type);
+    if (event.type === 'message.failed') failed = event;
+    if (event.type === 'message.completed') break;
+  }
+  assert.equal(failed?.code, 'SERVICE_UNAVAILABLE');
+  assert.ok(types.indexOf('message.failed') < types.indexOf('message.completed'), 'the next answer follows the failed one');
 });
 
 test('[sse.request-id-and-type] a stream exposes its request id, and every event its SSE event name', async () => {
@@ -269,8 +397,15 @@ test('[sse.typed-events] typed events, keep-alive comments ignored, finalMessage
 });
 
 test('[sse.resume] a dropped stream resumes with Last-Event-ID, without duplicates', async () => {
-  await faults({ dropAfterEvents: 3 });
-  const events = await collect(client().conversations.send('c-2', { message: 'hi' }));
+  // The mock holds the connection after the third event until the harness signals the drop, which it does once
+  // the SDK has delivered that event: a browser discards events still queued when a connection fails, so a drop on
+  // a timer could leave the client nothing to resume from.
+  await faults({ dropAfterEvents: 3, dropOnSignal: true });
+  const events: { eventId?: string; type: string }[] = [];
+  for await (const e of client().conversations.send('c-2', { message: 'hi' })) {
+    events.push(e);
+    if (events.length === 3) await fetch(`${BASE}/__mock/drop`, { method: 'POST' });
+  }
   const ids = events.map((e) => e.eventId);
   assert.equal(new Set(ids).size, ids.length, 'no duplicate events');
   assert.equal(events.at(-1)?.type, 'message.completed');
@@ -278,6 +413,71 @@ test('[sse.resume] a dropped stream resumes with Last-Event-ID, without duplicat
   assert.ok(resume, 'a resume request was made');
   assert.equal(resume.headers['last-event-id'], ids[2]);
   assert.equal(resume.headers.accept, 'text/event-stream');
+});
+
+// The mock's cursor the workspace stream cannot carry on from, and the cursor its stream.reset gives instead.
+const STALE_CURSOR = '0190d2a1-0000-7000-8000-000000000001';
+const RESET_CURSOR = '0193a6f3-0a1b-7c2d-8e3f-000000000010';
+
+test('[sse.final-ends-watch] a resumed answer ends at its final event, and closes the connection, although the watch stays open', async () => {
+  await faults({ dropAfterEvents: 2 });
+  const t0 = Date.now();
+  const answer = await client().conversations.send('c-watch', { message: 'hi' }).finalMessage();
+  assert.equal(answer.text, 'Staff receive 20 days of annual leave.');
+  assert.ok(Date.now() - t0 < 5_000, 'ended at message.completed, not when the server closed the watch');
+  let closed = false;
+  for (let i = 0; i < 100 && !closed; i++) {
+    closed = (await requests()).some((r) => r.event === 'client-disconnected');
+    if (!closed) await new Promise((r) => setTimeout(r, 20));
+  }
+  assert.ok(closed, 'the SDK closed the watch connection');
+});
+
+// TypeScript only: a stream sends its request when iterated, so opened() is how a caller knows it is open.
+test('opened() sends a stream request now and resolves at the headers; iterating reads that same response', async () => {
+  const stream = client().events.subscribe({ types: ['conversation.created'] });
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal((await api()).length, 0, 'nothing is sent until the stream is opened or iterated');
+  await stream.opened();
+  await stream.opened(); // idempotent
+  assert.equal((await api()).length, 1);
+  assert.ok(stream.requestId, 'the request id is known once the headers have arrived');
+  let first: string | undefined;
+  for await (const event of stream) {
+    first = event.type;
+    break; // a workspace stream stays open (and reconnects): take the first event and close
+  }
+  assert.equal(first, 'conversation.created');
+  assert.equal((await api()).length, 1, 'iterating did not send a second request');
+});
+
+test('opened() rejects with the call\'s typed error', async () => {
+  await faults({ status: { WatchWorkspaceEvents: [{ status: 404 }] } });
+  const stream = client().events.subscribe({ types: ['conversation.created'] });
+  await assert.rejects(stream.opened(), (e: unknown) => e instanceof NotFoundError || (e instanceof CaitlynError && (e as Err).status === 404));
+  await assert.rejects(
+    (async () => {
+      for await (const _ of stream) break;
+    })(),
+    (e: unknown) => e instanceof CaitlynError,
+    'iterating rethrows the same failure',
+  );
+});
+
+test('[sse.stream-reset] stream.reset is delivered as an event with its cursor as its id, and the stream carries on after it', async () => {
+  const events = [];
+  for await (const event of client().events.subscribe({ types: ['conversation.created'], after: STALE_CURSOR })) {
+    events.push(event);
+    if (events.length === 2) break; // a watch carries on until it is closed
+  }
+  assert.deepEqual(events.map((e) => e.type), ['stream.reset', 'conversation.created']);
+  const [reset, created] = events;
+  assert.ok(reset?.type === 'stream.reset');
+  assert.equal(reset.cursor, RESET_CURSOR);
+  assert.equal(reset.eventId, RESET_CURSOR);
+  assert.ok(created?.type === 'conversation.created');
+  assert.equal(created.data.agentId, 'GHT7YRWXPL');
+  assert.equal((await api()).length, 1, 'one request: a reset is not an error and is never retried');
 });
 
 test('[sse.clean-end-resumes] a clean end of stream before the final event also resumes', async () => {
@@ -317,13 +517,13 @@ test('[tolerance.unknown-enum] an unknown enum value is kept, not raised', async
   await faults({ unknownEnum: true });
   const docs = await collect(client().documents.list({ knowledgeBaseId: 'KB4T7YQ2WL' }));
   assert.equal(docs[1]!.status as string, 'archived');
-  const v = await client().versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+  const v = await client().agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
   assert.equal(v.source as string, 'cloned_from_template');
 });
 
 test('[tolerance.unknown-field-raw] unknown fields are kept in raw on the output', async () => {
   await faults({ unknownField: true });
-  const v = await client().versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+  const v = await client().agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
   assert.deepEqual(v.raw?.reviewState, { required: false });
   assert.ok(!('reviewState' in v), 'unknown fields are not spread onto the output');
 });
@@ -332,7 +532,7 @@ test('[tolerance.nested-raw] unknown fields are kept in raw on nested structures
   await faults({ unknownField: true });
   const docs = await collect(client().documents.list({ knowledgeBaseId: 'KB4T7YQ2WL' }));
   assert.deepEqual((docs[0] as unknown as { raw?: Record<string, unknown> }).raw?.retentionPolicy, { keepDays: 365 });
-  const v = await client().versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+  const v = await client().agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
   const kb = v.configuration.knowledgeBases?.[0] as unknown as { raw?: Record<string, unknown> };
   assert.equal(kb.raw?.reranker, 'cohere');
 });
@@ -356,8 +556,9 @@ test('[errors.404] a 404 is NotFoundError with status, code and requestId, with 
 
 test('[errors.409] a 409 is ConflictError', async () => {
   const c = client();
-  const up = await c.uploads.reserve({ fileName: 'a.txt', contentType: 'text/plain', byteSize: 1, sha256: 'x' });
-  const err = await expectError(c.documents.create({ knowledgeBaseId: 'KB4T7YQ2WL', uploadId: up.id, folder: 'hr/' }));
+  // An upload whose bytes never arrived: creating a document from it is the 409
+  const up = await c.uploads.reserve({ fileName: 'a.pdf', contentType: 'application/pdf', byteSize: 1, sha256: 'x' });
+  const err = await expectError(c.documents.create({ knowledgeBaseId: 'KB4T7YQ2WL', uploadId: up.id, folder: '/hr/' }));
   assert.ok(err instanceof ConflictError);
   assert.equal(err.status, 409);
   assert.equal(err.code, 'CONFLICT');
@@ -365,9 +566,9 @@ test('[errors.409] a 409 is ConflictError', async () => {
 
 test('[errors.412] a 412 on a stale ETag is PreconditionFailedError', async () => {
   const c = client();
-  const draft = await c.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
-  await c.versions.updateDraft('GHT7YRWXPL', { instructions: 'first' }, { ifMatch: draft.etag });
-  const err = await expectError(c.versions.updateDraft('GHT7YRWXPL', { instructions: 'second' }, { ifMatch: draft.etag }));
+  const draft = await c.agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+  await c.agents.versions.updateDraft('GHT7YRWXPL', { instructions: 'first' }, { ifMatch: draft.etag });
+  const err = await expectError(c.agents.versions.updateDraft('GHT7YRWXPL', { instructions: 'second' }, { ifMatch: draft.etag }));
   assert.ok(err instanceof PreconditionFailedError);
   assert.equal(err.code, 'PRECONDITION_FAILED');
   assert.ok(err.requestId);
@@ -375,7 +576,7 @@ test('[errors.412] a 412 on a stale ETag is PreconditionFailedError', async () =
 
 test('[errors.429-exhausted] a 429 after retries are exhausted carries retryAfterSeconds', async () => {
   await faults({ status: { GetAgentVersion: [0, 1, 2].map(() => ({ status: 429, retryAfter: 0 })) } });
-  const err = await expectError(client().versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }));
+  const err = await expectError(client().agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }));
   assert.equal(err.status, 429);
   assert.equal(err.code, 'RATE_LIMITED');
   assert.equal(err.retryAfterSeconds, 0);
@@ -384,8 +585,8 @@ test('[errors.429-exhausted] a 429 after retries are exhausted carries retryAfte
 
 test('[errors.field-errors] a 400 VALIDATION_FAILED for a field both set and cleared carries the field errors', async () => {
   const c = client();
-  const draft = await c.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
-  const err = await expectError(c.versions.updateDraft('GHT7YRWXPL', { identity: 'New', clear: ['identity'] }, { ifMatch: draft.etag }));
+  const draft = await c.agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+  const err = await expectError(c.agents.versions.updateDraft('GHT7YRWXPL', { identity: 'New', clear: ['identity'] }, { ifMatch: draft.etag }));
   assert.ok(err instanceof ValidationError);
   assert.equal(err.code, 'VALIDATION_FAILED');
   assert.equal(err.errors?.[0]?.pointer, '/identity');
@@ -399,7 +600,7 @@ const PAGE_STRADDLE = 'a'.repeat(8191) + '€'.repeat(10);
 test('[errors.raw-body-limit] rawBody keeps at most 8 KiB, cut on a character boundary, and says when it was cut', async () => {
   await faults({ status: { GetAgentVersion: [PAGE_20K, PAGE_STRADDLE].map((body) => ({ status: 404, contentType: 'text/html', body })) } });
   const c = client();
-  const get = (version: string) => expectError(c.versions.get({ agentId: 'GHT7YRWXPL', version }));
+  const get = (version: string) => expectError(c.agents.versions.get({ agentId: 'GHT7YRWXPL', version }));
   const page = await get('draft');
   assert.ok((page as unknown) instanceof NotFoundError);
   assert.equal(new TextEncoder().encode(page.rawBody!).byteLength, 8192);
@@ -428,8 +629,8 @@ test('[errors.connection] a connection closed before any response, and a refused
   // A browser resends a request whose connection closed before any response by itself (Chromium once, WebKit
   // several times), so in a page the mock closes it every time.
   await faults({ status: { GetAgentVersion: IN_PAGE ? Array.from({ length: 10 }, () => ({ close: true })) : [{ close: true }] } });
-  const closed = await expectError(client({ maxAttempts: 1 }).versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }));
-  const refused = await expectError(client({ maxAttempts: 1, endpoint: await refusedEndpoint() }).versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }));
+  const closed = await expectError(client({ maxAttempts: 1 }).agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }));
+  const refused = await expectError(client({ maxAttempts: 1, endpoint: await refusedEndpoint() }).agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }));
   for (const err of [closed, refused]) {
     assert.ok(err instanceof CaitlynConnectionError, `${err.constructor.name}: ${err.message}`);
     assert.deepEqual([err.status, err.code, err.requestId, err.rawBody, err.rawBodyTruncated], [0, 'CONNECTION_ERROR', undefined, '', false]);
@@ -468,7 +669,7 @@ test('[errors.html-404] an HTML 404 with no Caitlyn-Request-Id is the NotFoundEr
 
 test('[errors.empty-405] a 405 with an empty body is the generic error, with status 405 and code HTTP_405', async () => {
   await faults({ status: { GetAgentVersion: [{ status: 405, body: '' }] } });
-  const err = await expectError(client().versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }));
+  const err = await expectError(client().agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }));
   assert.equal(err.constructor, CaitlynError);
   assert.equal(err.status, 405);
   assert.equal(err.code, 'HTTP_405');
@@ -478,7 +679,7 @@ test('[errors.empty-405] a 405 with an empty body is the generic error, with sta
 
 test('[errors.text-502] a text/plain 502 is the generic error, with status 502, code HTTP_502 and the text, sent once', async () => {
   await faults({ status: { GetAgentVersion: [{ status: 502, contentType: 'text/plain', body: 'Bad Gateway' }] } });
-  const err = await expectError(client().versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }));
+  const err = await expectError(client().agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }));
   assert.equal(err.constructor, CaitlynError);
   assert.equal(err.status, 502);
   assert.equal(err.code, 'HTTP_502');
@@ -521,15 +722,15 @@ test('[cancel.stream] cancelling a stream closes the connection and raises Abort
 test('[cancel.unary] cancelling a single call stops it', async () => {
   const controller = new AbortController();
   controller.abort();
-  await assert.rejects(client().versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }, { signal: controller.signal }), (err: Error) => err.name === 'AbortError');
+  await assert.rejects(client().agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }, { signal: controller.signal }), (err: Error) => err.name === 'AbortError');
 });
 
 // ---------------------------------------------------------------- updates
 
 test('[update.if-match] If-Match is sent from the call option and the new ETag comes back', async () => {
   const c = client();
-  const draft = await c.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
-  const updated = await c.versions.updateDraft('GHT7YRWXPL', { instructions: `${draft.configuration.instructions}\nAlways state the policy clause number.` }, { ifMatch: draft.etag });
+  const draft = await c.agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+  const updated = await c.agents.versions.updateDraft('GHT7YRWXPL', { instructions: `${draft.configuration.instructions}\nAlways state the policy clause number.` }, { ifMatch: draft.etag });
   assert.notEqual(updated.etag, draft.etag);
   const patch = (await api()).find((r) => r.method === 'PATCH');
   assert.equal(patch.headers['if-match'], draft.etag);
@@ -538,8 +739,8 @@ test('[update.if-match] If-Match is sent from the call option and the new ETag c
 
 test('[update.clear] clear sends only the clear list, and the field is cleared', async () => {
   const c = client();
-  const draft = await c.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
-  const updated = await c.versions.updateDraft('GHT7YRWXPL', { clear: ['identity'] }, { ifMatch: draft.etag });
+  const draft = await c.agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+  const updated = await c.agents.versions.updateDraft('GHT7YRWXPL', { clear: ['identity'] }, { ifMatch: draft.etag });
   const patch = (await api()).find((r) => r.method === 'PATCH');
   assert.deepEqual(JSON.parse(patch.body), { clear: ['identity'] });
   assert.equal(updated.configuration.identity, undefined);
@@ -550,7 +751,7 @@ test('[update.clear] clear sends only the clear list, and the field is cleared',
 
 test('[wire.headers] exactly the SDK headers: Caitlyn user agent, Caitlyn-Sdk-Model, no AWS headers', async () => {
   await faults({ status: { GetAgentVersion: [{ status: 503, retryAfter: 0 }] } });
-  await client({ telemetry: { enabled: false } }).versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+  await client({ telemetry: { enabled: false } }).agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
   const sent = await api();
   assert.equal(sent.length, 2);
   for (const r of sent) {
@@ -589,7 +790,7 @@ test('[environment.hostile-aws] hostile AWS_* variables and ~/.aws files change 
   try {
     await faults({ status: { GetAgentVersion: [{ status: 503, retryAfter: 0 }] } });
     const t0 = Date.now();
-    const v = await client({ telemetry: { enabled: false } }).versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+    const v = await client({ telemetry: { enabled: false } }).agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
     const docs = await collect(client({ telemetry: { enabled: false } }).documents.list({ knowledgeBaseId: 'KB4T7YQ2WL', limit: 3 }));
     assert.equal(v.name, 'draft');
     assert.equal(docs.length, 7);
@@ -604,12 +805,104 @@ test('[environment.hostile-aws] hostile AWS_* variables and ~/.aws files change 
 
 // ---------------------------------------------------------------- versions, headers, telemetry, endpoint
 
+// ---------------------------------------------------------------- waiters (documents.waitUntilIndexed)
+// The mock's documentStatus fault gives a document the next status at each read; fast delays keep the cases short.
+
+const fastWait = { minDelayMs: 5, maxDelayMs: 20 };
+const doc = { knowledgeBaseId: 'KB4T7YQ2WL', documentId: 'doc-0002' };
+const documentStatus = (...statuses: string[]) => faults({ documentStatus: { 'doc-0002': statuses } });
+const gets = async () => (await api()).filter((r) => r.path === '/v3/knowledge-bases/KB4T7YQ2WL/documents/doc-0002').length;
+
+test('[waiter.success] a waiter returns the output once a success acceptor matches: indexed after queued and indexing, and partially indexed', async () => {
+  await documentStatus('queued', 'indexing', 'indexed');
+  const out = await client().documents.waitUntilIndexed(doc, fastWait);
+  assert.equal(out.status, 'indexed');
+  assert.equal(await gets(), 3, 'one read per status: the first at once, then after each pause');
+  await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
+  await documentStatus('indexing', 'partially_indexed');
+  assert.equal((await client().documents.waitUntilIndexed(doc, fastWait)).status, 'partially_indexed');
+});
+
+test('[waiter.failure] a failure acceptor, or an error no acceptor matches (a missing document), ends the wait with a failure waiter error carrying the last result', async () => {
+  await documentStatus('indexing', 'failed');
+  const failed = await client().documents.waitUntilIndexed(doc, fastWait).catch((e) => e);
+  assert.ok(failed instanceof WaiterError, `got ${failed}`);
+  assert.equal(failed.reason, 'failure');
+  assert.equal(failed.waiter, 'waitUntilIndexed');
+  assert.equal((failed.last as { status: string }).status, 'failed');
+  assert.equal(failed.attempts, 2);
+  // A missing document: the waiter's NotFoundError acceptor is a failure state
+  const missing = await client().documents.waitUntilIndexed({ ...doc, documentId: 'doc-none' }, fastWait).catch((e) => e);
+  assert.ok(missing instanceof WaiterError && missing.reason === 'failure', `got ${missing}`);
+  assert.ok(missing.last instanceof NotFoundError);
+  // An error no acceptor matches (a 403) also ends the wait at once, with that error as the last result
+  await faults({ status: { GetDocument: [{ status: 403 }] } });
+  const denied = await client().documents.waitUntilIndexed(doc, fastWait).catch((e) => e);
+  assert.ok(denied instanceof WaiterError && denied.reason === 'failure', `got ${denied}`);
+  assert.equal((denied.last as Err).status, 403);
+  assert.equal(denied.attempts, 1);
+});
+
+test('[waiter.timeout] a waiter whose limit passes ends with a timeout waiter error carrying the last output', async () => {
+  await documentStatus('indexing');
+  const t0 = Date.now();
+  const err = await client().documents.waitUntilIndexed(doc, { ...fastWait, maxWaitMs: 80 }).catch((e) => e);
+  assert.ok(err instanceof WaiterError, `got ${err}`);
+  assert.equal(err.reason, 'timeout');
+  assert.equal((err.last as { status: string }).status, 'indexing');
+  assert.ok(Date.now() - t0 < 2_000, 'the last pause was cut to the time left');
+});
+
+test('[waiter.default-limit] a waiter\'s default limit is its waitLimits entry (Indexed: 60 minutes), or 5 minutes without one', async () => {
+  await documentStatus('indexing');
+  // After the first read the clock jumps past any limit, so the error names the limit the waiter used.
+  const realNow = Date.now;
+  let calls = 0;
+  Date.now = () => realNow() + (calls++ > 0 ? 24 * 60 * 60 * 1000 : 0);
+  try {
+    const indexed = await client().documents.waitUntilIndexed(doc, fastWait).catch((e) => e);
+    assert.ok(indexed instanceof WaiterError && indexed.reason === 'timeout', `got ${indexed}`);
+    assert.match(indexed.message, /within 3600000 ms/);
+    calls = 0;
+    const plain = await waitUntil('waitUntilAnything', async () => ({ status: 'indexing' }), () => 'retry', fastWait).catch((e) => e);
+    assert.match(plain.message, new RegExp(`within ${DEFAULT_WAIT_LIMIT_MS} ms`));
+    assert.equal(DEFAULT_WAIT_LIMIT_MS, 5 * 60 * 1000);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('[waiter.success-on-error] a waiter whose success acceptor matches an error (Deleted, on a 404) ends the wait with no output: a deleted document read as deleting, then gone; its default limit is 15 minutes', async () => {
+  const target = { knowledgeBaseId: 'KB4T7YQ2WL', documentId: 'doc-0003' };
+  const deleted = await client().documents.delete(target);
+  assert.equal(deleted.status, 'deleting');
+  const result: void = await client().documents.waitUntilDeleted(target, fastWait);
+  assert.equal(result, undefined, 'no output: the 404 it waits for is the success');
+  const reads = (await api()).filter((r) => r.method === 'GET' && r.path === '/v3/knowledge-bases/KB4T7YQ2WL/documents/doc-0003').length;
+  assert.equal(reads, 2, 'one read while deleting, then the 404');
+  // The default limit: a document that stays deleting, and a clock that jumps past any limit after the first read
+  await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
+  await faults({ deletingReads: 1_000 });
+  await client().documents.delete(target);
+  const realNow = Date.now;
+  let calls = 0;
+  Date.now = () => realNow() + (calls++ > 0 ? 24 * 60 * 60 * 1000 : 0);
+  try {
+    const slow = await client().documents.waitUntilDeleted(target, fastWait).catch((e) => e);
+    assert.ok(slow instanceof WaiterError && slow.reason === 'timeout', `got ${slow}`);
+    assert.equal(slow.waiter, 'waitUntilDeleted');
+    assert.match(slow.message, /within 900000 ms/);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
 test('[since.fails-before-sending] an operation newer than the server fails before anything is sent', async () => {
   await faults({ apiVersion: '5.110.0' });
   const c = client();
-  await c.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }); // no check before the first response
+  await c.agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }); // no check before the first response
   const before = (await api()).length;
-  await assert.rejects(c.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }), (e: unknown) => {
+  await assert.rejects(c.agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' }), (e: unknown) => {
     assert.ok(e instanceof NotSupportedByServer);
     assert.equal(e.requires, SDK_MODEL);
     assert.equal(e.server, '5.110.0');
@@ -619,14 +912,14 @@ test('[since.fails-before-sending] an operation newer than the server fails befo
 });
 
 test('[headers.request-id] Caitlyn-Request-Id and Caitlyn-Api-Version are on successful outputs', async () => {
-  const v = await client().versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+  const v = await client().agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
   assert.equal(v.requestId, (await api()).at(-1).requestId);
   assert.equal(v.$metadata.requestId, v.requestId);
   assert.equal(v.apiVersion, '5.120.0');
 });
 
 test("[headers.response-metadata] a successful call's response metadata gives its HTTP status and request id", async () => {
-  const v = await client().versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+  const v = await client().agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
   const metadata = v.$metadata; // typed on every single-call output (MetadataBearer)
   assert.equal(metadata.httpStatusCode, 200);
   assert.equal(metadata.requestId, (await api()).at(-1).requestId);
@@ -639,7 +932,7 @@ test('[telemetry.spans] one span per call, one child span per attempt, tracepare
     const exporter = new InMemorySpanExporter();
     const provider = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] });
     await faults({ status: { GetAgentVersion: [{ status: 503, retryAfter: 0 }] } });
-    await client({ telemetry: { tracerProvider: provider } }).versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+    await client({ telemetry: { tracerProvider: provider } }).agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
     const spans = exporter.getFinishedSpans();
     const call = spans.find((s) => s.name === 'caitlyn.call');
     assert.ok(call, `spans: ${spans.map((s) => s.name).join(', ')}`);
@@ -658,7 +951,7 @@ test('[telemetry.attributes] the shared span names and attributes, on a failed c
   const provider = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] });
   const c = client({ telemetry: { tracerProvider: provider } });
   await faults({ status: { GetAgentVersion: [{ status: 503, retryAfter: 0 }] } });
-  await expectError(c.versions.get({ agentId: 'GHT7YRWXPL', version: 'nope' }));
+  await expectError(c.agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'nope' }));
   for await (const _ of c.documents.list({ knowledgeBaseId: 'KB4T7YQ2WL', limit: 100 })) void _;
   await c.uploads.create({ file: new Blob(['hello'], { type: 'text/plain' }), fileName: 'hello.txt' });
   const spans = exporter.getFinishedSpans();
@@ -722,7 +1015,7 @@ const signInRequired = () => faults({ auth: { require: true } });
 const authCounts = async (): Promise<Record<string, number>> => (await (await fetch(`${BASE}/__mock/auth`)).json()).counts;
 const tokenRequests = async () => (await requests()).filter((r) => r.path === '/oauth/token').map((r) => new URLSearchParams(r.body));
 const signedIn = (auth: AuthOptions, workspace = 'your-company.getcaitlyn.ai') => new Caitlyn({ workspace, endpoint: BASE, auth, telemetry: { enabled: false } });
-const read = (c: Caitlyn) => c.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+const read = (c: Caitlyn) => c.agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
 const ccAuth = (extra: Partial<Extract<AuthOptions, { mode: 'clientCredentials' }>> = {}): AuthOptions => ({ mode: 'clientCredentials', clientId: MOCK_CLIENT.id, clientSecret: MOCK_CLIENT.secret, ...extra });
 
 async function authError(p: Promise<unknown>): Promise<CaitlynAuthError> {
@@ -1103,7 +1396,7 @@ test('[auth.session] the session cookie, Origin on writes, and no Authorization 
   await signInRequired();
   const c = signedIn({ mode: 'session', cookie: MOCK_SESSION_COOKIE, origin: 'https://caitlyn.lndo.site' });
   const v = await read(c);
-  await c.versions.updateDraft('GHT7YRWXPL', { instructions: 'Cite clause numbers.' }, { ifMatch: v.etag! });
+  await c.agents.versions.updateDraft('GHT7YRWXPL', { instructions: 'Cite clause numbers.' }, { ifMatch: v.etag! });
   const [get, patch] = await api();
   assert.equal(get.headers.authorization, undefined);
   assert.equal(get.headers.cookie, MOCK_SESSION_COOKIE);

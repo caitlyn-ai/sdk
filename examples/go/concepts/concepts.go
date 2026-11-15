@@ -21,7 +21,7 @@ const conversationID = "0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47"
 // Errors shows how to tell the errors apart.
 func Errors(ctx context.Context, client *caitlyn.Client) {
 	// #region errors
-	_, err := client.Versions.Get(ctx, &caitlyn.GetAgentVersionInput{AgentID: "GHT7YRWXPL", Version: "v99"})
+	_, err := client.Agents.Versions.Get(ctx, &caitlyn.GetAgentVersionInput{AgentID: "GHT7YRWXPL", Version: "v99"})
 	var notFound *caitlyn.NotFoundError
 	var invalid *caitlyn.ValidationError
 	var noResponse *caitlyn.ConnectionError
@@ -126,7 +126,7 @@ func Cancelling(client *caitlyn.Client) error {
 func Pagination(ctx context.Context, client *caitlyn.Client) error {
 	// #region pagination
 	// Every document in the folder: the next page is fetched as the loop reaches it
-	input := &caitlyn.ListDocumentsInput{KnowledgeBaseID: "KB4T7YQ2WL", Folder: caitlyn.Ptr("hr/"), Limit: caitlyn.Ptr[int32](100)}
+	input := &caitlyn.ListDocumentsInput{KnowledgeBaseID: "KB4T7YQ2WL", Folder: caitlyn.Ptr("/hr/"), Limit: caitlyn.Ptr[int32](100)}
 	for document, err := range client.Documents.List(ctx, input) {
 		if err != nil {
 			return err

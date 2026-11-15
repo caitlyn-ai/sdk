@@ -1,6 +1,7 @@
 package ai.caitlyn.codegen.rust;
 
 import ai.caitlyn.codegen.model.CaitlynTraits;
+import ai.caitlyn.codegen.model.Waiters;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -41,7 +42,7 @@ import software.amazon.smithy.model.traits.TitleTrait;
  */
 final class ServiceGenerator {
     private static final ShapeId WAITABLE = ShapeId.from("smithy.waiters#waitable");
-    private static final Set<String> RESERVED_VARIANTS = Set.of("Api", "NotSupportedByServer", "Input", "Auth", "Connection", "Cancelled");
+    private static final Set<String> RESERVED_VARIANTS = Set.of("Api", "NotSupportedByServer", "Input", "Auth", "Connection", "Cancelled", "Waiter");
 
     private final RustContext ctx;
     private final Model model;
@@ -51,7 +52,6 @@ final class ServiceGenerator {
     private final TreeMap<String, List<OperationInfo>> byNamespace = new TreeMap<>();
     /** Every error shape in the service, by status. */
     private final TreeMap<Integer, StructureShape> errorsByStatus = new TreeMap<>();
-    private final List<String> skippedWaiters = new ArrayList<>();
 
     ServiceGenerator(RustContext ctx, ServiceShape service) {
         this.ctx = ctx;
@@ -121,10 +121,7 @@ final class ServiceGenerator {
             }
             case STREAM -> stream(w, op);
         }
-        if (op.op.findTrait(WAITABLE).isPresent()) {
-            // Waiters come with the waiter runtime (as the TypeScript SDK has); nothing in the model uses them yet.
-            skippedWaiters.add(op.name);
-        }
+        waiters(w, op);
     }
 
     private String resultType(OperationInfo op) {
@@ -159,7 +156,7 @@ final class ServiceGenerator {
 
     private void inputType(RustWriter w, OperationInfo op) {
         String name = op.inputType();
-        StringBuilder text = new StringBuilder("The input of `" + op.namespace + "()." + op.method + "`.");
+        StringBuilder text = new StringBuilder("The input of `" + op.call + "." + op.method + "`.");
         op.positional.ifPresent(p -> text.append(" `").append(p.member().getMemberName()).append("` is a parameter of the method."));
         op.ifMatch.ifPresent(p -> text.append(" `If-Match` is the call option `.if_match(etag)`").append(p.member().isRequired() ? " (required)." : "."));
         op.idempotency.ifPresent(p -> text.append(" The idempotency key is generated, or set with `.idempotency_key(key)`."));
@@ -408,7 +405,7 @@ final class ServiceGenerator {
                 + op.method + "_pages` yields whole pages."));
         w.l("    pub fn " + op.method + "(&self, " + positionalParam(op) + "input: " + op.inputType() + ") -> rt::Items<" + page + ", " + itemType + ", Error> {\n");
         w.l("        rt::Items::new(self." + op.method + "_pages(" + op.positionalParam().map(p -> p + ", ").orElse("") + "input), |p| " + itemsExpr + ")\n    }\n\n");
-        w.l(Names.doc("The pages of `" + op.namespace + "()." + op.method + "`, from `input." + cursorField + "` (normally unset) to the last page.", "    "));
+        w.l(Names.doc("The pages of `" + op.call + "." + op.method + "`, from `input." + cursorField + "` (normally unset) to the last page.", "    "));
         w.l("    pub fn " + op.method + "_pages(&self, " + positionalParam(op) + "input: " + op.inputType() + ") -> rt::Pages<" + page + ", Error> {\n");
         w.l("        let core = self.core.clone();\n" + positionalSetup(op));
         w.l("        let start = input." + cursorField + ".clone();\n");
@@ -454,16 +451,33 @@ final class ServiceGenerator {
         return new StreamTypes(u, finalType, "Some(" + fn + ")");
     }
 
+    /**
+     * A stream's type alias. It is named after its event union, as `SendMessage`'s ConversationEventStream is.
+     * When operations stream the same union and only some of them end with a final event, the ones without
+     * (WatchConversation, which carries on until it is closed) are named after the operation instead.
+     */
+    private String streamAlias(OperationInfo op, String union) {
+        ObjectNode sse = op.sse.orElseThrow();
+        String events = sse.expectStringMember("events").getValue();
+        boolean siblingHasFinal = ops.values().stream()
+                .filter(o -> o.sse.isPresent() && o.sse.get().expectStringMember("events").getValue().equals(events))
+                .anyMatch(o -> o.sse.get().getStringMember("final").isPresent());
+        boolean ownFinal = sse.getStringMember("final").isPresent();
+        return !ownFinal && siblingHasFinal ? Names.pascal(op.name) + "Stream" : union + "Stream";
+    }
+
     private void stream(RustWriter w, OperationInfo op) {
         StreamTypes st = streamTypes(w, op);
-        String alias = st.union() + "Stream";
+        String alias = streamAlias(op, st.union());
         String target = "rt::Stream<" + st.union() + ", " + st.finalType() + ", Error>";
         String prev = streamAliases.putIfAbsent(alias, target);
         if (prev == null) {
-            w.l(Names.doc("A stream of [`" + st.union() + "`] events. Call `next().await` until it returns `None`, then `final_message().await`"
-                    + (st.finalType().equals("()") ? "" : " for the [`" + st.finalType() + "`]")
-                    + " (it drains the stream if needed). A dropped connection is resumed with `Last-Event-ID` where the model allows; "
-                    + "dropping the stream closes the connection.", ""));
+            boolean hasFinal = !st.finalType().equals("()");
+            w.l(Names.doc("A stream of [`" + st.union() + "`] events. "
+                    + (hasFinal ? "Call `next().await` until it returns `None`, then `final_message().await` for the [`" + st.finalType()
+                            + "`] (it drains the stream if needed)."
+                            : "Call `next().await` until you have what you need, then drop the stream: it has no final event.")
+                    + " A dropped connection is resumed with `Last-Event-ID` where the model allows; dropping the stream closes the connection.", ""));
             w.l("pub type " + alias + " = " + target + ";\n\n");
         } else if (!prev.equals(target)) {
             throw new CodegenException(op.op.getId() + ": two streams of " + st.union() + " with different final events");
@@ -484,7 +498,14 @@ final class ServiceGenerator {
             for (OperationInfo.Param rp : r.all) {
                 String member = rp.member().getMemberName();
                 if (rp.location() == HttpBinding.Location.HEADER && rp.wire().equalsIgnoreCase("Last-Event-ID")) {
-                    fill.append("                        rin.").append(rp.field()).append(" = ").append(rp.member().isRequired() ? "last_event_id" : "Some(last_event_id)").append(";\n");
+                    // Before any event, the request goes as it was, with no Last-Event-ID; after one, Last-Event-ID
+                    // carries the position in place of a watch's `after` cursor (PROTOCOL.md 5.6).
+                    String dropAfter = r.op.getId().equals(op.op.getId())
+                            ? r.all.stream().filter(p -> p.member().getMemberName().equals("after")).findFirst()
+                                    .map(p -> " rin." + p.field() + " = None;").orElse("")
+                            : "";
+                    fill.append("                        if !last_event_id.is_empty() { rin.").append(rp.field()).append(" = ")
+                            .append(rp.member().isRequired() ? "last_event_id" : "Some(last_event_id)").append(";").append(dropAfter).append(" }\n");
                     lastSet = true;
                     continue;
                 }
@@ -505,6 +526,12 @@ final class ServiceGenerator {
             if (!lastSet) {
                 throw new CodegenException(r.op.getId() + ": a resumeWith operation needs a Last-Event-ID header member");
             }
+            // A watch resumes itself: the same request again (what it listens to included), from the last event.
+            boolean self = r.op.getId().equals(op.op.getId());
+            if (self) {
+                resumeSetup.append("            let resume_input = input.clone();\n");
+                captured.add("resume_input");
+            }
             StringBuilder b = new StringBuilder();
             b.append("            let resume_core = core.clone();\n            let resume_opts = opts.cancellation_only();\n");
             b.append("            let resume: rt::stream::Resume = Box::new(move |last_event_id: String| {\n");
@@ -513,7 +540,7 @@ final class ServiceGenerator {
                 b.append("                let ").append(c).append(" = ").append(c).append(".clone();\n");
             }
             b.append("                Box::pin(async move {\n");
-            b.append("                        let mut rin = ").append(r.inputType()).append("::default();\n").append(fill);
+            b.append("                        let mut rin = ").append(self ? "resume_input.clone()" : r.inputType() + "::default()").append(";\n").append(fill);
             b.append("                        let rreq = build_").append(fnName(r)).append("(").append(positionalArg).append("&rin)?;\n");
             b.append("                        core.send(&OP_").append(Names.constant(r.name)).append(", rreq, &opts).await\n");
             b.append("                })\n            });\n");
@@ -568,7 +595,7 @@ final class ServiceGenerator {
                 OperationInfo.Param p = op.param(target.get()).orElseThrow();
                 String result = resultType(op);
                 w.l("impl " + op.namespaceType + " {\n");
-                w.l(Names.doc("Uploads `file` (as `" + presigned.namespace + "().create` does), then calls `" + op.method + "` with `"
+                w.l(Names.doc("Uploads `file` (as `" + presigned.call + ".create` does), then calls `" + op.method + "` with `"
                         + p.field() + "` set to the upload's `id`. Other fields come from `input`.", "    "));
                 w.l("    pub fn upload(&self, " + positionalParam(op) + "file: rt::UploadFile, input: " + op.inputType() + ") -> rt::Call<" + result + ", Error> {\n");
                 w.l("        let this = self.clone();\n        let uploads = " + presigned.namespaceType + " { core: self.core.clone() };\n" + positionalSetup(op));
@@ -612,7 +639,10 @@ final class ServiceGenerator {
                     + "    /// Signing in failed.\n    Auth(rt::AuthError),\n"
                     + "    /// No response arrived, or the connection failed while the body was read, after any retries: status 0,\n"
                     + "    /// code `CONNECTION_ERROR`, and the network error as its source.\n    Connection(rt::ConnectionError),\n"
-                    + "    /// The call's cancellation token fired.\n    Cancelled,\n}\n\n");
+                    + "    /// The call's cancellation token fired.\n    Cancelled,\n"
+                    + "    /// A waiter (`wait_until_…`) reached a failure state or ran out of time (PROTOCOL.md 10.1). It names the waiter\n"
+                    + "    /// and carries the reason, the number of reads and the last read's output or error.\n"
+                    + "    Waiter(Box<rt::WaiterError<Error>>),\n}\n\n");
             StringBuilder api = new StringBuilder();
             StringBuilder shape = new StringBuilder();
             StringBuilder from = new StringBuilder();
@@ -653,11 +683,165 @@ final class ServiceGenerator {
                     + "        match self {\n            Error::NotSupportedByServer(e) => e.fmt(f),\n            Error::Input(e) => e.fmt(f),\n"
                     + "            Error::Auth(e) => e.fmt(f),\n            Error::Connection(e) => e.fmt(f),\n"
                     + "            Error::Cancelled => f.write_str(\"caitlyn: the call was cancelled\"),\n"
+                    + "            Error::Waiter(e) => e.fmt(f),\n"
                     + "            other => other.api().expect(\"a problem variant\").fmt(f),\n        }\n    }\n}\n\n");
             w.l("impl std::error::Error for Error {\n    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {\n        match self {\n"
-                    + "            Error::Connection(e) => Some(e),\n            other => other.api().and_then(|e| e.source.as_deref()).map(|s| s as _),\n"
+                    + "            Error::Connection(e) => Some(e),\n            Error::Waiter(e) => Some(e.as_ref()),\n"
+                    + "            other => other.api().and_then(|e| e.source.as_deref()).map(|s| s as _),\n"
                     + "        }\n    }\n}\n");
         });
+    }
+
+    // ------------------------------------------------------------------ waiters (smithy.waiters#waitable)
+
+    /** One {@code wait_until_<name>()} per waiter on a unary operation, and its acceptors (PROTOCOL.md 10.1). */
+    private void waiters(RustWriter w, OperationInfo op) {
+        Optional<ObjectNode> trait = op.op.findTrait(WAITABLE).map(t -> t.toNode().expectObjectNode());
+        if (trait.isEmpty()) {
+            return;
+        }
+        if (op.kind != OperationInfo.Kind.UNARY) {
+            throw new CodegenException(op.op.getId() + ": waiters on list or stream operations are not supported yet");
+        }
+        String result = resultType(op);
+        for (Map.Entry<String, software.amazon.smithy.model.node.Node> e : new TreeMap<>(trait.get().getStringMap()).entrySet()) {
+            String name = e.getKey();
+            ObjectNode waiter = e.getValue().expectObjectNode();
+            int min = waiter.getNumberMemberOrDefault("minDelay", 2).intValue();
+            int max = waiter.getNumberMemberOrDefault("maxDelay", 120).intValue();
+            int limit = CaitlynTraits.waitLimitSeconds(op.op, name);
+            String accept = "accept_" + fnName(op) + "_" + Names.snake(name).replace("r#", "");
+            String text = waiter.getStringMemberOrDefault("documentation", "Waits for " + name + ".");
+            String pos = op.positionalParam().map(p -> p + ".clone(), ").orElse("");
+            // A waiter whose success acceptors match only errors (Deleted, on a 404) has no output: the wait returns ().
+            boolean onError = Waiters.succeedsOnError(op.op.getId(), name, waiter);
+            String returns = onError ? "`Ok(())`" : "the output";
+            w.l("impl " + op.namespaceType + " {\n");
+            w.l(Names.doc(text + "\n\nIt reads `" + op.call + "." + op.method + "` at once, then after pauses of " + min + " to "
+                    + max + " seconds that grow with each read, until a success state (returning " + returns + "), a failure state or an "
+                    + "error no state matches ([`Error::Waiter`]), or the time limit: `max_wait`, by default " + limit + " seconds. Set "
+                    + "`max_wait`, `delays` or `cancel_on` before awaiting it; cancelling ends it with [`Error::Cancelled`].", "    "));
+            w.l("    pub fn wait_until_" + Names.snake(name).replace("r#", "") + "(&self, " + positionalParam(op) + "input: " + op.inputType()
+                    + ") -> rt::Wait<" + result + ", Error" + (onError ? ", ()" : "") + "> {\n");
+            w.l("        let this = self.clone();\n" + positionalSetup(op));
+            w.l("        rt::Wait::" + (onError ? "until_error" : "new") + "(\n            rt::WaiterSpec {\n                name: " + Names.str(name) + ",\n"
+                    + "                min_delay: std::time::Duration::from_secs(" + min + "),\n"
+                    + "                max_delay: std::time::Duration::from_secs(" + max + "),\n"
+                    + "                max_wait: std::time::Duration::from_secs(" + limit + "),\n            },\n");
+            w.l("            move |opts| std::future::IntoFuture::into_future(this." + op.method + "(" + pos + "input.clone()).options(opts)),\n");
+            w.l("            " + accept + ",\n            |e| Error::Waiter(Box::new(e)),\n            || Error::Cancelled,\n        )\n    }\n}\n\n");
+
+            StringBuilder acc = new StringBuilder("/// The `" + name + "` waiter's acceptors, in order; `None` when none matches.\n");
+            acc.append("fn ").append(accept).append("(read: &Result<").append(result).append(", Error>) -> Option<rt::WaitState> {\n");
+            StringBuilder preds = new StringBuilder();
+            int i = 0;
+            for (software.amazon.smithy.model.node.Node a : waiter.expectArrayMember("acceptors").getElements()) {
+                ObjectNode acceptor = a.expectObjectNode();
+                String state = switch (acceptor.expectStringMember("state").getValue()) {
+                    case "success" -> "rt::WaitState::Success";
+                    case "failure" -> "rt::WaitState::Failure";
+                    case "retry" -> "rt::WaitState::Retry";
+                    default -> throw new CodegenException(op.op.getId() + ": unknown waiter state");
+                };
+                ObjectNode matcher = acceptor.expectObjectMember("matcher");
+                String cond;
+                if (matcher.getBooleanMember("success").isPresent()) {
+                    cond = matcher.expectBooleanMember("success").getValue() ? "read.is_ok()" : "read.is_err()";
+                } else if (matcher.getStringMember("errorType").isPresent()) {
+                    String type = matcher.expectStringMember("errorType").getValue();
+                    OperationIndex.of(model).getErrors(service, op.op).stream().filter(s -> s.getId().getName().equals(type)).findFirst()
+                            .orElseThrow(() -> new CodegenException(op.op.getId() + ": waiter errorType " + type + " is not an error of the operation"));
+                    cond = "matches!(read, Err(e) if e.shape() == Some(" + Names.str(type) + "))";
+                } else if (matcher.getObjectMember("output").isPresent()) {
+                    ObjectNode m = matcher.expectObjectMember("output");
+                    String fn = accept + "_path" + i;
+                    preds.append(pathPredicate(fn, op.output, result, m.expectStringMember("path").getValue(),
+                            m.expectStringMember("comparator").getValue(), m.expectStringMember("expected").getValue(), op));
+                    cond = "matches!(read, Ok(out) if " + fn + "(out))";
+                } else {
+                    throw new CodegenException(op.op.getId() + ": only success, errorType and output waiter matchers are supported yet");
+                }
+                acc.append("    if ").append(cond).append(" {\n        return Some(").append(state).append(");\n    }\n");
+                i++;
+            }
+            acc.append("    None\n}\n\n");
+            w.l(acc.toString()).l(preds.toString());
+        }
+    }
+
+    /**
+     * Compiles a waiter's JMESPath to Rust: field chains ("a.b.c") with at most one list projection ("a.list[].c"),
+     * checked against the model so a wrong path fails generation, not a wait. It collects the values the path
+     * reaches as strings, then compares them.
+     */
+    private String pathPredicate(String fn, StructureShape root, String rootType, String path, String comparator, String expected,
+                                 OperationInfo op) {
+        if (!path.matches("[A-Za-z0-9_]+(\\[\\])?(\\.[A-Za-z0-9_]+(\\[\\])?)*") || path.chars().filter(ch -> ch == '[').count() > 1) {
+            throw new CodegenException(op.op.getId() + ": waiter path " + path + " uses JMESPath beyond field chains and one [] projection");
+        }
+        StringBuilder body = new StringBuilder("    let mut vals: Vec<String> = Vec::new();\n");
+        String indent = "    ";
+        int open = 0;
+        boolean projected = false;
+        String var = "out";
+        Shape current = root;
+        int n = 0;
+        for (String raw : path.split("\\.")) {
+            boolean flatten = raw.endsWith("[]");
+            String seg = flatten ? raw.substring(0, raw.length() - 2) : raw;
+            if (!(current instanceof StructureShape s)) {
+                throw new CodegenException(op.op.getId() + ": waiter path " + path + " walks into a non-structure");
+            }
+            MemberShape m = s.getMember(seg).orElseThrow(() -> new CodegenException(op.op.getId() + ": waiter path " + path + ": no member " + seg));
+            String next = "v" + (++n);
+            if (m.isRequired()) {
+                body.append(indent).append("let ").append(next).append(" = &").append(var).append(".").append(Names.snake(m.getMemberName())).append(";\n");
+            } else {
+                body.append(indent).append("if let Some(").append(next).append(") = &").append(var).append(".").append(Names.snake(m.getMemberName())).append(" {\n");
+                indent += "    ";
+                open++;
+            }
+            var = next;
+            current = target(m);
+            if (flatten) {
+                if (!(current instanceof ListShape list)) {
+                    throw new CodegenException(op.op.getId() + ": waiter path " + path + ": [] on a non-list");
+                }
+                String item = "v" + (++n);
+                body.append(indent).append("for ").append(item).append(" in ").append(var).append(".iter() {\n");
+                indent += "    ";
+                open++;
+                var = item;
+                current = model.expectShape(list.getMember().getTarget());
+                projected = true;
+            }
+        }
+        String leaf = switch (current.getType()) {
+            case STRING -> var + ".to_string()";
+            case ENUM -> var + ".as_str().to_owned()";
+            case BOOLEAN -> var + ".to_string()";
+            default -> throw new CodegenException(op.op.getId() + ": waiter path " + path + " ends on " + current.getType());
+        };
+        body.append(indent).append("vals.push(").append(leaf).append(");\n");
+        for (int k = 0; k < open; k++) {
+            indent = indent.substring(4);
+            body.append(indent).append("}\n");
+        }
+        String exp = Names.str(expected);
+        String test;
+        if (projected) {
+            test = switch (comparator) {
+                case "anyStringEquals" -> "vals.iter().any(|v| v == " + exp + ")";
+                case "allStringEquals" -> "!vals.is_empty() && vals.iter().all(|v| v == " + exp + ")";
+                default -> throw new CodegenException(op.op.getId() + ": comparator " + comparator + " on a projection");
+            };
+        } else {
+            if (!comparator.equals("stringEquals") && !comparator.equals("booleanEquals")) {
+                throw new CodegenException(op.op.getId() + ": comparator " + comparator + " without a projection");
+            }
+            test = "vals.first().is_some_and(|v| v == " + exp + ")";
+        }
+        return "/// `" + path + "` " + comparator + " `" + expected + "`.\nfn " + fn + "(out: &" + rootType + ") -> bool {\n" + body + "    " + test + "\n}\n\n";
     }
 
     // ------------------------------------------------------------------ client, lib, Cargo.toml
@@ -669,9 +853,9 @@ final class ServiceGenerator {
     private void client() {
         ctx.writerDelegator().useFileWriter("src/client.rs", "", w -> {
             w.l("use std::time::Duration;\n\nuse caitlyn_sdk_core as rt;\n\nuse crate::error::Error;\n\n");
-            String first = byNamespace.firstKey();
+            String first = byNamespace.firstEntry().getValue().get(0).call;
             w.l(Names.doc("The " + title() + " client. Create one with [`Client::new`] or [`Client::builder`] and share it: clones are cheap "
-                    + "and share the token cache. Operations are grouped by resource, for example `client." + first + "()."
+                    + "and share the token cache. Operations are grouped by resource, for example `client." + first + "."
                     + byNamespace.firstEntry().getValue().get(0).method + "(…)`.", ""));
             w.l("#[derive(Clone, Debug)]\npub struct Client {\n    pub(crate) core: rt::Client,\n}\n\n");
             w.l("impl Client {\n");
@@ -688,10 +872,19 @@ final class ServiceGenerator {
             w.l("    /// Sign-in: the current token, and the `oauth` mode's sign-in steps.\n    pub fn auth(&self) -> &rt::AuthSession {\n        self.core.auth()\n    }\n\n");
             w.l("    /// The latest `Caitlyn-Api-Version` the client has seen, or `None` before any response.\n"
                     + "    pub fn server_version(&self) -> Option<String> {\n        self.core.server_version()\n    }\n");
-            for (Map.Entry<String, List<OperationInfo>> e : byNamespace.entrySet()) {
-                String type = e.getValue().get(0).namespaceType;
-                w.l("\n    /// The " + e.getKey() + " operations.\n    pub fn " + e.getKey() + "(&self) -> " + type + " {\n        " + type
-                        + " { core: self.core.clone() }\n    }\n");
+            // One client object per namespace path segment (PROTOCOL.md 10): client.agents().versions().get(…).
+            TreeMap<List<String>, List<OperationInfo>> nodes = new TreeMap<>((a, b) -> String.join(".", a).compareTo(String.join(".", b)));
+            for (List<OperationInfo> group : byNamespace.values()) {
+                List<String> p = group.get(0).path;
+                for (int i = 1; i <= p.size(); i++) {
+                    nodes.computeIfAbsent(p.subList(0, i), k -> new ArrayList<>());
+                }
+                nodes.get(p).addAll(group);
+            }
+            for (List<String> node : nodes.keySet()) {
+                if (node.size() == 1) {
+                    w.l("\n" + accessor(node, nodes) + "\n");
+                }
             }
             w.l("}\n\n");
             w.l("/// Builds a [`Client`].\npub struct ClientBuilder(rt::ClientBuilder);\n\nimpl ClientBuilder {\n");
@@ -710,16 +903,48 @@ final class ServiceGenerator {
             w.l("    /// Writes trace context into each attempt's headers (see [`Propagator`](rt::Propagator)).\n"
                     + "    pub fn propagator(self, p: impl rt::Propagator + 'static) -> Self {\n        ClientBuilder(self.0.propagator(p))\n    }\n\n");
             w.l("    pub fn build(self) -> Result<Client, Error> {\n        Ok(Client { core: self.0.build()? })\n    }\n}\n");
-            for (Map.Entry<String, List<OperationInfo>> e : byNamespace.entrySet()) {
-                List<String> methods = new ArrayList<>();
+            for (Map.Entry<List<String>, List<OperationInfo>> e : nodes.entrySet()) {
+                List<String> node = e.getKey();
+                List<String> has = new ArrayList<>();
                 for (OperationInfo o : e.getValue()) {
-                    methods.add("`" + o.method + "`");
+                    has.add("`" + o.method + "`");
                 }
-                String type = e.getValue().get(0).namespaceType;
-                w.l("\n/// The " + e.getKey() + " operations (" + String.join(", ", methods) + "). Get one with `client." + e.getKey() + "()`.\n");
+                List<List<String>> children = children(node, nodes);
+                for (List<String> c : children) {
+                    has.add("`" + c.get(c.size() - 1) + "()`");
+                }
+                String type = OperationInfo.typeOf(node);
+                String reach = "client." + String.join("().", node) + "()";
+                w.l("\n/// The " + String.join(".", node) + " operations (" + String.join(", ", has) + "). Get one with `" + reach + "`.\n");
                 w.l("#[derive(Clone, Debug)]\npub struct " + type + " {\n    pub(crate) core: rt::Client,\n}\n");
+                if (!children.isEmpty()) {
+                    w.l("\nimpl " + type + " {\n");
+                    for (int i = 0; i < children.size(); i++) {
+                        w.l((i > 0 ? "\n" : "") + accessor(children.get(i), nodes) + "\n");
+                    }
+                    w.l("}\n");
+                }
             }
         });
+    }
+
+    /** The namespace paths one segment below {@code node}. */
+    private static List<List<String>> children(List<String> node, TreeMap<List<String>, List<OperationInfo>> nodes) {
+        List<List<String>> out = new ArrayList<>();
+        for (List<String> n : nodes.keySet()) {
+            if (n.size() == node.size() + 1 && n.subList(0, node.size()).equals(node)) {
+                out.add(n);
+            }
+        }
+        return out;
+    }
+
+    /** The method that returns {@code node}'s client object from its parent (or from Client). */
+    private static String accessor(List<String> node, TreeMap<List<String>, List<OperationInfo>> nodes) {
+        String type = OperationInfo.typeOf(node);
+        String seg = node.get(node.size() - 1);
+        return "    /// The " + String.join(".", node) + " operations.\n    pub fn " + seg + "(&self) -> " + type + " {\n        " + type
+                + " { core: self.core.clone() }\n    }";
     }
 
     private void lib() {
@@ -744,14 +969,11 @@ final class ServiceGenerator {
         }
         out.append("\npub use caitlyn_sdk_core::{\n    ApiError, Auth, AuthError, AuthSession, AuthorizationUrl, AwsCredentialProvider, AwsCredentials, Call, CallOptions,\n"
                 + "    Callback, CancellationToken, ConnectionError, FieldError, InputError, Items, MemoryTokenStore, NotSupportedByServer,\n"
-                + "    OAuthTokens, Pages, Propagator, Raw, ResponseMetadata, SigningAlgorithm, Stream, TokenStore, UploadFile,\n};\n\n");
+                + "    OAuthTokens, Pages, Propagator, Raw, ResponseMetadata, SigningAlgorithm, Stream, TokenStore, UploadFile, Wait, WaitReason,\n    WaiterError,\n};\n\n");
         out.append("/// The sign-in modes' option types.\npub mod auth {\n    pub use caitlyn_sdk_core::auth::*;\n    pub use caitlyn_sdk_core::aws::ProviderFn;\n}\n\n");
         out.append("/// This SDK's version.\npub const SDK_VERSION: &str = ").append(Names.str(s.version())).append(";\n\n");
         out.append("/// The Caitlyn release the SDK was generated from (the highest `@since` in the model), sent as `Caitlyn-Sdk-Model`.\n");
         out.append("pub const MODEL_VERSION: &str = ").append(Names.str(facts.apiVersion)).append(";\n");
-        if (!skippedWaiters.isEmpty()) {
-            out.append("\n// Waiters are not generated yet: ").append(String.join(", ", skippedWaiters)).append(".\n");
-        }
         ctx.fileManifest().writeFile("src/lib.rs", out.toString());
     }
 
@@ -759,7 +981,7 @@ final class ServiceGenerator {
     private String exampleCall() {
         for (OperationInfo op : ops.values()) {
             if (op.kind == OperationInfo.Kind.UNARY && op.positional.isEmpty()) {
-                return "let out = client." + op.namespace + "()." + op.method + "(caitlyn_sdk::" + op.inputType() + " {\n    ..Default::default()\n}).await?;\n"
+                return "let out = client." + op.call + "." + op.method + "(caitlyn_sdk::" + op.inputType() + " {\n    ..Default::default()\n}).await?;\n"
                         + "println!(\"{:?}\", out);\n";
             }
         }
