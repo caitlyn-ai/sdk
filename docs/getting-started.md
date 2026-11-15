@@ -38,8 +38,8 @@ cargo add caitlyn-sdk
 cargo add tokio --features macros,rt-multi-thread
 ```
 
-Every SDK has the same version number; the [releases](https://github.com/caitlyn-ai/sdk/releases) say what each one
-changed.
+Every SDK has the same version number. See [Releases](https://github.com/caitlyn-ai/sdk/releases) for the latest
+version and what changed.
 
 ## Make a first call
 
