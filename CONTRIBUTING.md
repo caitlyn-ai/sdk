@@ -270,14 +270,26 @@ cuts it, in the order the app repository's pipeline does:
 
 1. `fetch-semantic-version` (a semantic-release dry run) writes the next version to `VERSION.txt`.
 2. `stamp-version` stamps it into every SDK file (`scripts/version.mjs release`), as artifacts.
-3. `release` (semantic-release) checks the stamped files name that version, commits them to `main` as
-   `chore(release): x.y.z` (`@semantic-release/git`), tags that commit `v<version>` and creates the GitLab release.
+3. `release` (semantic-release) checks the stamped files name that version, adds the release notes to the top of
+   `CHANGELOG.md` (`@semantic-release/changelog`), commits both to `main` as `chore(release): x.y.z`
+   (`@semantic-release/git`), tags that commit `v<version>` and creates the GitLab release with the same notes.
 4. The push mirror takes `main` and the protected tag to `github.com/caitlyn-ai/sdk`.
 5. On GitHub, `release-npm` checks the tag's files carry its version (`scripts/version.mjs check`), tests, builds
    and checks the packages, then stages `sdk-core` and then `sdk`.
 6. On npmjs.com, account settings → Staged Packages: check both versions (name, version, dist-tag `latest`,
    publisher), then approve them, `sdk-core` with or before `sdk`, since the SDK depends on that exact
    `sdk-core` version. A batch approves both with one two-factor challenge.
+
+**GitHub releases.** On the same tag, `.github/workflows/release-github.yml` creates the GitHub release for it on the
+mirror, titled with the tag, with the version's section of the tag's `CHANGELOG.md` as its notes
+(`scripts/changelog-section.mjs`, which points the compare and commit links at the mirror). Only the highest version
+tag is marked the latest release. Running it again edits the release rather than failing. It uses the workflow's
+own `GITHUB_TOKEN` with `contents: write`; there is nothing to set up.
+
+To create or correct a GitHub release by hand, run the workflow from `main` with the tag: in GitHub, Actions →
+`release-github` → Run workflow, or `gh workflow run release-github.yml --repo caitlyn-ai/sdk --ref main -f tag=v0.8.0`.
+A tag from before `CHANGELOG.md` existed (v0.8.0 and earlier) takes its notes from `main`'s `CHANGELOG.md`, which
+was seeded with the GitLab releases' notes for v0.3.0 to v0.8.0; v0.2.0 and earlier have no GitHub release.
 
 The release commit has no `[skip ci]`, on purpose: GitHub Actions skips every `push`-triggered workflow whose head
 commit message contains `[skip ci]`, `[ci skip]`, `[no ci]`, `[skip actions]` or `[actions skip]`, and a tag push is
