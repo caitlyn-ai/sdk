@@ -1,0 +1,32 @@
+---
+// The page's right column: an SDK reference operation's code panel (OperationPanel.astro) in place of "On this page" on
+// a wide screen, and Starlight's own contents everywhere else. Below 72rem the panel moves into the page, so an
+// operation page keeps Starlight's "On this page" menu there.
+import Default from '@astrojs/starlight/components/PageSidebar.astro';
+import MobileTableOfContents from 'virtual:starlight/components/MobileTableOfContents';
+import OperationPanel from './OperationPanel.astro';
+
+const data = Astro.locals.starlightRoute.entry.data as { operation?: { panel?: Parameters<typeof OperationPanel>[0]['panel'] } };
+const panel = data.operation?.panel;
+---
+
+{
+  panel?.length ? (
+    <>
+      <div class="lg:sl-hidden">
+        <MobileTableOfContents />
+      </div>
+      <OperationPanel panel={panel} />
+    </>
+  ) : (
+    <Default />
+  )
+}
+
+{
+  panel?.length ? (
+    <script>
+      import '../scripts/operation-panel.ts';
+    </script>
+  ) : null
+}

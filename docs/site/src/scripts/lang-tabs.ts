@@ -1,5 +1,8 @@
-// Language tabs and fragment links. The Markdown has every language's code (src/plugins/remark-lang-tabs.mjs);
-// this shows one language at a time and keeps them in step across the page.
+// The site's code language, language tabs and fragment links. The Markdown has every language's code
+// (src/plugins/remark-lang-tabs.mjs); this shows one language at a time and keeps every tab group, the code
+// panel's language menu (src/components/LanguageSelect.astro) and anything marked data-lang-only in step. The language is
+// <html data-lang>, which an inline script in the head sets before the page paints (astro.config.mjs), so text
+// marked data-lang-only never flashes another language.
 //
 // Which language a group opens on, first match wins:
 //   1. the one holding the target of a `:~:text=` link (a citation from Ask Caitlyn quotes the code it means);
@@ -145,6 +148,16 @@ function activate(group: Element, key: string): boolean {
   return true;
 }
 
+const LANGUAGES = ['typescript', 'python', 'go', 'rust'];
+
+/** Makes a language the site's: on the page root, in every language menu, and remembered. */
+function setSiteLang(key: string, remember: boolean): void {
+  if (!LANGUAGES.includes(key)) return;
+  document.documentElement.dataset.lang = key;
+  for (const select of document.querySelectorAll<HTMLSelectElement>('caitlyn-language-select select')) select.value = key;
+  if (remember) storeLang(key);
+}
+
 function setUp(): void {
   const groups = [...document.querySelectorAll('[data-lang-tabs]')];
   const content = document.querySelector('main') ?? document.body;
@@ -154,6 +167,13 @@ function setUp(): void {
 
   const fromUrl = new URLSearchParams(location.search).get('lang');
   const preferred = fromUrl ?? storedLang();
+  setSiteLang(preferred ?? LANGUAGES[0]!, false);
+  for (const select of document.querySelectorAll<HTMLSelectElement>('caitlyn-language-select select')) {
+    select.addEventListener('change', () => {
+      setSiteLang(select.value, true);
+      for (const g of groups) activate(g, select.value);
+    });
+  }
   const pinned = new Map<Element, string>();
   for (const range of targets) {
     const panel = (range.startContainer.parentElement ?? null)?.closest<HTMLElement>('.lang-panel');
@@ -169,7 +189,7 @@ function setUp(): void {
     for (const tab of group.querySelectorAll<HTMLButtonElement>(':scope > .lang-tab-list > .lang-tab')) {
       tab.addEventListener('click', () => {
         const chosen = tab.dataset.lang!;
-        storeLang(chosen);
+        setSiteLang(chosen, true);
         // Keep the clicked tab where it is on screen while every group on the page switches
         const before = tab.getBoundingClientRect().top;
         for (const g of groups) activate(g, chosen);

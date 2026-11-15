@@ -17,6 +17,7 @@ import { frontMatter, metadataProblems } from './docs-metadata.mjs';
 import { MARKER, readPages } from './docs-guides.mjs';
 import { loadModel, root } from './docs-model.mjs';
 import { referencePages } from './docs-reference.mjs';
+import { LANGUAGES } from './docs-snippets.mjs';
 
 // Where the site is served. Production is https://build.caitlyn.ai at the root. A merge request's GitLab Pages
 // preview (the `pages` CI job) serves it under a path instead: DOCS_SITE_URL is that address and DOCS_BASE its
@@ -88,6 +89,25 @@ const reference = referencePages(ast);
 for (const p of reference.pages) {
   for (const problem of metadataProblems(p.metadata)) fail(`${p.slug} (generated)`, problem);
   pages.push({ ...p, source: 'the model', kind: p.group === 'errors' ? 'errors' : p.group === 'types' ? 'types' : 'reference' });
+}
+// A namespace's label in the sidebar, where the SDK's name is not what a reader looks for: the versions namespace
+// (caitlyn.versions.get) reads and changes agents, so its group is Agents. The SDK names in the pages stay as they are.
+const NAMESPACE_LABELS = { versions: 'Agents' };
+const namespaceLabel = (ns) => NAMESPACE_LABELS[ns] ?? ns.charAt(0).toUpperCase() + ns.slice(1);
+// An operation's address in the HTTP API's reference (/api/, Scalar's own anchors: tag, method and path)
+const apiAnchor = (group, method, path) => `/api/#tag/${group.toLowerCase()}/${method.toUpperCase()}${path}`;
+// The SDK reference lives under /sdk/ (the HTTP API's reference is /api/). Its pages were /reference/, which the pages
+// and the generator still write: each slug and link moves here, and every old address redirects to its new one.
+const SDK_REFERENCE = 'sdk';
+const moved = new Map();
+for (const p of pages) {
+  if (p.slug.startsWith('reference/')) {
+    const to = `${SDK_REFERENCE}/${p.slug.slice('reference/'.length)}`;
+    moved.set(`/${p.slug}/`, `/${to}/`);
+    p.slug = to;
+  }
+  p.body = p.body.replace(/\]\(\/reference\//g, `](/${SDK_REFERENCE}/`);
+  if (p.siteBody) p.siteBody = p.siteBody.replace(/\]\(\/reference\//g, `](/${SDK_REFERENCE}/`);
 }
 /** The heading ids a page will have: github-slugger over each heading's text, or its {#id} (as on the site). */
 function anchors(page) {
@@ -182,52 +202,400 @@ fs.rmSync(generated, { recursive: true, force: true });
 fs.mkdirSync(content, { recursive: true });
 fs.mkdirSync(generated, { recursive: true });
 const yaml = (v) => JSON.stringify(v); // JSON strings are valid YAML scalars
+
+// The start pages, in the sidebar's order
+const START = ['getting-started', 'authentication', 'errors', 'retries', 'streaming', 'pagination', 'telemetry', 'guides-in-the-app', 'faq'];
+// The start pages' labels: what each is about, so a card's label tells the reader something
+const START_LABELS = {
+  '': 'Overview',
+  authentication: 'Sign-in',
+  errors: 'SDK behaviour',
+  retries: 'SDK behaviour',
+  streaming: 'SDK behaviour',
+  pagination: 'SDK behaviour',
+  telemetry: 'SDK behaviour',
+  faq: 'Questions',
+  'guides-in-the-app': 'Guides',
+};
+// Where a page sits, for the kicker above its title (docs/site/src/components/PageTitle.astro) and its card label
+const sectionLabel = (page) => {
+  if (page.kind === 'guides') return 'Guide';
+  if (page.kind === 'reference') return 'SDK reference';
+  if (page.kind === 'types') return 'Type';
+  if (page.kind === 'errors') return 'Error code';
+  if (page.kind === 'pages') return START_LABELS[page.slug] ?? 'Start here';
+  const first = page.slug.split('/')[0];
+  return first.charAt(0).toUpperCase() + first.slice(1).replace(/-/g, ' ');
+};
+
+// The icon on a page's card (docs/site/src/components/NextCards.astro): Starlight's own icon set, by page, then by
+// section, then by kind
+const ICONS = {
+  'getting-started': 'rocket',
+  authentication: 'padlock',
+  errors: 'warning',
+  retries: 'clock',
+  streaming: 'comment-alt',
+  pagination: 'list-format',
+  telemetry: 'analytics',
+  faq: 'question-circle',
+  'guides-in-the-app': 'open-book',
+  embed: 'window',
+  'sign-in': 'padlock',
+  tools: 'setting',
+};
+const KIND_ICONS = { guides: 'open-book', reference: 'puzzle', types: 'document', errors: 'warning' };
+const cardIcon = (page) => ICONS[page.slug] ?? ICONS[page.slug.split('/')[0]] ?? KIND_ICONS[page.kind] ?? 'information';
+
+// "What's next" on each page: the site's own map (docs/site/src/whats-next.json), resolved to titles and
+// descriptions here so the component needs no lookup. A link to no page fails the build.
+const whatsNextMap = JSON.parse(fs.readFileSync(path.join(project, 'src/whats-next.json'), 'utf8'));
+const pageBySlug = new Map(pages.map((p) => [p.slug, p]));
+const whatsNext = (slug) =>
+  (whatsNextMap[slug] ?? []).map((entry) => {
+    const target = typeof entry === 'string' ? entry : entry.page;
+    const t = pageBySlug.get(target);
+    if (!t) {
+      fail('docs/site/src/whats-next.json', `"${slug}" lists "${target}", which is no page`);
+      return null;
+    }
+    return { link: `${BASE}${target ? `${target}/` : ''}`, title: entry.label ?? t.title, description: description(t.body), section: sectionLabel(t), icon: cardIcon(t) };
+  }).filter(Boolean);
+
+/**
+ * A page's own closing "Next" section (## Next, ## Next steps or ## What's next) becomes its "What's next" cards: each
+ * list item that links to a page is a card, with the item's own text as its description; any other item (a pointer
+ * to the app's Help) stays as a note under the cards. The section leaves the Starlight body only; the Markdown copies
+ * and llms-full.txt keep it as written. Returns null when the page has no such section.
+ */
+const NEXT_HEADING = /^## (?:Next|Next steps|What's next)\s*$/m;
+const plainText = (md) => md.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/[`*_]/g, '').replace(/\s+/g, ' ').trim();
+const sentence = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+const contentNext = (p) => {
+  const match = NEXT_HEADING.exec(p.body);
+  if (!match) return null;
+  const rest = p.body.slice(match.index + match[0].length);
+  if (/^## /m.test(rest)) return null; // only a closing section
+  const items = rest.split(/\n(?=- )/).map((i) => i.trim()).filter((i) => i.startsWith('- ')).map((i) => i.slice(2).replace(/\s+/g, ' '));
+  if (!items.length || rest.replace(/^- .*(\n {2,}.*)*$/gm, '').trim()) return null; // not a plain list
+  const cards = [];
+  const notes = [];
+  for (const item of items) {
+    const link = /^\[([^\]]+)\]\((\/[^)#\s]*)(?:#[^)]*)?\)(?::\s*|\s+[-–]\s*)?(.*)$/.exec(item);
+    const target = link && pageBySlug.get(link[2].replace(/^\/|\/$/g, ''));
+    if (!target) {
+      notes.push(inlineHtml(item));
+      continue;
+    }
+    cards.push({
+      link: `${BASE}${target.slug ? `${target.slug}/` : ''}`,
+      title: target.title,
+      description: sentence(plainText(link[3])) || description(target.body),
+      section: sectionLabel(target),
+      icon: cardIcon(target),
+    });
+  }
+  if (!cards.length) return null;
+  return { cards, notes, body: p.body.slice(0, match.index).trimEnd() + '\n' };
+};
+
+const card = (t) => ({ link: `${BASE}${t.slug ? `${t.slug}/` : ''}`, title: t.title, description: description(t.body), section: sectionLabel(t), icon: cardIcon(t) });
+/** The pages in the same sidebar group as this one, starting after it and wrapping round */
+const neighbours = (p) => {
+  const rank = (q) => (q.kind === 'pages' && START.includes(q.slug) ? START.indexOf(q.slug) : START.length);
+  const group = pages.filter((q) => q.kind === p.kind && (q.group ?? '') === (p.group ?? '') && q.slug !== '').sort((x, y) => rank(x) - rank(y));
+  const at = group.findIndex((q) => q.slug === p.slug);
+  return [...group.slice(at + 1), ...group.slice(0, Math.max(at, 0))].filter((q) => q.slug !== p.slug).map(card);
+};
+const dedupe = (cards, p) => {
+  const seen = new Set([`${BASE}${p.slug}/`]);
+  return cards.filter((c) => !seen.has(c.link) && seen.add(c.link)).slice(0, 6);
+};
+
+/** The landing page's first paragraph, which its hero shows instead (the .md copy keeps it in place). */
+const firstParagraph = (body) => /^\s*([^\n#>|`<-][\s\S]*?)(?:\n\s*\n|$)/.exec(body)?.[1] ?? '';
+const inlineHtml = (md) =>
+  md
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, href) => `<a href="${rebase(`](${href}`).slice(2)}">${text}</a>`)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 for (const p of pages) {
   const file = path.join(content, `${p.slug || 'index'}.md`);
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  let body = p.siteBody ?? p.body;
+  const landing = [];
+  if (!p.slug) {
+    // The landing page opens with the hero (docs/site/src/components/Hero.astro): its title, its first paragraph
+    // as the tagline, and the two places most readers start.
+    const lead = firstParagraph(body);
+    body = body.replace(lead, '').replace(/^\s+/, '');
+    landing.push(
+      'template: splash',
+      'hero:',
+      `  title: ${yaml(p.title)}`,
+      `  tagline: ${yaml(inlineHtml(lead))}`,
+      '  actions:',
+      `    - { text: "Get started", link: ${yaml(`${BASE}getting-started/`)}, variant: primary }`,
+    );
+  }
+  // The page's own "Next" section wins over the site's map: it is what its author wrote
+  const own = p.slug ? contentNext(p) : null;
+  if (own) body = own.body;
+  // The cards are four or two (docs/site/src/components/WhatsNext.astro trims them, after leaving out the page the
+  // Next link already shows), so the list carries spares: the site's map, then the pages beside this one.
+  const next = p.slug ? dedupe([...(own ? own.cards : []), ...whatsNext(p.slug), ...neighbours(p)], p) : whatsNext(p.slug);
+  const nextNotes = own?.notes ?? [];
+
   const fm = [
     '---',
     `title: ${yaml(p.title)}`,
     `description: ${yaml(description(p.body))}`,
     // An explicit slug keeps the address exactly as written (Starlight would lower-case /errors/NOT_FOUND/)
-    ...(p.slug ? [`slug: ${yaml(p.slug)}`] : ['tableOfContents: false']),
+    ...(p.slug ? [`slug: ${yaml(p.slug)}`] : ['tableOfContents: false', ...landing]),
+    ...(next.length ? [`whatsNext: ${yaml(next)}`] : []),
+    ...(nextNotes.length ? [`whatsNextNotes: ${yaml(nextNotes)}`] : []),
+    `section: ${yaml(sectionLabel(p))}`,
     `pageType: ${p.metadata.pageType}`,
     `sinceVersion: ${p.metadata.sinceVersion}`,
     `resources: ${yaml(p.metadata.resources ?? [])}`,
     `integrations: ${yaml(p.metadata.integrations ?? [])}`,
     `operations: ${yaml(p.metadata.operations ?? [])}`,
+    // An operation page's header strip (src/components/OperationHeader.astro): each SDK's call, the HTTP call and the
+    // same operation in the HTTP API's reference
+    ...(p.operation ? [`operation: ${yaml({ ...p.operation, api: `${BASE}${apiAnchor(namespaceLabel(p.group), p.operation.http.method, p.operation.http.path.replace(/^\/api/, '')).slice(1)}` })}`] : []),
     '---',
     '',
   ].join('\n');
-  fs.writeFileSync(file, `${fm}${rebase(p.body).trimEnd()}\n`);
+  fs.writeFileSync(file, `${fm}${rebase(body).trimEnd()}\n`);
 }
 
-// The sidebar: the start pages in a fixed order, the guides, then the reference grouped by SDK namespace.
-const START = ['getting-started', 'authentication', 'errors', 'retries', 'streaming', 'pagination', 'telemetry', 'guides-in-the-app', 'faq'];
+// The sidebar, as topics (starlight-sidebar-topics): each topic is a section of the site with its own sidebar, and
+// a page's topic is the one whose sidebar lists it. Get started and How the API works take the start pages named in
+// TOPIC_START; a start page in neither (a new one) lands in Get started. Guides holds the guides, the SECTIONS and
+// the app's guides. SDK reference holds the operations by SDK namespace, then the types and the error codes.
 const bySlug = new Map(pages.map((p) => [p.slug, p]));
 // Starlight puts the base in front of sidebar links itself
 const link = (p, label = p.title) => ({ label, link: `/${p.slug ? `${p.slug}/` : ''}` });
+// A reference page's link (an operation, type or error code) stays on one line, cut with an ellipsis
+// (src/styles/components.css), and carries its full name for the tooltip shown when it is cut (src/scripts/sidebar-cut.ts).
+// The full name is the link's own text either way, so a screen reader reads all of it.
+const refLink = (p, label = p.label ?? p.title) => ({ ...link(p, label), attrs: { 'data-ref': '', 'data-full': label } });
 const namespaces = [...new Set(reference.ops.map((o) => o.namespace))];
+const TOPIC_START = {
+  'how-the-api-works': ['streaming', 'pagination', 'retries', 'errors', 'telemetry'],
+  guides: ['guides-in-the-app'],
+};
+const placed = new Set(Object.values(TOPIC_START).flat());
+const startPagesOf = (slugs) => slugs.filter((s) => bySlug.has(s)).map((s) => bySlug.get(s));
+const getStarted = [bySlug.get(''), ...startPagesOf(START.filter((s) => !placed.has(s))), ...pages.filter((p) => p.kind === 'pages' && p.slug !== '' && !START.includes(p.slug))];
+const referenceGroups = [
+  ...namespaces.map((ns) => ({ label: namespaceLabel(ns), items: pages.filter((p) => p.kind === 'reference' && p.group === ns).map((p) => refLink(p)) })),
+  { label: 'Types', collapsed: true, items: pages.filter((p) => p.kind === 'types').map((p) => refLink(p)) },
+  { label: 'Error codes', collapsed: true, items: pages.filter((p) => p.kind === 'errors').map((p) => refLink(p)) },
+];
+const guidePages = pages.filter((p) => p.kind === 'guides');
+const howItWorks = startPagesOf(TOPIC_START['how-the-api-works']);
 const sidebar = [
-  { label: 'Start here', items: [link(bySlug.get(''), 'Overview'), ...START.filter((s) => bySlug.has(s)).map((s) => link(bySlug.get(s)))] },
-  { label: 'Guides', items: pages.filter((p) => p.kind === 'guides').map((p) => link(p)) },
-  ...SECTIONS.map((s) => ({ label: s.label, items: sectionPages(s, pages).map((p) => link(p)) })),
+  { label: 'Get started', link: '/', icon: 'rocket', items: getStarted.map((p) => link(p, p.slug === '' ? 'Overview' : p.title)) },
   {
-    label: 'API reference',
+    label: 'Guides',
+    link: link(guidePages[0] ?? sectionPages(SECTIONS[0], pages)[0]).link,
+    icon: 'open-book',
     items: [
-      ...namespaces.map((ns) => ({ label: ns, items: pages.filter((p) => p.kind === 'reference' && p.group === ns).map((p) => link(p, p.label)) })),
-      { label: 'Types', collapsed: true, items: pages.filter((p) => p.kind === 'types').map((p) => link(p, p.label)) },
-      { label: 'Error codes', collapsed: true, items: pages.filter((p) => p.kind === 'errors').map((p) => link(p, p.label)) },
+      ...guidePages.map((p) => link(p)),
+      ...SECTIONS.map((s) => ({ label: s.label, items: sectionPages(s, pages).map((p) => link(p)) })),
+      ...startPagesOf(TOPIC_START.guides).map((p) => link(p)),
     ],
   },
+  { label: 'How the API works', link: link(howItWorks[0]).link, icon: 'puzzle', items: howItWorks.map((p) => link(p)) },
+  { label: 'SDK reference', link: bySlug.has('sdk/send-message') ? '/sdk/send-message/' : referenceGroups[0].items[0].link, icon: 'seti:json', badge: { text: 'Beta', variant: 'default' }, items: referenceGroups },
 ];
-const unlisted = pages.filter((p) => p.kind === 'pages' && p.slug !== '' && !START.includes(p.slug));
-if (unlisted.length) sidebar[0].items.push(...unlisted.map((p) => link(p)));
+// The HTTP API's reference (/api/, rendered by Scalar from src/generated/openapi.json): a copy of the model's
+// OpenAPI document made for the site. The model's file is unchanged. The copy groups the operations by the SDK
+// reference's groups, titles each with its operation name, names the bearer scheme plainly, and opens each
+// operation's description with a link to the same operation in the SDK reference, taken from the SDK reference's
+// own pages so the two cannot drift. Each operation carries its first example in every SDK language as
+// x-codeSamples (the programs the SDK reference shows), and the document's info names each SDK's install, from
+// Getting started, for Scalar's Client Libraries box (x-scalar-sdk-installation). Its text passes the same
+// public-wording check as the pages.
+const openapi = JSON.parse(fs.readFileSync(path.join(root, 'model/openapi.json'), 'utf8'));
+const opByName = new Map(reference.ops.map((o) => [o.name, o]));
+const groupOrder = namespaces.map(namespaceLabel);
+openapi.tags = groupOrder.map((name) => ({ name }));
+for (const methods of Object.values(openapi.paths ?? {})) {
+  for (const operation of Object.values(methods)) {
+    const op = opByName.get(operation.operationId);
+    if (!op) {
+      fail('model/openapi.json', `${operation.operationId} is not an operation of the SDK reference`);
+      continue;
+    }
+    operation.summary = op.name;
+    operation.tags = [namespaceLabel(op.namespace)];
+    const sdkPage = pages.find((p) => p.kind === 'reference' && p.title === op.name);
+    const example = reference.examples.find((e) => e.op.id === op.id);
+    if (example) operation['x-codeSamples'] = LANGUAGES.map((l) => ({ lang: l.key, label: l.label, source: example.code[l.key].trimEnd() }));
+    if (!sdkPage) fail('model/openapi.json', `${op.name} has no page in the SDK reference`);
+    else operation.description = [`Using an SDK? See [\`${op.namespace}.${op.method}\`](${BASE}${sdkPage.slug}/) in the SDK reference.`, operation.description].filter(Boolean).join('\n\n');
+  }
+}
+// Each SDK's install, as Getting started gives it (its Install section's tabs)
+const installSection = /## Install\n([\s\S]*?)\n## /.exec(bySlugEarly.get('getting-started')?.body ?? '')?.[1] ?? '';
+const installs = [...installSection.matchAll(/```\w+ tab="([^"]+)"\n([\s\S]*?)```/g)].map(([, label, source]) => ({ label, source: source.trimEnd() }));
+openapi.info['x-scalar-sdk-installation'] = LANGUAGES.map((l) => installs.find((i) => i.label === l.label))
+  .filter(Boolean)
+  .map((i) => ({ lang: LANGUAGES.find((l) => l.label === i.label).key, label: i.label, source: i.source }));
+if (openapi.info['x-scalar-sdk-installation'].length !== LANGUAGES.length) fail('docs/getting-started.md', 'the Install section needs a tab for each SDK, for the API reference');
+const SCHEME = 'bearerAuth';
+const schemes = openapi.components?.securitySchemes ?? {};
+for (const name of Object.keys(schemes)) {
+  if (name === SCHEME) continue;
+  schemes[SCHEME] = { ...schemes[name], description: 'A Caitlyn access token, sent as `Authorization: Bearer <token>`. See [Authentication](/authentication/).' };
+  delete schemes[name];
+}
+const renameScheme = (security) => security?.map((req) => Object.fromEntries(Object.entries(req).map(([k, v]) => [k in schemes ? k : SCHEME, v])));
+openapi.security = renameScheme(openapi.security);
+for (const methods of Object.values(openapi.paths ?? {})) for (const operation of Object.values(methods)) if (operation.security) operation.security = renameScheme(operation.security);
+// The public-wording check over every key and string the reference renders (code samples are programs, not prose)
+const checkApiText = (value, where) => {
+  if (typeof value === 'string') {
+    const prose = value.replace(/`[^`]*`/g, (c) => (/^`@[a-z]/.test(c) ? c : '``'));
+    for (const [re, what] of INTERNAL_PROSE) if (re.test(prose)) fail(`the API reference (${where})`, `mentions ${what}: "${value.trim().slice(0, 100)}"`);
+    for (const [re, what] of INTERNAL_ANYWHERE) if (re.test(value)) fail(`the API reference (${where})`, `names ${what}: "${value.trim().slice(0, 100)}"`);
+  } else if (Array.isArray(value)) value.forEach((v, i) => checkApiText(v, `${where}[${i}]`));
+  else if (value && typeof value === 'object') {
+    for (const [k, v] of Object.entries(value)) {
+      checkApiText(k, `${where} key`);
+      if (k !== 'x-codeSamples' && k !== 'x-scalar-sdk-installation') checkApiText(v, `${where}/${k}`);
+    }
+  }
+};
+checkApiText(openapi, '');
+fs.writeFileSync(path.join(generated, 'openapi.json'), JSON.stringify(openapi, null, 2) + '\n');
+const apiTopic = {
+  label: 'API reference',
+  link: '/api/',
+  icon: 'seti:json',
+  items: [
+    { label: 'Overview', link: '/api/' },
+    ...groupOrder.map((group) => ({
+      label: group,
+      items: Object.entries(openapi.paths).flatMap(([route, methods]) =>
+        Object.entries(methods)
+          .filter(([, o]) => o.tags?.[0] === group)
+          .map(([method, o]) => ({ label: o.summary, link: apiAnchor(group, method, route) })),
+      ),
+    })),
+    // The types and error codes are the SDK reference's pages (Scalar's own models list is off): shortcuts to them
+    ...referenceGroups.filter((g) => g.label === 'Types' || g.label === 'Error codes'),
+  ],
+};
+sidebar.push(apiTopic);
+// The site's icons (src/generated/icons.css): Material Symbols Rounded (outlined, weight 400), the Caitlyn app's own set, for the sections
+// and the sidebar's groups, and Simple Icons' monochrome logos for the languages on code blocks and the language tabs.
+// Each is drawn in CSS as a mask filled with the text colour, 16px, so it is decorative (no text for a screen reader)
+// and needs no script or icon font. The icon data comes from the installed Iconify sets; nothing is fetched.
+const iconSet = (name) => JSON.parse(fs.readFileSync(path.join(project, `node_modules/@iconify-json/${name}/icons.json`), 'utf8'));
+const ICON_SETS = { 'material-symbols': iconSet('material-symbols'), 'simple-icons': iconSet('simple-icons') };
+const iconUrl = (id) => {
+  const [prefix, name] = id.split(':');
+  const set = ICON_SETS[prefix];
+  const icon = set.icons[name] ?? set.icons[set.aliases?.[name]?.parent];
+  if (!icon) throw new Error(`docs-build: no icon ${id}`);
+  const w = icon.width ?? set.width ?? 24;
+  const h = icon.height ?? set.height ?? 24;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}">${icon.body}</svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg).replace(/'/g, '%27')}")`;
+};
+const TOPIC_ICONS = { 'Get started': 'rocket-launch-outline-rounded', Guides: 'menu-book-outline-rounded', 'How the API works': 'extension-outline-rounded', 'SDK reference': 'code-outline-rounded', 'API reference': 'api-outline-rounded' };
+const GROUP_ICONS = {
+  Conversations: 'chat-bubble-outline-rounded', Documents: 'description-outline-rounded', Uploads: 'upload-outline-rounded', Agents: 'smart-toy-outline-rounded',
+  Types: 'data-object-outline-rounded', 'Error codes': 'warning-outline-rounded', 'Sign-in and identity': 'key-outline-rounded', Embed: 'web-outline-rounded',
+  'Tools and connectors': 'power-outline-rounded',
+};
+// Every code block's language and every tab group's label has an icon: Simple Icons' monochrome logo where the language
+// or framework has one, a Material Symbols icon where it does not (text, HTTP). The build fails on one with no icon,
+// so a new language or tab never shows an empty square.
+const CODE_ICONS = {
+  ts: 'simple-icons:typescript', typescript: 'simple-icons:typescript', tsx: 'simple-icons:react', js: 'simple-icons:javascript',
+  javascript: 'simple-icons:javascript', jsx: 'simple-icons:react', python: 'simple-icons:python', py: 'simple-icons:python',
+  go: 'simple-icons:go', rust: 'simple-icons:rust', rs: 'simple-icons:rust', sh: 'simple-icons:gnubash', bash: 'simple-icons:gnubash',
+  shell: 'simple-icons:gnubash', html: 'simple-icons:html5', json: 'simple-icons:json', yaml: 'simple-icons:yaml', yml: 'simple-icons:yaml',
+  toml: 'simple-icons:toml', markdown: 'simple-icons:markdown', md: 'simple-icons:markdown', apache: 'simple-icons:apache',
+  nginx: 'simple-icons:nginx', php: 'simple-icons:php', http: 'material-symbols:http-rounded', text: 'material-symbols:notes-rounded',
+  plaintext: 'material-symbols:notes-rounded', txt: 'material-symbols:notes-rounded',
+};
+const TAB_ICONS = {
+  typescript: 'simple-icons:typescript', python: 'simple-icons:python', go: 'simple-icons:go', rust: 'simple-icons:rust',
+  html: 'simple-icons:html5', react: 'simple-icons:react', 'next-js': 'simple-icons:nextdotjs', javascript: 'simple-icons:javascript',
+  curl: 'simple-icons:gnubash', shell: 'simple-icons:gnubash',
+};
+const LANGUAGE_ICONS = { typescript: 'typescript', python: 'python', go: 'go', rust: 'rust' };
+const tabKey = (label) => label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+for (const p of pages) {
+  let fence = false;
+  for (const line of p.body.split('\n')) {
+    const open = /^\s*```([A-Za-z0-9_+-]*)(.*)$/.exec(line);
+    if (!open) continue;
+    fence = !fence;
+    if (!fence) continue;
+    const lang = open[1] || 'plaintext';
+    if (!CODE_ICONS[lang]) fail(p.source === 'the model' ? `${p.slug} (generated)` : p.source, `a \`${lang}\` code block has no icon: add it to CODE_ICONS in scripts/docs-build.mjs`);
+    const tab = /(?:^|\s)tab="([^"]+)"/.exec(open[2])?.[1];
+    if (tab && !TAB_ICONS[tabKey(tab)]) fail(p.source === 'the model' ? `${p.slug} (generated)` : p.source, `the "${tab}" tab has no icon: add it to TAB_ICONS in scripts/docs-build.mjs`);
+  }
+}
+const topicKey = (label) => label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+const iconRules = [];
+const masked = (selector, id) => `${selector} {\n  display: inline-block;\n  -webkit-mask-image: ${iconUrl(id)};\n  mask-image: ${iconUrl(id)};\n}`;
+for (const topic of sidebar) {
+  const key = topicKey(topic.label);
+  topic.attrs = { ...(topic.attrs ?? {}), 'data-topic': key };
+  if (TOPIC_ICONS[topic.label]) iconRules.push(masked(`.starlight-sidebar-topics a[data-topic='${key}'] .starlight-sidebar-topics-icon::before`, `material-symbols:${TOPIC_ICONS[topic.label]}`));
+  // A group's icon by its place in its section's sidebar (Starlight's groups take no attributes)
+  topic.items.forEach((item, i) => {
+    if (!item.items || !GROUP_ICONS[item.label]) return;
+    iconRules.push(masked(`.sidebar-content:has(a.starlight-sidebar-topics-current[data-topic='${key}']) ul.top-level > li:nth-child(${i + 1}) > details > summary .group-label::before`, `material-symbols:${GROUP_ICONS[item.label]}`));
+  });
+}
+for (const [lang, icon] of Object.entries(CODE_ICONS)) {
+  iconRules.push(masked(`.expressive-code:has(pre[data-language='${lang}']) figcaption .title::before`, icon));
+}
+for (const [key, icon] of Object.entries(TAB_ICONS)) iconRules.push(masked(`.lang-tab[data-lang='${key}']::before`, icon));
+// The code panel's language menu shows the site's language's logo (<html data-lang>, TypeScript until one is chosen)
+for (const lang of ['typescript', 'python', 'go', 'rust']) iconRules.push(masked(`:root[data-lang='${lang}'] .caitlyn-lang-picker-icon`, `simple-icons:${LANGUAGE_ICONS[lang]}`));
+iconRules.push(masked(`:root:not([data-lang]) .caitlyn-lang-picker-icon`, 'simple-icons:typescript'));
+// The API reference's client picker (Scalar): its trigger names the language in its aria-label, and each option is an
+// id ending in the client, so each shows the language's logo as the code panel's menu does
+const SCALAR_CLIENTS = [['TypeScript', 'typescript', 'custom/typescript'], ['Python', 'python', 'custom/python'], ['Go', 'go', 'custom/go'], ['Rust', 'rust', 'custom/rust'], ['Curl', 'gnubash', 'shell/curl']];
+for (const [label, icon, id] of SCALAR_CLIENTS) {
+  iconRules.push(masked(`[data-testid='client-picker'][aria-label$=': ${label}']::before`, `simple-icons:${icon}`));
+  iconRules.push(masked(`li[role='option'][id$='-${id}'] > span::before`, `simple-icons:${icon}`));
+}
+// The SDK reference's member rows (scripts/docs-reference.mjs memberTree): where a group is sent, and a wire name
+const UI_ICONS = { path: 'route-outline-rounded', query: 'search-rounded', header: 'subject-rounded', body: 'data-object-outline-rounded', events: 'stream-rounded', wire: 'swap-horiz-rounded' };
+for (const [name, icon] of Object.entries(UI_ICONS)) iconRules.push(masked(`.caitlyn-icon[data-icon='${name}']`, `material-symbols:${icon}`));
+fs.writeFileSync(path.join(generated, 'icons.css'), `/* Generated by scripts/docs-build.mjs: the site's icons, as masks (src/styles/components.css draws them). */\n${iconRules.join('\n')}\n`);
 fs.writeFileSync(path.join(generated, 'sidebar.json'), JSON.stringify(sidebar, null, 2) + '\n');
+// The SDK reference's old addresses, for astro.config.mjs's redirects
+// Astro reads each old address under the base itself, but takes the new one as written, so it carries the base
+fs.writeFileSync(path.join(generated, 'redirects.json'), JSON.stringify(Object.fromEntries([...moved].map(([from, to]) => [from, `${BASE}${to.slice(1)}`])), null, 2) + '\n');
 
 // ---------------------------------------------------------------------------------------------- the build
 
+if (invalid) {
+  console.error(`docs-build: ${invalid} problems; fix them before publishing.`);
+  process.exit(1);
+}
+
 fs.rmSync(out, { recursive: true, force: true });
+// Astro caches rendered pages between builds and keeps a cached page's old stylesheet names when only the site's
+// configuration changed, so every build starts without that cache.
+for (const cache of ['node_modules/.astro', '.astro']) fs.rmSync(path.join(project, cache), { recursive: true, force: true });
 execFileSync('npx', ['--no-install', 'astro', 'build'], {
   cwd: project,
   stdio: 'inherit',
@@ -245,6 +613,14 @@ for (const p of pages) {
   fs.mkdirSync(path.dirname(path.join(site, mdPath)), { recursive: true });
   fs.writeFileSync(path.join(site, mdPath), md);
   entries.push({ path: mdPath, url: `${PROD_URL}/${p.slug ? `${p.slug}/` : ''}`, title: p.title, metadata: p.metadata, page: p, markdown: md });
+}
+// The SDK reference's old Markdown addresses (/reference/x.md): static hosting cannot redirect a file, so each is a
+// short Markdown page that names its new address, the Markdown counterpart of the HTML redirect pages.
+for (const [from, to] of moved) {
+  const p = pages.find((q) => `/${q.slug}/` === to);
+  const file = path.join(site, `${from.replace(/^\/|\/$/g, '')}.md`);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `# ${p?.title ?? to}\n\nThis page has moved to ${SITE_URL}${to.replace(/\/$/, '')}.md (the page itself: ${SITE_URL}${to}).\n`);
 }
 if (invalid) {
   console.error(`docs-build: ${invalid} problems.`);
@@ -267,7 +643,7 @@ const llms = [
   ...section('Start here', startPages),
   ...section('Guides', kind('guides')),
   ...SECTIONS.flatMap((s) => section(s.label, sectionPages(s, entries.map((e) => e.page)).map((pg) => entries.find((e) => e.page === pg)))),
-  ...section('API reference', kind('reference')),
+  ...section('SDK reference', kind('reference')),
   ...section('Types', kind('types')),
   '## Optional',
   '',

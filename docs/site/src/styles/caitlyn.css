@@ -26,10 +26,22 @@
   font-display: swap;
 }
 
+/* A local face metric-matched to Euclid Circular Regular, for the moment before the web font arrives (and anywhere it
+   is not served), so the swap moves no text. Measured from the web font against Arial: Euclid's advance widths run
+   5.08 percent wider, its ascent is 1000 and its descent 268 on a 1000-unit em, with no line gap. */
+@font-face {
+  font-family: 'Euclid Circular Fallback';
+  src: local('Arial'), local('ArialMT'), local('Helvetica Neue'), local('Helvetica');
+  size-adjust: 105.08%;
+  ascent-override: 95.16%;
+  descent-override: 25.5%;
+  line-gap-override: 0%;
+}
+
 /* ---------------------------------------------------------------- tokens */
 :root {
   /* type.families */
-  --caitlyn-sans: 'Euclid Circular', Poppins, system-ui, sans-serif;
+  --caitlyn-sans: 'Euclid Circular', 'Euclid Circular Fallback', Poppins, system-ui, sans-serif;
   --caitlyn-accent: 'Ryo Text Plus', Georgia, serif;
 
   /* Palette 4.1 */
@@ -38,6 +50,11 @@
   --caitlyn-primary-light-10: #f2f0f0;
   --caitlyn-accent-neutral-50: #667470;
   --caitlyn-amber-primary: #ffbb26;
+  --caitlyn-amber-accent-01: #ff9207;
+  --caitlyn-field-primary: #a3af64;
+  --caitlyn-field-accent-01: #c2ffa5;
+  --caitlyn-clay-primary: #f6a679;
+  --caitlyn-clay-accent-01: #ffe3d2;
 
   /* Semantic tokens, light theme */
   --caitlyn-ground: var(--caitlyn-pure-white);
@@ -47,6 +64,63 @@
   --caitlyn-strong-rule: var(--caitlyn-primary-dark-100);
   --caitlyn-panel: var(--caitlyn-primary-light-10);
   --caitlyn-highlight: var(--caitlyn-amber-primary);
+
+  /* The site's one accent: amber, the brand's hero accent (03-colour.md). Amber is never text on white (2.2:1), so it
+     marks rather than writes: link underlines, the current page, tab and contents entry, the note rule, and fills (the
+     selected tab, the card icons' tiles, a given answer) with ink on them, 11:1. Its accent tone, amber-accent-01,
+     is the hover on an amber fill (ink on it, 8.8:1). Where amber would read as a warning, clay takes its place
+     (the "Needs work" answer and the errors' warning tile). The same values serve both themes. */
+  --caitlyn-accent-colour: var(--caitlyn-amber-primary);
+  --caitlyn-accent-fill: var(--caitlyn-amber-primary);
+  --caitlyn-accent-fill-hover: var(--caitlyn-amber-accent-01);
+  --caitlyn-caution-fill: var(--caitlyn-clay-primary);
+}
+
+/* ------------------------------------------------------------- type scale */
+/* Every font size is one of these tokens. The system's sizes are multiplied by one scale, 0.9, so the site at 100%
+   has the type size the earlier design had at 90% zoom (the product owner's direction), each rounded to a whole
+   pixel. Only the type changes: spacing, widths and component sizes stay as they were (see "Spacing that would follow
+   the type" below). Reading text is 15px, never smaller. Starlight's own size steps (the sidebar, the contents,
+   search) take the same scale. */
+:root {
+  --caitlyn-type-scale: 0.9;
+  --caitlyn-text-kicker: round(nearest, calc(11px * var(--caitlyn-type-scale)), 1px); /* kicker, 11px: 10px */
+  --caitlyn-text-code-face: round(nearest, calc(13px * var(--caitlyn-type-scale)), 1px); /* 13px: 12px */
+  --caitlyn-text-body: round(nearest, calc(14px * var(--caitlyn-type-scale)), 1px); /* body, 14px: 13px */
+  --caitlyn-text-subhead: round(nearest, calc(15px * var(--caitlyn-type-scale)), 1px); /* subhead, 15px: 14px */
+  --caitlyn-text-card: round(nearest, calc(18px * var(--caitlyn-type-scale)), 1px); /* GAP, 18px: 16px */
+  --caitlyn-text-section-title: round(nearest, calc(26px * var(--caitlyn-type-scale)), 1px); /* section-title, 26px: 23px */
+  --caitlyn-text-cover-title: round(nearest, calc(56px * var(--caitlyn-type-scale)), 1px); /* cover-title, 56px: 50px */
+  --caitlyn-text-hero: round(nearest, calc(80px * var(--caitlyn-type-scale)), 1px); /* cover-title for the hero, 80px: 72px */
+  --caitlyn-text-reading: max(15px, round(nearest, calc(16px * var(--caitlyn-type-scale)), 1px)); /* 16px: 15px */
+
+  --sl-text-2xs: round(nearest, calc(0.75rem * var(--caitlyn-type-scale)), 1px);
+  --sl-text-xs: round(nearest, calc(0.8125rem * var(--caitlyn-type-scale)), 1px);
+  --sl-text-sm: round(nearest, calc(0.875rem * var(--caitlyn-type-scale)), 1px);
+  --sl-text-base: var(--caitlyn-text-reading);
+  --sl-text-lg: round(nearest, calc(1.125rem * var(--caitlyn-type-scale)), 1px);
+  --sl-text-xl: round(nearest, calc(1.25rem * var(--caitlyn-type-scale)), 1px);
+  --sl-text-2xl: round(nearest, calc(1.5rem * var(--caitlyn-type-scale)), 1px);
+  --sl-text-3xl: round(nearest, calc(1.8125rem * var(--caitlyn-type-scale)), 1px);
+  --sl-text-4xl: round(nearest, calc(2.1875rem * var(--caitlyn-type-scale)), 1px);
+  --sl-text-5xl: round(nearest, calc(2.625rem * var(--caitlyn-type-scale)), 1px);
+  --sl-text-6xl: round(nearest, calc(4rem * var(--caitlyn-type-scale)), 1px);
+}
+body {
+  font-size: var(--caitlyn-text-reading);
+}
+
+/* Spacing that would follow the type: Starlight sets these in em, so a smaller size would pull them in. Dividing by
+   the scale keeps each at the size it had before the type was scaled. */
+.sl-markdown-content :not(h1, h2, h3, h4, h5, h6) + :is(h1, h2, h3, h4, h5, h6):not(:where(.not-content *)),
+.sl-markdown-content :not(h1, h2, h3, h4, h5, h6, .sl-heading-wrapper) + :is(.sl-heading-wrapper) {
+  margin-top: calc(1.5em / var(--caitlyn-type-scale));
+}
+.sidebar-content summary {
+  padding-block: calc(0.2em / var(--caitlyn-type-scale));
+}
+.sidebar-content a {
+  padding-block: calc(0.3em / var(--caitlyn-type-scale));
 }
 
 /* Semantic tokens, dark theme (tokens.json gives each semantic token a dark value) */
@@ -78,8 +152,8 @@
   --sl-color-gray-7: var(--caitlyn-panel);
   --sl-color-black: var(--caitlyn-ground);
 
-  /* Monochrome first: links, the current page and the selected tab are ink, never amber (amber is not a
-     text colour and reaches only 2.2:1 on white). GAP: navigation and sidebar states. */
+  /* Starlight's accent is text, so it stays ink: amber is not a text colour (2.2:1 on white). The site marks links,
+     the current page and the selected tab with amber itself (components.css). GAP: navigation and sidebar states. */
   --sl-color-accent-low: var(--caitlyn-panel);
   --sl-color-accent: var(--caitlyn-ink);
   --sl-color-accent-high: var(--caitlyn-ink);
@@ -95,21 +169,21 @@
   --sl-color-hairline-light: var(--caitlyn-rule);
   --sl-color-hairline-shade: var(--caitlyn-rule);
 
-  /* No shadows or blur: structure comes from whitespace and hairlines. */
+  /* No shadows or blur: structure comes from whitespace, hairlines and panel fills. */
   --sl-shadow-sm: none;
   --sl-shadow-md: none;
   --sl-shadow-lg: none;
 
   /* Type scale: body, subhead, section-title and cover-title */
-  --sl-text-body: 14px; /* body */
-  --sl-text-body-sm: 14px; /* body: supporting text shares the body size */
-  --sl-text-code: 14px; /* body */
-  --sl-text-code-sm: 14px; /* body */
-  --sl-text-h1: 56px; /* cover-title */
-  --sl-text-h2: 26px; /* section-title */
-  --sl-text-h3: 15px; /* subhead */
-  --sl-text-h4: 15px; /* subhead */
-  --sl-text-h5: 15px; /* subhead */
+  --sl-text-body: var(--caitlyn-text-body); /* body */
+  --sl-text-body-sm: var(--caitlyn-text-body); /* body: supporting text shares the body size */
+  --sl-text-code: var(--caitlyn-text-body); /* body */
+  --sl-text-code-sm: var(--caitlyn-text-body); /* body */
+  --sl-text-h1: var(--caitlyn-text-cover-title); /* cover-title */
+  --sl-text-h2: var(--caitlyn-text-section-title); /* section-title */
+  --sl-text-h3: var(--caitlyn-text-subhead); /* subhead */
+  --sl-text-h4: var(--caitlyn-text-subhead); /* subhead */
+  --sl-text-h5: var(--caitlyn-text-subhead); /* subhead */
   --sl-line-height: 1.55; /* body */
   --sl-line-height-headings: 1.05; /* section-title */
 }
@@ -139,11 +213,16 @@
   --sl-color-backdrop-overlay: color-mix(in srgb, var(--caitlyn-primary-dark-100) 66%, transparent);
 }
 
-/* ------------------------------------------------------------ corners: radius-0 everywhere */
-*,
-*::before,
-*::after {
-  border-radius: 0 !important; /* radius-0 */
+/* ------------------------------------------------------------------------- corners */
+/* Rounded, following caitlyn.ai rather than the system's sharp-corner rule (the product owner's direction for this
+   site): a small radius on buttons, rows and inline code, and a larger one on panels, cards and code blocks.
+   GAP: the system has no radius tokens; these are caitlyn.ai's. */
+:root {
+  --caitlyn-radius-inline: 4px;
+  --caitlyn-radius-button: 6px;
+  --caitlyn-radius-row: 8px;
+  --caitlyn-radius-code: 12px;
+  --caitlyn-radius-panel: 16px;
 }
 
 /* ---------------------------------------------------------------------------- type */
@@ -159,7 +238,7 @@ body {
 
 /* The page title: cover-title */
 h1#_top {
-  font-size: 56px;
+  font-size: var(--caitlyn-text-cover-title);
   line-height: 0.95;
   font-weight: 500;
   letter-spacing: -0.03em;
@@ -169,18 +248,18 @@ h1#_top {
    section-title, rather than an in-between size. */
 @media (max-width: 50rem) {
   h1#_top {
-    font-size: 26px;
+    font-size: var(--caitlyn-text-section-title);
     line-height: 1.05;
   }
 }
 .sl-markdown-content h2 {
-  font-size: 26px; /* section-title */
+  font-size: var(--caitlyn-text-section-title); /* section-title */
   line-height: 1.05;
   font-weight: 500;
   letter-spacing: -0.03em;
 }
 .sl-markdown-content :is(h3, h4, h5, h6) {
-  font-size: 15px; /* subhead */
+  font-size: var(--caitlyn-text-subhead); /* subhead */
   line-height: 1.35;
   font-weight: 500;
   letter-spacing: normal;
@@ -201,7 +280,7 @@ starlight-toc a[aria-current='true'],
 
 /* Secondary metadata (the table of contents heading, the last-updated line) is muted; content stays ink */
 .right-sidebar h2 {
-  font-size: 15px; /* subhead */
+  font-size: var(--caitlyn-text-subhead); /* subhead */
   font-weight: 500;
 }
 
@@ -216,7 +295,7 @@ starlight-toc a[aria-current='true'],
   min-width: 0;
 }
 .caitlyn-docs-label {
-  font-size: 15px; /* subhead */
+  font-size: var(--caitlyn-text-subhead); /* subhead */
   font-weight: 500;
   white-space: nowrap;
   color: var(--caitlyn-ink);
@@ -245,13 +324,17 @@ starlight-toc a[aria-current='true'],
 }
 
 /* ------------------------------------------------------------------- notes and code */
-/* A note carries the highlight rule at its left (the "Not yet available" and "Preview" notes) */
+/* A note is a rounded panel carrying the highlight rule at its left (the "Not yet available" and "Preview" notes) */
 .sl-markdown-content blockquote {
-  border-inline-start: 2px solid var(--caitlyn-highlight); /* GAP: rule width is not a token */
+  padding: 16px 24px; /* space-4, space-6 */
+  border: 0;
+  border-radius: var(--caitlyn-radius-panel);
+  background: var(--caitlyn-panel);
+  box-shadow: inset 3px 0 0 var(--caitlyn-highlight); /* the highlight rule. GAP: rule width is not a token */
   color: var(--caitlyn-ink);
 }
 
-/* Inline code on a panel fill, square */
+/* Inline code on a panel fill */
 .sl-markdown-content code:not(pre code) {
   background-color: var(--caitlyn-panel);
 }

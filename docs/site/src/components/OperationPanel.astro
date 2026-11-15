@@ -1,0 +1,78 @@
+---
+// An SDK reference operation's code panel (src/components/PageSidebar.astro): the examples to choose from, the call in
+// the site's code language (chosen in the panel's header, LanguageSelect.astro), what the call returns (the result's
+// JSON, the error's details, or for a stream a sample sequence of events), then the page's contents. On a wide screen
+// it is the right column, beside the page as it scrolls; below 72rem src/scripts/operation-panel.ts moves it into the
+// page after the opening, where Starlight's "On this page" menu does the contents' job.
+import { Code } from '@astrojs/starlight/components';
+import TableOfContents from 'virtual:starlight/components/TableOfContents';
+import LanguageSelect from './LanguageSelect.astro';
+
+interface Example {
+  title: string;
+  code: Record<string, string>;
+  status: number;
+  result: string | null;
+  events: string | null;
+}
+interface Props {
+  panel: Example[];
+}
+const { panel } = Astro.props;
+const LANGS = [
+  { key: 'typescript', lang: 'ts' },
+  { key: 'python', lang: 'python' },
+  { key: 'go', lang: 'go' },
+  { key: 'rust', lang: 'rust' },
+];
+const STATUS: Record<number, string> = { 200: 'OK', 201: 'Created', 202: 'Accepted', 204: 'No content', 400: 'Bad request', 401: 'Unauthenticated', 403: 'Forbidden', 404: 'Not found', 409: 'Conflict', 412: 'Precondition failed', 428: 'Precondition required', 429: 'Too many requests', 500: 'Internal error', 503: 'Unavailable' };
+---
+
+<section class="caitlyn-op-panel" aria-label="Code" data-operation-panel>
+  {
+    panel.length > 1 && (
+      <div class="caitlyn-op-panel-examples" role="group" aria-label="Example">
+        {panel.map((ex, i) => (
+          <button type="button" data-example-choice={String(i)} aria-pressed={i === 0 ? 'true' : 'false'}>
+            {ex.title}
+          </button>
+        ))}
+      </div>
+    )
+  }
+  <div class="caitlyn-op-code">
+    <div class="caitlyn-op-code-head">
+      <LanguageSelect />
+    </div>
+    {
+      panel.map((ex, i) => (
+        <div data-example={String(i)} data-example-title={ex.title} hidden={i > 0}>
+          {LANGS.map((l) => (
+            <div data-lang-only={l.key}>
+              <Code code={ex.code[l.key] ?? ''} lang={l.lang} frame="none" />
+            </div>
+          ))}
+        </div>
+      ))
+    }
+  </div>
+  {
+    panel.map((ex, i) => (
+      <div class="caitlyn-op-response" data-example={String(i)} hidden={i > 0}>
+        <p class="caitlyn-kicker caitlyn-op-response-head">
+          Response <span class="caitlyn-status" data-status-class={String(ex.status).charAt(0)}>{ex.status} {STATUS[ex.status] ?? ''}</span>
+        </p>
+        {ex.result && <Code code={ex.result} lang="json" frame="none" />}
+        {ex.events && (
+          <>
+            <Code code={ex.events} lang="text" frame="none" />
+            <p class="caitlyn-op-panel-note">A sample sequence: the event types are the stream's own, the values are placeholders.</p>
+          </>
+        )}
+      </div>
+    ))
+  }
+  <div class="caitlyn-op-toc">
+    <TableOfContents />
+  </div>
+</section>

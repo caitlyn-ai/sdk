@@ -1,0 +1,17 @@
+---
+// The page header: a kicker naming where the page sits (Start here, Guide, API reference, Type, Error code), then
+// the title at cover-title. The page's first paragraph follows as its lead, and a strong rule closes the opening
+// (src/styles/components.css). A guide's sections are steps, so only a guide numbers them (data-steps).
+import OperationHeader from './OperationHeader.astro';
+const data = Astro.locals.starlightRoute.entry.data as { title: string; section?: string; pageType?: string; operation?: Parameters<typeof OperationHeader>[0]['operation'] };
+const steps = data.pageType === 'guide';
+// The SDK reference's operation, type and error-code pages: a title at the size of the API reference's operation
+// headings
+const reference = data.pageType === 'reference' || data.pageType === 'error';
+---
+
+<header class="caitlyn-page-header" data-steps={steps ? '' : undefined} data-reference={reference ? '' : undefined}>
+  {data.section && <p class="caitlyn-kicker caitlyn-page-section">{data.section}</p>}
+  <h1 id="_top">{data.title}</h1>
+  {data.operation && <OperationHeader operation={data.operation} />}
+</header>

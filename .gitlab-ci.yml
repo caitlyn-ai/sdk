@@ -263,8 +263,16 @@ docs:build:
     expire_in: 1 week
     paths: [build/docs/]
   rules:
+    # The live build shows "Was this page useful?" and sends answers to /_feedback (production-demo-infrastructure,
+    # developer-docs/feedback.tf). Previews show it, so a reviewer sees the page as it ships, but send nothing: they
+    # have no endpoint (their hosting has no /_feedback), and the panel says the answer was not sent.
     - if: $DOCS_ENABLED == "true" && $CI_PIPELINE_SOURCE == "merge_request_event"
+      variables:
+        PUBLIC_DOCS_FEEDBACK: 'on'
     - if: $DOCS_ENABLED == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      variables:
+        PUBLIC_DOCS_FEEDBACK: 'on'
+        PUBLIC_DOCS_FEEDBACK_ENDPOINT: /_feedback
 
 # A merge request's docs as a GitLab Pages parallel deployment, so a reviewer can read them before the CloudFront
 # preview (docs:preview) works. Pages on this project is private, so only project members can open it. Each merge
