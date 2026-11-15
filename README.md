@@ -11,8 +11,8 @@ conformance suite, and (later) the Go CLI, the integrations MCP server and the d
 | Rust | `caitlyn-sdk` | Caitlyn's own generator (`codegen/rust`): serde and tokio | `caitlyn-sdk-core` | `rust/` |
 
 None of them uses an AWS runtime: no `@aws-sdk` package, no botocore, no aws-sdk-go, no aws-smithy crate, and
-none reads AWS configuration. They depend on the OpenTelemetry API only (Rust: the `tracing` crate). The TypeScript packages are on npm. Releases to PyPI, crates.io and as a tagged Go module are set up
-(CONTRIBUTING.md, "Releasing") but have not published anything yet.
+none reads AWS configuration. They depend on the OpenTelemetry API only (Rust: the `tracing` crate). Every SDK is published at the same version: `@caitlyn-ai/sdk` on npm, `caitlyn` on PyPI, `caitlyn-sdk` on crates.io,
+and the Go module `github.com/caitlyn-ai/sdk/go` (tagged `go/vX.Y.Z`). CONTRIBUTING.md, "Releasing", describes how.
 
 ## Where things are
 
