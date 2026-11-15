@@ -27,3 +27,4 @@ __pycache__/
 /docs/site/src/content/docs/
 /docs/site/src/generated/
 /docs/site/.astro/
+/docs/site/public/api/

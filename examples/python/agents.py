@@ -38,7 +38,7 @@ def list_versions(caitlyn: Caitlyn, agent_id: str) -> list[str]:
 
 def publish_version(caitlyn: Caitlyn, agent_id: str, name: str) -> AgentVersion:
     # #region publish-version
-    # Production becomes a copy of the named version. Send production's ETag, so two publishes cannot overwrite
+    # Production runs the named version from now on. Send production's ETag, so two publishes cannot overwrite
     # each other; the production it replaces is kept in the production history.
     production = caitlyn.agents.versions.get(agent_id=agent_id, version="production")
     published = caitlyn.agents.versions.publish(agent_id=agent_id, version=name, if_match=production.etag)
@@ -78,6 +78,6 @@ def reset_draft(caitlyn: Caitlyn, agent_id: str, version: str) -> AgentVersion:
 
 def delete_version(caitlyn: Caitlyn, agent_id: str, name: str) -> None:
     # #region delete-version
-    # Production is its own copy, so deleting a version that was published does not change it.
+    # Deleting a version that was published does not change what production runs.
     caitlyn.agents.versions.delete(agent_id=agent_id, version=name)
     # #endregion

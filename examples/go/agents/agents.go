@@ -34,7 +34,7 @@ func UpdateDraft(ctx context.Context, client *caitlyn.Client, agentID, instructi
 	return updated, nil
 }
 
-// PinDraft keeps a copy of the draft you tested as a named version.
+// PinDraft keeps the draft you tested as a named version.
 func PinDraft(ctx context.Context, client *caitlyn.Client, agentID, name string) (*caitlyn.PinDraftVersionResult, error) {
 	// #region pin-draft
 	draft, err := client.Agents.Versions.Get(ctx, &caitlyn.GetAgentVersionInput{AgentID: agentID, Version: "draft"})
@@ -70,7 +70,7 @@ func ListVersions(ctx context.Context, client *caitlyn.Client, agentID string) (
 	return versions, nil
 }
 
-// PublishVersion makes production a copy of a version, failing if production changed since it was read.
+// PublishVersion makes a version the one production runs, failing if production changed since it was read.
 func PublishVersion(ctx context.Context, client *caitlyn.Client, agentID, version string) (*caitlyn.AgentVersion, error) {
 	// #region publish-version
 	// Production's ETag, so two publishes cannot overwrite each other
@@ -127,14 +127,14 @@ func GetProductionHistory(ctx context.Context, client *caitlyn.Client, agentID, 
 	return entry, nil
 }
 
-// ResetDraft makes the draft a copy of another version.
+// ResetDraft starts the draft again from another version.
 func ResetDraft(ctx context.Context, client *caitlyn.Client, agentID, from string) (*caitlyn.AgentVersion, error) {
 	// #region reset-draft
 	draft, err := client.Agents.Versions.Get(ctx, &caitlyn.GetAgentVersionInput{AgentID: agentID, Version: "draft"})
 	if err != nil {
 		return nil, err
 	}
-	// The draft becomes a copy of from: a version name, or "production". Nothing else changes.
+	// The draft starts again from the version in from: a version name, or "production". Nothing else changes.
 	reset, err := client.Agents.Versions.ResetDraft(ctx, agentID, &caitlyn.ResetDraftVersionInput{From: from},
 		caitlyn.WithIfMatch(draft.ETag))
 	if err != nil {
@@ -148,7 +148,7 @@ func ResetDraft(ctx context.Context, client *caitlyn.Client, agentID, from strin
 // DeleteVersion deletes a named version.
 func DeleteVersion(ctx context.Context, client *caitlyn.Client, agentID, name string) error {
 	// #region delete-version
-	// Production is its own copy, so deleting the version it came from does not change it
+	// Deleting the version production was published from does not change what production runs
 	_, err := client.Agents.Versions.Delete(ctx, &caitlyn.DeleteAgentVersionInput{AgentID: agentID, Version: name})
 	if err != nil {
 		return err

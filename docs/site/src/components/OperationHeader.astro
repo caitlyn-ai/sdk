@@ -1,15 +1,27 @@
 ---
-// An SDK reference operation's header strip, under its title: the call in the reader's code language (the site's
-// language picker chooses it, src/scripts/lang-tabs.ts), the HTTP call, and the same operation in the HTTP API's
-// reference. scripts/docs-build.mjs writes the data from the model (scripts/docs-reference.mjs).
+// An operation's header strip, under its title: the call in the reader's code language (the site's language picker
+// chooses it, src/scripts/lang-tabs.ts), the HTTP call, and the same operation in the other reference. The SDK
+// reference leads with the SDK call; the API reference leads with the HTTP call. scripts/docs-build.mjs writes the
+// data (scripts/docs-reference.mjs, scripts/docs-api.mjs).
 interface Props {
-  operation: { name: string; method: string; calls: Record<string, string>; http: { method: string; path: string }; api: string };
+  operation: { kind?: 'sdk' | 'api'; name: string; method: string; calls: Record<string, string>; http: { method: string; path: string }; other: { label: string; link: string } };
 }
 const { operation } = Astro.props;
 const LABELS: Record<string, string> = { typescript: 'TypeScript', python: 'Python', go: 'Go', rust: 'Rust' };
+const api = operation.kind === 'api';
 ---
 
 <dl class="caitlyn-operation-strip">
+  {
+    api && (
+      <div class="caitlyn-operation-strip-row">
+        <dt class="caitlyn-kicker">HTTP</dt>
+        <dd>
+          <code class="caitlyn-strip-code"><span class="caitlyn-http-method" data-method={operation.http.method}>{operation.http.method}</span> {operation.http.path}</code>
+        </dd>
+      </div>
+    )
+  }
   <div class="caitlyn-operation-strip-row">
     <dt class="caitlyn-kicker">SDK</dt>
     <dd>
@@ -17,17 +29,23 @@ const LABELS: Record<string, string> = { typescript: 'TypeScript', python: 'Pyth
         Object.entries(operation.calls).map(([lang, call]) => (
           <span data-lang-only={lang}>
             <span class="sr-only">{LABELS[lang]}: </span>
-            <code>{call}</code>
+            <code class="caitlyn-strip-code">{call}</code>
           </span>
         ))
       }
     </dd>
   </div>
-  <div class="caitlyn-operation-strip-row">
-    <dt class="caitlyn-kicker">HTTP</dt>
-    <dd><code>{operation.http.method} {operation.http.path}</code></dd>
-  </div>
+  {
+    !api && (
+      <div class="caitlyn-operation-strip-row">
+        <dt class="caitlyn-kicker">HTTP</dt>
+        <dd>
+          <code class="caitlyn-strip-code"><span class="caitlyn-http-method" data-method={operation.http.method}>{operation.http.method}</span> {operation.http.path}</code>
+        </dd>
+      </div>
+    )
+  }
   <div class="caitlyn-operation-strip-row caitlyn-operation-strip-api">
-    <dd><a href={operation.api}>In the API reference</a></dd>
+    <dd><a href={operation.other.link}>{operation.other.label}</a></dd>
   </div>
 </dl>

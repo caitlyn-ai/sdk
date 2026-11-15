@@ -1,77 +1,133 @@
 ---
-// An SDK reference operation's code panel (src/components/PageSidebar.astro): the examples to choose from, the call in
-// the site's code language (chosen in the panel's header, LanguageSelect.astro), what the call returns (the result's
-// JSON, the error's details, or for a stream a sample sequence of events), then the page's contents. On a wide screen
-// it is the right column, beside the page as it scrolls; below 72rem src/scripts/operation-panel.ts moves it into the
-// page after the opening, where Starlight's "On this page" menu does the contents' job.
+// A reference operation's code panel (src/components/PageSidebar.astro): the API's server with the reader's
+// workspace (ServerBlock.astro), the examples to choose from, the example in the chosen code language (the panel's
+// menu, LanguageSelect.astro; the API reference's offers curl too), what comes back, then the page's contents. The SDK
+// reference shows what the call returns (the result's JSON or the error's details); the API reference shows the HTTP
+// response. A stream shows a sample sequence of events. From 1249px it is the right column, beside the page as it
+// scrolls; below, src/scripts/operation-panel.ts moves it into the page after the opening, where Starlight's "On this
+// page" menu does the contents' job.
 import { Code } from '@astrojs/starlight/components';
 import TableOfContents from 'virtual:starlight/components/TableOfContents';
 import LanguageSelect from './LanguageSelect.astro';
+import ServerBlock from './ServerBlock.astro';
 
 interface Example {
   title: string;
   code: Record<string, string>;
   status: number;
   result: string | null;
+  response?: string | null;
   events: string | null;
+}
+interface Response {
+  status: number;
+  result?: string | null;
+  response?: string | null;
+  events: string | null;
+  sample: boolean;
+  code?: string;
 }
 interface Props {
   panel: Example[];
+  responses?: Response[];
+  kind?: 'sdk' | 'api';
 }
-const { panel } = Astro.props;
+const { panel, kind = 'sdk' } = Astro.props;
+// Every status the operation documents; an older page without the list has its examples' statuses
+const responses: Response[] = Astro.props.responses?.length ? Astro.props.responses : [...new Map(panel.map((ex) => [ex.status, { status: ex.status, result: ex.result, response: ex.response, events: ex.events, sample: false }])).values()];
+const first = panel[0]?.status ?? responses[0]?.status;
+const api = kind === 'api';
 const LANGS = [
+  ...(api ? [{ key: 'curl', lang: 'sh' }] : []),
   { key: 'typescript', lang: 'ts' },
   { key: 'python', lang: 'python' },
   { key: 'go', lang: 'go' },
   { key: 'rust', lang: 'rust' },
 ];
-const STATUS: Record<number, string> = { 200: 'OK', 201: 'Created', 202: 'Accepted', 204: 'No content', 400: 'Bad request', 401: 'Unauthenticated', 403: 'Forbidden', 404: 'Not found', 409: 'Conflict', 412: 'Precondition failed', 428: 'Precondition required', 429: 'Too many requests', 500: 'Internal error', 503: 'Unavailable' };
+const STATUS: Record<number, string> = { 200: 'OK', 201: 'Created', 202: 'Accepted', 204: 'No content', 400: 'Bad request', 401: 'Unauthenticated', 403: 'Forbidden', 404: 'Not found', 409: 'Conflict', 412: 'Precondition failed', 413: 'Payload too large', 422: 'Unprocessable content', 428: 'Precondition required', 429: 'Too many requests', 500: 'Internal error', 503: 'Unavailable' };
 ---
 
 <section class="caitlyn-op-panel" aria-label="Code" data-operation-panel>
+  <ServerBlock />
   {
     panel.length > 1 && (
-      <div class="caitlyn-op-panel-examples" role="group" aria-label="Example">
-        {panel.map((ex, i) => (
-          <button type="button" data-example-choice={String(i)} aria-pressed={i === 0 ? 'true' : 'false'}>
-            {ex.title}
-          </button>
-        ))}
+      <div class="caitlyn-op-panel-picker not-content">
+        <p class="caitlyn-kicker" id="caitlyn-op-examples-label">Examples</p>
+        <div class="caitlyn-op-panel-examples" role="group" aria-labelledby="caitlyn-op-examples-label">
+          {panel.map((ex, i) => (
+            <button type="button" data-example-choice={String(i)} aria-pressed={i === 0 ? 'true' : 'false'}>
+              {ex.title}
+            </button>
+          ))}
+        </div>
       </div>
     )
   }
   <div class="caitlyn-op-code">
     <div class="caitlyn-op-code-head">
-      <LanguageSelect />
+      <LanguageSelect curl={api} />
     </div>
     {
       panel.map((ex, i) => (
-        <div data-example={String(i)} data-example-title={ex.title} hidden={i > 0}>
-          {LANGS.map((l) => (
+        <div data-example={String(i)} data-example-title={ex.title} data-example-status={String(ex.status)} hidden={i > 0}>
+          {LANGS.filter((l) => ex.code[l.key]).map((l) => (
             <div data-lang-only={l.key}>
-              <Code code={ex.code[l.key] ?? ''} lang={l.lang} frame="none" />
+              <Code code={ex.code[l.key] ?? ''} lang={l.lang} frame="none" wrap={false} />
             </div>
           ))}
         </div>
       ))
     }
   </div>
-  {
-    panel.map((ex, i) => (
-      <div class="caitlyn-op-response" data-example={String(i)} hidden={i > 0}>
-        <p class="caitlyn-kicker caitlyn-op-response-head">
-          Response <span class="caitlyn-status" data-status-class={String(ex.status).charAt(0)}>{ex.status} {STATUS[ex.status] ?? ''}</span>
-        </p>
-        {ex.result && <Code code={ex.result} lang="json" frame="none" />}
-        {ex.events && (
-          <>
-            <Code code={ex.events} lang="text" frame="none" />
-            <p class="caitlyn-op-panel-note">A sample sequence: the event types are the stream's own, the values are placeholders.</p>
-          </>
-        )}
+  <div class="caitlyn-op-response" data-op-responses>
+    <div class="caitlyn-op-response-head not-content">
+      <p class="caitlyn-kicker" id="caitlyn-op-response-label">Response</p>
+      <div class="caitlyn-op-status-tabs" role="tablist" aria-labelledby="caitlyn-op-response-label">
+        {
+          responses.map((r) => (
+            <button
+              type="button"
+              role="tab"
+              id={`caitlyn-op-status-${r.status}`}
+              class="caitlyn-status"
+              data-status-class={String(r.status).charAt(0)}
+              data-status-tab={String(r.status)}
+              aria-selected={r.status === first ? 'true' : 'false'}
+              aria-controls="caitlyn-op-response-pane"
+              tabindex={r.status === first ? 0 : -1}
+            >
+              {r.status}
+              <span class="sr-only"> {STATUS[r.status] ?? ''}</span>
+            </button>
+          ))
+        }
       </div>
-    ))
-  }
+    </div>
+    <div class="caitlyn-op-response-pane" id="caitlyn-op-response-pane" role="tabpanel" aria-labelledby={`caitlyn-op-status-${first}`}>
+      {
+        [
+          ...panel.map((ex, i) => ({ key: `e${i}`, example: String(i), r: { status: ex.status, result: ex.result, response: ex.response, events: ex.events, sample: false } as Response })),
+          ...responses.map((r) => ({ key: `s${r.status}`, example: undefined, r })),
+        ].map(({ example, r }) => (
+          <div data-response data-response-example={example} data-status={String(r.status)} hidden={example !== '0'}>
+            <p class="caitlyn-op-response-status">
+              {r.status} {STATUS[r.status] ?? ''}
+              {r.sample && r.code && <span class="caitlyn-op-panel-note"> · an illustration: the error shape, with the code {r.code}</span>}
+            </p>
+            {r.response && <Code code={r.response} lang="http" frame="none" wrap={false} />}
+            {r.result && <Code code={r.result} lang="json" frame="none" wrap={false} />}
+            {r.events && (
+              <>
+                <Code code={r.events} lang="text" frame="none" wrap={false} />
+                <p class="caitlyn-op-panel-note">A sample sequence: the event types are the stream's own, the values are placeholders.</p>
+              </>
+            )}
+            {!r.response && !r.result && !r.events && <p class="caitlyn-op-panel-note">No body.</p>}
+          </div>
+        ))
+      }
+    </div>
+  </div>
   <div class="caitlyn-op-toc">
     <TableOfContents />
   </div>

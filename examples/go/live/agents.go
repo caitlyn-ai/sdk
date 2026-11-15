@@ -81,7 +81,7 @@ func agentChecks(client *caitlyn.Client, agentID, publishAgentID string, check f
 		if publishAgentID == "" {
 			return skip("publishing turned off: CAITLYN_PUBLISH_AGENT_ID is not set")
 		}
-		// Publish a copy of that agent's draft, then delete the copy: production keeps its own copy.
+		// Pin that agent's draft, publish the pinned version, then delete it: production keeps running what was published.
 		name := "go-sdk-publish-" + unique()
 		if _, err := agents.PinDraft(ctx, client, publishAgentID, name); err != nil {
 			return fmt.Errorf("pin the draft to publish: %w", err)
@@ -94,7 +94,7 @@ func agentChecks(client *caitlyn.Client, agentID, publishAgentID string, check f
 		case published.PublishedAt == nil:
 			return errors.New("production has no publishedAt after the publish")
 		case deleteErr != nil:
-			return fmt.Errorf("could not delete the published copy %s: %w", name, deleteErr)
+			return fmt.Errorf("could not delete the published version %s: %w", name, deleteErr)
 		}
 		return nil
 	})
@@ -140,7 +140,7 @@ func agentChecks(client *caitlyn.Client, agentID, publishAgentID string, check f
 		if err != nil {
 			return err
 		}
-		// The pinned version is a copy of the draft, so resetting from it leaves the draft's configuration as it was.
+		// The pinned version has the draft's configuration, so resetting from it leaves the draft's configuration as it was.
 		reset, err := agents.ResetDraft(ctx, client, agentID, pinned)
 		if err != nil {
 			return err

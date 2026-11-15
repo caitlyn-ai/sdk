@@ -93,7 +93,7 @@ println!("draft now {}", updated.etag);
 
 ## Keep the draft you tested
 
-Once the draft behaves as you want, keep a copy of it. [PinDraftVersion](/reference/pin-draft-version/) saves
+Once the draft behaves as you want, keep it. [PinDraftVersion](/reference/pin-draft-version/) saves
 the draft as a new named version, with a note saying why. Send the draft's ETag to pin only the draft you
 tested. Pinning does not change production, and the draft carries on as before.
 
@@ -182,7 +182,7 @@ for v in &versions {
 
 ## Publish
 
-[PublishAgentVersion](/reference/publish-agent-version/) makes production a copy of a named version. Send
+[PublishAgentVersion](/reference/publish-agent-version/) makes a named version the one production runs. Send
 production's current ETag, so two publishes cannot overwrite each other. For an agent's first publish, when it
 has no production yet, send `*`.
 
@@ -196,7 +196,7 @@ console.log(`production is now ${published.name}, published by ${published.publi
 ```
 <!-- example: examples/python/agents.py#publish-version -->
 ```python tab="Python"
-# Production becomes a copy of the named version. Send production's ETag, so two publishes cannot overwrite
+# Production runs the named version from now on. Send production's ETag, so two publishes cannot overwrite
 # each other; the production it replaces is kept in the production history.
 production = caitlyn.agents.versions.get(agent_id=agent_id, version="production")
 published = caitlyn.agents.versions.publish(agent_id=agent_id, version=name, if_match=production.etag)
@@ -328,15 +328,15 @@ To roll back, publish an earlier version again.
 
 ## Start the draft again
 
-[ResetDraftVersion](/reference/reset-draft-version/) replaces the draft with a copy of a named version, or of
-production, and discards the draft's changes. The version copied from, and production, are untouched.
+[ResetDraftVersion](/reference/reset-draft-version/) starts the draft again from a named version, or from
+production, and discards the draft's changes. The version you start from, and production, are untouched.
 
 <!-- example: examples/typescript/agents.ts#reset-draft -->
 ```ts tab="TypeScript"
 const draft = await caitlyn.agents.versions.get({ agentId, version: 'draft' });
-// The version copied from, and production, are untouched
+// The version the draft starts from, and production, are untouched
 const reset = await caitlyn.agents.versions.resetDraft(agentId, { from }, { ifMatch: draft.etag });
-console.log(`the draft is a copy of ${from} again; its ETag is now ${reset.etag}`);
+console.log(`the draft matches ${from} again; its ETag is now ${reset.etag}`);
 ```
 <!-- example: examples/python/agents.py#reset-draft -->
 ```python tab="Python"
@@ -351,7 +351,7 @@ draft, err := client.Agents.Versions.Get(ctx, &caitlyn.GetAgentVersionInput{Agen
 if err != nil {
 	return nil, err
 }
-// The draft becomes a copy of from: a version name, or "production". Nothing else changes.
+// The draft starts again from the version in from: a version name, or "production". Nothing else changes.
 reset, err := client.Agents.Versions.ResetDraft(ctx, agentID, &caitlyn.ResetDraftVersionInput{From: from},
 	caitlyn.WithIfMatch(draft.ETag))
 if err != nil {
@@ -380,12 +380,12 @@ await caitlyn.agents.versions.delete({ agentId, version });
 ```
 <!-- example: examples/python/agents.py#delete-version -->
 ```python tab="Python"
-# Production is its own copy, so deleting a version that was published does not change it.
+# Deleting a version that was published does not change what production runs.
 caitlyn.agents.versions.delete(agent_id=agent_id, version=name)
 ```
 <!-- example: examples/go/agents/agents.go#delete-version -->
 ```go tab="Go"
-// Production is its own copy, so deleting the version it came from does not change it
+// Deleting the version production was published from does not change what production runs
 _, err := client.Agents.Versions.Delete(ctx, &caitlyn.DeleteAgentVersionInput{AgentID: agentID, Version: name})
 if err != nil {
 	return err
