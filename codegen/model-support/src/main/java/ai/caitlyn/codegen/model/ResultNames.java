@@ -45,6 +45,14 @@ public final class ResultNames {
         model.shapes().filter(s -> s.getId().getNamespace().equals(service.getId().getNamespace()))
                 .filter(s -> !s.isResourceShape() && !s.isOperationShape() && !s.isServiceShape() && !s.isMemberShape())
                 .forEach(s -> taken.add(exported.apply(s.getId().getName())));
+        Set<String> shapeNames = Set.copyOf(taken); // two results may share a name; a result and a model shape may not
+        // The names outputs get from their body mixins, reserved before any output takes a verb-stripped name, so the
+        // order operations come in does not decide who gets one (DeleteAgentVersion would otherwise take
+        // AgentVersion, GetAgentVersion's).
+        Set<String> mixinNames = new HashSet<>();
+        for (OperationShape op : TopDownIndex.of(model).getContainedOperations(service)) {
+            ops.getOutputShape(op).flatMap(o -> mixinName(model, o)).filter(n -> !shapeNames.contains(n)).ifPresent(mixinNames::add);
+        }
         for (OperationShape op : TopDownIndex.of(model).getContainedOperations(service)) {
             Optional<StructureShape> out = ops.getOutputShape(op);
             if (out.isEmpty() || op.hasTrait(CaitlynTraits.SSE_EVENTS)) {
@@ -55,9 +63,11 @@ public final class ResultNames {
             if (pages.getPaginationInfo(service, op).isPresent()) {
                 name = op.getId().getName() + "Page";
             } else {
-                name = mixinName(model, output).orElseGet(() -> {
+                // The body mixin's name, unless a model shape already has it (GetDocument's output and the
+                // Document structure share DocumentBody): then the verb-stripped name, then <Operation>Result.
+                name = mixinName(model, output).filter(n -> !shapeNames.contains(n)).orElseGet(() -> {
                     String stripped = stripVerb(op.getId().getName());
-                    return stripped != null && !taken.contains(stripped) ? stripped : op.getId().getName() + "Result";
+                    return stripped != null && !taken.contains(stripped) && !mixinNames.contains(stripped) ? stripped : op.getId().getName() + "Result";
                 });
             }
             for (Map.Entry<ShapeId, String> e : names.entrySet()) {

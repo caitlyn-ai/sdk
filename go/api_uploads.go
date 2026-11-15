@@ -93,7 +93,7 @@ func readCreateUpload(resp *core.Response) (*Upload, error) {
 // (409), *PayloadTooLargeError (413), *UnprocessableContentError (422); another status the API models
 // has its own type too (*NotFoundError for 404), and any other status is an *Error.
 //
-// Since Caitlyn 5.115.0.
+// Since Caitlyn 5.115.0; beta.
 func (c *UploadsClient) Reserve(ctx context.Context, in *CreateUploadInput, opts ...CallOption) (*Upload, error) {
 	if in == nil {
 		in = &CreateUploadInput{}
@@ -107,6 +107,97 @@ func (c *UploadsClient) Reserve(ctx context.Context, in *CreateUploadInput, opts
 		return nil, err
 	}
 	return readCreateUpload(resp)
+}
+
+// GetUploadInput is the input of Uploads.Get.
+type GetUploadInput struct {
+	// The upload to read.
+	// Sent in the path.
+	UploadID string `json:"-"`
+}
+
+func errorsGetUpload(status int, e *core.APIError) error {
+	switch status {
+	case 400:
+		return &ValidationError{e}
+	case 401:
+		return &UnauthenticatedError{e}
+	case 403:
+		return &PermissionDeniedError{e}
+	case 404:
+		return &NotFoundError{e}
+	case 409:
+		return &ConflictError{e}
+	case 412:
+		return &PreconditionFailedError{e}
+	case 413:
+		return &PayloadTooLargeError{e}
+	case 422:
+		return &UnprocessableContentError{e}
+	case 428:
+		return &PreconditionRequiredError{e}
+	case 429:
+		return &TooManyRequestsError{e}
+	case 500:
+		return &InternalError{e}
+	case 503:
+		return &ServiceUnavailableError{e}
+	}
+	return e
+}
+
+var opGetUpload = &core.Operation{
+	Name:      "GetUpload",
+	Method:    "GET",
+	Since:     "5.115.0",
+	RetrySafe: true,
+	Retryable: []int{503, 429},
+	Errors:    errorsGetUpload,
+}
+
+func buildGetUpload(in *GetUploadInput) (*core.Request, error) {
+	if in.UploadID == "" {
+		return nil, core.MissingInput("GetUpload", "uploadId")
+	}
+	req := core.NewRequest("/v3/uploads/" + core.PathLabel(in.UploadID))
+	return req, nil
+}
+
+func readGetUpload(resp *core.Response) (*GetUploadResult, error) {
+	out := &GetUploadResult{}
+	if err := resp.DecodeJSON(out); err != nil {
+		return nil, err
+	}
+	out.APIVersion = resp.HeaderPtr("Caitlyn-Api-Version")
+	out.RequestID = resp.HeaderPtr("Caitlyn-Request-Id")
+	out.metadata = resp.Metadata()
+	return out, nil
+}
+
+// Get gets an upload's status and when its upload URL expires.
+//
+// Use it to check that the bytes arrived before passing the upload's `id` to the operation that
+// uses it. Only the person or client that reserved the upload can read it; anyone else gets 404.
+//
+// Errors: *InternalError (500), *PermissionDeniedError (403), *ServiceUnavailableError (503),
+// *TooManyRequestsError (429), *UnauthenticatedError (401), *ValidationError (400), *NotFoundError
+// (404); another status the API models has its own type too (*NotFoundError for 404), and any other
+// status is an *Error.
+//
+// Since Caitlyn 5.115.0; beta.
+func (c *UploadsClient) Get(ctx context.Context, in *GetUploadInput, opts ...CallOption) (*GetUploadResult, error) {
+	if in == nil {
+		in = &GetUploadInput{}
+	}
+	req, err := buildGetUpload(in)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.c.core.Do(ctx, opGetUpload, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	return readGetUpload(resp)
 }
 
 // Create uploads a file: it computes the SHA-256, reserves a slot with Reserve, then sends the bytes

@@ -5,6 +5,16 @@ from typing import ClassVar
 
 from caitlyn_core import CaitlynError
 
+class ConflictError(CaitlynError):
+    """The resource's state does not allow the request, a unique name is taken, or a request with the
+    same idempotency key is still in progress.
+
+    Raised for HTTP 409.
+    """
+
+    http_status: ClassVar[int | None] = 409
+
+
 class InternalError(CaitlynError):
     """An unexpected server failure. Not retried by the SDKs.
 
@@ -44,15 +54,6 @@ class PreconditionFailedError(CaitlynError):
     http_status: ClassVar[int | None] = 412
 
 
-class PreconditionRequiredError(CaitlynError):
-    """The update sent no `If-Match` header; read the resource and send its ETag.
-
-    Raised for HTTP 428.
-    """
-
-    http_status: ClassVar[int | None] = 428
-
-
 class ServiceUnavailableError(CaitlynError):
     """A dependency is briefly unavailable, or the request's audit event could not be recorded; wait for
     `Retry-After` and try again.
@@ -84,9 +85,19 @@ class UnauthenticatedError(CaitlynError):
     http_status: ClassVar[int | None] = 401
 
 
+class UnprocessableContentError(CaitlynError):
+    """The idempotency key was already used with a different request body.
+
+    Raised for HTTP 422.
+    """
+
+    http_status: ClassVar[int | None] = 422
+
+
 class ValidationError(CaitlynError):
     """The request is malformed: a member is missing, the wrong type or out of range; it has a member,
-    filter or sort field the operation does not define; or its cursor is not valid for this list.
+    filter or sort field the operation does not define; its cursor is not valid for this list; or it
+    asks to delete `draft` or `production`, which every agent keeps.
 
     Raised for HTTP 400.
     """
@@ -94,14 +105,13 @@ class ValidationError(CaitlynError):
     http_status: ClassVar[int | None] = 400
 
 
-class ConflictError(CaitlynError):
-    """The resource's state does not allow the request, a unique name is taken, or a request with the
-    same idempotency key is still in progress.
+class PreconditionRequiredError(CaitlynError):
+    """The update sent no `If-Match` header; read the resource and send its ETag.
 
-    Raised for HTTP 409.
+    Raised for HTTP 428.
     """
 
-    http_status: ClassVar[int | None] = 409
+    http_status: ClassVar[int | None] = 428
 
 
 class PayloadTooLargeError(CaitlynError):
@@ -111,12 +121,3 @@ class PayloadTooLargeError(CaitlynError):
     """
 
     http_status: ClassVar[int | None] = 413
-
-
-class UnprocessableContentError(CaitlynError):
-    """The idempotency key was already used with a different request body.
-
-    Raised for HTTP 422.
-    """
-
-    http_status: ClassVar[int | None] = 422

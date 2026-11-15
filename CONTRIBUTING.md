@@ -108,10 +108,34 @@ CAITLYN_WORKSPACE=your-workspace.example.com CAITLYN_AGENT_ID=… CAITLYN_TOKEN_
   `CAITLYN_TOKEN_REF`, a 1Password secret reference the script reads with `op read`. It is passed into the
   container by name, never on a command line, and the script never prints it.
 - `CAITLYN_AGENT_ID` is an agent whose draft can answer.
+- `CAITLYN_KNOWLEDGE_BASE_ID` is a knowledge base the checks may add documents to, and `CAITLYN_PUBLISH_AGENT_ID`
+  an agent the checks may publish. Without one, the checks that need it print
+  `skip <check>: no knowledge base configured` or `skip <check>: publishing turned off`; a language runner may
+  skip for no other reason. Reading a production history entry uses the publish agent's history, so without one it
+  skips with `publishing turned off`; listing an empty history is a pass.
+- A check refused with 403 `PERMISSION_DENIED` reports `fail <check>: 403 PERMISSION_DENIED: <detail>`. The script
+  turns that into `skip <check>: public role only` only when `CAITLYN_PUBLIC_ROLE_ONLY=1`, set while the workspace's
+  role setup has not run: a 403 does not say which role the caller has. Otherwise it is a failure. The setting is
+  empty in the CI job, so a run has to set it deliberately, and a run that sets it says so at the top of its summary.
+- The table lists every skip with its reason. A skip is not a pass: a skipped check blocks a release unless it is
+  accepted for that release.
+- The checks put the workspace back as they found it. The draft checks change the draft and restore it; pinning
+  creates a uniquely named version and deleting removes it. Publishing, on the publish agent only, pins that agent's
+  draft as a uniquely named version, publishes it (with production's ETag as If-Match), checks `publishedAt`, then
+  deletes the pinned version; production keeps what was published. Each run adds a production history entry to
+  that agent, as publishing does.
+- The document checks delete every document they create. DeleteDocument deletes the document CreateDocument made
+  and WaitUntilDeleted waits for it to be gone; BatchDeleteDocuments deletes a second document together with an
+  identifier that does not exist, and expects `accepted` for the document and `failed` with `NOT_FOUND` for the
+  other, in request order. A check that fails part way still batch-deletes what the run created and waits until
+  each is gone.
 - Each language's runner is `scripts/examples-live/<language>.sh`. It runs the examples with the client's
   `endpoint` set to `CAITLYN_ENDPOINT`, and prints `ok <check>` or `fail <check>: <why>` for each check.
 
-It needs a workspace and a credential, so it is not part of `make check` or CI.
+It needs a workspace and a credential, so it is not part of `make check`. In CI it is the manual
+`examples:live` job: it runs in merge request pipelines and in pipelines started through the API or the web, against
+the workspace and agent in `CAITLYN_WORKSPACE` and `CAITLYN_AGENT_ID` (both can be set for a pipeline), with the
+token from the masked project variable `CAITLYN_TOKEN_MR2062`. The table is in the job log.
 
 ## The model snapshot
 

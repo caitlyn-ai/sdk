@@ -4,16 +4,33 @@ import { CaitlynServiceException } from "../models/CaitlynServiceException";
 import { SseStream, uploadFile, type CallOptions, type WithRaw } from "@caitlyn-ai/sdk-core";
 import type { MetadataBearer as __MetadataBearer } from "@smithy/types";
 import { ConflictError, InternalError, NotFoundError, PayloadTooLargeError, PermissionDeniedError, PreconditionFailedError, PreconditionRequiredError, ServiceUnavailableError, TooManyRequestsError, UnauthenticatedError, UnprocessableContentError, ValidationError } from "../models/errors";
+import { BatchDeleteDocumentsCommand } from "../commands/BatchDeleteDocumentsCommand";
+import { CreateConversationCommand } from "../commands/CreateConversationCommand";
 import { CreateDocumentCommand } from "../commands/CreateDocumentCommand";
 import { CreateUploadCommand } from "../commands/CreateUploadCommand";
+import { DeleteAgentVersionCommand } from "../commands/DeleteAgentVersionCommand";
+import { DeleteDocumentCommand } from "../commands/DeleteDocumentCommand";
 import { GetAgentVersionCommand } from "../commands/GetAgentVersionCommand";
+import { GetCallerCommand } from "../commands/GetCallerCommand";
+import { GetDocumentCommand } from "../commands/GetDocumentCommand";
+import { GetProductionHistoryEntryCommand } from "../commands/GetProductionHistoryEntryCommand";
+import { GetUploadCommand } from "../commands/GetUploadCommand";
+import { ListAgentVersionsCommand } from "../commands/ListAgentVersionsCommand";
+import { paginateListAgentVersions } from "../pagination/ListAgentVersionsPaginator";
 import { ListDocumentsCommand } from "../commands/ListDocumentsCommand";
 import { paginateListDocuments } from "../pagination/ListDocumentsPaginator";
-import { ResumeConversationStreamCommand } from "../commands/ResumeConversationStreamCommand";
+import { ListProductionHistoryEntriesCommand } from "../commands/ListProductionHistoryEntriesCommand";
+import { paginateListProductionHistoryEntries } from "../pagination/ListProductionHistoryEntriesPaginator";
+import { PinDraftVersionCommand } from "../commands/PinDraftVersionCommand";
+import { PublishAgentVersionCommand } from "../commands/PublishAgentVersionCommand";
+import { ResetDraftVersionCommand } from "../commands/ResetDraftVersionCommand";
 import { SendMessageCommand } from "../commands/SendMessageCommand";
+import { WatchConversationCommand } from "../commands/WatchConversationCommand";
 import { UpdateDraftVersionCommand } from "../commands/UpdateDraftVersionCommand";
-import type { CreateDocumentInput, CreateDocumentOutput, CreateUploadInput, CreateUploadOutput, Document, GetAgentVersionInput, GetAgentVersionOutput, ListDocumentsInput, ListDocumentsOutput, ResumeConversationStreamInput, ResumeConversationStreamOutput, SendMessageInput, SendMessageOutput, UpdateDraftVersionInput, UpdateDraftVersionOutput } from "../models/models_0";
-import { ConversationEventNames, type ConversationEvent, type Message } from "./events";
+import { WatchWorkspaceEventsCommand } from "../commands/WatchWorkspaceEventsCommand";
+import type { AgentVersionSummary, BatchDeleteDocumentsInput, BatchDeleteDocumentsOutput, CreateConversationInput, CreateConversationOutput, CreateDocumentInput, CreateDocumentOutput, CreateUploadInput, CreateUploadOutput, DeleteAgentVersionInput, DeleteAgentVersionOutput, DeleteDocumentInput, DeleteDocumentOutput, Document, GetAgentVersionInput, GetAgentVersionOutput, GetCallerInput, GetCallerOutput, GetDocumentInput, GetDocumentOutput, GetProductionHistoryEntryInput, GetProductionHistoryEntryOutput, GetUploadInput, GetUploadOutput, ListAgentVersionsInput, ListAgentVersionsOutput, ListDocumentsInput, ListDocumentsOutput, ListProductionHistoryEntriesInput, ListProductionHistoryEntriesOutput, PinDraftVersionInput, PinDraftVersionOutput, ProductionHistorySummary, PublishAgentVersionInput, PublishAgentVersionOutput, ResetDraftVersionInput, ResetDraftVersionOutput, SendMessageInput, SendMessageOutput, UpdateDraftVersionInput, UpdateDraftVersionOutput, WatchConversationInput, WatchConversationOutput, WatchWorkspaceEventsInput, WatchWorkspaceEventsOutput } from "../models/models_0";
+import { waitUntil, type WaiterOptions, type WaiterState } from "@caitlyn-ai/sdk-core";
+import { ConversationEventNames, WorkspaceEventNames, type ConversationEvent, type Message, type WorkspaceEvent } from "./events";
 
 /** The error class for each HTTP status (one per status: PROTOCOL.md lint rule 1). */
 const ERROR_CLASSES: Record<number, new (opts: any) => CaitlynServiceException> = {
@@ -43,10 +60,39 @@ const toError = (problem: Record<string, unknown>): Error => {
   return Object.assign(error, problem, { message });
 };
 
+/** Deletes up to 100 documents in one call, with a result for each.
+ * 
+ * Each document is deleted as DeleteDocument deletes one. The call returns 200 even when every
+ * item fails: `results` has one entry per identifier, always in request order, each either
+ * `accepted` (the document is now `deleting`, or already was) or `failed` with a code: `NOT_FOUND`
+ * for a document that is gone or that the caller may not see, and `CONFLICT` for a document still
+ * being processed (`pending` or `processing`), which cannot be deleted until it is `indexed`,
+ * `partially_indexed` or `failed`. One failed item never stops the others. More than 100 identifiers, none, or the same identifier twice is refused with 400
+ * `VALIDATION_FAILED` for the whole call. Safe to repeat: a repeat gives the same results, apart
+ * from `NOT_FOUND` for documents that finished deleting in between. */
+export function batchDeleteDocuments(client: CaitlynClient, input: BatchDeleteDocumentsInput, options: CallOptions = {}): Promise<WithRaw<BatchDeleteDocumentsOutput & __MetadataBearer>> {
+  const { signal, ...rest } = options;
+  return client.send(new BatchDeleteDocumentsCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<BatchDeleteDocumentsOutput & __MetadataBearer>>;
+}
+
+/** Starts a conversation with one version of an agent.
+ * 
+ * Send messages to it with `SendMessage`, and watch it with `WatchConversation`. The conversation
+ * belongs to the caller that created it: the person, or the API client's own credential.
+ * 
+ * `version` names the agent version that answers. Today only `draft` can be used: `production`
+ * and named versions arrive with agent versions, and asking for one before then is refused with
+ * 400 `VALIDATION_FAILED`, naming the versions that can be used. */
+export function createConversation(client: CaitlynClient, input: Omit<CreateConversationInput, "idempotencyKey">, options: CallOptions & { idempotencyKey?: string } = {}): Promise<WithRaw<CreateConversationOutput & __MetadataBearer>> {
+  const { signal, ...rest } = options;
+  return client.send(new CreateConversationCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<CreateConversationOutput & __MetadataBearer>>;
+}
+
 /** Creates a document from an upload; ingestion continues after the response.
  * 
  * Returns 202 with the document in its initial state and the Operation that tracks ingestion, and
- * `Location` names the Operation. Needs the files permission, read access to the knowledge base and
+ * `Location` names the document: read it with GetDocument, or wait for it with the SDKs'
+ * `waitUntilIndexed`. Needs the files permission, read access to the knowledge base and
  * access to the folder; it does not need update access to the knowledge base, which is for the
  * knowledge base's own configuration. */
 export function createDocument(client: CaitlynClient, input: Omit<CreateDocumentInput, "idempotencyKey">, options: CallOptions & { idempotencyKey?: string } = {}): Promise<WithRaw<CreateDocumentOutput & __MetadataBearer>> {
@@ -65,6 +111,34 @@ export function createUpload(client: CaitlynClient, input: Omit<CreateUploadInpu
   return client.send(new CreateUploadCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<CreateUploadOutput & __MetadataBearer>>;
 }
 
+/** Deletes a named version.
+ * 
+ * Any named version can be deleted, including one that was published: production is its own
+ * copy, so it does not change. `draft` and `production`, which every agent keeps, are refused with
+ * 400 `VERSION_NOT_DELETABLE`. Production history entries copied from the version are never
+ * deleted or changed, and still read as they did. Like every change, it is audited. */
+export function deleteAgentVersion(client: CaitlynClient, input: DeleteAgentVersionInput, options: CallOptions = {}): Promise<WithRaw<DeleteAgentVersionOutput & __MetadataBearer>> {
+  const { signal, ...rest } = options;
+  return client.send(new DeleteAgentVersionCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<DeleteAgentVersionOutput & __MetadataBearer>>;
+}
+
+/** Deletes a document; removing it from search continues after the response.
+ * 
+ * Returns 202 with the document in `deleting`; wait for it to be gone with the SDKs'
+ * `waitUntilDeleted`. Repeating the call while the document is still `deleting` returns 202 again;
+ * once it is gone, 404, as for any record that does not exist.
+ * 
+ * A document still being processed (`pending` or `processing`) cannot be deleted yet: the call is
+ * refused with 409 `CONFLICT`. Wait until it is `indexed`, `partially_indexed` or `failed`, for
+ * example with the SDKs' `waitUntilIndexed`, then delete it.
+ * 
+ * Needs the files delete permission, read access to the knowledge base and access to the
+ * document's folder. */
+export function deleteDocument(client: CaitlynClient, input: DeleteDocumentInput, options: CallOptions = {}): Promise<WithRaw<DeleteDocumentOutput & __MetadataBearer>> {
+  const { signal, ...rest } = options;
+  return client.send(new DeleteDocumentCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<DeleteDocumentOutput & __MetadataBearer>>;
+}
+
 /** Gets one version of an agent, with its full configuration and its ETag.
  * 
  * `version` is `draft`, `production` or the name of a pinned or published version. Production is
@@ -75,12 +149,95 @@ export function getAgentVersion(client: CaitlynClient, input: GetAgentVersionInp
   return client.send(new GetAgentVersionCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<GetAgentVersionOutput & __MetadataBearer>>;
 }
 
+/** Describes the caller: who the credential belongs to, what kind of credential it is, its scopes
+ * and its organisation.
+ * 
+ * Any valid credential may call it, with no particular scope, so an integration can check its
+ * credential before doing anything else. It only describes the credential that made the request;
+ * it never reads another person's or client's record. */
+export function getCaller(client: CaitlynClient, input: GetCallerInput, options: CallOptions = {}): Promise<WithRaw<GetCallerOutput & __MetadataBearer>> {
+  const { signal, ...rest } = options;
+  return client.send(new GetCallerCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<GetCallerOutput & __MetadataBearer>>;
+}
+
+/** Gets one document in a knowledge base, with its status.
+ * 
+ * `status` says where the document is in its lifecycle; `indexed`, `partially_indexed` and `failed`
+ * are final. A document in a folder the caller may not see is 404, as one that does not exist is.
+ * The SDKs' `waitUntilIndexed` waiter calls this operation until the document is searchable, and
+ * `waitUntilDeleted` until it is gone. */
+export function getDocument(client: CaitlynClient, input: GetDocumentInput, options: CallOptions = {}): Promise<WithRaw<GetDocumentOutput & __MetadataBearer>> {
+  const { signal, ...rest } = options;
+  return client.send(new GetDocumentCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<GetDocumentOutput & __MetadataBearer>>;
+}
+
+/** Waits until the document is gone, after DeleteDocument or BatchDeleteDocuments accepted it: the wait ends when reading it returns 404. Waits up to 15 minutes by default.
+ *
+ * It reads GetDocument at once, then every 2 to 30 seconds, until a success state (it returns nothing: the error it waits for is the success), a failure
+ * state, or an error the waiter does not expect (a WaiterError). It waits at most 900 seconds unless `maxWaitMs` says otherwise; `signal` cancels it. */
+export async function waitUntilDeleted(client: CaitlynClient, input: GetDocumentInput, options: WaiterOptions = {}): Promise<void> {
+  await waitUntil("waitUntilDeleted", (signal) => getDocument(client, input, { signal }), acceptDeleted, { minDelayMs: 2000, maxDelayMs: 30000, ...options }, 900000);
+}
+
+const acceptDeleted = ({ output, error }: { output?: GetDocumentOutput; error?: unknown }): WaiterState | undefined => {
+  if (error instanceof NotFoundError) return "success";
+  return error === undefined ? "retry" : undefined;
+};
+
+/** Waits until the document is searchable: `indexed`, or `partially_indexed` when some enrichments did not complete. Fails when it is `failed`, being deleted, or gone. Waits up to 60 minutes by default.
+ *
+ * It reads GetDocument at once, then every 2 to 30 seconds, until a success state (it returns that output), a failure state, or an error the waiter
+ * does not expect (a WaiterError). It waits at most 3600 seconds unless `maxWaitMs` says otherwise; `signal` cancels it. */
+export function waitUntilIndexed(client: CaitlynClient, input: GetDocumentInput, options: WaiterOptions = {}): Promise<WithRaw<GetDocumentOutput & __MetadataBearer>> {
+  return waitUntil("waitUntilIndexed", (signal) => getDocument(client, input, { signal }), acceptIndexed, { minDelayMs: 2000, maxDelayMs: 30000, ...options }, 3600000);
+}
+
+const acceptIndexed = ({ output, error }: { output?: GetDocumentOutput; error?: unknown }): WaiterState | undefined => {
+  if (output !== undefined && output.status === "indexed") return "success";
+  if (output !== undefined && output.status === "partially_indexed") return "success";
+  if (output !== undefined && output.status === "failed") return "failure";
+  if (output !== undefined && output.status === "deleting") return "failure";
+  if (error instanceof NotFoundError) return "failure";
+  return error === undefined ? "retry" : undefined;
+};
+
+/** Gets one production history entry, with the full configuration production had.
+ * 
+ * The entry is a copy: it reads the same whether or not the version it came from still exists. */
+export function getProductionHistoryEntry(client: CaitlynClient, input: GetProductionHistoryEntryInput, options: CallOptions = {}): Promise<WithRaw<GetProductionHistoryEntryOutput & __MetadataBearer>> {
+  const { signal, ...rest } = options;
+  return client.send(new GetProductionHistoryEntryCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<GetProductionHistoryEntryOutput & __MetadataBearer>>;
+}
+
+/** Gets an upload's status and when its upload URL expires.
+ * 
+ * Use it to check that the bytes arrived before passing the upload's `id` to the operation that
+ * uses it. Only the person or client that reserved the upload can read it; anyone else gets 404. */
+export function getUpload(client: CaitlynClient, input: GetUploadInput, options: CallOptions = {}): Promise<WithRaw<GetUploadOutput & __MetadataBearer>> {
+  const { signal, ...rest } = options;
+  return client.send(new GetUploadCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<GetUploadOutput & __MetadataBearer>>;
+}
+
+/** Lists an agent's named versions in the order they were made, oldest first.
+ * 
+ * Each entry says how the version was made and whether production currently matches it. The
+ * draft and production are not entries: read them with `draft` and `production`. Needs the agent's
+ * version access grant, as reading any version other than production does. */
+export function listAgentVersions(client: CaitlynClient, input: ListAgentVersionsInput, options: CallOptions = {}): AsyncIterable<WithRaw<AgentVersionSummary>> {
+  const { signal, ...rest } = options;
+  return {
+    async *[Symbol.asyncIterator]() {
+      const pages = paginateListAgentVersions({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
+      for await (const page of pages) yield* page.items as WithRaw<AgentVersionSummary>[];
+    },
+  };
+}
+
 /** Lists the documents in a knowledge base, one page at a time.
  * 
  * Documents are returned in a stable order that does not change between pages. Filters combine
- * with AND. Unlike v2, an unknown filter is refused with 400 `UNKNOWN_FILTER` instead of being
- * ignored, and the list can be sorted by `name`, `updatedAt` (when the document last changed) and
- * `byteSize` on the server; v2 sorts on the client only. */
+ * with AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. The list can be sorted by
+ * `name`, `updatedAt` (when the document last changed) and `byteSize`. */
 export function listDocuments(client: CaitlynClient, input: ListDocumentsInput, options: CallOptions = {}): AsyncIterable<WithRaw<Document>> {
   const { signal, ...rest } = options;
   return {
@@ -91,24 +248,62 @@ export function listDocuments(client: CaitlynClient, input: ListDocumentsInput, 
   };
 }
 
-/** Re-attaches to the answer that is being written, from the event after `Last-Event-ID`.
+/** Lists an agent's production history, newest first: what production was before each publish.
  * 
- * Used by the SDKs after a dropped connection; callers rarely need it directly. When no answer is
- * being written, the stream ends at once. */
-export function resumeConversationStream(client: CaitlynClient, conversationId: string, input: Omit<ResumeConversationStreamInput, "conversationId">, options: CallOptions = {}): SseStream<ConversationEvent, Message> {
+ * Each entry says which version production came from, who published it and when, and who replaced
+ * it and when. Read an entry's full configuration with GetProductionHistoryEntry. Entries are never
+ * edited or deleted, and production at any point in time is the entry whose published and
+ * unpublished times span it (or current production, if none does). */
+export function listProductionHistoryEntries(client: CaitlynClient, input: ListProductionHistoryEntriesInput, options: CallOptions = {}): AsyncIterable<WithRaw<ProductionHistorySummary>> {
   const { signal, ...rest } = options;
-  return new SseStream<ConversationEvent, Message>(
-    { known: ConversationEventNames, final: { event: "message.completed", member: "message" }, errorEvent: "message.failed", toError },
-    () => client.send(new ResumeConversationStreamCommand({ ...input, conversationId, ...rest }), { abortSignal: signal }),
-    undefined,
-    signal,
-  );
+  return {
+    async *[Symbol.asyncIterator]() {
+      const pages = paginateListProductionHistoryEntries({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
+      for await (const page of pages) yield* page.items as WithRaw<ProductionHistorySummary>[];
+    },
+  };
+}
+
+/** Keeps a copy of the draft as a new named version.
+ * 
+ * The new version is pinned: it does not change production, and the draft carries on as before.
+ * Send the draft's ETag as `If-Match` to pin only the draft you tested; without it, the draft is
+ * pinned as it is now. Returns the new version, and `Location` names it. */
+export function pinDraftVersion(client: CaitlynClient, agentId: string, input: Omit<PinDraftVersionInput, "idempotencyKey" | "ifMatch" | "agentId">, options: CallOptions & { idempotencyKey?: string; ifMatch?: string } = {}): Promise<WithRaw<PinDraftVersionOutput & __MetadataBearer>> {
+  const { signal, ...rest } = options;
+  return client.send(new PinDraftVersionCommand({ ...input, agentId, ...rest }), { abortSignal: signal }) as Promise<WithRaw<PinDraftVersionOutput & __MetadataBearer>>;
+}
+
+/** Publishes a version: production becomes a copy of it.
+ * 
+ * `version` is a version name, or `draft`. Publishing the draft first keeps a copy of it as a new
+ * version named `name`, then publishes that, so production always matches a named version. The
+ * version published is kept as it is; nothing is moved or deleted, and deleting it later does not
+ * change production. Send production's current ETag
+ * (from `GET /v3/agents/{agentId}/versions/production`) as `If-Match`, so two publishes cannot
+ * overwrite each other; a stale ETag is refused with 412. Production before the publish is kept as
+ * a production history entry (ListProductionHistoryEntries), stamped with who replaced it and
+ * when; the new production carries `publishedAt` and `publishedBy`. Rolling back is publishing an
+ * earlier version. */
+export function publishAgentVersion(client: CaitlynClient, input: Omit<PublishAgentVersionInput, "ifMatch">, options: CallOptions & { ifMatch: string }): Promise<WithRaw<PublishAgentVersionOutput & __MetadataBearer>> {
+  const { signal, ...rest } = options;
+  return client.send(new PublishAgentVersionCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<PublishAgentVersionOutput & __MetadataBearer>>;
+}
+
+/** Resets the draft to a copy of another version; `If-Match` is required.
+ * 
+ * The draft's configuration becomes the configuration of `from`, which is a version name or
+ * `production`. Nothing else changes: the version copied from is kept, and production is
+ * untouched. Returns the draft and its new ETag. */
+export function resetDraftVersion(client: CaitlynClient, agentId: string, input: Omit<ResetDraftVersionInput, "ifMatch" | "agentId">, options: CallOptions & { ifMatch: string }): Promise<WithRaw<ResetDraftVersionOutput & __MetadataBearer>> {
+  const { signal, ...rest } = options;
+  return client.send(new ResetDraftVersionCommand({ ...input, agentId, ...rest }), { abortSignal: signal }) as Promise<WithRaw<ResetDraftVersionOutput & __MetadataBearer>>;
 }
 
 /** Sends a message and streams the answer as server-sent events.
  * 
  * The stream ends with exactly one `message.completed` or `message.failed`. If the connection
- * drops, the SDK re-attaches with `ResumeConversationStream` and `Last-Event-ID`, so no event is
+ * drops, the SDK re-attaches with `WatchConversation` and `Last-Event-ID`, so no event is
  * lost or repeated. Not retried automatically: a send that fails before the stream starts is
  * reported to the caller. */
 export function sendMessage(client: CaitlynClient, conversationId: string, input: Omit<SendMessageInput, "conversationId">, options: CallOptions = {}): SseStream<ConversationEvent, Message> {
@@ -117,7 +312,7 @@ export function sendMessage(client: CaitlynClient, conversationId: string, input
     { known: ConversationEventNames, final: { event: "message.completed", member: "message" }, errorEvent: "message.failed", toError },
     () => client.send(new SendMessageCommand({ ...input, conversationId, ...rest }), { abortSignal: signal }),
     (lastEventId) =>
-      client.send(new ResumeConversationStreamCommand({ conversationId, lastEventId: lastEventId }), { abortSignal: signal }),
+      client.send(new WatchConversationCommand({ conversationId, lastEventId: lastEventId }), { abortSignal: signal }),
     signal,
   );
 }
@@ -131,6 +326,55 @@ export function sendMessage(client: CaitlynClient, conversationId: string, input
 export function updateDraftVersion(client: CaitlynClient, agentId: string, input: Omit<UpdateDraftVersionInput, "ifMatch" | "agentId">, options: CallOptions & { ifMatch: string }): Promise<WithRaw<UpdateDraftVersionOutput & __MetadataBearer>> {
   const { signal, ...rest } = options;
   return client.send(new UpdateDraftVersionCommand({ ...input, agentId, ...rest }), { abortSignal: signal }) as Promise<WithRaw<UpdateDraftVersionOutput & __MetadataBearer>>;
+}
+
+/** Watches a conversation: the answer being written, if any, then every answer after it, until the
+ * caller closes the stream. An answer whose stream ended moments before the watch opened may still
+ * be delivered, from its `message.started` event; match answers on your own message ID.
+ * 
+ * With `Last-Event-ID`, it resumes from the event after that one, so a dropped connection loses
+ * nothing; the SDKs use this to re-attach to `SendMessage`, and to reconnect a dropped watch. When
+ * the answer that event belongs to has ended, or can no longer be replayed, the watch sends
+ * `stream.reset` with a new cursor instead, then carries on. Each answer ends with
+ * `message.completed` or `message.failed`, which end that answer but not the stream, so
+ * `waitUntil`-style helpers watch for the event they need and then close. */
+export function watchConversation(client: CaitlynClient, conversationId: string, input: Omit<WatchConversationInput, "conversationId">, options: CallOptions = {}): SseStream<ConversationEvent, never> {
+  const { signal, ...rest } = options;
+  return new SseStream<ConversationEvent, never>(
+    { known: ConversationEventNames, final: undefined, errorEvent: "message.failed", toError },
+    () => client.send(new WatchConversationCommand({ ...input, conversationId, ...rest }), { abortSignal: signal }),
+    (lastEventId) =>
+      client.send(new WatchConversationCommand({ ...input, conversationId, ...rest, lastEventId: lastEventId }), { abortSignal: signal }),
+    signal,
+  );
+}
+
+/** Streams the workspace's events the caller asks for, from a cursor or from now.
+ * 
+ * A stream listens to what it names and nothing else: give `type`, `conversationId`, or both.
+ * Every event is about a subject (a conversation, for now), and the caller receives it only when
+ * it may read that subject, decided per event as a read of the subject would be: the same
+ * permission and, for a token, the same scope. An answer, a tool call or an input request needs
+ * what `WatchConversation` needs; a token whose scopes leave out conversation transcripts receives
+ * none of them.
+ * 
+ * Each event's `id` is a cursor. Send it back as `after` (or `Last-Event-ID` on a reconnect) to
+ * carry on from it without missing or repeating an event; without either, the stream starts now.
+ * A cursor the stream cannot carry on from is answered with `stream.reset` and a new cursor, not
+ * an error. To wait for something your own call will cause, open the stream first, then make the
+ * call.
+ * 
+ * Catching up after a cursor covers activity through the v3 API. A conversation event comes
+ * with its content, in the same structures as the conversation's own stream. */
+export function watchWorkspaceEvents(client: CaitlynClient, input: WatchWorkspaceEventsInput, options: CallOptions = {}): SseStream<WorkspaceEvent, never> {
+  const { signal, ...rest } = options;
+  return new SseStream<WorkspaceEvent, never>(
+    { known: WorkspaceEventNames, final: undefined, errorEvent: undefined, toError },
+    () => client.send(new WatchWorkspaceEventsCommand({ ...input, ...rest }), { abortSignal: signal }),
+    (lastEventId) =>
+      client.send(new WatchWorkspaceEventsCommand({ ...input, ...rest, ...(lastEventId === undefined ? {} : { after: undefined }), lastEventId: lastEventId }), { abortSignal: signal }),
+    signal,
+  );
 }
 
 /** Computes the SHA-256, reserves the upload slot and sends the bytes to it. */

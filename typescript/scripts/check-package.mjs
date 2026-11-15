@@ -26,15 +26,19 @@ import { gzipSync } from 'node:zlib';
 // which @smithy/core/protocols (imported by the fetch handler) loads on demand and the SDK never asks for. Budgets are in bytes; set from the
 // sizes measured on 13 November 2026, with the browser build (dist-browser) on sdk-core's own runtime, plus a margin,
 // so growth is a decision rather than an accident. In 0.1.1, on the Smithy runtime, they were 43 126, 43 207,
-// 44 230 and 44 902 bytes.
+// 44 230 and 44 902 bytes. Raised on 14 November 2026 for the model with ten operations, which added 300 to 500
+// bytes even to a bundle that imports one of them (24 736, 24 812, 25 880, 26 598, 27 487 and 24 736 bytes).
+// Raised on 15 November 2026 for the final v3 model (agent versions and production history, documents and uploads,
+// and waitUntilIndexed), which added 870 to 1 550 bytes (25 607, 25 698, 26 955, 28 358, 28 495 and 25 607 bytes),
+// with a margin of about 1%.
 const ENTRIES = {
   'client + one operation': {
-    budget: 24_500,
+    budget: 26_000,
     code: `import { createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk';
 export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
   },
   'client + one operation + oauth sign-in': {
-    budget: 24_500,
+    budget: 26_100,
     code: `import { createAuth, createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk';
 const options = { workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'oauth', clientId: 'app', redirectUri: location.origin + '/callback' } };
 const auth = createAuth(options);
@@ -44,13 +48,13 @@ export const finish = (p) => auth.handleCallback(p);
 export const run = () => getAgentVersion(client, { agentId: 'A', version: 'draft' });`,
   },
   'client + streaming chat': {
-    budget: 25_700,
+    budget: 27_300,
     code: `import { createCaitlynClient, sendMessage } from '@caitlyn-ai/sdk';
 const client = createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'session' } });
 export const ask = async (id, message, onText) => { for await (const e of sendMessage(client, id, { message })) if (e.type === 'text.delta') onText(e.delta); };`,
   },
   'Caitlyn class (every operation)': {
-    budget: 26_300, // grows with every operation the model gains: raise it with the model change that needs it
+    budget: 28_700, // grows with every operation the model gains: raise it with the model change that needs it
     code: `import { Caitlyn } from '@caitlyn-ai/sdk';
 export const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 't' } });`,
   },
@@ -58,13 +62,13 @@ export const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', au
   // and the browser build when it imports '@caitlyn-ai/sdk/browser'.
   // A Node bundle (a Lambda, say): the Node build, on fetch, with nothing from the Smithy HTTP handlers.
   'client + one operation, bundled for Node': {
-    budget: 27_500,
+    budget: 28_900,
     platform: 'node',
     code: `import { createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk';
 export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
   },
   'client + one operation, @caitlyn-ai/sdk/browser in a web worker': {
-    budget: 24_500,
+    budget: 26_000,
     conditions: ['worker'],
     code: `import { createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk/browser';
 export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
@@ -100,7 +104,7 @@ const c = new Caitlyn({ workspace: 'w', auth: { mode: 'workloadIdentity', token:
 export async function f(): Promise<string | undefined> {
   for await (const e of c.conversations.send('C1', { message: 'hi' })) { const x: ConversationEvent = e; void x; }
   try {
-    const v = await c.versions.get({ agentId: 'A', version: 'draft' });
+    const v = await c.agents.versions.get({ agentId: 'A', version: 'draft' });
     const status: number | undefined = v.$metadata.httpStatusCode; // a single call's output carries its response metadata
     const requestId: string | undefined = v.$metadata.requestId;
     void [status, requestId, v.raw];
@@ -200,7 +204,7 @@ fs.writeFileSync(path.join(work, 'loaded.mjs'), `import { registerHooks, createR
 const seen = new Set();
 registerHooks({ load(url, ctx, next) { seen.add(url); return next(url, ctx); } });
 const { Caitlyn } = await import('@caitlyn-ai/sdk');
-await new Caitlyn({ workspace: 'w', auth: { mode: 'token', token: 't' } }).versions.get({ agentId: 'A', version: 'draft' }, { signal: AbortSignal.abort() }).catch(() => undefined);
+await new Caitlyn({ workspace: 'w', auth: { mode: 'token', token: 't' } }).agents.versions.get({ agentId: 'A', version: 'draft' }, { signal: AbortSignal.abort() }).catch(() => undefined);
 createRequire(import.meta.url)('@caitlyn-ai/sdk');
 const bad = [...seen].filter((u) => /@smithy\\/(core\\/dist-[a-z]+\\/(index\\.js|submodules\\/(retry|event-streams|checksum|cbor|endpoints|protocols|serde|config)\\/)|node-http-handler|fetch-http-handler)/.test(u));
 if (bad.length) { console.error(bad.join('\\n')); process.exit(1); }`);

@@ -152,13 +152,19 @@ async fn list_all(c: &Client, kb: &str, limit: Option<i32>) -> Result<Vec<Docume
 }
 
 async fn draft(c: &Client) -> Result<AgentVersion, Error> {
-    c.versions()
+    c.agents()
+        .versions()
         .get(GetAgentVersionInput {
             agent_id: AGENT.into(),
             version: "draft".into(),
         })
         .await
 }
+
+/// The mock's cursor the workspace stream cannot carry on from, and the cursor its stream.reset gives instead.
+const STALE_CURSOR: &str = "0190d2a1-0000-7000-8000-000000000001";
+const RESET_CURSOR: &str = "0193a6f3-0a1b-7c2d-8e3f-000000000010";
+const ID_11: &str = "0193a6f3-0a1b-7c2d-8e3f-000000000011";
 
 async fn send(c: &Client, conversation: &str) -> Result<ConversationEventStream, Error> {
     c.conversations()
@@ -172,7 +178,7 @@ async fn send(c: &Client, conversation: &str) -> Result<ConversationEventStream,
         .await
 }
 
-async fn collect(s: &mut ConversationEventStream) -> (Vec<ConversationEvent>, Option<Error>) {
+async fn collect<E, F: Clone>(s: &mut caitlyn_sdk_core::Stream<E, F, Error>) -> (Vec<E>, Option<Error>) {
     let mut evs = Vec::new();
     while let Some(r) = s.next().await {
         match r {
@@ -449,21 +455,119 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
         }),
 
         // ------------------------------------------------------------------ SSE
-        "sse.resume-finished" => Box::pin(async move {
+        "sse.resumed-answer-reset" => Box::pin(async move {
+            // The mock cuts the stream only once the SDK has yielded the two events before the cut, so it always has
+            // an event ID to resume from.
+            m.faults(json!({"dropAfterEvents": 2, "dropOnSignal": true, "finishWhileAway": true}))
+                .await;
+            let mut stream = send(&client(m), "c-away").await.map_err(s)?;
+            let mut events = Vec::new();
+            let mut err = None;
+            while let Some(r) = stream.next().await {
+                match r {
+                    Ok(e) => events.push(e),
+                    Err(e) => {
+                        err = Some(e);
+                        break;
+                    }
+                }
+                if events.len() == 2 {
+                    m.post("/__mock/drop", json!({})).await;
+                }
+            }
+            ensure!(
+                err.is_none() && events.len() == 3 && events[2].event_type() == "stream.reset",
+                "events {} err {err:?}; want two events, then the reset",
+                events.len()
+            );
+            let fin = stream.final_message().await;
+            ensure!(
+                matches!(&fin, Err(e) if e.code() == Some("NO_FINAL_EVENT")),
+                "final_message: {fin:?}"
+            );
+            let gets = m.api().await.iter().filter(|r| str_at(r, "method") == "GET").count();
+            ensure!(gets == 1, "{gets} reconnects; want one, and none after the reset");
+            Ok(())
+        }),
+        "sse.watch-reconnects" => Box::pin(async move {
             let c = client(m);
-            let mut first = send(&c, "c-done").await.map_err(s)?;
-            let (evs, err) = collect(&mut first).await;
-            ensure!(err.is_none(), "first stream: {err:?}");
-            let last = evs.last().and_then(|e| e.event_id()).ok_or("no last event id")?.to_owned();
-            let mut resumed = c
-                .conversations()
-                .resume("c-done", ResumeConversationStreamInput { last_event_id: Some(last) })
+            let mut first = send(&c, "c-w").await.map_err(s)?;
+            let (_, err) = collect(&mut first).await;
+            ensure!(err.is_none(), "send: {err:?}");
+            m.faults(json!({"watchCloses": 7})).await;
+            let mut watch = c.conversations().watch("c-w", WatchConversationInput::default()).await.map_err(s)?;
+            let events = take(&mut watch, |e| e.event_type() == "message.completed").await.map_err(s)?;
+            let types: Vec<_> = events.iter().map(|e| e.event_type()).collect();
+            ensure!(
+                types.join(" ")
+                    == "message.started progress.updated tool.started tool.finished text.delta citation.added text.delta message.completed",
+                "events {types:?}"
+            );
+            let gets = m
+                .matching(|r| str_at(r, "method") == "GET" && str_at(r, "path") == "/v3/conversations/c-w/stream")
+                .await;
+            ensure!(
+                gets.len() == 8,
+                "{} requests; want eight: seven reconnects, because each carried an event",
+                gets.len()
+            );
+            for (i, g) in gets[1..].iter().enumerate() {
+                ensure!(
+                    header(g, "last-event-id") == events[i].event_id(),
+                    "reconnect {} Last-Event-ID {g:?}",
+                    i + 1
+                );
+            }
+            Ok(())
+        }),
+        "sse.watch-resends-request" => Box::pin(async move {
+            m.faults(json!({"watchCloses": 1})).await;
+            let mut stream = client(m)
+                .events()
+                .subscribe(WatchWorkspaceEventsInput {
+                    types: Some(vec!["conversation.created".into()]),
+                    conversation_ids: Some(vec!["c-11".into(), "c-12".into()]),
+                    ..Default::default()
+                })
                 .await
                 .map_err(s)?;
-            let (evs, err) = collect(&mut resumed).await;
-            ensure!(evs.is_empty() && err.is_none(), "resumed: {} events, error {err:?}", evs.len());
+            let mut n = 0;
+            let events = take(&mut stream, |_| {
+                n += 1;
+                n == 2
+            })
+            .await
+            .map_err(s)?;
+            let reqs = m.matching(|r| str_at(r, "path") == "/v3/events/stream").await;
+            ensure!(reqs.len() == 2, "{} requests", reqs.len());
+            let (q0, q1) = (str_at(&reqs[0], "query"), str_at(&reqs[1], "query"));
+            ensure!(
+                q1 == q0
+                    && q1.contains("type=conversation.created")
+                    && q1.contains("conversationId=c-11")
+                    && header(&reqs[1], "last-event-id") == events[0].event_id(),
+                "requests {reqs:?}"
+            );
+            Ok(())
+        }),
+        "sse.conversation-reset" => Box::pin(async move {
+            let c = client(m);
+            let mut first = send(&c, "c-r").await.map_err(s)?;
+            let (answer, err) = collect(&mut first).await;
+            ensure!(err.is_none(), "send: {err:?}");
+            let last = answer.last().and_then(|e| e.event_id()).ok_or("no last event id")?.to_owned();
+            let mut watch = c
+                .conversations()
+                .watch("c-r", WatchConversationInput { last_event_id: Some(last) })
+                .await
+                .map_err(s)?;
+            let events = take(&mut watch, |e| e.event_type() == "message.completed").await.map_err(s)?;
+            let ConversationEvent::StreamReset(reset) = &events[0] else {
+                return Err(format!("first event {:?}", events[0]));
+            };
+            ensure!(events[0].event_id() == Some(reset.cursor.as_str()), "reset {reset:?}");
             let gets = m.api().await.iter().filter(|r| str_at(r, "method") == "GET").count();
-            ensure!(gets == 1, "resume requests {gets}");
+            ensure!(gets == 1, "{gets} requests; a reset is not an error and is never retried");
             Ok(())
         }),
         "sse.request-id-and-type" => Box::pin(async move {
@@ -547,6 +651,272 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                     && header(&resume[0], "accept") == Some("text/event-stream"),
                 "events {} resume {resume:?}",
                 events.len()
+            );
+            Ok(())
+        }),
+        "waiter.success" => {
+            Box::pin(async move {
+                m.faults(json!({"documentStatus": {"doc-0002": ["queued", "indexing", "indexed"], "doc-0003": ["indexing", "partially_indexed"]}}))
+                .await;
+                let d = wait_indexed(m, "doc-0002").await.map_err(s)?;
+                let reads = m.api().await.len();
+                ensure!(
+                    d.status.as_str() == "indexed" && reads == 3,
+                    "status {} after {reads} reads",
+                    d.status.as_str()
+                );
+                let d = wait_indexed(m, "doc-0003").await.map_err(s)?;
+                ensure!(d.status.as_str() == "partially_indexed", "status {}", d.status.as_str());
+                Ok(())
+            })
+        }
+        "waiter.failure" => Box::pin(async move {
+            m.faults(json!({"documentStatus": {"doc-0002": ["indexing", "failed"]}})).await;
+            let e = wait_indexed(m, "doc-0002").await.err().ok_or("a failed document succeeded")?;
+            let Error::Waiter(w) = &e else { return Err(format!("got {e:?}")) };
+            let last = w.last_output::<GetDocumentResult>().map(|d| d.status.as_str().to_owned());
+            ensure!(
+                w.waiter == "Indexed" && w.reason == WaitReason::Failure && w.attempts == 2 && last.as_deref() == Some("failed"),
+                "got {w:?}, last {last:?}"
+            );
+            ensure!(e.to_string() == "Indexed: reached a failure state", "message {e}");
+            let e = wait_indexed(m, "doc-9999").await.err().ok_or("a missing document succeeded")?;
+            let Error::Waiter(w) = &e else { return Err(format!("got {e:?}")) };
+            ensure!(
+                w.reason == WaitReason::Failure && w.attempts == 1 && matches!(w.last_error, Some(Error::NotFound(_))),
+                "missing document: {w:?}"
+            );
+            Ok(())
+        }),
+        "waiter.timeout" => Box::pin(async move {
+            m.faults(json!({"documentStatus": {"doc-0002": ["indexing"]}})).await;
+            let r = client(m)
+                .documents()
+                .wait_until_indexed(GetDocumentInput {
+                    knowledge_base_id: "KB4T7YQ2WL".into(),
+                    document_id: "doc-0002".into(),
+                })
+                .delays(Duration::from_millis(20), Duration::from_millis(20))
+                .max_wait(Duration::from_millis(150))
+                .await;
+            let e = r.err().ok_or("succeeded")?;
+            let Error::Waiter(w) = &e else { return Err(format!("got {e:?}")) };
+            let last = w.last_output::<GetDocumentResult>().map(|d| d.status.as_str().to_owned());
+            ensure!(
+                w.reason == WaitReason::Timeout && w.attempts >= 3 && last.as_deref() == Some("indexing"),
+                "got {w:?}, last {last:?}"
+            );
+            Ok(())
+        }),
+        "waiter.success-on-error" => Box::pin(async move {
+            let doc = || GetDocumentInput {
+                knowledge_base_id: "KB4T7YQ2WL".into(),
+                document_id: "doc-0002".into(),
+            };
+            let gone = client(m).documents().wait_until_deleted(doc());
+            ensure!(gone.limit() == Duration::from_secs(900), "Deleted's limit {:?}", gone.limit());
+            let deleted = client(m)
+                .documents()
+                .delete(DeleteDocumentInput {
+                    knowledge_base_id: "KB4T7YQ2WL".into(),
+                    document_id: "doc-0002".into(),
+                })
+                .await
+                .map_err(s)?;
+            ensure!(deleted.status.as_str() == "deleting", "delete returned {}", deleted.status.as_str());
+            let before = m.api().await.len();
+            // The wait has no output: `()` once the document is gone.
+            let () = client(m)
+                .documents()
+                .wait_until_deleted(doc())
+                .delays(Duration::from_millis(10), Duration::from_millis(10))
+                .await
+                .map_err(s)?;
+            let reads = m.api().await.len() - before;
+            ensure!(reads == 2, "{reads} reads: one deleting, then 404");
+            Ok(())
+        }),
+        "waiter.default-limit" => Box::pin(async move {
+            let wait = client(m).documents().wait_until_indexed(GetDocumentInput {
+                knowledge_base_id: "KB4T7YQ2WL".into(),
+                document_id: "doc-0002".into(),
+            });
+            ensure!(wait.limit() == Duration::from_secs(3600), "Indexed's limit {:?}", wait.limit());
+            ensure!(
+                caitlyn_sdk_core::waiter::DEFAULT_LIMIT == Duration::from_secs(300),
+                "the default without waitLimits"
+            );
+            ensure!(
+                wait.max_wait(Duration::from_secs(5)).limit() == Duration::from_secs(5),
+                "max_wait replaces it"
+            );
+            Ok(())
+        }),
+        "sse.final-ends-watch" => Box::pin(async move {
+            m.faults(json!({"dropAfterEvents": 2})).await;
+            let t0 = Instant::now();
+            let mut stream = send(&client(m), "c-watch").await.map_err(s)?;
+            let answer = stream.final_message().await.map_err(s)?;
+            ensure!(answer.text == "Staff receive 20 days of annual leave.", "answer {answer:?}");
+            ensure!(
+                t0.elapsed() < Duration::from_secs(5),
+                "ended when the server closed the watch, not at message.completed"
+            );
+            drop(stream);
+            for i in 0.. {
+                if !m.matching(|r| str_at(r, "event") == "client-disconnected").await.is_empty() {
+                    break;
+                }
+                ensure!(i < 100, "the SDK did not close the watch connection");
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            Ok(())
+        }),
+        "sse.stream-reset" => Box::pin(async move {
+            let mut stream = client(m)
+                .events()
+                .subscribe(WatchWorkspaceEventsInput {
+                    types: Some(vec!["conversation.created".into()]),
+                    after: Some(STALE_CURSOR.into()),
+                    ..Default::default()
+                })
+                .await
+                .map_err(s)?;
+            let mut n = 0;
+            // a watch carries on until it is closed
+            let events = take(&mut stream, |_| {
+                n += 1;
+                n == 2
+            })
+            .await
+            .map_err(s)?;
+            ensure!(events.len() == 2, "events {}", events.len());
+            let WorkspaceEvent::StreamReset(reset) = &events[0] else {
+                return Err(format!("first event {:?}", events[0]));
+            };
+            ensure!(
+                events[0].event_type() == "stream.reset" && reset.cursor == RESET_CURSOR && events[0].event_id() == Some(RESET_CURSOR),
+                "reset {reset:?}"
+            );
+            let WorkspaceEvent::ConversationCreatedEvent(created) = &events[1] else {
+                return Err(format!("second event {:?}", events[1]));
+            };
+            ensure!(created.data.agent_id == "GHT7YRWXPL", "created {created:?}");
+            let n = m.api().await.len();
+            ensure!(n == 1, "{n} requests; a reset is not an error and is never retried");
+            Ok(())
+        }),
+        "sse.reconnect-backoff" => Box::pin(async move {
+            let c = client(m);
+            let mut first = send(&c, "c-b").await.map_err(s)?;
+            let (_, err) = collect(&mut first).await;
+            ensure!(err.is_none(), "send: {err:?}");
+            m.faults(json!({"watchEmptyCloses": 4})).await;
+            let mut watch = c.conversations().watch("c-b", WatchConversationInput::default()).await.map_err(s)?;
+            let (_, err) = collect(&mut watch).await;
+            ensure!(
+                matches!(&err, Some(e) if e.code() == Some("STREAM_LOST")),
+                "got {err:?}, want STREAM_LOST"
+            );
+            let at: Vec<i64> = m
+                .matching(|r| str_at(r, "method") == "GET")
+                .await
+                .iter()
+                .map(|r| r["at"].as_i64().unwrap_or_default())
+                .collect();
+            ensure!(at.len() == 4, "{} requests; want the first and three reconnects", at.len());
+            let (g1, g2, g3) = (at[1] - at[0], at[2] - at[1], at[3] - at[2]);
+            ensure!(
+                // The bands do not overlap, so their lower bounds show the pause grows; the upper bounds, three
+                // times each band's top, catch a broken cap.
+                g1 >= 200 && g2 >= 450 && g3 >= 950 && g1 <= 1500 && g2 <= 3000 && g3 <= 6000,
+                "pauses {g1}, {g2}, {g3} ms: want at least 0.25, 0.5 and 1 s, and at most 1.5, 3 and 6 s"
+            );
+            Ok(())
+        }),
+        "sse.reconnect-without-event-id" => Box::pin(async move {
+            m.faults(json!({"watchEmptyCloses": 1})).await;
+            let mut stream = client(m)
+                .events()
+                .subscribe(WatchWorkspaceEventsInput {
+                    types: Some(vec!["conversation.created".into()]),
+                    after: Some(ID_11.into()),
+                    ..Default::default()
+                })
+                .await
+                .map_err(s)?;
+            take(&mut stream, |_| true).await.map_err(s)?;
+            let reqs = m.matching(|r| str_at(r, "path") == "/v3/events/stream").await;
+            ensure!(reqs.len() >= 2, "{} requests; want a reconnect", reqs.len());
+            ensure!(
+                header(&reqs[1], "last-event-id").is_none() && str_at(&reqs[1], "query") == str_at(&reqs[0], "query"),
+                "reconnect {:?}; want no Last-Event-ID and the same query",
+                reqs[1]
+            );
+            Ok(())
+        }),
+        "sse.reconnect-drops-after" => Box::pin(async move {
+            m.faults(json!({"watchCloses": 1})).await;
+            let mut stream = client(m)
+                .events()
+                .subscribe(WatchWorkspaceEventsInput {
+                    types: Some(vec!["conversation.created".into()]),
+                    after: Some(ID_11.into()),
+                    ..Default::default()
+                })
+                .await
+                .map_err(s)?;
+            let mut n = 0;
+            let events = take(&mut stream, |_| {
+                n += 1;
+                n == 2
+            })
+            .await
+            .map_err(s)?;
+            let reqs = m.matching(|r| str_at(r, "path") == "/v3/events/stream").await;
+            ensure!(reqs.len() >= 2, "{} requests", reqs.len());
+            let (q0, q1) = (str_at(&reqs[0], "query"), str_at(&reqs[1], "query"));
+            ensure!(
+                q0.contains("after=")
+                    && !q1.contains("after=")
+                    && q1.contains("type=conversation.created")
+                    && header(&reqs[1], "last-event-id") == events[0].event_id(),
+                "requests {reqs:?}"
+            );
+            Ok(())
+        }),
+        "sse.duplicate-not-progress" => Box::pin(async move {
+            let c = client(m);
+            let mut first = send(&c, "c-d").await.map_err(s)?;
+            let (_, err) = collect(&mut first).await;
+            ensure!(err.is_none(), "send: {err:?}");
+            m.faults(json!({"watchReplayCloses": 10})).await;
+            let mut watch = c.conversations().watch("c-d", WatchConversationInput::default()).await.map_err(s)?;
+            let (events, err) = collect(&mut watch).await;
+            ensure!(
+                events.len() == 1 && matches!(&err, Some(e) if e.code() == Some("STREAM_LOST")),
+                "events {} err {err:?}; want one event, the duplicates dropped, then STREAM_LOST",
+                events.len()
+            );
+            let gets = m.api().await.iter().filter(|r| str_at(r, "method") == "GET").count();
+            ensure!(gets == 4, "{gets} requests; want the first and three reconnects");
+            Ok(())
+        }),
+        "sse.watch-failed-answer" => Box::pin(async move {
+            let c = client(m);
+            m.faults(json!({"failStream": true})).await;
+            let mut first = send(&c, "c-f").await.map_err(s)?;
+            let (_, err) = collect(&mut first).await;
+            ensure!(err.is_some(), "send: want the failure raised");
+            let mut watch = c.conversations().watch("c-f", WatchConversationInput::default()).await.map_err(s)?;
+            let events = take(&mut watch, |e| e.event_type() == "message.completed").await.map_err(s)?;
+            let failed = events
+                .iter()
+                .position(|e| matches!(e, ConversationEvent::MessageFailed(f) if f.code == "SERVICE_UNAVAILABLE"));
+            let completed = events.iter().position(|e| e.event_type() == "message.completed");
+            ensure!(
+                matches!((failed, completed), (Some(f), Some(c)) if f < c),
+                "message.failed at {failed:?}, message.completed at {completed:?}; want the failure delivered, then the next answer"
             );
             Ok(())
         }),
@@ -676,8 +1046,8 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let up = c
                 .uploads()
                 .reserve(CreateUploadInput {
-                    file_name: "a.txt".into(),
-                    content_type: "text/plain".into(),
+                    file_name: "a.pdf".into(),
+                    content_type: "application/pdf".into(),
                     byte_size: 1,
                     sha256: "x".into(),
                 })
@@ -688,7 +1058,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 .create(CreateDocumentInput {
                     knowledge_base_id: KB.into(),
                     upload_id: up.id,
-                    folder: "hr/".into(),
+                    folder: "/hr/".into(),
                     ..Default::default()
                 })
                 .await;
@@ -702,12 +1072,13 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 instructions: Some(text.into()),
                 ..Default::default()
             };
-            c.versions()
+            c.agents()
+                .versions()
                 .update_draft(AGENT, update("first"))
                 .if_match(&d.etag)
                 .await
                 .map_err(s)?;
-            let r = c.versions().update_draft(AGENT, update("second")).if_match(&d.etag).await;
+            let r = c.agents().versions().update_draft(AGENT, update("second")).if_match(&d.etag).await;
             ensure!(
                 matches!(&r, Err(Error::PreconditionFailed(e)) if e.code == "PRECONDITION_FAILED" && e.request_id.is_some()),
                 "got {:?}",
@@ -797,6 +1168,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let c = client(m);
             let d = draft(&c).await.map_err(s)?;
             let r = c
+                .agents()
                 .versions()
                 .update_draft(
                     AGENT,
@@ -857,6 +1229,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 let c = c.clone();
                 async move {
                     match c
+                        .agents()
                         .versions()
                         .get(GetAgentVersionInput {
                             agent_id: AGENT.into(),
@@ -972,6 +1345,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             });
             let t0 = Instant::now();
             let r = client(m)
+                .agents()
                 .versions()
                 .get(GetAgentVersionInput {
                     agent_id: AGENT.into(),
@@ -993,6 +1367,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let c = client(m);
             let d = draft(&c).await.map_err(s)?;
             let updated = c
+                .agents()
                 .versions()
                 .update_draft(
                     AGENT,
@@ -1016,6 +1391,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let c = client(m);
             let d = draft(&c).await.map_err(s)?;
             let updated = c
+                .agents()
                 .versions()
                 .update_draft(
                     AGENT,
@@ -1170,6 +1546,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let c = client(m);
             m.faults(status("GetAgentVersion", &[(503, 0)])).await;
             let r = c
+                .agents()
                 .versions()
                 .get(GetAgentVersionInput {
                     agent_id: AGENT.into(),
@@ -1396,18 +1773,41 @@ fn with_headers<T: serde::Serialize>(out: &T, headers: &[(&str, Option<&str>)]) 
     v
 }
 
-async fn drain(r: Result<ConversationEventStream, Error>) -> Result<Value, Error> {
+/// Reads a stream's first event, or its error (a watch carries on until it is closed).
+async fn drain<E, F: Clone>(r: Result<caitlyn_sdk_core::Stream<E, F, Error>, Error>) -> Result<Value, Error> {
     let mut s = r?;
-    while let Some(ev) = s.next().await {
+    if let Some(ev) = s.next().await {
         ev?;
     }
     Ok(Value::Null)
+}
+
+/// Reads events until `stop` returns true for one, or the stream ends.
+async fn take<E, F: Clone>(s: &mut caitlyn_sdk_core::Stream<E, F, Error>, mut stop: impl FnMut(&E) -> bool) -> Result<Vec<E>, Error> {
+    let mut evs = Vec::new();
+    while let Some(ev) = s.next().await {
+        let ev = ev?;
+        let done = stop(&ev);
+        evs.push(ev);
+        if done {
+            break;
+        }
+    }
+    Ok(evs)
 }
 
 /// Calls the operation with an example's input. A new operation in the model fails until it has an entry here.
 async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Value, Error>> {
     let body = |_: ()| input.clone();
     Some(match op {
+        "CreateConversation" => {
+            let i: CreateConversationInput = serde_json::from_value(body(())).ok()?;
+            c.conversations()
+                .create(i)
+                .options(options(input))
+                .await
+                .map(|o| with_headers(&o, &[("location", o.location.as_deref()), ("requestId", o.request_id.as_deref())]))
+        }
         "CreateDocument" => {
             let mut i: CreateDocumentInput = serde_json::from_value(body(())).ok()?;
             i.knowledge_base_id = labels(input, "knowledgeBaseId");
@@ -1426,6 +1826,7 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
                 .map(|o| with_headers(&o, &[("location", o.location.as_deref()), ("requestId", o.request_id.as_deref())]))
         }
         "GetAgentVersion" => c
+            .agents()
             .versions()
             .get(GetAgentVersionInput {
                 agent_id: labels(input, "agentId"),
@@ -1433,6 +1834,121 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
             })
             .await
             .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str())), ("requestId", o.request_id.as_deref())])),
+        "DeleteDocument" => c
+            .documents()
+            .delete(DeleteDocumentInput {
+                knowledge_base_id: labels(input, "knowledgeBaseId"),
+                document_id: labels(input, "documentId"),
+            })
+            .await
+            .map(|o| with_headers(&o, &[("requestId", o.request_id.as_deref())])),
+        "BatchDeleteDocuments" => {
+            let mut i: BatchDeleteDocumentsInput = serde_json::from_value(body(())).ok()?;
+            i.knowledge_base_id = labels(input, "knowledgeBaseId");
+            c.documents()
+                .batch_delete(i)
+                .await
+                .map(|o| with_headers(&o, &[("requestId", o.request_id.as_deref())]))
+        }
+        "GetDocument" => c
+            .documents()
+            .get(GetDocumentInput {
+                knowledge_base_id: labels(input, "knowledgeBaseId"),
+                document_id: labels(input, "documentId"),
+            })
+            .await
+            .map(|o| with_headers(&o, &[("requestId", o.request_id.as_deref())])),
+        "GetUpload" => c
+            .uploads()
+            .get(GetUploadInput {
+                upload_id: labels(input, "uploadId"),
+            })
+            .await
+            .map(|o| with_headers(&o, &[("requestId", o.request_id.as_deref())])),
+        "ListProductionHistoryEntries" => {
+            let i = ListProductionHistoryEntriesInput {
+                agent_id: labels(input, "agentId"),
+                limit: input.get("limit").and_then(Value::as_i64).map(|n| n as i32),
+                cursor: opt(input, "cursor"),
+            };
+            match c.agents().production_history().list_pages(i).next().await? {
+                Ok(p) => Ok(with_headers(&p, &[("requestId", p.request_id.as_deref())])),
+                Err(e) => Err(e),
+            }
+        }
+        "GetProductionHistoryEntry" => c
+            .agents()
+            .production_history()
+            .get(GetProductionHistoryEntryInput {
+                agent_id: labels(input, "agentId"),
+                history_entry_id: labels(input, "historyEntryId"),
+            })
+            .await
+            .map(|o| with_headers(&o, &[("requestId", o.request_id.as_deref())])),
+        "ListAgentVersions" => {
+            let i = ListAgentVersionsInput {
+                agent_id: labels(input, "agentId"),
+                limit: input.get("limit").and_then(Value::as_i64).map(|n| n as i32),
+                cursor: opt(input, "cursor"),
+            };
+            match c.agents().versions().list_pages(i).next().await? {
+                Ok(p) => Ok(with_headers(&p, &[("requestId", p.request_id.as_deref())])),
+                Err(e) => Err(e),
+            }
+        }
+        "PinDraftVersion" => {
+            let i: PinDraftVersionInput = serde_json::from_value(body(())).ok()?;
+            c.agents()
+                .versions()
+                .pin(labels(input, "agentId"), i)
+                .options(options(input))
+                .await
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[
+                            ("etag", Some(o.etag.as_str())),
+                            ("location", o.location.as_deref()),
+                            ("requestId", o.request_id.as_deref()),
+                        ],
+                    )
+                })
+        }
+        "ResetDraftVersion" => {
+            let i: ResetDraftVersionInput = serde_json::from_value(body(())).ok()?;
+            c.agents()
+                .versions()
+                .reset_draft(labels(input, "agentId"), i)
+                .options(options(input))
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str())), ("requestId", o.request_id.as_deref())]))
+        }
+        "DeleteAgentVersion" => c
+            .agents()
+            .versions()
+            .delete(DeleteAgentVersionInput {
+                agent_id: labels(input, "agentId"),
+                version: labels(input, "version"),
+            })
+            .await
+            .map(|o| with_headers(&o, &[("requestId", o.request_id.as_deref())])),
+        "PublishAgentVersion" => c
+            .agents()
+            .versions()
+            .publish(PublishAgentVersionInput {
+                agent_id: labels(input, "agentId"),
+                version: labels(input, "version"),
+                name: opt(input, "name"),
+                note: opt(input, "note"),
+            })
+            .options(options(input))
+            .await
+            .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str())), ("requestId", o.request_id.as_deref())])),
+        "GetCaller" => c
+            .callers()
+            .get(GetCallerInput {})
+            .await
+            .map(|o| with_headers(&o, &[("requestId", o.request_id.as_deref())])),
         "ListDocuments" => {
             let i = ListDocumentsInput {
                 knowledge_base_id: labels(input, "knowledgeBaseId"),
@@ -1448,12 +1964,12 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
                 Err(e) => Err(e),
             }
         }
-        "ResumeConversationStream" => {
+        "WatchConversation" => {
             drain(
                 c.conversations()
-                    .resume(
+                    .watch(
                         labels(input, "conversationId"),
-                        ResumeConversationStreamInput {
+                        WatchConversationInput {
                             last_event_id: opt(input, "lastEventId"),
                         },
                     )
@@ -1467,11 +1983,27 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
         }
         "UpdateDraftVersion" => {
             let i: UpdateDraftVersionInput = serde_json::from_value(body(())).ok()?;
-            c.versions()
+            c.agents()
+                .versions()
                 .update_draft(labels(input, "agentId"), i)
                 .options(options(input))
                 .await
                 .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str())), ("requestId", o.request_id.as_deref())]))
+        }
+        "WatchWorkspaceEvents" => {
+            let list = |k: &str| {
+                input
+                    .get(k)
+                    .and_then(Value::as_array)
+                    .map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect())
+            };
+            let i = WatchWorkspaceEventsInput {
+                types: list("types"),
+                conversation_ids: list("conversationIds"),
+                after: opt(input, "after"),
+                last_event_id: opt(input, "lastEventId"),
+            };
+            drain(c.events().subscribe(i).await).await
         }
         _ => return None,
     })
@@ -2098,7 +2630,8 @@ fn auth_case<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
         "auth.session" => Box::pin(async move {
             let c = client_with(m, Auth::session("caitlyn_session=mock-session").origin("https://caitlyn.lndo.site"));
             let v = read(&c).await.map_err(s)?;
-            c.versions()
+            c.agents()
+                .versions()
                 .update_draft(
                     AGENT,
                     UpdateDraftVersionInput {
@@ -2211,10 +2744,23 @@ const AUTH_CASES: &[(&str, &str)] = &[
 
 // ---------------------------------------------------------------------------------------------- Rust only
 
+/// The Indexed waiter on one of the mock's documents, with short pauses.
+async fn wait_indexed(m: &Mock, document_id: &str) -> Result<GetDocumentResult, Error> {
+    client(m)
+        .documents()
+        .wait_until_indexed(GetDocumentInput {
+            knowledge_base_id: "KB4T7YQ2WL".into(),
+            document_id: document_id.into(),
+        })
+        .delays(Duration::from_millis(10), Duration::from_millis(10))
+        .await
+}
+
 fn rust_case<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
     Some(match id {
         "rust.typed-error-has-problem" => Box::pin(async move {
             let r = client(m)
+                .agents()
                 .versions()
                 .get(GetAgentVersionInput {
                     agent_id: AGENT.into(),
@@ -2237,6 +2783,7 @@ fn rust_case<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
         }),
         "rust.if-match-required-before-sending" => Box::pin(async move {
             let r = client(m)
+                .agents()
                 .versions()
                 .update_draft(
                     AGENT,

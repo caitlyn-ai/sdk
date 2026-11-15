@@ -37,6 +37,30 @@ export function publicDoc(text) {
     .join('\n\n');
 }
 
+/**
+ * The operations no Caitlyn release serves yet: those the snapshot (model/model.json, before prepare-model stamps
+ * it) still marks @since("next"). The app's release replaces "next" with its number when it publishes the
+ * model, so once an operation ships, its pages stop saying it is unavailable.
+ */
+export function unreleasedOperations() {
+  const raw = JSON.parse(fs.readFileSync(path.join(root, 'model/model.json'), 'utf8')).shapes;
+  return new Set(Object.entries(raw).filter(([, s]) => s.type === 'operation' && s.traits?.[C('since')] === 'next').map(([id]) => local(id)));
+}
+
+/**
+ * How each language reaches a namespace's client object: a dotted @clientMethod namespace (`agents.versions`) nests
+ * one object per segment, outermost first (PROTOCOL.md 10). TypeScript and Python use properties, Go exported
+ * fields, Rust methods.
+ */
+export function namespacePath(lang, namespace) {
+  const parts = namespace.split('.');
+  if (lang === 'typescript') return parts.join('.');
+  if (lang === 'python') return parts.map((p) => names.python(p)).join('.');
+  if (lang === 'go') return parts.map((p) => names.go(p)).join('.');
+  if (lang === 'rust') return parts.map((p) => `${names.rust(p)}()`).join('.');
+  throw new Error(`namespacePath: no language ${lang}`);
+}
+
 export const local = (id) => id.split('#')[1];
 const lowerFirst = (s) => s[0].toLowerCase() + s.slice(1);
 export const kebab = (n) => n.replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/([A-Z])([A-Z][a-z])/g, '$1-$2').toLowerCase();
@@ -171,6 +195,10 @@ export function operations(ast) {
         since: t[C('since')],
         doc: (t[T('documentation')] ?? '').trim(),
       };
+    })
+    .map((o) => {
+      if (!['ga', 'beta', 'internal'].includes(o.stability)) throw new Error(`${o.name}: @stability is ${o.stability}; every operation declares ga, beta or internal`);
+      return o;
     })
     .filter((o) => o.stability !== 'internal')
     .sort((a, b) => a.namespace.localeCompare(b.namespace) || a.name.localeCompare(b.name));

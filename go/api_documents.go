@@ -4,11 +4,116 @@ package caitlyn
 
 import (
 	"context"
+	"errors"
 	"iter"
 	"strconv"
+	"time"
 
 	"github.com/caitlyn-ai/caitlyn-go/core"
 )
+
+// BatchDeleteDocumentsInput is the input of Documents.BatchDelete.
+type BatchDeleteDocumentsInput struct {
+	// The knowledge base the documents are in.
+	// Sent in the path.
+	KnowledgeBaseID string `json:"-"`
+	// The documents to delete: 1 to 100 identifiers, each at most once.
+	DocumentIDs []string `json:"documentIds"`
+}
+
+func errorsBatchDeleteDocuments(status int, e *core.APIError) error {
+	switch status {
+	case 400:
+		return &ValidationError{e}
+	case 401:
+		return &UnauthenticatedError{e}
+	case 403:
+		return &PermissionDeniedError{e}
+	case 404:
+		return &NotFoundError{e}
+	case 409:
+		return &ConflictError{e}
+	case 412:
+		return &PreconditionFailedError{e}
+	case 413:
+		return &PayloadTooLargeError{e}
+	case 422:
+		return &UnprocessableContentError{e}
+	case 428:
+		return &PreconditionRequiredError{e}
+	case 429:
+		return &TooManyRequestsError{e}
+	case 500:
+		return &InternalError{e}
+	case 503:
+		return &ServiceUnavailableError{e}
+	}
+	return e
+}
+
+var opBatchDeleteDocuments = &core.Operation{
+	Name:      "BatchDeleteDocuments",
+	Method:    "POST",
+	Since:     "5.115.0",
+	RetrySafe: true,
+	Retryable: []int{503, 429},
+	Errors:    errorsBatchDeleteDocuments,
+}
+
+func buildBatchDeleteDocuments(in *BatchDeleteDocumentsInput) (*core.Request, error) {
+	if in.KnowledgeBaseID == "" {
+		return nil, core.MissingInput("BatchDeleteDocuments", "knowledgeBaseId")
+	}
+	req := core.NewRequest("/v3/knowledge-bases/" + core.PathLabel(in.KnowledgeBaseID) + "/documents:batch-delete")
+	if err := req.JSONBody(in); err != nil {
+		return nil, err
+	}
+	return req, nil
+}
+
+func readBatchDeleteDocuments(resp *core.Response) (*BatchDeleteDocumentsResult, error) {
+	out := &BatchDeleteDocumentsResult{}
+	if err := resp.DecodeJSON(out); err != nil {
+		return nil, err
+	}
+	out.APIVersion = resp.HeaderPtr("Caitlyn-Api-Version")
+	out.RequestID = resp.HeaderPtr("Caitlyn-Request-Id")
+	out.metadata = resp.Metadata()
+	return out, nil
+}
+
+// BatchDelete deletes up to 100 documents in one call, with a result for each.
+//
+// Each document is deleted as DeleteDocument deletes one. The call returns 200 even when every
+// item fails: `results` has one entry per identifier, always in request order, each either
+// `accepted` (the document is now `deleting`, or already was) or `failed` with a code: `NOT_FOUND`
+// for a document that is gone or that the caller may not see, and `CONFLICT` for a document still
+// being processed (`pending` or `processing`), which cannot be deleted until it is `indexed`,
+// `partially_indexed` or `failed`. One failed item never stops the others. More than 100 identifiers,
+// none, or the same identifier twice is refused with 400
+// `VALIDATION_FAILED` for the whole call. Safe to repeat: a repeat gives the same results, apart
+// from `NOT_FOUND` for documents that finished deleting in between.
+//
+// Errors: *InternalError (500), *PermissionDeniedError (403), *ServiceUnavailableError (503),
+// *TooManyRequestsError (429), *UnauthenticatedError (401), *ValidationError (400), *NotFoundError
+// (404); another status the API models has its own type too (*NotFoundError for 404), and any other
+// status is an *Error.
+//
+// Since Caitlyn 5.115.0; beta.
+func (c *DocumentsClient) BatchDelete(ctx context.Context, in *BatchDeleteDocumentsInput, opts ...CallOption) (*BatchDeleteDocumentsResult, error) {
+	if in == nil {
+		in = &BatchDeleteDocumentsInput{}
+	}
+	req, err := buildBatchDeleteDocuments(in)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.c.core.Do(ctx, opBatchDeleteDocuments, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	return readBatchDeleteDocuments(resp)
+}
 
 // CreateDocumentInput is the input of Documents.Create. The idempotency key is generated, or set with
 // WithIdempotencyKey.
@@ -16,11 +121,15 @@ type CreateDocumentInput struct {
 	// The knowledge base to add the document to.
 	// Sent in the path.
 	KnowledgeBaseID string `json:"-"`
-	// The upload holding the document's bytes. Each upload can be used once.
+	// The upload holding the document's bytes. Each upload can be used once. Refused with 400
+	// `VALIDATION_FAILED` when the bytes are not the file type the document's name says.
 	UploadID string `json:"uploadId"`
 	// The folder to put the document in.
 	Folder string `json:"folder"`
-	// The document's name. Absent means the uploaded file's name.
+	// The document's name. Absent means the uploaded file's name. A name without an extension is
+	// given the one the upload's content type maps to, because ingestion reads the file type
+	// from it. Refused with 400 `VALIDATION_FAILED` when the type maps to no extension, or when
+	// the extension is one a knowledge base cannot ingest.
 	Name *string `json:"name,omitempty"`
 }
 
@@ -90,7 +199,8 @@ func readCreateDocument(resp *core.Response) (*CreateDocumentResult, error) {
 // Create creates a document from an upload; ingestion continues after the response.
 //
 // Returns 202 with the document in its initial state and the Operation that tracks ingestion, and
-// `Location` names the Operation. Needs the files permission, read access to the knowledge base and
+// `Location` names the document: read it with GetDocument, or wait for it with the SDKs'
+// `waitUntilIndexed`. Needs the files permission, read access to the knowledge base and
 // access to the folder; it does not need update access to the knowledge base, which is for the
 // knowledge base's own configuration.
 //
@@ -99,7 +209,7 @@ func readCreateDocument(resp *core.Response) (*CreateDocumentResult, error) {
 // (409), *NotFoundError (404), *UnprocessableContentError (422); another status the API models has its
 // own type too (*NotFoundError for 404), and any other status is an *Error.
 //
-// Since Caitlyn 5.115.0.
+// Since Caitlyn 5.115.0; beta.
 func (c *DocumentsClient) Create(ctx context.Context, in *CreateDocumentInput, opts ...CallOption) (*CreateDocumentResult, error) {
 	if in == nil {
 		in = &CreateDocumentInput{}
@@ -113,6 +223,291 @@ func (c *DocumentsClient) Create(ctx context.Context, in *CreateDocumentInput, o
 		return nil, err
 	}
 	return readCreateDocument(resp)
+}
+
+// DeleteDocumentInput is the input of Documents.Delete.
+type DeleteDocumentInput struct {
+	// The knowledge base the document is in.
+	// Sent in the path.
+	KnowledgeBaseID string `json:"-"`
+	// The document to delete.
+	// Sent in the path.
+	DocumentID string `json:"-"`
+}
+
+func errorsDeleteDocument(status int, e *core.APIError) error {
+	switch status {
+	case 400:
+		return &ValidationError{e}
+	case 401:
+		return &UnauthenticatedError{e}
+	case 403:
+		return &PermissionDeniedError{e}
+	case 404:
+		return &NotFoundError{e}
+	case 409:
+		return &ConflictError{e}
+	case 412:
+		return &PreconditionFailedError{e}
+	case 413:
+		return &PayloadTooLargeError{e}
+	case 422:
+		return &UnprocessableContentError{e}
+	case 428:
+		return &PreconditionRequiredError{e}
+	case 429:
+		return &TooManyRequestsError{e}
+	case 500:
+		return &InternalError{e}
+	case 503:
+		return &ServiceUnavailableError{e}
+	}
+	return e
+}
+
+var opDeleteDocument = &core.Operation{
+	Name:      "DeleteDocument",
+	Method:    "DELETE",
+	Since:     "5.115.0",
+	RetrySafe: true,
+	Retryable: []int{503, 429},
+	Errors:    errorsDeleteDocument,
+}
+
+func buildDeleteDocument(in *DeleteDocumentInput) (*core.Request, error) {
+	if in.KnowledgeBaseID == "" {
+		return nil, core.MissingInput("DeleteDocument", "knowledgeBaseId")
+	}
+	if in.DocumentID == "" {
+		return nil, core.MissingInput("DeleteDocument", "documentId")
+	}
+	req := core.NewRequest("/v3/knowledge-bases/" + core.PathLabel(in.KnowledgeBaseID) + "/documents/" + core.PathLabel(in.DocumentID))
+	return req, nil
+}
+
+func readDeleteDocument(resp *core.Response) (*DeleteDocumentResult, error) {
+	out := &DeleteDocumentResult{}
+	if err := resp.DecodeJSON(out); err != nil {
+		return nil, err
+	}
+	out.APIVersion = resp.HeaderPtr("Caitlyn-Api-Version")
+	out.RequestID = resp.HeaderPtr("Caitlyn-Request-Id")
+	out.metadata = resp.Metadata()
+	return out, nil
+}
+
+// Delete deletes a document; removing it from search continues after the response.
+//
+// Returns 202 with the document in `deleting`; wait for it to be gone with the SDKs'
+// `waitUntilDeleted`. Repeating the call while the document is still `deleting` returns 202 again;
+// once it is gone, 404, as for any record that does not exist.
+//
+// A document still being processed (`pending` or `processing`) cannot be deleted yet: the call is
+// refused with 409 `CONFLICT`. Wait until it is `indexed`, `partially_indexed` or `failed`, for
+// example with the SDKs' `waitUntilIndexed`, then delete it.
+//
+// Needs the files delete permission, read access to the knowledge base and access to the
+// document's folder.
+//
+// Errors: *InternalError (500), *PermissionDeniedError (403), *ServiceUnavailableError (503),
+// *TooManyRequestsError (429), *UnauthenticatedError (401), *ValidationError (400), *ConflictError
+// (409), *NotFoundError (404); another status the API models has its own type too (*NotFoundError for
+// 404), and any other status is an *Error.
+//
+// Since Caitlyn 5.115.0; beta.
+func (c *DocumentsClient) Delete(ctx context.Context, in *DeleteDocumentInput, opts ...CallOption) (*DeleteDocumentResult, error) {
+	if in == nil {
+		in = &DeleteDocumentInput{}
+	}
+	req, err := buildDeleteDocument(in)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.c.core.Do(ctx, opDeleteDocument, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	return readDeleteDocument(resp)
+}
+
+// GetDocumentInput is the input of Documents.Get.
+type GetDocumentInput struct {
+	// The knowledge base the document is in.
+	// Sent in the path.
+	KnowledgeBaseID string `json:"-"`
+	// The document to get.
+	// Sent in the path.
+	DocumentID string `json:"-"`
+}
+
+func errorsGetDocument(status int, e *core.APIError) error {
+	switch status {
+	case 400:
+		return &ValidationError{e}
+	case 401:
+		return &UnauthenticatedError{e}
+	case 403:
+		return &PermissionDeniedError{e}
+	case 404:
+		return &NotFoundError{e}
+	case 409:
+		return &ConflictError{e}
+	case 412:
+		return &PreconditionFailedError{e}
+	case 413:
+		return &PayloadTooLargeError{e}
+	case 422:
+		return &UnprocessableContentError{e}
+	case 428:
+		return &PreconditionRequiredError{e}
+	case 429:
+		return &TooManyRequestsError{e}
+	case 500:
+		return &InternalError{e}
+	case 503:
+		return &ServiceUnavailableError{e}
+	}
+	return e
+}
+
+var opGetDocument = &core.Operation{
+	Name:      "GetDocument",
+	Method:    "GET",
+	Since:     "5.115.0",
+	RetrySafe: true,
+	Retryable: []int{503, 429},
+	Errors:    errorsGetDocument,
+}
+
+func buildGetDocument(in *GetDocumentInput) (*core.Request, error) {
+	if in.KnowledgeBaseID == "" {
+		return nil, core.MissingInput("GetDocument", "knowledgeBaseId")
+	}
+	if in.DocumentID == "" {
+		return nil, core.MissingInput("GetDocument", "documentId")
+	}
+	req := core.NewRequest("/v3/knowledge-bases/" + core.PathLabel(in.KnowledgeBaseID) + "/documents/" + core.PathLabel(in.DocumentID))
+	return req, nil
+}
+
+func readGetDocument(resp *core.Response) (*GetDocumentResult, error) {
+	out := &GetDocumentResult{}
+	if err := resp.DecodeJSON(out); err != nil {
+		return nil, err
+	}
+	out.APIVersion = resp.HeaderPtr("Caitlyn-Api-Version")
+	out.RequestID = resp.HeaderPtr("Caitlyn-Request-Id")
+	out.metadata = resp.Metadata()
+	return out, nil
+}
+
+// Get gets one document in a knowledge base, with its status.
+//
+// `status` says where the document is in its lifecycle; `indexed`, `partially_indexed` and `failed`
+// are final. A document in a folder the caller may not see is 404, as one that does not exist is.
+// The SDKs' `waitUntilIndexed` waiter calls this operation until the document is searchable, and
+// `waitUntilDeleted` until it is gone.
+//
+// Errors: *InternalError (500), *PermissionDeniedError (403), *ServiceUnavailableError (503),
+// *TooManyRequestsError (429), *UnauthenticatedError (401), *ValidationError (400), *NotFoundError
+// (404); another status the API models has its own type too (*NotFoundError for 404), and any other
+// status is an *Error.
+//
+// Since Caitlyn 5.115.0; beta.
+func (c *DocumentsClient) Get(ctx context.Context, in *GetDocumentInput, opts ...CallOption) (*GetDocumentResult, error) {
+	if in == nil {
+		in = &GetDocumentInput{}
+	}
+	req, err := buildGetDocument(in)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.c.core.Do(ctx, opGetDocument, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	return readGetDocument(resp)
+}
+
+// WaitUntilDeleted waits until the document is gone, after DeleteDocument or BatchDeleteDocuments
+// accepted it: the wait ends when reading it returns 404. Waits up to 15 minutes by default.
+//
+// It polls Documents.Get (first at once, then every 2 to 30 seconds) until a success state, when it
+// returns nil: the waiter succeeds on an error, so it has no output to return. A failure state or the
+// time limit, 15 minutes unless WithMaxWait sets another, ends it with a *WaiterError; a context's
+// deadline or cancellation ends it with the context's error.
+func (c *DocumentsClient) WaitUntilDeleted(ctx context.Context, in *GetDocumentInput, opts ...WaiterOption) error {
+	_, err := core.Wait(ctx, "Deleted", 2*time.Second, 30*time.Second, 900*time.Second, opts,
+		func(ctx context.Context) (*GetDocumentResult, error) { return c.Get(ctx, in) },
+		acceptDeleted)
+	return err
+}
+
+func acceptDeleted(out *GetDocumentResult, err error) core.WaitState {
+	var e0 *NotFoundError
+	if errors.As(err, &e0) {
+		return core.WaitSuccess
+	}
+	if err != nil {
+		return core.WaitFailure
+	}
+	return core.WaitRetry
+}
+
+// WaitUntilIndexed waits until the document is searchable: `indexed`, or `partially_indexed` when some
+// enrichments did not complete. Fails when it is `failed`, being deleted, or gone. Waits up to 60
+// minutes by default.
+//
+// It polls Documents.Get (first at once, then every 2 to 30 seconds) until a success state, when it
+// returns the output. A failure state or the time limit, 1 hour unless WithMaxWait sets another, ends
+// it with a *WaiterError; a context's deadline or cancellation ends it with the context's error.
+func (c *DocumentsClient) WaitUntilIndexed(ctx context.Context, in *GetDocumentInput, opts ...WaiterOption) (*GetDocumentResult, error) {
+	return core.Wait(ctx, "Indexed", 2*time.Second, 30*time.Second, 3600*time.Second, opts,
+		func(ctx context.Context) (*GetDocumentResult, error) { return c.Get(ctx, in) },
+		acceptIndexed)
+}
+
+func acceptIndexed(out *GetDocumentResult, err error) core.WaitState {
+	if err == nil && acceptIndexedPath0(out) {
+		return core.WaitSuccess
+	}
+	if err == nil && acceptIndexedPath1(out) {
+		return core.WaitSuccess
+	}
+	if err == nil && acceptIndexedPath2(out) {
+		return core.WaitFailure
+	}
+	if err == nil && acceptIndexedPath3(out) {
+		return core.WaitFailure
+	}
+	var e4 *NotFoundError
+	if errors.As(err, &e4) {
+		return core.WaitFailure
+	}
+	if err != nil {
+		return core.WaitFailure
+	}
+	return core.WaitRetry
+}
+
+func acceptIndexedPath0(out *GetDocumentResult) bool {
+	v1 := out.Status
+	return string(v1) == "indexed"
+}
+
+func acceptIndexedPath1(out *GetDocumentResult) bool {
+	v1 := out.Status
+	return string(v1) == "partially_indexed"
+}
+
+func acceptIndexedPath2(out *GetDocumentResult) bool {
+	v1 := out.Status
+	return string(v1) == "failed"
+}
+
+func acceptIndexedPath3(out *GetDocumentResult) bool {
+	v1 := out.Status
+	return string(v1) == "deleting"
 }
 
 // ListDocumentsInput is the input of Documents.List.
@@ -220,9 +615,8 @@ func readListDocuments(resp *core.Response) (*ListDocumentsPage, error) {
 // List lists the documents in a knowledge base, one page at a time.
 //
 // Documents are returned in a stable order that does not change between pages. Filters combine
-// with AND. Unlike v2, an unknown filter is refused with 400 `UNKNOWN_FILTER` instead of being
-// ignored, and the list can be sorted by `name`, `updatedAt` (when the document last changed) and
-// `byteSize` on the server; v2 sorts on the client only.
+// with AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. The list can be sorted by
+// `name`, `updatedAt` (when the document last changed) and `byteSize`.
 //
 // It yields every item, fetching pages as needed; ListPages yields whole pages.
 //
@@ -231,7 +625,7 @@ func readListDocuments(resp *core.Response) (*ListDocumentsPage, error) {
 // (404); another status the API models has its own type too (*NotFoundError for 404), and any other
 // status is an *Error.
 //
-// Since Caitlyn 5.115.0.
+// Since Caitlyn 5.115.0; beta.
 func (c *DocumentsClient) List(ctx context.Context, in *ListDocumentsInput, opts ...CallOption) iter.Seq2[Document, error] {
 	return core.Items(c.ListPages(ctx, in, opts...), func(p *ListDocumentsPage) []Document { return p.Items })
 }

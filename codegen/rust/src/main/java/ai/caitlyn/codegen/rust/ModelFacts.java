@@ -54,6 +54,8 @@ final class ModelFacts {
         duplicateResults = results.duplicates();
         sse = new SseEvents(model, service);
         sseUnions = sse.unions().keySet();
+        // A failure event (PROTOCOL.md 5.5) is raised as an error on a stream with a final event, and delivered as an
+        // event on a watch, so it is a type of its own and a variant of its union.
         sseErrorTargets = sse.failureTargets();
         apiVersion = Versions.modelVersion(model, service);
         problemFields.addAll(ProblemDetails.memberNames(model, service));
@@ -65,12 +67,11 @@ final class ModelFacts {
             }
         }
         for (SseEvents.Union union : sse.unions().values()) {
-            for (MemberShape m : union.events()) {
-                boolean usedElsewhere = model.getMemberShapes().stream()
-                        .anyMatch(o -> o.getTarget().equals(m.getTarget()) && !sseUnions.contains(o.getContainer()));
-                if (usedElsewhere) {
-                    throw new CodegenException(m.getId() + ": an SSE event structure used outside event unions is not supported yet");
-                }
+            // An event structure may also be an ordinary member elsewhere: the workspace stream's tool.finished
+            // carries a conversation's ToolFinished as its data. It is the same type there, with no event id.
+            List<MemberShape> members = new ArrayList<>(union.events());
+            union.failure().ifPresent(members::add);
+            for (MemberShape m : members) {
                 sseMemberOf.computeIfAbsent(m.getTarget(), k -> new ArrayList<>()).add(union.shape().getId());
             }
         }
@@ -88,7 +89,7 @@ final class ModelFacts {
     /** Structures written to types.rs (inputs live with their operation; streaming outputs become streams). */
     boolean isGenerated(StructureShape s) {
         return !inputs.contains(s.getId()) && !streamingOutputs.contains(s.getId())
-                && !duplicateResults.contains(s.getId()) && !sseErrorTargets.contains(s.getId())
+                && !duplicateResults.contains(s.getId())
                 && !s.hasTrait(MixinTrait.class) && !s.hasTrait(ErrorTrait.class);
     }
 }

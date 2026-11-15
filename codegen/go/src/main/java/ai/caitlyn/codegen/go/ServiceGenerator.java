@@ -1,6 +1,7 @@
 package ai.caitlyn.codegen.go;
 
 import ai.caitlyn.codegen.model.CaitlynTraits;
+import ai.caitlyn.codegen.model.Waiters;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -71,7 +72,8 @@ final class ServiceGenerator {
 
     void run() {
         for (Map.Entry<String, List<OperationInfo>> ns : byNamespace.entrySet()) {
-            String file = "api_" + Names.words(ns.getKey()).stream().reduce((a, b) -> a + "_" + b).orElseThrow() + ".go";
+            String joined = String.join("", ns.getValue().get(0).path);
+            String file = "api_" + Names.words(joined).stream().reduce((a, b) -> a + "_" + b).orElseThrow() + ".go";
             ctx.writerDelegator().useFileWriter(file, "", w -> {
                 for (OperationInfo op : ns.getValue()) {
                     operation(w, op);
@@ -432,15 +434,32 @@ final class ServiceGenerator {
 
     private final Map<String, String> streamAliases = new LinkedHashMap<>();
 
+    /**
+     * A stream's type alias. It is named after its event union, as `SendMessage`'s ConversationEventStream is.
+     * When operations stream the same union and only some of them end with a final event, the ones without
+     * (WatchConversation, which carries on until it is closed) are named after the operation instead.
+     */
+    private String streamAlias(OperationInfo op, String union) {
+        ObjectNode sse = op.sse.orElseThrow();
+        String events = sse.expectStringMember("events").getValue();
+        boolean siblingHasFinal = ops.values().stream()
+                .filter(o -> o.sse.isPresent() && o.sse.get().expectStringMember("events").getValue().equals(events))
+                .anyMatch(o -> o.sse.get().getStringMember("final").isPresent());
+        boolean ownFinal = sse.getStringMember("final").isPresent();
+        return !ownFinal && siblingHasFinal ? Names.exported(op.name) + "Stream" : union + "Stream";
+    }
+
     private void stream(GoWriter w, OperationInfo op) {
         StreamTypes st = streamTypes(w, op);
-        String alias = st.union() + "Stream";
+        String alias = streamAlias(op, st.union());
         String target = "core.Stream[" + st.union() + ", " + st.finalType() + "]";
         String prev = streamAliases.putIfAbsent(alias, target);
         if (prev == null) {
-            w.l(Names.comment(alias + " is a stream of " + st.union() + " events. Range over Events, then call FinalMessage"
-                    + (st.finalType().equals("struct{}") ? "" : " for the *" + st.finalType())
-                    + "; always Close it. A dropped connection is resumed with Last-Event-ID where the model allows.", ""));
+            boolean hasFinal = !st.finalType().equals("struct{}");
+            w.l(Names.comment(alias + " is a stream of " + st.union() + " events. "
+                    + (hasFinal ? "Range over Events, then call FinalMessage for the *" + st.finalType() + "; always Close it."
+                            : "Range over Events until you have what you need, then Close it: the stream has no final event.")
+                    + " A dropped connection is resumed with Last-Event-ID where the model allows.", ""));
             w.l("type " + alias + " = " + target + "\n\n");
         } else if (!prev.equals(target)) {
             throw new CodegenException(op.op.getId() + ": two streams of " + st.union() + " with different final events");
@@ -454,35 +473,54 @@ final class ServiceGenerator {
                 throw new CodegenException(op.op.getId() + ": resumeWith " + resumeWith.get() + " is not a generated operation");
             }
             StringBuilder b = new StringBuilder("func(ctx context.Context, lastEventID string) (*core.Response, error) {\n");
-            b.append("\t\t\trin := &").append(r.inputType()).append("{}\n");
-            String positionalArg = "";
-            boolean lastSet = false;
-            for (OperationInfo.Param rp : r.all) {
-                String member = rp.member().getMemberName();
-                if (rp.location() == HttpBinding.Location.HEADER && rp.wire().equalsIgnoreCase("Last-Event-ID")) {
-                    b.append("\t\t\trin.").append(rp.field()).append(" = ").append(isPointer(rp) ? "&lastEventID" : "lastEventID").append("\n");
-                    lastSet = true;
-                    continue;
+            if (r.op.getId().equals(op.op.getId())) {
+                // A watch resumes itself: the same request again (what it listens to included), from the last event.
+                OperationInfo.Param last = r.all.stream()
+                        .filter(rp -> rp.location() == HttpBinding.Location.HEADER && rp.wire().equalsIgnoreCase("Last-Event-ID"))
+                        .findFirst().orElseThrow(() -> new CodegenException(r.op.getId() + ": a resumeWith operation needs a Last-Event-ID header member"));
+                // Before any event, the request goes as it was, with no Last-Event-ID; after one, Last-Event-ID carries
+                // the position in place of an `after` cursor (PROTOCOL.md 5.6).
+                b.append("\t\t\trin := *in\n\t\t\tif lastEventID != \"\" {\n");
+                b.append("\t\t\t\trin.").append(last.field()).append(" = ").append(isPointer(last) ? "&lastEventID" : "lastEventID").append("\n");
+                r.all.stream().filter(rp -> rp.member().getMemberName().equals("after")).findFirst()
+                        .ifPresent(after -> b.append("\t\t\t\trin.").append(after.field()).append(" = nil\n"));
+                b.append("\t\t\t}\n");
+                b.append("\t\t\trreq, err := build").append(r.name).append("(").append(args(op, "&rin")).append(")\n");
+                b.append("\t\t\tif err != nil {\n\t\t\t\treturn nil, err\n\t\t\t}\n");
+                b.append("\t\t\treturn c.c.core.Do(ctx, op").append(r.name).append(", rreq, nil)\n\t\t}");
+                resume = b.toString();
+            } else {
+                b.append("\t\t\trin := &").append(r.inputType()).append("{}\n");
+                String positionalArg = "";
+                boolean lastSet = false;
+                for (OperationInfo.Param rp : r.all) {
+                    String member = rp.member().getMemberName();
+                    if (rp.location() == HttpBinding.Location.HEADER && rp.wire().equalsIgnoreCase("Last-Event-ID")) {
+                        b.append("\t\t\tif lastEventID != \"\" {\n\t\t\t\trin.").append(rp.field()).append(" = ")
+                                .append(isPointer(rp) ? "&lastEventID" : "lastEventID").append("\n\t\t\t}\n");
+                        lastSet = true;
+                        continue;
+                    }
+                    if (rp.location() != HttpBinding.Location.LABEL) {
+                        continue;
+                    }
+                    OperationInfo.Param src = op.param(member).orElseThrow(() ->
+                            new CodegenException(r.op.getId() + ": label " + member + " has no member of the same name in " + op.op.getId()));
+                    String value = valueExpr(op, src);
+                    if (r.positional.isPresent() && r.positional.get().member().getMemberName().equals(member)) {
+                        positionalArg = value + ", ";
+                    } else {
+                        b.append("\t\t\trin.").append(rp.field()).append(" = ").append(value).append("\n");
+                    }
                 }
-                if (rp.location() != HttpBinding.Location.LABEL) {
-                    continue;
+                if (!lastSet) {
+                    throw new CodegenException(r.op.getId() + ": a resumeWith operation needs a Last-Event-ID header member");
                 }
-                OperationInfo.Param src = op.param(member).orElseThrow(() ->
-                        new CodegenException(r.op.getId() + ": label " + member + " has no member of the same name in " + op.op.getId()));
-                String value = valueExpr(op, src);
-                if (r.positional.isPresent() && r.positional.get().member().getMemberName().equals(member)) {
-                    positionalArg = value + ", ";
-                } else {
-                    b.append("\t\t\trin.").append(rp.field()).append(" = ").append(value).append("\n");
-                }
+                b.append("\t\t\trreq, err := build").append(r.name).append("(").append(positionalArg).append("rin)\n");
+                b.append("\t\t\tif err != nil {\n\t\t\t\treturn nil, err\n\t\t\t}\n");
+                b.append("\t\t\treturn c.c.core.Do(ctx, op").append(r.name).append(", rreq, nil)\n\t\t}");
+                resume = b.toString();
             }
-            if (!lastSet) {
-                throw new CodegenException(r.op.getId() + ": a resumeWith operation needs a Last-Event-ID header member");
-            }
-            b.append("\t\t\trreq, err := build").append(r.name).append("(").append(positionalArg).append("rin)\n");
-            b.append("\t\t\tif err != nil {\n\t\t\t\treturn nil, err\n\t\t\t}\n");
-            b.append("\t\t\treturn c.c.core.Do(ctx, op").append(r.name).append(", rreq, nil)\n\t\t}");
-            resume = b.toString();
         }
         w.l(methodDoc(op, op.method, "The error for a failed request is returned at once; errors during the stream (an error event, "
                 + "a connection that could not be resumed, cancellation) end Events with that error."));
@@ -491,7 +529,7 @@ final class ServiceGenerator {
         w.l("\treq, err := build" + op.name + "(" + args(op, "in") + ")\n\tif err != nil {\n\t\treturn nil, err\n\t}\n");
         w.l("\tresp, err := c.c.core.Do(ctx, op" + op.name + ", req, opts)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n");
         w.l("\treturn core.OpenStream(ctx, resp, core.StreamSpec[" + st.union() + ", " + st.finalType() + "]{\n");
-        w.l("\t\tDecode: decode" + st.union() + "(errors" + op.name + "),\n\t\tFinal: " + st.finalFn() + ",\n\t\tResume: " + resume + ",\n\t}), nil\n}\n\n");
+        w.l("\t\tDecode: decode" + st.union() + "(errors" + op.name + ", " + !st.finalType().equals("struct{}") + "),\n\t\tFinal: " + st.finalFn() + ",\n\t\tResume: " + resume + ",\n\t}), nil\n}\n\n");
     }
 
     // ------------------------------------------------------------------ uploads (PROTOCOL.md 10)
@@ -539,6 +577,17 @@ final class ServiceGenerator {
 
     // ------------------------------------------------------------------ waiters (smithy.waiters#waitable)
 
+    /** A waiter's time limit in words: "5 minutes", "1 hour", "90 seconds". */
+    static String duration(int seconds) {
+        if (seconds % 3600 == 0) {
+            return seconds / 3600 + (seconds == 3600 ? " hour" : " hours");
+        }
+        if (seconds % 60 == 0) {
+            return seconds / 60 + (seconds == 60 ? " minute" : " minutes");
+        }
+        return seconds + (seconds == 1 ? " second" : " seconds");
+    }
+
     private void waiters(GoWriter w, OperationInfo op) {
         Optional<Node> trait = op.op.findTrait(WAITABLE).map(t -> t.toNode());
         if (trait.isEmpty()) {
@@ -554,14 +603,29 @@ final class ServiceGenerator {
             ObjectNode waiter = e.getValue().expectObjectNode();
             int min = waiter.getNumberMemberOrDefault("minDelay", 2).intValue();
             int max = waiter.getNumberMemberOrDefault("maxDelay", 120).intValue();
+            // The shared rule (PROTOCOL.md 10.1): its @waitLimits entry, else 300 seconds.
+            int limit = CaitlynTraits.waitLimitSeconds(op.op, name);
             String text = waiter.getStringMemberOrDefault("documentation", "Waits for " + name + ".");
             String accept = "accept" + name;
+            // A waiter that succeeds only on an error (Deleted, on a 404) has no output: its method returns only an
+            // error, nil once the wait succeeds (PROTOCOL.md 10.1; mixing output and error successes is refused).
+            boolean noOutput = Waiters.succeedsOnError(op.op.getId(), name, waiter);
+            String success = noOutput
+                    ? " until a success state, when it returns nil: the waiter succeeds on an error, so it has no output to return."
+                    : " until a success state, when it returns the output.";
             w.l(Names.doc("WaitUntil" + name, text + "\n\nIt polls " + op.namespace + "." + op.method
-                    + " (first at once, then every " + min + " to " + max + " seconds) until a success state, a failure state "
-                    + "(a *WaiterError), or the time limit (WithMaxWait, default 5 minutes, or the context's deadline).", true, ""));
-            w.l("func (c *" + op.namespaceType + ") WaitUntil" + name + "(" + params(op) + ", opts ...WaiterOption) (*" + result + ", error) {\n");
-            w.l("\treturn core.Wait(ctx, " + Names.str(name) + ", " + min + "*time.Second, " + max + "*time.Second, opts,\n");
-            w.l("\t\tfunc(ctx context.Context) (*" + result + ", error) { return c." + op.method + "(ctx, " + args(op, "in") + ") },\n\t\t" + accept + ")\n}\n\n");
+                    + " (first at once, then every " + min + " to " + max + " seconds)" + success + " A failure state or the time "
+                    + "limit, " + duration(limit) + " unless WithMaxWait sets another, ends it with a *WaiterError; a context's deadline "
+                    + "or cancellation ends it with the context's error.", true, ""));
+            String call = "core.Wait(ctx, " + Names.str(name) + ", " + min + "*time.Second, " + max + "*time.Second, " + limit + "*time.Second, opts,\n"
+                    + "\t\tfunc(ctx context.Context) (*" + result + ", error) { return c." + op.method + "(ctx, " + args(op, "in") + ") },\n\t\t" + accept + ")";
+            if (noOutput) {
+                w.l("func (c *" + op.namespaceType + ") WaitUntil" + name + "(" + params(op) + ", opts ...WaiterOption) error {\n");
+                w.l("\t_, err := " + call + "\n\treturn err\n}\n\n");
+            } else {
+                w.l("func (c *" + op.namespaceType + ") WaitUntil" + name + "(" + params(op) + ", opts ...WaiterOption) (*" + result + ", error) {\n");
+                w.l("\treturn " + call + "\n}\n\n");
+            }
             StringBuilder acc = new StringBuilder("func " + accept + "(out *" + result + ", err error) core.WaitState {\n");
             StringBuilder preds = new StringBuilder();
             int i = 0;
@@ -693,9 +757,20 @@ final class ServiceGenerator {
             w.l(Names.comment("Client is the " + title + " client. Create one with NewClient and share it: it is safe for concurrent use. "
                     + "Operations are grouped by resource, for example client." + byNamespace.firstKey() + "."
                     + byNamespace.firstEntry().getValue().get(0).method + ".", ""));
+            // One client struct per namespace segment: Client.Agents is an *AgentsClient, whose Versions is an
+            // *AgentsVersionsClient holding the agents.versions methods (PROTOCOL.md 10).
+            TreeMap<String, List<String>> nodes = new TreeMap<>(); // every namespace and its parents, by dotted path
+            for (List<OperationInfo> ops : byNamespace.values()) {
+                List<String> path = ops.get(0).path;
+                for (int i = 1; i <= path.size(); i++) {
+                    nodes.put(String.join(".", path.subList(0, i)), path.subList(0, i));
+                }
+            }
             w.l("type Client struct {\n");
-            for (String ns : byNamespace.keySet()) {
-                w.l("\t" + ns + " *" + ns + "Client\n");
+            for (List<String> node : nodes.values()) {
+                if (node.size() == 1) {
+                    w.l("\t" + node.get(0) + " *" + node.get(0) + "Client\n");
+                }
             }
             w.l("\n\tcore *core.Client\n}\n\n");
             w.l(Names.comment("NewClient returns a client for workspace (for example \"your-company.getcaitlyn.ai\"), authenticated by auth "
@@ -705,8 +780,10 @@ final class ServiceGenerator {
             w.l("func NewClient(workspace string, auth Auth, opts ...Option) (*Client, error) {\n");
             w.l("\tcc, err := core.NewClient(core.SDKInfo{Version: core.ModuleVersion(ModulePath, SDKVersion), ModelVersion: ModelVersion}, workspace, auth, opts...)\n");
             w.l("\tif err != nil {\n\t\treturn nil, err\n\t}\n\tc := &Client{core: cc}\n");
-            for (String ns : byNamespace.keySet()) {
-                w.l("\tc." + ns + " = &" + ns + "Client{c: c}\n");
+            for (Map.Entry<String, List<String>> node : nodes.entrySet()) {
+                // A namespace that only groups others has no methods, so it needs no way back to the client.
+                String init = byNamespace.containsKey(node.getKey()) ? "{c: c}" : "{}";
+                w.l("\tc." + node.getKey() + " = &" + String.join("", node.getValue()) + "Client" + init + "\n");
             }
             w.l("\treturn c, nil\n}\n\n");
             w.l("// ServerVersion is the latest Caitlyn-Api-Version the client has seen, or \"\" before any response.\n");
@@ -716,14 +793,40 @@ final class ServiceGenerator {
             w.l("// Auth is the client's sign-in: its mode and token, and the OAuth mode's steps (AuthorizationURL,\n");
             w.l("// HandleCallback, SignOut).\n");
             w.l("func (c *Client) Auth() *AuthSession { return c.core.Auth() }\n\n");
-            for (Map.Entry<String, List<OperationInfo>> e : byNamespace.entrySet()) {
+            for (Map.Entry<String, List<String>> node : nodes.entrySet()) {
+                String dotted = node.getKey();
+                String type = String.join("", node.getValue()) + "Client";
                 List<String> methods = new ArrayList<>();
-                for (OperationInfo o : e.getValue()) {
+                for (OperationInfo o : byNamespace.getOrDefault(dotted, List.of())) {
                     methods.add(o.method);
                 }
-                w.l(Names.comment(e.getKey() + "Client holds the " + Names.lowerFirst(e.getKey()) + " operations (" + String.join(", ", methods)
-                        + "). Use Client." + e.getKey() + ".", ""));
-                w.l("type " + e.getKey() + "Client struct{ c *Client }\n\n");
+                List<String> children = new ArrayList<>();
+                for (List<String> other : nodes.values()) {
+                    if (other.size() == node.getValue().size() + 1 && other.subList(0, other.size() - 1).equals(node.getValue())) {
+                        children.add(other.get(other.size() - 1));
+                    }
+                }
+                String what = Names.words(String.join("", node.getValue())).stream().reduce((a, b) -> a + " " + b).orElseThrow();
+                List<String> holds = new ArrayList<>();
+                if (!methods.isEmpty()) {
+                    holds.add("holds the " + what + " operations (" + String.join(", ", methods) + ")");
+                }
+                if (!children.isEmpty()) {
+                    holds.add((methods.isEmpty() ? "groups " : "and groups ") + String.join(" and ", children));
+                }
+                w.l(Names.comment(type + " " + String.join(" ", holds) + ". Use Client." + dotted + ".", ""));
+                if (children.isEmpty()) {
+                    w.l("type " + type + " struct{ c *Client }\n\n");
+                    continue;
+                }
+                w.l("type " + type + " struct {\n");
+                for (String c : children) {
+                    w.l("\t" + c + " *" + type.substring(0, type.length() - "Client".length()) + c + "Client\n");
+                }
+                if (!methods.isEmpty()) {
+                    w.l("\n\tc *Client\n");
+                }
+                w.l("}\n\n");
             }
         });
     }

@@ -51,7 +51,7 @@ test('in a browser, token mode warns once per client, and allowBrowserToken sile
   browser();
   const once = warnings(() => {
     const c = new Caitlyn({ workspace, auth: { mode: 'token', token: 't' } });
-    void c.versions; // using the client warns no more
+    void c.agents.versions; // using the client warns no more
   });
   assert.equal(once.length, 1);
   assert.match(once[0], /long-lived token in a browser is exposed/);

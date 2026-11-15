@@ -48,19 +48,60 @@ import {
   defaultCaitlynHttpAuthSchemeParametersProvider,
   resolveHttpAuthSchemeConfig,
 } from "./auth/httpAuthSchemeProvider";
+import type {
+  BatchDeleteDocumentsCommandInput,
+  BatchDeleteDocumentsCommandOutput,
+} from "./commands/BatchDeleteDocumentsCommand";
+import type {
+  CreateConversationCommandInput,
+  CreateConversationCommandOutput,
+} from "./commands/CreateConversationCommand";
 import type { CreateDocumentCommandInput, CreateDocumentCommandOutput } from "./commands/CreateDocumentCommand";
 import type { CreateUploadCommandInput, CreateUploadCommandOutput } from "./commands/CreateUploadCommand";
+import type {
+  DeleteAgentVersionCommandInput,
+  DeleteAgentVersionCommandOutput,
+} from "./commands/DeleteAgentVersionCommand";
+import type { DeleteDocumentCommandInput, DeleteDocumentCommandOutput } from "./commands/DeleteDocumentCommand";
 import type { GetAgentVersionCommandInput, GetAgentVersionCommandOutput } from "./commands/GetAgentVersionCommand";
+import type { GetCallerCommandInput, GetCallerCommandOutput } from "./commands/GetCallerCommand";
+import type { GetDocumentCommandInput, GetDocumentCommandOutput } from "./commands/GetDocumentCommand";
+import type {
+  GetProductionHistoryEntryCommandInput,
+  GetProductionHistoryEntryCommandOutput,
+} from "./commands/GetProductionHistoryEntryCommand";
+import type { GetUploadCommandInput, GetUploadCommandOutput } from "./commands/GetUploadCommand";
+import type {
+  ListAgentVersionsCommandInput,
+  ListAgentVersionsCommandOutput,
+} from "./commands/ListAgentVersionsCommand";
 import type { ListDocumentsCommandInput, ListDocumentsCommandOutput } from "./commands/ListDocumentsCommand";
 import type {
-  ResumeConversationStreamCommandInput,
-  ResumeConversationStreamCommandOutput,
-} from "./commands/ResumeConversationStreamCommand";
+  ListProductionHistoryEntriesCommandInput,
+  ListProductionHistoryEntriesCommandOutput,
+} from "./commands/ListProductionHistoryEntriesCommand";
+import type { PinDraftVersionCommandInput, PinDraftVersionCommandOutput } from "./commands/PinDraftVersionCommand";
+import type {
+  PublishAgentVersionCommandInput,
+  PublishAgentVersionCommandOutput,
+} from "./commands/PublishAgentVersionCommand";
+import type {
+  ResetDraftVersionCommandInput,
+  ResetDraftVersionCommandOutput,
+} from "./commands/ResetDraftVersionCommand";
 import type { SendMessageCommandInput, SendMessageCommandOutput } from "./commands/SendMessageCommand";
 import type {
   UpdateDraftVersionCommandInput,
   UpdateDraftVersionCommandOutput,
 } from "./commands/UpdateDraftVersionCommand";
+import type {
+  WatchConversationCommandInput,
+  WatchConversationCommandOutput,
+} from "./commands/WatchConversationCommand";
+import type {
+  WatchWorkspaceEventsCommandInput,
+  WatchWorkspaceEventsCommandOutput,
+} from "./commands/WatchWorkspaceEventsCommand";
 import {
   type ClientInputEndpointParameters,
   type ClientResolvedEndpointParameters,
@@ -76,25 +117,53 @@ export { __Client };
  * @public
  */
 export type ServiceInputTypes =
+  | BatchDeleteDocumentsCommandInput
+  | CreateConversationCommandInput
   | CreateDocumentCommandInput
   | CreateUploadCommandInput
+  | DeleteAgentVersionCommandInput
+  | DeleteDocumentCommandInput
   | GetAgentVersionCommandInput
+  | GetCallerCommandInput
+  | GetDocumentCommandInput
+  | GetProductionHistoryEntryCommandInput
+  | GetUploadCommandInput
+  | ListAgentVersionsCommandInput
   | ListDocumentsCommandInput
-  | ResumeConversationStreamCommandInput
+  | ListProductionHistoryEntriesCommandInput
+  | PinDraftVersionCommandInput
+  | PublishAgentVersionCommandInput
+  | ResetDraftVersionCommandInput
   | SendMessageCommandInput
-  | UpdateDraftVersionCommandInput;
+  | UpdateDraftVersionCommandInput
+  | WatchConversationCommandInput
+  | WatchWorkspaceEventsCommandInput;
 
 /**
  * @public
  */
 export type ServiceOutputTypes =
+  | BatchDeleteDocumentsCommandOutput
+  | CreateConversationCommandOutput
   | CreateDocumentCommandOutput
   | CreateUploadCommandOutput
+  | DeleteAgentVersionCommandOutput
+  | DeleteDocumentCommandOutput
   | GetAgentVersionCommandOutput
+  | GetCallerCommandOutput
+  | GetDocumentCommandOutput
+  | GetProductionHistoryEntryCommandOutput
+  | GetUploadCommandOutput
+  | ListAgentVersionsCommandOutput
   | ListDocumentsCommandOutput
-  | ResumeConversationStreamCommandOutput
+  | ListProductionHistoryEntriesCommandOutput
+  | PinDraftVersionCommandOutput
+  | PublishAgentVersionCommandOutput
+  | ResetDraftVersionCommandOutput
   | SendMessageCommandOutput
-  | UpdateDraftVersionCommandOutput;
+  | UpdateDraftVersionCommandOutput
+  | WatchConversationCommandOutput
+  | WatchWorkspaceEventsCommandOutput;
 
 /**
  * @public
@@ -286,7 +355,7 @@ export class CaitlynClient extends __Client<
     );
     this.middlewareStack.use(getHttpSigningPlugin(this.config));
     this.middlewareStack.use(getCaitlynSdkPlugin(this.config, {
-      'retrySafeOperations': ['CreateDocument', 'CreateUpload', 'GetAgentVersion', 'ListDocuments', 'ResumeConversationStream', 'UpdateDraftVersion'], sdkModel: '5.115.0', 'since': ['CreateDocument=5.115.0', 'CreateUpload=5.115.0', 'GetAgentVersion=5.115.0', 'ListDocuments=5.115.0', 'ResumeConversationStream=5.115.0', 'SendMessage=5.115.0', 'UpdateDraftVersion=5.115.0'], }));
+      'retrySafeOperations': ['BatchDeleteDocuments', 'CreateConversation', 'CreateDocument', 'CreateUpload', 'DeleteAgentVersion', 'DeleteDocument', 'GetAgentVersion', 'GetCaller', 'GetDocument', 'GetProductionHistoryEntry', 'GetUpload', 'ListAgentVersions', 'ListDocuments', 'ListProductionHistoryEntries', 'PinDraftVersion', 'UpdateDraftVersion', 'WatchConversation', 'WatchWorkspaceEvents'], sdkModel: '5.115.0', 'since': ['BatchDeleteDocuments=5.115.0', 'CreateConversation=5.115.0', 'CreateDocument=5.115.0', 'CreateUpload=5.115.0', 'DeleteAgentVersion=5.115.0', 'DeleteDocument=5.115.0', 'GetAgentVersion=5.115.0', 'GetCaller=5.115.0', 'GetDocument=5.115.0', 'GetProductionHistoryEntry=5.115.0', 'GetUpload=5.115.0', 'ListAgentVersions=5.115.0', 'ListDocuments=5.115.0', 'ListProductionHistoryEntries=5.115.0', 'PinDraftVersion=5.115.0', 'PublishAgentVersion=5.115.0', 'ResetDraftVersion=5.115.0', 'SendMessage=5.115.0', 'UpdateDraftVersion=5.115.0', 'WatchConversation=5.115.0', 'WatchWorkspaceEvents=5.115.0'], }));
   }
 
   /**

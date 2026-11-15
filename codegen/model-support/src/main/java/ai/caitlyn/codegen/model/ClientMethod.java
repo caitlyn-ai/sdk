@@ -1,5 +1,6 @@
 package ai.caitlyn.codegen.model;
 
+import java.util.List;
 import java.util.Optional;
 import software.amazon.smithy.codegen.core.CodegenException;
 import software.amazon.smithy.model.Model;
@@ -12,7 +13,8 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * lower-camel spelling. Each generator turns the names into its language's case.
  *
  * @param namespace          {@code documents}, {@code versions}: the bound resource's name minus a trailing
- *                           "Resource", pluralised; or {@code @clientMethod}'s namespace
+ *                           "Resource", pluralised; or {@code @clientMethod}'s namespace, which may be a dotted
+ *                           path, outermost first ({@code agents.versions}: {@code client.agents.versions.get})
  * @param method             {@code create}, {@code get}, {@code update}, {@code delete}, {@code list}, {@code put}
  *                           for lifecycle operations, else the operation's name; or {@code @clientMethod}'s name
  * @param positionalMember   the identifier a non-lifecycle instance operation of a single-identifier resource
@@ -20,6 +22,20 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * @param resource           the resource the operation is bound to, if any
  */
 public record ClientMethod(String namespace, String method, Optional<String> positionalMember, Optional<ResourceShape> resource) {
+
+    /**
+     * The namespace's segments, outermost first: {@code agents.versions} gives {@code [agents, versions]}, and a
+     * plain namespace one segment. Each SDK nests a client object per segment, in its own casing (PROTOCOL.md 10).
+     */
+    public List<String> path() {
+        return List.of(namespace.split("\\."));
+    }
+
+    /** The innermost segment, which names the client object that holds the methods ({@code versions}). */
+    public String leaf() {
+        List<String> p = path();
+        return p.get(p.size() - 1);
+    }
 
     public static ClientMethod of(Model model, OperationShape op) {
         ShapeId id = op.getId();
@@ -42,6 +58,9 @@ public record ClientMethod(String namespace, String method, Optional<String> pos
         Optional<String> mn = CaitlynTraits.stringMember(op, CaitlynTraits.CLIENT_METHOD, "name");
         String lowerOp = Character.toLowerCase(id.getName().charAt(0)) + id.getName().substring(1);
         if (ns.isPresent() && mn.isPresent()) {
+            if (!ns.get().matches("[a-z][A-Za-z0-9]*(\\.[a-z][A-Za-z0-9]*)*")) {
+                throw new CodegenException(id + ": @clientMethod namespace " + ns.get() + " is not a dotted path of lower camel case words");
+            }
             return new ClientMethod(ns.get(), mn.get(), positional, Optional.ofNullable(bound));
         }
         if (bound == null) {

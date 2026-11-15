@@ -88,7 +88,8 @@ final class OperationInfo {
         // Naming, shared with the TypeScript and Go generators (model-support's ClientMethod).
         ClientMethod cm = ClientMethod.of(model, op);
         this.positionalMember = cm.positionalMember().orElse(null);
-        this.namespace = Names.snake(cm.namespace());
+        // A dotted path, outermost first (PROTOCOL.md 10): each segment in snake_case, the dots kept.
+        this.namespace = cm.path().stream().map(Names::snake).collect(java.util.stream.Collectors.joining("."));
         this.method = Names.snake(cm.method());
         this.resource = cm.resource();
 

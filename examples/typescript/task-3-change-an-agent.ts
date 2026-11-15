@@ -5,9 +5,9 @@ import { Caitlyn, PreconditionFailedError, ValidationError } from '@caitlyn-ai/s
 const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! } });
 
 export async function addClauseNumbers(agentId: string): Promise<void> {
-  const draft = await caitlyn.versions.get({ agentId, version: 'draft' });
+  const draft = await caitlyn.agents.versions.get({ agentId, version: 'draft' });
   try {
-    await caitlyn.versions.updateDraft(agentId, { instructions: `${draft.configuration.instructions}\nAlways state the policy clause number.` }, { ifMatch: draft.etag });
+    await caitlyn.agents.versions.updateDraft(agentId, { instructions: `${draft.configuration.instructions}\nAlways state the policy clause number.` }, { ifMatch: draft.etag });
   } catch (err) {
     if (err instanceof PreconditionFailedError) return addClauseNumbers(agentId); // someone else changed it: read again
     if (err instanceof ValidationError) for (const e of err.errors ?? []) console.error(e.pointer, e.code, e.detail);
@@ -15,6 +15,6 @@ export async function addClauseNumbers(agentId: string): Promise<void> {
   }
 
   // Return a setting to its default
-  const edited = await caitlyn.versions.get({ agentId, version: 'draft' });
-  await caitlyn.versions.updateDraft(agentId, { clear: ['identity'] }, { ifMatch: edited.etag });
+  const edited = await caitlyn.agents.versions.get({ agentId, version: 'draft' });
+  await caitlyn.agents.versions.updateDraft(agentId, { clear: ['identity'] }, { ifMatch: edited.etag });
 }

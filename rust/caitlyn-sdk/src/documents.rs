@@ -14,6 +14,96 @@ use crate::client::*;
 use crate::error::Error;
 use crate::types::*;
 
+/// The input of `documents().batch_delete`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BatchDeleteDocumentsInput {
+    /// The knowledge base the documents are in.
+    ///
+    /// Sent in the path.
+    #[serde(skip)]
+    pub knowledge_base_id: String,
+    /// The documents to delete: 1 to 100 identifiers, each at most once.
+    #[serde(rename = "documentIds")]
+    pub document_ids: Vec<String>,
+}
+
+fn errors_batch_delete_documents(e: rt::Error) -> Error {
+    Error::from(e)
+}
+
+static OP_BATCH_DELETE_DOCUMENTS: rt::Operation = rt::Operation {
+    name: "BatchDeleteDocuments",
+    method: "POST",
+    since: Some("5.115.0"),
+    retry_safe: true,
+    sse: false,
+    idempotency_header: None,
+    if_match_required: false,
+    retryable: &[503, 429],
+};
+
+fn build_batch_delete_documents(input: &BatchDeleteDocumentsInput) -> Result<rt::Request, rt::Error> {
+    if input.knowledge_base_id.is_empty() {
+        return Err(rt::Error::missing_input("BatchDeleteDocuments", "knowledgeBaseId"));
+    }
+    let mut req = rt::Request::new(
+        [
+            "/v3/knowledge-bases/",
+            &rt::path_label(&input.knowledge_base_id),
+            "/documents:batch-delete",
+        ]
+        .concat(),
+    );
+    req.json_body(input)?;
+    Ok(req)
+}
+
+async fn read_batch_delete_documents(resp: rt::Response) -> Result<BatchDeleteDocumentsResult, rt::Error> {
+    let api_version = resp.header("caitlyn-api-version");
+    let request_id = resp.header("caitlyn-request-id");
+    let metadata = resp.metadata();
+    let mut out: BatchDeleteDocumentsResult = resp.json().await?;
+    out.api_version = api_version;
+    out.request_id = request_id;
+    out.response_metadata = metadata;
+    Ok(out)
+}
+
+impl DocumentsClient {
+    /// Deletes up to 100 documents in one call, with a result for each.
+    ///
+    /// Each document is deleted as DeleteDocument deletes one. The call returns 200 even when every
+    /// item fails: `results` has one entry per identifier, always in request order, each either
+    /// `accepted` (the document is now `deleting`, or already was) or `failed` with a code: `NOT_FOUND`
+    /// for a document that is gone or that the caller may not see, and `CONFLICT` for a document still
+    /// being processed (`pending` or `processing`), which cannot be deleted until it is `indexed`,
+    /// `partially_indexed` or `failed`. One failed item never stops the others. More than 100 identifiers,
+    /// none, or the same identifier twice is refused with 400
+    /// `VALIDATION_FAILED` for the whole call. Safe to repeat: a repeat gives the same results, apart
+    /// from `NOT_FOUND` for documents that finished deleting in between.
+    ///
+    /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
+    /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]
+    /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
+    /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
+    ///
+    /// Since Caitlyn 5.115.0; beta.
+    pub fn batch_delete(&self, input: BatchDeleteDocumentsInput) -> rt::Call<BatchDeleteDocumentsResult, Error> {
+        let core = self.core.clone();
+        rt::Call::new(move |opts| {
+            Box::pin(async move {
+                let req = build_batch_delete_documents(&input).map_err(errors_batch_delete_documents)?;
+                let resp = core
+                    .send(&OP_BATCH_DELETE_DOCUMENTS, req, &opts)
+                    .await
+                    .map_err(errors_batch_delete_documents)?;
+                read_batch_delete_documents(resp).await.map_err(errors_batch_delete_documents)
+            })
+        })
+    }
+}
+
 /// The input of `documents().create`. The idempotency key is generated, or set with
 /// `.idempotency_key(key)`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -24,13 +114,17 @@ pub struct CreateDocumentInput {
     /// Sent in the path.
     #[serde(skip)]
     pub knowledge_base_id: String,
-    /// The upload holding the document's bytes. Each upload can be used once.
+    /// The upload holding the document's bytes. Each upload can be used once. Refused with 400
+    /// `VALIDATION_FAILED` when the bytes are not the file type the document's name says.
     #[serde(rename = "uploadId")]
     pub upload_id: String,
     /// The folder to put the document in.
     #[serde(rename = "folder")]
     pub folder: String,
-    /// The document's name. Absent means the uploaded file's name.
+    /// The document's name. Absent means the uploaded file's name. A name without an extension is
+    /// given the one the upload's content type maps to, because ingestion reads the file type
+    /// from it. Refused with 400 `VALIDATION_FAILED` when the type maps to no extension, or when
+    /// the extension is one a knowledge base cannot ingest.
     #[serde(rename = "name", skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 }
@@ -76,7 +170,8 @@ impl DocumentsClient {
     /// Creates a document from an upload; ingestion continues after the response.
     ///
     /// Returns 202 with the document in its initial state and the Operation that tracks ingestion, and
-    /// `Location` names the Operation. Needs the files permission, read access to the knowledge base and
+    /// `Location` names the document: read it with GetDocument, or wait for it with the SDKs'
+    /// `waitUntilIndexed`. Needs the files permission, read access to the knowledge base and
     /// access to the folder; it does not need update access to the knowledge base, which is for the
     /// knowledge base's own configuration.
     ///
@@ -86,7 +181,7 @@ impl DocumentsClient {
     /// another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other
     /// status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.115.0.
+    /// Since Caitlyn 5.115.0; beta.
     pub fn create(&self, input: CreateDocumentInput) -> rt::Call<CreateDocumentResult, Error> {
         let core = self.core.clone();
         rt::Call::new(move |opts| {
@@ -97,6 +192,296 @@ impl DocumentsClient {
             })
         })
     }
+}
+
+/// The input of `documents().delete`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DeleteDocumentInput {
+    /// The knowledge base the document is in.
+    ///
+    /// Sent in the path.
+    #[serde(skip)]
+    pub knowledge_base_id: String,
+    /// The document to delete.
+    ///
+    /// Sent in the path.
+    #[serde(skip)]
+    pub document_id: String,
+}
+
+fn errors_delete_document(e: rt::Error) -> Error {
+    Error::from(e)
+}
+
+static OP_DELETE_DOCUMENT: rt::Operation = rt::Operation {
+    name: "DeleteDocument",
+    method: "DELETE",
+    since: Some("5.115.0"),
+    retry_safe: true,
+    sse: false,
+    idempotency_header: None,
+    if_match_required: false,
+    retryable: &[503, 429],
+};
+
+fn build_delete_document(input: &DeleteDocumentInput) -> Result<rt::Request, rt::Error> {
+    if input.knowledge_base_id.is_empty() {
+        return Err(rt::Error::missing_input("DeleteDocument", "knowledgeBaseId"));
+    }
+    if input.document_id.is_empty() {
+        return Err(rt::Error::missing_input("DeleteDocument", "documentId"));
+    }
+    let req = rt::Request::new(
+        [
+            "/v3/knowledge-bases/",
+            &rt::path_label(&input.knowledge_base_id),
+            "/documents/",
+            &rt::path_label(&input.document_id),
+        ]
+        .concat(),
+    );
+    Ok(req)
+}
+
+async fn read_delete_document(resp: rt::Response) -> Result<DeleteDocumentResult, rt::Error> {
+    let api_version = resp.header("caitlyn-api-version");
+    let request_id = resp.header("caitlyn-request-id");
+    let metadata = resp.metadata();
+    let mut out: DeleteDocumentResult = resp.json().await?;
+    out.api_version = api_version;
+    out.request_id = request_id;
+    out.response_metadata = metadata;
+    Ok(out)
+}
+
+impl DocumentsClient {
+    /// Deletes a document; removing it from search continues after the response.
+    ///
+    /// Returns 202 with the document in `deleting`; wait for it to be gone with the SDKs'
+    /// `waitUntilDeleted`. Repeating the call while the document is still `deleting` returns 202 again;
+    /// once it is gone, 404, as for any record that does not exist.
+    ///
+    /// A document still being processed (`pending` or `processing`) cannot be deleted yet: the call is
+    /// refused with 409 `CONFLICT`. Wait until it is `indexed`, `partially_indexed` or `failed`, for
+    /// example with the SDKs' `waitUntilIndexed`, then delete it.
+    ///
+    /// Needs the files delete permission, read access to the knowledge base and access to the
+    /// document's folder.
+    ///
+    /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
+    /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]
+    /// (400), [`Error::Conflict`] (409), [`Error::NotFound`] (404); another status the API models has its
+    /// own variant too ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
+    ///
+    /// Since Caitlyn 5.115.0; beta.
+    pub fn delete(&self, input: DeleteDocumentInput) -> rt::Call<DeleteDocumentResult, Error> {
+        let core = self.core.clone();
+        rt::Call::new(move |opts| {
+            Box::pin(async move {
+                let req = build_delete_document(&input).map_err(errors_delete_document)?;
+                let resp = core.send(&OP_DELETE_DOCUMENT, req, &opts).await.map_err(errors_delete_document)?;
+                read_delete_document(resp).await.map_err(errors_delete_document)
+            })
+        })
+    }
+}
+
+/// The input of `documents().get`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GetDocumentInput {
+    /// The knowledge base the document is in.
+    ///
+    /// Sent in the path.
+    #[serde(skip)]
+    pub knowledge_base_id: String,
+    /// The document to get.
+    ///
+    /// Sent in the path.
+    #[serde(skip)]
+    pub document_id: String,
+}
+
+fn errors_get_document(e: rt::Error) -> Error {
+    Error::from(e)
+}
+
+static OP_GET_DOCUMENT: rt::Operation = rt::Operation {
+    name: "GetDocument",
+    method: "GET",
+    since: Some("5.115.0"),
+    retry_safe: true,
+    sse: false,
+    idempotency_header: None,
+    if_match_required: false,
+    retryable: &[503, 429],
+};
+
+fn build_get_document(input: &GetDocumentInput) -> Result<rt::Request, rt::Error> {
+    if input.knowledge_base_id.is_empty() {
+        return Err(rt::Error::missing_input("GetDocument", "knowledgeBaseId"));
+    }
+    if input.document_id.is_empty() {
+        return Err(rt::Error::missing_input("GetDocument", "documentId"));
+    }
+    let req = rt::Request::new(
+        [
+            "/v3/knowledge-bases/",
+            &rt::path_label(&input.knowledge_base_id),
+            "/documents/",
+            &rt::path_label(&input.document_id),
+        ]
+        .concat(),
+    );
+    Ok(req)
+}
+
+async fn read_get_document(resp: rt::Response) -> Result<GetDocumentResult, rt::Error> {
+    let api_version = resp.header("caitlyn-api-version");
+    let request_id = resp.header("caitlyn-request-id");
+    let metadata = resp.metadata();
+    let mut out: GetDocumentResult = resp.json().await?;
+    out.api_version = api_version;
+    out.request_id = request_id;
+    out.response_metadata = metadata;
+    Ok(out)
+}
+
+impl DocumentsClient {
+    /// Gets one document in a knowledge base, with its status.
+    ///
+    /// `status` says where the document is in its lifecycle; `indexed`, `partially_indexed` and `failed`
+    /// are final. A document in a folder the caller may not see is 404, as one that does not exist is.
+    /// The SDKs' `waitUntilIndexed` waiter calls this operation until the document is searchable, and
+    /// `waitUntilDeleted` until it is gone.
+    ///
+    /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
+    /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]
+    /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
+    /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
+    ///
+    /// Since Caitlyn 5.115.0; beta.
+    pub fn get(&self, input: GetDocumentInput) -> rt::Call<GetDocumentResult, Error> {
+        let core = self.core.clone();
+        rt::Call::new(move |opts| {
+            Box::pin(async move {
+                let req = build_get_document(&input).map_err(errors_get_document)?;
+                let resp = core.send(&OP_GET_DOCUMENT, req, &opts).await.map_err(errors_get_document)?;
+                read_get_document(resp).await.map_err(errors_get_document)
+            })
+        })
+    }
+}
+
+impl DocumentsClient {
+    /// Waits until the document is gone, after DeleteDocument or BatchDeleteDocuments accepted it: the wait
+    /// ends when reading it returns 404. Waits up to 15 minutes by default.
+    ///
+    /// It reads `documents().get` at once, then after pauses of 2 to 30 seconds that grow with each read,
+    /// until a success state (returning `Ok(())`), a failure state or an error no state matches
+    /// ([`Error::Waiter`]), or the time limit: `max_wait`, by default 900 seconds. Set `max_wait`, `delays`
+    /// or `cancel_on` before awaiting it; cancelling ends it with [`Error::Cancelled`].
+    pub fn wait_until_deleted(&self, input: GetDocumentInput) -> rt::Wait<GetDocumentResult, Error, ()> {
+        let this = self.clone();
+        rt::Wait::until_error(
+            rt::WaiterSpec {
+                name: "Deleted",
+                min_delay: std::time::Duration::from_secs(2),
+                max_delay: std::time::Duration::from_secs(30),
+                max_wait: std::time::Duration::from_secs(900),
+            },
+            move |opts| std::future::IntoFuture::into_future(this.get(input.clone()).options(opts)),
+            accept_get_document_deleted,
+            |e| Error::Waiter(Box::new(e)),
+            || Error::Cancelled,
+        )
+    }
+}
+
+/// The `Deleted` waiter's acceptors, in order; `None` when none matches.
+fn accept_get_document_deleted(read: &Result<GetDocumentResult, Error>) -> Option<rt::WaitState> {
+    if matches!(read, Err(e) if e.shape() == Some("NotFoundError")) {
+        return Some(rt::WaitState::Success);
+    }
+    None
+}
+
+impl DocumentsClient {
+    /// Waits until the document is searchable: `indexed`, or `partially_indexed` when some enrichments did
+    /// not complete. Fails when it is `failed`, being deleted, or gone. Waits up to 60 minutes by default.
+    ///
+    /// It reads `documents().get` at once, then after pauses of 2 to 30 seconds that grow with each read,
+    /// until a success state (returning the output), a failure state or an error no state matches
+    /// ([`Error::Waiter`]), or the time limit: `max_wait`, by default 3600 seconds. Set `max_wait`,
+    /// `delays` or `cancel_on` before awaiting it; cancelling ends it with [`Error::Cancelled`].
+    pub fn wait_until_indexed(&self, input: GetDocumentInput) -> rt::Wait<GetDocumentResult, Error> {
+        let this = self.clone();
+        rt::Wait::new(
+            rt::WaiterSpec {
+                name: "Indexed",
+                min_delay: std::time::Duration::from_secs(2),
+                max_delay: std::time::Duration::from_secs(30),
+                max_wait: std::time::Duration::from_secs(3600),
+            },
+            move |opts| std::future::IntoFuture::into_future(this.get(input.clone()).options(opts)),
+            accept_get_document_indexed,
+            |e| Error::Waiter(Box::new(e)),
+            || Error::Cancelled,
+        )
+    }
+}
+
+/// The `Indexed` waiter's acceptors, in order; `None` when none matches.
+fn accept_get_document_indexed(read: &Result<GetDocumentResult, Error>) -> Option<rt::WaitState> {
+    if matches!(read, Ok(out) if accept_get_document_indexed_path0(out)) {
+        return Some(rt::WaitState::Success);
+    }
+    if matches!(read, Ok(out) if accept_get_document_indexed_path1(out)) {
+        return Some(rt::WaitState::Success);
+    }
+    if matches!(read, Ok(out) if accept_get_document_indexed_path2(out)) {
+        return Some(rt::WaitState::Failure);
+    }
+    if matches!(read, Ok(out) if accept_get_document_indexed_path3(out)) {
+        return Some(rt::WaitState::Failure);
+    }
+    if matches!(read, Err(e) if e.shape() == Some("NotFoundError")) {
+        return Some(rt::WaitState::Failure);
+    }
+    None
+}
+
+/// `status` stringEquals `indexed`.
+fn accept_get_document_indexed_path0(out: &GetDocumentResult) -> bool {
+    let mut vals: Vec<String> = Vec::new();
+    let v1 = &out.status;
+    vals.push(v1.as_str().to_owned());
+    vals.first().is_some_and(|v| v == "indexed")
+}
+
+/// `status` stringEquals `partially_indexed`.
+fn accept_get_document_indexed_path1(out: &GetDocumentResult) -> bool {
+    let mut vals: Vec<String> = Vec::new();
+    let v1 = &out.status;
+    vals.push(v1.as_str().to_owned());
+    vals.first().is_some_and(|v| v == "partially_indexed")
+}
+
+/// `status` stringEquals `failed`.
+fn accept_get_document_indexed_path2(out: &GetDocumentResult) -> bool {
+    let mut vals: Vec<String> = Vec::new();
+    let v1 = &out.status;
+    vals.push(v1.as_str().to_owned());
+    vals.first().is_some_and(|v| v == "failed")
+}
+
+/// `status` stringEquals `deleting`.
+fn accept_get_document_indexed_path3(out: &GetDocumentResult) -> bool {
+    let mut vals: Vec<String> = Vec::new();
+    let v1 = &out.status;
+    vals.push(v1.as_str().to_owned());
+    vals.first().is_some_and(|v| v == "deleting")
 }
 
 /// The input of `documents().list`.
@@ -197,9 +582,8 @@ impl DocumentsClient {
     /// Lists the documents in a knowledge base, one page at a time.
     ///
     /// Documents are returned in a stable order that does not change between pages. Filters combine
-    /// with AND. Unlike v2, an unknown filter is refused with 400 `UNKNOWN_FILTER` instead of being
-    /// ignored, and the list can be sorted by `name`, `updatedAt` (when the document last changed) and
-    /// `byteSize` on the server; v2 sorts on the client only.
+    /// with AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. The list can be sorted by
+    /// `name`, `updatedAt` (when the document last changed) and `byteSize`.
     ///
     /// It yields every item, fetching pages as needed (`next().await`, or `collect().await` for all of
     /// them); `list_pages` yields whole pages.
@@ -209,7 +593,7 @@ impl DocumentsClient {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.115.0.
+    /// Since Caitlyn 5.115.0; beta.
     pub fn list(&self, input: ListDocumentsInput) -> rt::Items<ListDocumentsPage, Document, Error> {
         rt::Items::new(self.list_pages(input), |p| p.items)
     }

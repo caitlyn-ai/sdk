@@ -20,7 +20,7 @@ func main() {
 	}
 
 	// Read the draft of an agent: its configuration and its ETag
-	draft, err := client.Versions.Get(ctx, &caitlyn.GetAgentVersionInput{AgentID: "GHT7YRWXPL", Version: "draft"})
+	draft, err := client.Agents.Versions.Get(ctx, &caitlyn.GetAgentVersionInput{AgentID: "GHT7YRWXPL", Version: "draft"})
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -9,4 +9,4 @@ export { uploadFile, type UploadMeta, type UploadSlot } from './upload.js';
 export { clientConfig, createAuth, workspaceEndpoint, type CaitlynOptions, type CallOptions, type CaitlynErrorFields, type CaitlynFieldError } from './client.js';
 export { AuthSession, CaitlynAuthError, workspaceAudience, workspaceHost, getCaitlynAuthPlugin, tokenIdentityProvider, type AuthOptions, type OAuthTokens, type TokenStore } from './auth.js';
 export { signV4, getWebIdentityToken, defaultAwsCredentials, type AwsCredentials, type AwsCredentialSource } from './aws.js';
-export { waitUntil, WaiterError, type WaiterOptions, type WaiterState } from './waiter.js';
+export { waitUntil, WaiterError, DEFAULT_WAIT_LIMIT_MS, type WaiterOptions, type WaiterState } from './waiter.js';

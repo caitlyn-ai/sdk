@@ -5,6 +5,8 @@ val smithyVersion: String by project
 dependencies {
     api("software.amazon.smithy:smithy-codegen-core:$smithyVersion")
     api("software.amazon.smithy:smithy-model:$smithyVersion")
+    // The waiter trait, for the tests' models (generators read it from the model as a node).
+    testImplementation("software.amazon.smithy:smithy-waiters:$smithyVersion")
     testImplementation(platform("org.junit:junit-bom:5.11.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

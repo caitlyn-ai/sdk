@@ -28,7 +28,11 @@ type waitSettings struct {
 	minDelay, maxDelay time.Duration
 }
 
-// WithMaxWait bounds the whole wait (default 5 minutes). A context deadline also bounds it.
+// DefaultMaxWait is the time limit of a waiter whose operation names none (PROTOCOL.md 10.1).
+const DefaultMaxWait = 300 * time.Second
+
+// WithMaxWait bounds the whole wait, in place of the waiter's own limit (the model's waitLimits for it, else
+// DefaultMaxWait). A context's deadline still ends the wait, with the context's error.
 func WithMaxWait(d time.Duration) WaiterOption { return func(w *waitSettings) { w.maxWait = d } }
 
 // WithWaitDelays overrides the model's minDelay and maxDelay.
@@ -42,8 +46,12 @@ type WaiterError struct {
 	// State is "failure" (a failure acceptor matched or an error matched no acceptor) or "timeout".
 	State    string
 	Attempts int
+	// Output is the last output read, when the last read returned one (an *…Result or other output pointer).
+	Output any
 	// Err is the last error seen, if any.
 	Err error
+	// Limit is the time limit the wait ran under: the waiter's own (from the model), or WithMaxWait's.
+	Limit time.Duration
 }
 
 func (e *WaiterError) Error() string {
@@ -59,17 +67,20 @@ func (e *WaiterError) Unwrap() error { return e.Err }
 
 // Wait polls until accept says success or failure, following the Smithy waiter retry rules: the first
 // attempt at once, then a random delay between minDelay and an exponentially growing ceiling capped at
-// maxDelay, never past the time limit.
-func Wait[O any](ctx context.Context, name string, minDelay, maxDelay time.Duration, opts []WaiterOption,
+// maxDelay, never past the time limit. maxWait is the waiter's own time limit, from the model's waitLimits
+// trait (0 means DefaultMaxWait); WithMaxWait replaces it.
+func Wait[O any](ctx context.Context, name string, minDelay, maxDelay, maxWait time.Duration, opts []WaiterOption,
 	poll func(ctx context.Context) (O, error), accept func(out O, err error) WaitState) (O, error) {
-	w := waitSettings{maxWait: 5 * time.Minute, minDelay: minDelay, maxDelay: maxDelay}
+	if maxWait <= 0 {
+		maxWait = DefaultMaxWait
+	}
+	w := waitSettings{maxWait: maxWait, minDelay: minDelay, maxDelay: maxDelay}
 	for _, o := range opts {
 		o(&w)
 	}
+	// The context's deadline or cancellation ends the wait with the context's error, never a WaiterError
+	// (PROTOCOL.md 10.1): only the waiter's own limit times out.
 	deadline := time.Now().Add(w.maxWait)
-	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
-		deadline = d
-	}
 	var zero O
 	for attempt := 1; ; attempt++ {
 		out, err := poll(ctx)
@@ -80,12 +91,12 @@ func Wait[O any](ctx context.Context, name string, minDelay, maxDelay time.Durat
 		case WaitSuccess:
 			return out, nil
 		case WaitFailure:
-			return zero, &WaiterError{Waiter: name, State: "failure", Attempts: attempt, Err: err}
+			return zero, &WaiterError{Waiter: name, State: "failure", Attempts: attempt, Output: lastOutput(out, err), Err: err, Limit: w.maxWait}
 		}
 		delay := waiterDelay(attempt, w.minDelay, w.maxDelay)
 		remaining := time.Until(deadline)
 		if remaining <= w.minDelay {
-			return zero, &WaiterError{Waiter: name, State: "timeout", Attempts: attempt, Err: err}
+			return zero, &WaiterError{Waiter: name, State: "timeout", Attempts: attempt, Output: lastOutput(out, err), Err: err, Limit: w.maxWait}
 		}
 		if delay > remaining-w.minDelay {
 			delay = remaining - w.minDelay
@@ -98,6 +109,14 @@ func Wait[O any](ctx context.Context, name string, minDelay, maxDelay time.Durat
 			return zero, ctx.Err()
 		}
 	}
+}
+
+// lastOutput is the read's output for a WaiterError, or nil when the read failed.
+func lastOutput[O any](out O, err error) any {
+	if err != nil {
+		return nil
+	}
+	return out
 }
 
 func waiterDelay(attempt int, minDelay, maxDelay time.Duration) time.Duration {

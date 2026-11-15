@@ -9,7 +9,7 @@
 //! use caitlyn_sdk::{Auth, Client};
 //!
 //! let client = Client::new("your-company.getcaitlyn.ai", Auth::token("cait-pat-…"))?;
-//! let out = client.documents().create(caitlyn_sdk::CreateDocumentInput {
+//! let out = client.documents().batch_delete(caitlyn_sdk::BatchDeleteDocumentsInput {
 //!     ..Default::default()
 //! }).await?;
 //! println!("{:?}", out);
@@ -18,26 +18,32 @@
 //! ```
 #![forbid(unsafe_code)]
 
+mod agents_production_history;
+mod agents_versions;
+mod callers;
 mod client;
 mod conversations;
 mod documents;
 mod error;
+mod events;
 pub mod types;
 mod uploads;
-mod versions;
 
+pub use agents_production_history::*;
+pub use agents_versions::*;
+pub use callers::*;
 pub use client::*;
 pub use conversations::*;
 pub use documents::*;
 pub use error::Error;
+pub use events::*;
 pub use types::*;
 pub use uploads::*;
-pub use versions::*;
 
 pub use caitlyn_sdk_core::{
     ApiError, Auth, AuthError, AuthSession, AuthorizationUrl, AwsCredentialProvider, AwsCredentials, Call, CallOptions, Callback,
     CancellationToken, ConnectionError, FieldError, InputError, Items, MemoryTokenStore, NotSupportedByServer, OAuthTokens, Pages,
-    Propagator, Raw, ResponseMetadata, SigningAlgorithm, Stream, TokenStore, UploadFile,
+    Propagator, Raw, ResponseMetadata, SigningAlgorithm, Stream, TokenStore, UploadFile, Wait, WaitReason, WaiterError,
 };
 
 /// The sign-in modes' option types.

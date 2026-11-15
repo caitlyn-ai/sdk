@@ -21,6 +21,7 @@ pub mod stream;
 pub mod telemetry;
 pub mod time;
 mod upload;
+pub mod waiter;
 
 pub use auth::{Auth, AuthSession, AuthorizationUrl, Callback, MemoryTokenStore, OAuthTokens, TokenStore};
 pub use aws::{AwsCredentialProvider, AwsCredentials, SigningAlgorithm};
@@ -35,6 +36,7 @@ pub use stream::{Decoded, Stream, StreamSpec};
 pub use telemetry::Propagator;
 pub use tokio_util::sync::CancellationToken;
 pub use upload::UploadFile;
+pub use waiter::{Wait, WaitReason, WaitState, WaiterError, WaiterSpec};
 
 /// Re-exported for generated code.
 #[doc(hidden)]

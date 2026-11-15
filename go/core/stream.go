@@ -6,11 +6,21 @@ import (
 	"errors"
 	"io"
 	"iter"
+	"math/rand/v2"
 	"strings"
+	"time"
 )
 
 // maxReconnects is PROTOCOL.md 5.6's limit.
 const maxReconnects = 3
+
+// ReconnectDelay is the pause before the nth reconnect in a row (PROTOCOL.md 5.6): an exponential backoff with
+// jitter, 0.25-0.5 s, then 0.5-1 s, then 1-2 s, so each pause is longer than the last.
+func ReconnectDelay(attempt int) time.Duration {
+	attempt = min(max(attempt, 1), 5) // 500 ms × 2^4 already passes the 8 s cap
+	d := min(8*time.Second, 500*time.Millisecond<<(attempt-1))
+	return d/2 + time.Duration(rand.Int64N(int64(d/2)+1))
+}
 
 // StreamSpec is what generated code supplies for one @sseEvents operation.
 type StreamSpec[E any, F any] struct {
@@ -38,13 +48,13 @@ type Stream[E any, F any] struct {
 	seen       map[string]struct{}
 	lastID     string
 	reconnects int
+	// attempts counts the reconnects since the last event: at most maxReconnects in a row (PROTOCOL.md 5.6).
+	attempts   int
 	final      *F
 	done       bool
 	err        error
 	requestID  string
 	apiVersion string
-	// onResponse counts the SSE events (known or not) the current response has carried.
-	onResponse int
 }
 
 // OpenStream wraps a 2xx text/event-stream response.
@@ -59,7 +69,6 @@ func OpenStream[E any, F any](ctx context.Context, resp *Response, spec StreamSp
 func (s *Stream[E, F]) attach(resp *Response) {
 	s.resp = resp
 	s.r = bufio.NewReaderSize(resp.Body, 64<<10)
-	s.onResponse = 0
 }
 
 // RequestID is the Caitlyn-Request-Id of the response that opened the stream.
@@ -137,9 +146,10 @@ func (s *Stream[E, F]) next() (E, error) {
 				return zero, s.fail(cerr)
 			}
 			clean := errors.Is(err, io.EOF)
-			// A response that ends cleanly without any event means the answer had already finished: the stream
-			// ends, without an error and without reconnecting (PROTOCOL.md 5.6).
-			if clean && (s.spec.Final == nil || s.final != nil || s.onResponse == 0) {
+			// A clean end is the end of a stream that has its final event, or that cannot resume and has none.
+			// Otherwise it reconnects: a proxy cut it short of its final event, or a server shutting down ended a
+			// watch (PROTOCOL.md 5.6, 5.7).
+			if clean && (s.final != nil || (s.spec.Resume == nil && s.spec.Final == nil)) {
 				s.Close()
 				return zero, io.EOF
 			}
@@ -149,18 +159,24 @@ func (s *Stream[E, F]) next() (E, error) {
 				}
 				return zero, s.fail(err)
 			}
-			if rerr := s.reconnect(err); rerr != nil {
+			cause := err
+			if clean {
+				cause = nil // io.EOF as the cause would make STREAM_LOST look like the end of the stream to Events
+			}
+			if rerr := s.reconnect(cause); rerr != nil {
 				return zero, s.fail(rerr)
 			}
 			continue
 		}
-		s.onResponse++
 		if id != "" {
 			if _, dup := s.seen[id]; dup {
 				continue
 			}
 			s.seen[id] = struct{}{}
 			s.lastID = id
+			// Only a new event counts as progress (PROTOCOL.md 5.6). An event without an id cannot be told apart from
+			// a replay, so it does not count; every event on the conversation and workspace streams has one.
+			s.attempts = 0
 		}
 		if name == "" {
 			name = "message"
@@ -176,23 +192,35 @@ func (s *Stream[E, F]) next() (E, error) {
 			if f, isFinal := s.spec.Final(ev); isFinal {
 				s.final = f
 				s.Close()
+			} else if name == "stream.reset" && s.reconnects > 0 {
+				// PROTOCOL.md 5.9: the answer finished while the stream was disconnected, and its final event went
+				// to the earlier connection. The stream ends at the reset, with no error and no further reconnect.
+				s.Close()
 			}
 		}
 		return ev, nil
 	}
 }
 
-// reconnect re-attaches with Last-Event-ID, at most maxReconnects times in all (PROTOCOL.md 5.6).
+// reconnect re-attaches with Last-Event-ID, at most maxReconnects times in a row without an event (PROTOCOL.md 5.6).
 func (s *Stream[E, F]) reconnect(cause error) error {
 	if s.resp != nil {
 		s.resp.Body.Close()
 		s.resp = nil
 	}
 	for {
-		if s.reconnects >= maxReconnects {
+		if s.attempts >= maxReconnects {
 			return sdkError("STREAM_LOST", "The stream was lost and could not be resumed", cause)
 		}
 		s.reconnects++
+		s.attempts++
+		pause := time.NewTimer(ReconnectDelay(s.attempts))
+		select {
+		case <-s.ctx.Done():
+			pause.Stop()
+			return s.ctx.Err()
+		case <-pause.C:
+		}
 		resp, err := s.spec.Resume(s.ctx, s.lastID)
 		if err == nil {
 			s.attach(resp)

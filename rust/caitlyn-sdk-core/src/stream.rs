@@ -9,6 +9,7 @@ use bytes::Bytes;
 use futures_util::{Stream as FutStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 
+use crate::client::random_u64;
 use crate::error::{problem_from_body, Error};
 use crate::request::{BoxFuture, Response};
 
@@ -17,10 +18,18 @@ const MAX_RECONNECTS: u32 = 3;
 /// What a generated decoder makes of one SSE event.
 pub enum Decoded<E> {
     Event(E),
-    /// The union's failure member (`message.failed`): the runtime raises its problem as a typed error.
-    Failure,
+    /// The union's failure member (`message.failed`): on a stream with a final event the runtime raises its problem
+    /// as a typed error; on a watch it is delivered as the event it carries (PROTOCOL.md 5.5).
+    Failure(E),
     /// An event name this SDK does not know: skipped.
     Skip,
+}
+
+/// The pause before the nth reconnect in a row (PROTOCOL.md 5.6): an exponential backoff with jitter, 0.25-0.5 s,
+/// then 0.5-1 s, then 1-2 s, so each pause is longer than the last.
+pub fn reconnect_delay(attempt: u32) -> std::time::Duration {
+    let ceil_ms: u64 = 500u64.checked_shl(attempt.saturating_sub(1).min(10)).unwrap_or(8_000).min(8_000);
+    std::time::Duration::from_millis(ceil_ms / 2 + random_u64() % (ceil_ms / 2 + 1))
 }
 
 /// Reopens a stream from the event after `last_event_id` (the model's `resumeWith` operation).
@@ -51,12 +60,12 @@ pub struct Stream<E, F, Er> {
     seen: HashSet<String>,
     last_id: Option<String>,
     reconnects: u32,
+    /// Reconnects since the last event: at most `MAX_RECONNECTS` in a row (PROTOCOL.md 5.6).
+    attempts: u32,
     final_: Option<F>,
     done: bool,
     request_id: Option<String>,
     api_version: Option<String>,
-    /// SSE events (known or not) the current response has carried.
-    on_response: usize,
 }
 
 impl<E, F, Er> std::fmt::Debug for Stream<E, F, Er> {
@@ -82,11 +91,11 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
             seen: HashSet::new(),
             last_id: None,
             reconnects: 0,
+            attempts: 0,
             final_: None,
             done: false,
             request_id,
             api_version,
-            on_response: 0,
         };
         s.attach(resp);
         s
@@ -95,7 +104,6 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
     fn attach(&mut self, resp: Response) {
         self.body = Some(Box::pin(resp.inner.bytes_stream()));
         self.buf.clear();
-        self.on_response = 0;
     }
 
     /// The first response's `Caitlyn-Request-Id`.
@@ -145,9 +153,10 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
                 end => {
                     let cause = end.err();
                     let clean = cause.is_none();
-                    // A response that ends cleanly without any event means the answer had already finished: the
-                    // stream ends, without an error and without reconnecting (PROTOCOL.md 5.6).
-                    if clean && (self.spec.final_of.is_none() || self.final_.is_some() || self.on_response == 0) {
+                    // A clean end is the end of a stream that has its final event, or that cannot resume and has
+                    // none. Otherwise it reconnects: a proxy cut it short of its final event, or a server shutting
+                    // down ended a watch (PROTOCOL.md 5.6, 5.7).
+                    if clean && (self.final_.is_some() || (self.spec.resume.is_none() && self.spec.final_of.is_none())) {
                         self.close();
                         return None;
                     }
@@ -163,21 +172,28 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
                     continue;
                 }
             };
-            self.on_response += 1;
             if let Some(id) = &id {
                 if !self.seen.insert(id.clone()) {
                     continue;
                 }
                 self.last_id = Some(id.clone());
+                self.attempts = 0; // only a new event counts as progress (PROTOCOL.md 5.6)
             }
             let name = if name.is_empty() { "message".to_owned() } else { name };
             match (self.spec.decode)(&name, id.as_deref(), &data) {
                 Err(e) => return self.fail(Error::sdk("DECODE_FAILED", "An event could not be decoded", Some(Box::new(e)))),
                 Ok(Decoded::Skip) => continue,
-                Ok(Decoded::Failure) => return self.fail(Error::Api(Box::new(problem_from_body(0, &data)))),
+                Ok(Decoded::Failure(_)) if self.spec.final_of.is_some() => {
+                    return self.fail(Error::Api(Box::new(problem_from_body(0, &data))));
+                }
+                Ok(Decoded::Failure(ev)) => return Some(Ok(ev)),
                 Ok(Decoded::Event(ev)) => {
                     if let Some(f) = self.spec.final_of.and_then(|final_of| final_of(&ev)) {
                         self.final_ = Some(f);
+                        self.close();
+                    } else if self.spec.final_of.is_some() && name == "stream.reset" && self.reconnects > 0 {
+                        // PROTOCOL.md 5.9: the answer finished while the stream was disconnected, and its final
+                        // event went to the earlier connection. The stream ends at the reset, with no error.
                         self.close();
                     }
                     return Some(Ok(ev));
@@ -210,10 +226,20 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
         self.body = None;
         let mut cause: Option<Box<dyn std::error::Error + Send + Sync>> = cause.map(|e| Box::new(e) as _);
         loop {
-            if self.reconnects >= MAX_RECONNECTS {
+            if self.attempts >= MAX_RECONNECTS {
                 return Err(Error::sdk("STREAM_LOST", "The stream was lost and could not be resumed", cause));
             }
             self.reconnects += 1;
+            self.attempts += 1;
+            let pause = tokio::time::sleep(reconnect_delay(self.attempts));
+            match self.cancel.clone() {
+                Some(t) => tokio::select! {
+                    biased;
+                    _ = t.cancelled() => return Err(Error::Cancelled),
+                    _ = pause => {}
+                },
+                None => pause.await,
+            }
             let resume = self.spec.resume.as_ref().expect("resume checked by the caller");
             match resume(self.last_id.clone().unwrap_or_default()).await {
                 Ok(resp) => {

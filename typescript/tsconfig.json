@@ -33,6 +33,7 @@
     "packages/sdk-core/src",
     "../conformance/typescript",
     "test",
-    "../examples/typescript"
+    "../examples/typescript",
+    "../scripts/examples-live"
   ]
 }

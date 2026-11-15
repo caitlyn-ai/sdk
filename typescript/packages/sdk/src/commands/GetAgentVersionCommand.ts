@@ -52,6 +52,12 @@ export interface GetAgentVersionCommandOutput extends GetAgentVersionOutput, __M
  * //   basedOn: "STRING_VALUE",
  * //   matchesProduction: true || false,
  * //   createdAt: new Date("TIMESTAMP"), // required
+ * //   publishedAt: new Date("TIMESTAMP"),
+ * //   publishedBy: { // Actor
+ * //     userId: "STRING_VALUE",
+ * //     apiClientId: "STRING_VALUE",
+ * //     displayName: "STRING_VALUE", // required
+ * //   },
  * //   note: "STRING_VALUE",
  * //   configuration: { // AgentConfiguration
  * //     identity: "STRING_VALUE",
@@ -107,7 +113,8 @@ export interface GetAgentVersionCommandOutput extends GetAgentVersionOutput, __M
  *
  * @throws {@link ValidationError} (client fault)
  *  The request is malformed: a member is missing, the wrong type or out of range; it has a member,
- * filter or sort field the operation does not define; or its cursor is not valid for this list.
+ * filter or sort field the operation does not define; its cursor is not valid for this list; or it
+ * asks to delete `draft` or `production`, which every agent keeps.
  *
  * @throws {@link CaitlynServiceException}
  * <p>Base exception class for all service exceptions from Caitlyn service.</p>

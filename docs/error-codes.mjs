@@ -13,7 +13,7 @@ export const ERROR_CODES = {
   },
   UNKNOWN_FILTER: {
     meaning: 'A list request has a filter, or a filter operator, the operation does not declare.',
-    action: 'Use only the filters the operation\'s reference page lists. Unlike v2, an unknown filter is refused rather than ignored.',
+    action: 'Use only the filters the operation\'s reference page lists. An unknown filter is refused rather than ignored, so a misspelt filter never silently returns everything.',
   },
   UNKNOWN_SORT: {
     meaning: 'A list request asks to sort by a field the operation cannot sort by.',
@@ -86,5 +86,9 @@ export const ERROR_CODES = {
   SERVICE_UNAVAILABLE: {
     meaning: "A service Caitlyn depends on is briefly unavailable, or the request's audit event could not be recorded (Caitlyn refuses a write it cannot audit).",
     action: 'Wait for `Retry-After` (`retryAfterSeconds`) and try again. The SDKs do this for operations that are safe to repeat ([Retries](/retries/)).',
+  },
+  VERSION_NOT_DELETABLE: {
+    meaning: 'The version named cannot be deleted. `draft` and `production` are not saved versions: the draft is the version you edit, and production is whichever version is published.',
+    action: 'Delete a saved version by its name (from `agents.versions.list`). To change what production serves, publish another version; to discard the draft\'s changes, reset the draft from a saved version.',
   },
 };

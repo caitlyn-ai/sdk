@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.UnaryOperator;
+import software.amazon.smithy.codegen.core.CodegenException;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.knowledge.OperationIndex;
 import software.amazon.smithy.model.knowledge.PaginatedIndex;
@@ -100,6 +101,37 @@ final class ModelFacts {
                 if (!usedElsewhere) {
                     sseOnlyStructures.add(m.getTarget());
                 }
+            }
+        }
+        // A structure the model already names ...Event (the workspace stream's MessageCompletedEvent) can clash with
+        // the class another stream's event gets (the conversation stream's MessageCompleted is MessageCompletedEvent).
+        // In a union with such a clash, every class named after a ...Event structure is prefixed with the union's
+        // name (WorkspaceMessageCompletedEvent, WorkspaceConversationCreatedEvent), so the union's classes read
+        // alike and the names that already shipped do not change.
+        Map<String, Long> uses = eventClassNames.values().stream()
+                .collect(java.util.stream.Collectors.groupingBy(n -> n, java.util.stream.Collectors.counting()));
+        Set<ShapeId> clashing = new HashSet<>();
+        for (Map.Entry<ShapeId, String> e : eventClassNames.entrySet()) {
+            MemberShape m = model.expectShape(e.getKey(), MemberShape.class);
+            if (uses.get(e.getValue()) > 1 && m.getTarget().getName().endsWith("Event")) {
+                clashing.add(m.getContainer());
+            }
+        }
+        for (Map.Entry<ShapeId, String> e : eventClassNames.entrySet()) {
+            MemberShape m = model.expectShape(e.getKey(), MemberShape.class);
+            if (clashing.contains(m.getContainer()) && m.getTarget().getName().endsWith("Event")) {
+                e.setValue(m.getContainer().getName().replaceFirst("Event$", "") + e.getValue());
+            }
+        }
+        // One class may serve several unions only when it is the same event: the same structure and SSE name
+        // (stream.reset is on both the conversation and the workspace stream).
+        Map<String, String> eventByClass = new HashMap<>();
+        for (Map.Entry<ShapeId, String> e : eventClassNames.entrySet()) {
+            MemberShape m = model.expectShape(e.getKey(), MemberShape.class);
+            String event = m.getTarget() + " " + SseEvents.wireName(m);
+            String prev = eventByClass.putIfAbsent(e.getValue(), event);
+            if (prev != null && !prev.equals(event)) {
+                throw new CodegenException("two SSE events would get the Python class name " + e.getValue() + ": " + prev + " and " + event);
             }
         }
         Bindings.checkSupported(model, service);

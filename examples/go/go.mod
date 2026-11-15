@@ -1,5 +1,6 @@
-// The Go examples the developer docs show: hand-written (gettingstarted, signin) and generated from the model's
-// @examples (reference/, by scripts/docs-snippets.mjs). scripts/test-go.sh builds and vets them.
+// The Go examples the developer docs show: hand-written (gettingstarted, signin, concepts, conversations, documents, agents) and
+// generated from the model's @examples (reference/, by scripts/docs-snippets.mjs). scripts/test-go.sh builds and
+// vets them. live runs the conversations, documents and agents examples against a real server (scripts/examples-live/go.sh).
 module github.com/caitlyn-ai/caitlyn-go/examples
 
 go 1.23.0

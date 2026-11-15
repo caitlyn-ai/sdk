@@ -7,7 +7,9 @@ from __future__ import annotations
 import asyncio
 import base64
 import dataclasses
+import functools
 import json
+import keyword
 import os
 import re
 import socket
@@ -89,7 +91,7 @@ async def test_retry_429(mock: Mock, case_id: str) -> None:
 async def test_retry_503(mock: Mock, case_id: str) -> None:
     mock.faults(status={"GetAgentVersion": [{"status": 503, "retryAfter": 1}]})
     t0 = time.monotonic()
-    v = await client(mock).versions.get(agent_id="GHT7YRWXPL", version="draft")
+    v = await client(mock).agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
     assert time.monotonic() - t0 >= 1
     assert v.name == "draft"
 
@@ -98,7 +100,7 @@ async def test_retry_503(mock: Mock, case_id: str) -> None:
 async def test_retry_long(mock: Mock, case_id: str) -> None:
     mock.faults(status={"GetAgentVersion": [{"status": 429, "retryAfter": 7}]})
     t0 = time.monotonic()
-    await client(mock).versions.get(agent_id="GHT7YRWXPL", version="draft")
+    await client(mock).agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
     assert time.monotonic() - t0 >= 7
 
 
@@ -110,16 +112,16 @@ def fault503(n: int) -> list[dict[str, int]]:
 async def test_retry_budget_drains(mock: Mock, case_id: str) -> None:
     c = client(mock, retry_budget=10)
     mock.faults(status={"GetAgentVersion": fault503(4)})
-    first = await expect_error(c.versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    first = await expect_error(c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft"))
     assert isinstance(first, ServiceUnavailableError) and len(mock.api()) == 3  # two retries, 5 tokens each
     t0 = time.monotonic()
-    second = await expect_error(c.versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    second = await expect_error(c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft"))
     assert isinstance(second, ServiceUnavailableError) and len(mock.api()) == 4  # spent: no retry
     assert time.monotonic() - t0 < 1
     # A retry after no response costs 10: a budget of 9 pays for a 503's retry but not this one.
     mock.reset()
     mock.faults(status={"GetAgentVersion": [{"close": True}]})
-    closed = await expect_error(client(mock, retry_budget=9).versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    closed = await expect_error(client(mock, retry_budget=9).agents.versions.get(agent_id="GHT7YRWXPL", version="draft"))
     assert isinstance(closed, CaitlynConnectionError) and len(mock.api()) == 1
 
 
@@ -127,18 +129,18 @@ async def test_retry_budget_drains(mock: Mock, case_id: str) -> None:
 async def test_retry_budget_refund(mock: Mock, case_id: str) -> None:
     c = client(mock, retry_budget=5)
     mock.faults(status={"GetAgentVersion": fault503(1)})
-    await c.versions.get(agent_id="GHT7YRWXPL", version="draft")  # retried once, then refunded
+    await c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")  # retried once, then refunded
     mock.faults(status={"GetAgentVersion": fault503(1)})
-    v = await c.versions.get(agent_id="GHT7YRWXPL", version="draft")
+    v = await c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
     assert v.name == "draft" and len(mock.api()) == 4
 
 
 @case("retry.budget-first-attempt")
 async def test_retry_budget_first_attempt(mock: Mock, case_id: str) -> None:
     c = client(mock, retry_budget=0)
-    assert (await c.versions.get(agent_id="GHT7YRWXPL", version="draft")).name == "draft"
+    assert (await c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")).name == "draft"
     mock.faults(status={"GetAgentVersion": fault503(1)})
-    err = await expect_error(c.versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    err = await expect_error(c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft"))
     assert isinstance(err, ServiceUnavailableError) and len(mock.api()) == 2
 
 
@@ -166,7 +168,7 @@ async def test_unsafe_not_retried(mock: Mock, case_id: str) -> None:
 async def test_above_max_retry_delay(mock: Mock, case_id: str) -> None:
     mock.faults(status={"GetAgentVersion": [{"status": 429, "retryAfter": 120}]})
     t0 = time.monotonic()
-    err = await expect_error(client(mock).versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    err = await expect_error(client(mock).agents.versions.get(agent_id="GHT7YRWXPL", version="draft"))
     assert (err.status, err.retry_after_seconds) == (429, 120)
     assert time.monotonic() - t0 < 1
     assert len(mock.api()) == 1
@@ -188,13 +190,158 @@ async def test_pagination(mock: Mock, case_id: str) -> None:
 # ------------------------------------------------------------------ SSE
 
 
-@case("sse.resume-finished")
-async def test_sse_resume_finished(mock: Mock, case_id: str) -> None:
+@case("sse.resumed-answer-reset")
+async def test_sse_resumed_answer_reset(mock: Mock, case_id: str) -> None:
+    # The mock cuts the stream only once the SDK has yielded the two events before the cut, so it always has an
+    # event ID to resume from.
+    mock.faults(dropAfterEvents=2, dropOnSignal=True, finishWhileAway=True)
+    async with client(mock).conversations.send("c-away", message="hi") as stream:
+        events: list[Any] = []
+        async for event in stream:
+            events.append(event)
+            if len(events) == 2:
+                mock._post("/__mock/drop")  # pyright: ignore[reportPrivateUsage]
+        assert [e.type for e in events][-1] == "stream.reset" and len(events) == 3  # two events, then the reset
+        err = await expect_error(stream.final_message())
+    assert err.code == "NO_FINAL_EVENT"
+    assert len([r for r in mock.api() if r["method"] == "GET"]) == 1  # one reconnect, and none after the reset
+
+
+@case("sse.watch-reconnects")
+async def test_sse_watch_reconnects(mock: Mock, case_id: str) -> None:
     c = client(mock)
-    first = await collect(c.conversations.send("c-done", message="hi"))
-    async with c.conversations.resume("c-done", last_event_id=first[-1].event_id) as resumed:
-        assert await collect(resumed) == []
-    assert len([r for r in mock.api() if r["method"] == "GET"]) == 1  # one resume request, no reconnects
+    async with c.conversations.send("c-w", message="hi") as stream:
+        await collect(stream)
+    mock.faults(watchCloses=7)
+    events: list[Any] = []
+    async with c.conversations.watch("c-w") as watch:
+        async for event in watch:
+            events.append(event)
+            if event.type == "message.completed":
+                break
+    assert [e.type for e in events] == [
+        "message.started", "progress.updated", "tool.started", "tool.finished", "text.delta", "citation.added", "text.delta", "message.completed",
+    ]
+    gets = [r for r in mock.api() if r["method"] == "GET" and r["path"] == "/v3/conversations/c-w/stream"]
+    assert len(gets) == 8  # seven reconnects, more than three, because each carried an event
+    assert [g["headers"].get("last-event-id") for g in gets[1:]] == [e.event_id for e in events[:-1]]
+
+
+@case("sse.watch-resends-request")
+async def test_sse_watch_resends_request(mock: Mock, case_id: str) -> None:
+    mock.faults(watchCloses=1)
+    events: list[Any] = []
+    async with client(mock).events.subscribe(types=["conversation.created"], conversation_ids=["c-11", "c-12"]) as stream:
+        async for event in stream:
+            events.append(event)
+            if len(events) == 2:
+                break
+    first, second = [r for r in mock.api() if r["path"] == "/v3/events/stream"]
+    assert second["query"] == first["query"]
+    assert "type=conversation.created" in second["query"] and "conversationId=c-11" in second["query"]
+    assert second["headers"].get("last-event-id") == events[0].event_id
+
+
+@case("sse.conversation-reset")
+async def test_sse_conversation_reset(mock: Mock, case_id: str) -> None:
+    c = client(mock)
+    async with c.conversations.send("c-r", message="hi") as stream:
+        answer = await collect(stream)
+    events: list[Any] = []
+    async with c.conversations.watch("c-r", last_event_id=answer[-1].event_id) as watch:
+        async for event in watch:
+            events.append(event)
+            if event.type == "message.completed":
+                break
+    reset = events[0]
+    assert isinstance(reset, caitlyn.StreamResetEvent) and reset.cursor == reset.event_id
+    assert events[-1].type == "message.completed"  # the next answer follows the reset
+    assert len([r for r in mock.api() if r["method"] == "GET"]) == 1  # a reset is not an error and is never retried
+
+
+ID_11 = "0193a6f3-0a1b-7c2d-8e3f-000000000011"
+
+
+@case("sse.reconnect-backoff")
+async def test_sse_reconnect_backoff(mock: Mock, case_id: str) -> None:
+    c = client(mock)
+    async with c.conversations.send("c-b", message="hi") as stream:
+        await collect(stream)
+    mock.faults(watchEmptyCloses=4)
+    async with c.conversations.watch("c-b") as watch:
+        err = await expect_error(collect(watch))
+    assert err.code == "STREAM_LOST"
+    at = [r["at"] for r in mock.api() if r["method"] == "GET"]
+    assert len(at) == 4  # the first request and three reconnects
+    g1, g2, g3 = at[1] - at[0], at[2] - at[1], at[3] - at[2]
+    # The bands (0.25-0.5 s, 0.5-1 s, 1-2 s) do not overlap, so their lower bounds show the pause grows; the upper
+    # bounds, three times each band's top, catch a broken cap.
+    assert g1 >= 200 and g2 >= 450 and g3 >= 950, (g1, g2, g3)
+    assert g1 <= 1500 and g2 <= 3000 and g3 <= 6000, (g1, g2, g3)
+
+
+@case("sse.reconnect-without-event-id")
+async def test_sse_reconnect_without_event_id(mock: Mock, case_id: str) -> None:
+    mock.faults(watchEmptyCloses=1)
+    async with client(mock).events.subscribe(types=["conversation.created"], after=ID_11) as stream:
+        async for _ in stream:
+            break
+    first, second = [r for r in mock.api() if r["path"] == "/v3/events/stream"][:2]
+    assert "last-event-id" not in second["headers"]
+    assert second["query"] == first["query"]  # the same request, after cursor included
+
+
+@case("sse.reconnect-drops-after")
+async def test_sse_reconnect_drops_after(mock: Mock, case_id: str) -> None:
+    mock.faults(watchCloses=1)
+    events: list[Any] = []
+    async with client(mock).events.subscribe(types=["conversation.created"], after=ID_11) as stream:
+        async for event in stream:
+            events.append(event)
+            if len(events) == 2:
+                break
+    first, second = [r for r in mock.api() if r["path"] == "/v3/events/stream"][:2]
+    assert "after=" in first["query"]
+    assert second["headers"].get("last-event-id") == events[0].event_id
+    assert "after=" not in second["query"] and "type=conversation.created" in second["query"]
+
+
+@case("sse.duplicate-not-progress")
+async def test_sse_duplicate_not_progress(mock: Mock, case_id: str) -> None:
+    c = client(mock)
+    async with c.conversations.send("c-d", message="hi") as stream:
+        await collect(stream)
+    mock.faults(watchReplayCloses=10)
+    seen: list[str] = []
+
+    async def read(watch: Any) -> None:
+        async for event in watch:
+            seen.append(event.type)
+
+    async with c.conversations.watch("c-d") as watch:
+        err = await expect_error(read(watch))
+    assert err.code == "STREAM_LOST"
+    assert seen == ["message.started"]  # the duplicates were dropped
+    assert len([r for r in mock.api() if r["method"] == "GET"]) == 4  # the first request and three reconnects
+
+
+@case("sse.watch-failed-answer")
+async def test_sse_watch_failed_answer(mock: Mock, case_id: str) -> None:
+    c = client(mock)
+    mock.faults(failStream=True)
+    async with c.conversations.send("c-f", message="hi") as stream:
+        await expect_error(collect(stream))
+    types: list[str] = []
+    failed: Any = None
+    async with c.conversations.watch("c-f") as watch:
+        async for event in watch:
+            types.append(event.type)
+            if event.type == "message.failed":
+                failed = event
+            if event.type == "message.completed":
+                break
+    assert failed is not None and failed.code == "SERVICE_UNAVAILABLE"
+    assert types.index("message.failed") < types.index("message.completed")  # the next answer follows the failed one
 
 
 @case("sse.request-id-and-type")
@@ -238,6 +385,45 @@ async def test_sse_resume(mock: Mock, case_id: str) -> None:
     resume = next(r for r in mock.api() if r["method"] == "GET" and r["path"] == "/v3/conversations/c-2/stream")
     assert resume["headers"].get("last-event-id") == ids[2]
     assert resume["headers"].get("accept") == "text/event-stream"
+
+
+STALE_CURSOR = "0190d2a1-0000-7000-8000-000000000001"
+"""The mock's cursor the workspace stream cannot carry on from."""
+RESET_CURSOR = "0193a6f3-0a1b-7c2d-8e3f-000000000010"
+"""The cursor its stream.reset gives instead."""
+
+
+@case("sse.final-ends-watch")
+async def test_sse_final_ends_watch(mock: Mock, case_id: str) -> None:
+    mock.faults(dropAfterEvents=2)
+    t0 = time.monotonic()
+    async with client(mock).conversations.send("c-watch", message="hi") as stream:
+        answer = await stream.final_message()
+    assert answer.text == "Staff receive 20 days of annual leave."
+    assert time.monotonic() - t0 < 5, "ended at message.completed, not when the server closed the watch"
+    for _ in range(100):
+        if any(r.get("event") == "client-disconnected" for r in mock.requests()):
+            break
+        await asyncio.sleep(0.02)
+    else:
+        raise AssertionError("the SDK did not close the watch connection")
+
+
+@case("sse.stream-reset")
+async def test_sse_stream_reset(mock: Mock, case_id: str) -> None:
+    events: list[Any] = []
+    async with client(mock).events.subscribe(types=["conversation.created"], after=STALE_CURSOR) as stream:
+        async for event in stream:
+            events.append(event)
+            if len(events) == 2:
+                break  # a watch carries on until it is closed
+    assert [e.type for e in events] == ["stream.reset", "conversation.created"]
+    reset, created = events
+    assert isinstance(reset, caitlyn.StreamResetEvent)
+    assert (reset.cursor, reset.event_id) == (RESET_CURSOR, RESET_CURSOR)
+    assert isinstance(created, caitlyn.WorkspaceConversationCreatedEvent)
+    assert created.data.agent_id == "GHT7YRWXPL"
+    assert len(mock.api()) == 1  # a reset is not an error and is never retried
 
 
 @case("sse.clean-end-resumes")
@@ -284,7 +470,7 @@ async def test_unknown_enum(mock: Mock, case_id: str) -> None:
     mock.faults(unknownEnum=True)
     docs = await collect(client(mock).documents.list(knowledge_base_id="KB4T7YQ2WL"))
     assert docs[1].status == "archived"
-    v = await client(mock).versions.get(agent_id="GHT7YRWXPL", version="draft")
+    v = await client(mock).agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
     assert v.source == "cloned_from_template"
 
 
@@ -292,7 +478,7 @@ async def test_unknown_enum(mock: Mock, case_id: str) -> None:
 async def test_unknown_field_raw(mock: Mock, case_id: str) -> None:
     mock.faults(unknownField=True)
     c = client(mock)
-    v = await c.versions.get(agent_id="GHT7YRWXPL", version="draft")
+    v = await c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
     assert v.raw["reviewState"] == {"required": False}
     assert v.raw["configuration"]["instructions"] == "Answer from the HR policies."
     assert "etag" not in v.raw  # raw is the body as received; header-bound members are attributes only
@@ -307,7 +493,7 @@ async def test_nested_raw(mock: Mock, case_id: str) -> None:
     c = client(mock)
     docs = await collect(c.documents.list(knowledge_base_id="KB4T7YQ2WL"))
     assert docs[0].raw["retentionPolicy"] == {"keepDays": 365}
-    v = await c.versions.get(agent_id="GHT7YRWXPL", version="draft")
+    v = await c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
     assert v.configuration.knowledge_bases is not None
     assert v.configuration.knowledge_bases[0].raw["reranker"] == "cohere"
 
@@ -330,8 +516,8 @@ async def test_404(mock: Mock, case_id: str) -> None:
 @case("errors.409")
 async def test_409(mock: Mock, case_id: str) -> None:
     c = client(mock)
-    up = await c.uploads.reserve(file_name="a.txt", content_type="text/plain", byte_size=1, sha256="x")
-    err = await expect_error(c.documents.create(knowledge_base_id="KB4T7YQ2WL", upload_id=up.id, folder="hr/"))
+    up = await c.uploads.reserve(file_name="a.pdf", content_type="application/pdf", byte_size=1, sha256="x")
+    err = await expect_error(c.documents.create(knowledge_base_id="KB4T7YQ2WL", upload_id=up.id, folder="/hr/"))
     assert isinstance(err, ConflictError)
     assert (err.status, err.code) == (409, "CONFLICT")
 
@@ -339,9 +525,9 @@ async def test_409(mock: Mock, case_id: str) -> None:
 @case("errors.412")
 async def test_412(mock: Mock, case_id: str) -> None:
     c = client(mock)
-    draft = await c.versions.get(agent_id="GHT7YRWXPL", version="draft")
-    await c.versions.update_draft("GHT7YRWXPL", if_match=draft.etag, instructions="first")
-    err = await expect_error(c.versions.update_draft("GHT7YRWXPL", if_match=draft.etag, instructions="second"))
+    draft = await c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
+    await c.agents.versions.update_draft("GHT7YRWXPL", if_match=draft.etag, instructions="first")
+    err = await expect_error(c.agents.versions.update_draft("GHT7YRWXPL", if_match=draft.etag, instructions="second"))
     assert isinstance(err, PreconditionFailedError)
     assert (err.status, err.code) == (412, "PRECONDITION_FAILED")
     assert err.request_id
@@ -350,7 +536,7 @@ async def test_412(mock: Mock, case_id: str) -> None:
 @case("errors.429-exhausted")
 async def test_429_exhausted(mock: Mock, case_id: str) -> None:
     mock.faults(status={"GetAgentVersion": [{"status": 429, "retryAfter": 0}] * 3})
-    err = await expect_error(client(mock).versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    err = await expect_error(client(mock).agents.versions.get(agent_id="GHT7YRWXPL", version="draft"))
     assert (err.status, err.code, err.retry_after_seconds) == (429, "RATE_LIMITED", 0)
     assert len(mock.api()) == 3
 
@@ -371,7 +557,7 @@ async def test_html_404(mock: Mock, case_id: str) -> None:
 @case("errors.empty-405")
 async def test_empty_405(mock: Mock, case_id: str) -> None:
     mock.faults(status={"GetAgentVersion": [{"status": 405, "body": ""}]})
-    err = await expect_error(client(mock).versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    err = await expect_error(client(mock).agents.versions.get(agent_id="GHT7YRWXPL", version="draft"))
     assert type(err) is CaitlynError
     assert (err.status, err.code, err.request_id, err.raw_body) == (405, "HTTP_405", None, "")
 
@@ -379,7 +565,7 @@ async def test_empty_405(mock: Mock, case_id: str) -> None:
 @case("errors.text-502")
 async def test_text_502(mock: Mock, case_id: str) -> None:
     mock.faults(status={"GetAgentVersion": [{"status": 502, "contentType": "text/plain", "body": "Bad Gateway"}]})
-    err = await expect_error(client(mock).versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    err = await expect_error(client(mock).agents.versions.get(agent_id="GHT7YRWXPL", version="draft"))
     assert type(err) is CaitlynError
     assert (err.status, err.code, err.raw_body) == (502, "HTTP_502", "Bad Gateway")
     assert len(mock.api()) == 1
@@ -401,8 +587,8 @@ async def test_status_from_http(mock: Mock, case_id: str) -> None:
 @case("errors.field-errors")
 async def test_field_errors(mock: Mock, case_id: str) -> None:
     c = client(mock)
-    draft = await c.versions.get(agent_id="GHT7YRWXPL", version="draft")
-    err = await expect_error(c.versions.update_draft("GHT7YRWXPL", if_match=draft.etag, identity="x", clear=["identity"]))
+    draft = await c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
+    err = await expect_error(c.agents.versions.update_draft("GHT7YRWXPL", if_match=draft.etag, identity="x", clear=["identity"]))
     assert isinstance(err, ValidationError)
     assert (err.status, err.code) == (400, "VALIDATION_FAILED")
     [field] = err.errors
@@ -433,14 +619,14 @@ async def test_unmodelled_status(mock: Mock, case_id: str) -> None:
 async def test_raw_body_limit(mock: Mock, case_id: str) -> None:
     mock.faults(status={"GetAgentVersion": [{"status": 404, "contentType": "text/html", "body": b} for b in (PAGE_20K, PAGE_STRADDLE)]})
     c = client(mock)
-    page = await expect_error(c.versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    page = await expect_error(c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft"))
     assert isinstance(page, NotFoundError)
     assert len(page.raw_body.encode()) == 8192
     assert page.raw_body == PAGE_20K[:8192]
     assert page.raw_body_truncated is True
-    straddle = await expect_error(c.versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    straddle = await expect_error(c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft"))
     assert (straddle.raw_body, straddle.raw_body_truncated) == ("a" * 8191, True)
-    problem = await expect_error(c.versions.get(agent_id="GHT7YRWXPL", version="nope"))
+    problem = await expect_error(c.agents.versions.get(agent_id="GHT7YRWXPL", version="nope"))
     assert isinstance(problem, NotFoundError)
     assert json.loads(problem.raw_body)["code"] == "NOT_FOUND"
     assert problem.raw_body_truncated is False
@@ -457,9 +643,9 @@ def refused_endpoint() -> str:
 @case("errors.connection")
 async def test_connection_error(mock: Mock, case_id: str) -> None:
     mock.faults(status={"GetAgentVersion": [{"close": True}]})
-    closed = await expect_error(client(mock, max_attempts=1).versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    closed = await expect_error(client(mock, max_attempts=1).agents.versions.get(agent_id="GHT7YRWXPL", version="draft"))
     refused_client = AsyncCaitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=refused_endpoint(), max_attempts=1)
-    refused = await expect_error(refused_client.versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    refused = await expect_error(refused_client.agents.versions.get(agent_id="GHT7YRWXPL", version="draft"))
     for err in (closed, refused):
         assert isinstance(err, CaitlynConnectionError), repr(err)
         assert (err.status, err.code, err.request_id, err.raw_body, err.raw_body_truncated) == (0, "CONNECTION_ERROR", None, "", False)
@@ -494,7 +680,7 @@ async def test_cancel_stream(mock: Mock, case_id: str) -> None:
 @case("cancel.unary")
 async def test_cancel_unary(mock: Mock, case_id: str) -> None:
     mock.faults(status={"GetAgentVersion": [{"status": 503, "retryAfter": 2}]})
-    task = asyncio.create_task(client(mock).versions.get(agent_id="GHT7YRWXPL", version="draft"))
+    task = asyncio.create_task(client(mock).agents.versions.get(agent_id="GHT7YRWXPL", version="draft"))
     await asyncio.sleep(0.2)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -507,8 +693,8 @@ async def test_cancel_unary(mock: Mock, case_id: str) -> None:
 @case("update.if-match")
 async def test_if_match(mock: Mock, case_id: str) -> None:
     c = client(mock)
-    draft = await c.versions.get(agent_id="GHT7YRWXPL", version="draft")
-    updated = await c.versions.update_draft("GHT7YRWXPL", if_match=draft.etag, instructions="x")
+    draft = await c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
+    updated = await c.agents.versions.update_draft("GHT7YRWXPL", if_match=draft.etag, instructions="x")
     assert updated.etag != draft.etag
     patch = next(r for r in mock.api() if r["method"] == "PATCH")
     assert patch["headers"]["if-match"] == draft.etag
@@ -518,8 +704,8 @@ async def test_if_match(mock: Mock, case_id: str) -> None:
 @case("update.clear")
 async def test_clear(mock: Mock, case_id: str) -> None:
     c = client(mock)
-    draft = await c.versions.get(agent_id="GHT7YRWXPL", version="draft")
-    updated = await c.versions.update_draft("GHT7YRWXPL", if_match=draft.etag, clear=["identity"])
+    draft = await c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
+    updated = await c.agents.versions.update_draft("GHT7YRWXPL", if_match=draft.etag, clear=["identity"])
     patch = next(r for r in mock.api() if r["method"] == "PATCH")
     assert json.loads(patch["body"]) == {"clear": ["identity"]}
     assert updated.configuration.identity is None
@@ -532,7 +718,7 @@ async def test_clear(mock: Mock, case_id: str) -> None:
 @case("wire.headers")
 async def test_wire_headers(mock: Mock, case_id: str) -> None:
     mock.faults(status={"GetAgentVersion": [{"status": 503, "retryAfter": 0}]})
-    await client(mock).versions.get(agent_id="GHT7YRWXPL", version="draft")
+    await client(mock).agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
     sent = mock.api()
     assert len(sent) == 2
     for r in sent:
@@ -558,7 +744,7 @@ async def test_hostile_aws(mock: Mock, tmp_path: Path, monkeypatch: pytest.Monke
         monkeypatch.setenv(k, v)
     mock.faults(status={"GetAgentVersion": [{"status": 503, "retryAfter": 0}]})
     t0 = time.monotonic()
-    v = await client(mock).versions.get(agent_id="GHT7YRWXPL", version="draft")
+    v = await client(mock).agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
     docs = await collect(client(mock).documents.list(knowledge_base_id="KB4T7YQ2WL", limit=3))
     assert (v.name, len(docs)) == ("draft", 7)
     assert time.monotonic() - t0 < 2, "something waited on the environment"
@@ -572,24 +758,24 @@ async def test_hostile_aws(mock: Mock, tmp_path: Path, monkeypatch: pytest.Monke
 async def test_since(mock: Mock, case_id: str) -> None:
     mock.faults(apiVersion="5.110.0")
     c = client(mock)
-    await c.versions.get(agent_id="GHT7YRWXPL", version="draft")  # no check before the first response
+    await c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")  # no check before the first response
     before = len(mock.api())
     with pytest.raises(NotSupportedByServer) as info:
-        await c.versions.get(agent_id="GHT7YRWXPL", version="draft")
+        await c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
     assert (info.value.requires, info.value.server) == (SDK_MODEL, "5.110.0")
     assert len(mock.api()) == before
 
 
 @case("headers.request-id")
 async def test_request_id(mock: Mock, case_id: str) -> None:
-    v = await client(mock).versions.get(agent_id="GHT7YRWXPL", version="draft")
+    v = await client(mock).agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
     assert v.request_id == mock.api()[-1]["requestId"]
     assert v.api_version == "5.120.0"
 
 
 @case("headers.response-metadata")
 async def test_response_metadata(mock: Mock, case_id: str) -> None:
-    v = await client(mock).versions.get(agent_id="GHT7YRWXPL", version="draft")
+    v = await client(mock).agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
     metadata = v.response_metadata
     assert metadata is not None
     assert metadata.http_status_code == 200
@@ -606,7 +792,7 @@ async def test_telemetry_attributes(mock: Mock, tmp_path: Path, case_id: str) ->
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     c = client(mock, tracer_provider=provider)
     mock.faults(status={"GetAgentVersion": [{"status": 503, "retryAfter": 0}]})
-    await expect_error(c.versions.get(agent_id="GHT7YRWXPL", version="nope"))
+    await expect_error(c.agents.versions.get(agent_id="GHT7YRWXPL", version="nope"))
     await collect(c.documents.list(knowledge_base_id="KB4T7YQ2WL", limit=100))
     f = tmp_path / "hello.txt"
     f.write_text("hello")
@@ -664,7 +850,7 @@ async def test_telemetry(mock: Mock, case_id: str) -> None:
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     mock.faults(status={"GetAgentVersion": [{"status": 503, "retryAfter": 0}]})
-    await client(mock, tracer_provider=provider).versions.get(agent_id="GHT7YRWXPL", version="draft")
+    await client(mock, tracer_provider=provider).agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
     spans = exporter.get_finished_spans()
     call = next(s for s in spans if s.name == "caitlyn.call")
     assert call.context is not None
@@ -707,12 +893,12 @@ async def test_own_http_client_uses_the_endpoint(mock: Mock) -> None:
     """A caller's own httpx client, with no base_url or a different one, still sends to the client's endpoint."""
     for own in (httpx.AsyncClient(), httpx.AsyncClient(base_url="http://127.0.0.1:9")):
         async with own:
-            v = await client(mock, http_client=own).versions.get(agent_id="GHT7YRWXPL", version="draft")
+            v = await client(mock, http_client=own).agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
             assert v.name == "draft"
     sync_own = httpx.Client()
     with sync_own:
         c = caitlyn.Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base, http_client=sync_own)
-        assert c.versions.get(agent_id="GHT7YRWXPL", version="draft").name == "draft"
+        assert c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft").name == "draft"
     assert [r["path"] for r in mock.api()] == ["/v3/agents/GHT7YRWXPL/versions/draft"] * 3
 
 
@@ -737,7 +923,7 @@ def signed_in(mock: Mock, auth: Auth, workspace: str = "your-company.getcaitlyn.
 
 
 def read(c: AsyncCaitlyn) -> Awaitable[AgentVersion]:
-    return c.versions.get(agent_id="GHT7YRWXPL", version="draft")
+    return c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
 
 
 def cc_auth(**kw: Any) -> ClientCredentials:
@@ -1118,7 +1304,7 @@ async def test_auth_session(mock: Mock, case_id: str) -> None:
     c = signed_in(mock, Session(cookie=MOCK_SESSION_COOKIE, origin="https://caitlyn.lndo.site"))
     v = await read(c)
     assert v.etag is not None
-    await c.versions.update_draft("GHT7YRWXPL", if_match=v.etag, instructions="Cite clause numbers.")
+    await c.agents.versions.update_draft("GHT7YRWXPL", if_match=v.etag, instructions="Cite clause numbers.")
     get, patch = mock.api()
     assert "authorization" not in get["headers"]
     assert get["headers"]["cookie"] == MOCK_SESSION_COOKIE
@@ -1128,7 +1314,123 @@ async def test_auth_session(mock: Mock, case_id: str) -> None:
     assert mock.token_requests() == []
 
 
+# ------------------------------------------------------------------ waiters (PROTOCOL.md 10.1)
+# Against the mock's GetDocument: the documentStatus fault gives each read the next status, the last one repeating.
+
+FAST_WAIT: dict[str, Any] = {"min_delay": 0.01, "max_delay": 0.02}
+
+
+def document_reads(mock: Mock, document_id: str = "doc-0002") -> int:
+    return len([r for r in mock.api() if r["path"] == f"/v3/knowledge-bases/KB4T7YQ2WL/documents/{document_id}"])
+
+
+@case("waiter.success")
+async def test_waiter_success(mock: Mock, case_id: str) -> None:
+    mock.faults(documentStatus={"doc-0002": ["queued", "indexing", "indexed"], "doc-0003": ["indexing", "partially_indexed"]})
+    docs = client(mock).documents
+    doc = await docs.wait_until_indexed(knowledge_base_id="KB4T7YQ2WL", document_id="doc-0002", **FAST_WAIT)
+    assert doc.status == "indexed"
+    assert document_reads(mock) == 3, "read at once, then until indexed"
+    partly = await docs.wait_until_indexed(knowledge_base_id="KB4T7YQ2WL", document_id="doc-0003", **FAST_WAIT)
+    assert partly.status == "partially_indexed"
+
+
+@case("waiter.failure")
+async def test_waiter_failure(mock: Mock, case_id: str) -> None:
+    mock.faults(documentStatus={"doc-0002": ["queued", "failed"]})
+    docs = client(mock).documents
+    with pytest.raises(caitlyn.WaiterError) as info:
+        await docs.wait_until_indexed(knowledge_base_id="KB4T7YQ2WL", document_id="doc-0002", **FAST_WAIT)
+    e = info.value
+    assert (e.waiter, e.reason, e.attempts, str(e)) == ("Indexed", "failure", 2, "Indexed: reached a failure state")
+    assert getattr(e.last, "status") == "failed"
+    # A missing document: the 404 is the last result, and the wait ends at once.
+    with pytest.raises(caitlyn.WaiterError) as gone:
+        await docs.wait_until_indexed(knowledge_base_id="KB4T7YQ2WL", document_id="doc-9999", **FAST_WAIT)
+    assert (gone.value.reason, gone.value.attempts) == ("failure", 1)
+    assert isinstance(gone.value.last, NotFoundError)
+
+
+@case("waiter.timeout")
+async def test_waiter_timeout(mock: Mock, case_id: str) -> None:
+    mock.faults(documentStatus={"doc-0002": ["indexing"]})
+    t0 = time.monotonic()
+    with pytest.raises(caitlyn.WaiterError) as info:
+        await client(mock).documents.wait_until_indexed(
+            knowledge_base_id="KB4T7YQ2WL", document_id="doc-0002", max_wait=0.2, min_delay=0.05, max_delay=0.1
+        )
+    assert info.value.reason == "timeout"
+    assert getattr(info.value.last, "status") == "indexing"
+    assert time.monotonic() - t0 < 0.5, "the last pause is cut to the time left"
+
+
+@case("waiter.default-limit")
+async def test_waiter_default_limit(mock: Mock, case_id: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    import inspect
+
+    from caitlyn import Caitlyn
+    from caitlyn_core import wait_async
+
+    sync = inspect.signature(Caitlyn(workspace="x", auth=Token("t"), endpoint=mock.base).documents.wait_until_indexed)
+    asynchronous = inspect.signature(client(mock).documents.wait_until_indexed)
+    for sig in (sync, asynchronous):
+        assert sig.parameters["max_wait"].default == 3600, "@waitLimits(Indexed: 3600)"
+        assert (sig.parameters["min_delay"].default, sig.parameters["max_delay"].default) == (2, 30)
+    # A waiter with no @waitLimits entry waits 5 minutes: run one on a clock that moves a minute per look.
+    now = [0.0]
+
+    def clock() -> float:
+        now[0] += 60
+        return now[0]
+
+    async def no_pause(_: float) -> None:
+        return None
+
+    monkeypatch.setattr("caitlyn_core._waiter.time.monotonic", clock)
+    monkeypatch.setattr("caitlyn_core._waiter.asyncio.sleep", no_pause)
+
+    async def read() -> str:
+        return "pending"
+
+    with pytest.raises(caitlyn.WaiterError) as info:
+        await wait_async("Other", read, lambda output, error: None, min_delay=2, max_delay=30)
+    assert str(info.value) == "Other: did not finish within 300 s"
+
+
+@case("waiter.success-on-error")
+async def test_waiter_success_on_error(mock: Mock, case_id: str) -> None:
+    import inspect
+
+    from caitlyn import Caitlyn
+
+    docs = client(mock).documents
+    deleted = await docs.delete(knowledge_base_id="KB4T7YQ2WL", document_id="doc-0002")
+    assert deleted.status == "deleting"
+    reads_before = document_reads(mock)
+    result = await docs.wait_until_deleted(knowledge_base_id="KB4T7YQ2WL", document_id="doc-0002", **FAST_WAIT)
+    assert result is None, "a success through an error (the 404) has no output"
+    assert document_reads(mock) - reads_before == 2, "read once as deleting, then gone"
+    sync = inspect.signature(Caitlyn(workspace="x", auth=Token("t"), endpoint=mock.base).documents.wait_until_deleted)
+    for sig in (sync, inspect.signature(docs.wait_until_deleted)):
+        assert sig.parameters["max_wait"].default == 900, "@waitLimits(Deleted: 900)"
+        assert sig.return_annotation in (None, "None")
+
+
+async def test_waiter_retries_inside_each_read(mock: Mock) -> None:
+    """Python only: a retryable status is retried by the client inside one read, not counted as a waiter attempt."""
+    mock.faults(documentStatus={"doc-0002": ["indexed"]}, status={"GetDocument": [{"status": 503, "retryAfter": 0}]})
+    doc = await client(mock).documents.wait_until_indexed(knowledge_base_id="KB4T7YQ2WL", document_id="doc-0002", **FAST_WAIT)
+    assert doc.status == "indexed"
+    assert document_reads(mock) == 2
+
+
 # ------------------------------------------------------------------ the model's @examples
+
+
+def param(name: str) -> str:
+    """A member's Python parameter name: snake_case, with `_` after a reserved word (`from` gives `from_`)."""
+    n = snake(name)
+    return n + "_" if keyword.iskeyword(n) or n in ("match", "case") else n
 
 
 def snake(name: str) -> str:
@@ -1138,7 +1440,8 @@ def snake(name: str) -> str:
 def resource_method(c: AsyncCaitlyn, operation: str) -> Callable[..., Any]:
     """The public method that calls an operation, from the generated METHODS table."""
     namespace, name = operations.METHODS[operation]
-    return getattr(getattr(c, namespace), name)
+    resource: Any = functools.reduce(getattr, namespace.split("."), c)  # a dotted namespace nests: agents.versions
+    return getattr(resource, name)
 
 
 def assert_subset(expected: Any, actual: Any, at: str = "output") -> None:
@@ -1163,7 +1466,7 @@ async def test_example(mock: Mock, ex: dict[str, Any]) -> None:
     mock.prime_example(ex["id"])
     c = client(mock)
     method = resource_method(c, ex["operation"])
-    kwargs = {snake(k): v for k, v in ex["input"].items()}
+    kwargs = {param(k): v for k, v in ex["input"].items()}
     result: Any = None
     error: BaseException | None = None
     try:
@@ -1172,9 +1475,10 @@ async def test_example(mock: Mock, ex: dict[str, Any]) -> None:
             async for page in out.pages():
                 result = page
                 break
-        elif hasattr(out, "__aenter__"):  # a stream: drain it
+        elif hasattr(out, "__aenter__"):  # a stream: read its first event (a watch carries on until it is closed)
             async with out as stream:
-                await collect(stream)
+                async for _ in stream:
+                    break
         else:
             result = await out
     except CaitlynError as e:
@@ -1221,13 +1525,13 @@ def test_sync_sign_in_one_token_across_threads(mock: Mock) -> None:
     sign_in_required(mock)
     c = Caitlyn(workspace="your-company.getcaitlyn.ai", endpoint=mock.base, auth=cc_auth())
     def call(_: int) -> AgentVersion:
-        return c.versions.get(agent_id="GHT7YRWXPL", version="draft")
+        return c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
 
     with ThreadPoolExecutor(8) as pool:
         list(pool.map(call, range(8)))
     assert mock.auth_counts()["client_credentials"] == 1
     mock.faults(auth={"revokeIssued": True})
-    c.versions.get(agent_id="GHT7YRWXPL", version="draft")
+    c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
     assert mock.auth_counts()["client_credentials"] == 2, "signed in again once after the 401"
     assert len(mock.api()) == 10
 
@@ -1242,9 +1546,9 @@ def test_sync_oauth_sign_in_refresh_and_sign_out(mock: Mock) -> None:
     assert start.state == "kept"
     redirect = httpx.URL(httpx.get(start.url).headers["location"])
     c.auth.handle_callback(code=redirect.params["code"], state=redirect.params["state"], expected_state="kept", code_verifier=start.code_verifier)
-    c.versions.get(agent_id="GHT7YRWXPL", version="draft")
+    c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
     mock.faults(auth={"revokeIssued": True})
-    c.versions.get(agent_id="GHT7YRWXPL", version="draft")
+    c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
     assert mock.auth_counts()["refresh_token"] == 1
     c.auth.sign_out()
     assert store.tokens is None
@@ -1260,7 +1564,7 @@ def test_sync_client_refuses_async_callbacks(mock: Mock) -> None:
 
     c = Caitlyn(workspace="your-company.getcaitlyn.ai", endpoint=mock.base, auth=WorkloadIdentity(ci_token))
     with pytest.raises(TypeError, match="AsyncCaitlyn"):
-        c.versions.get(agent_id="GHT7YRWXPL", version="draft")
+        c.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
 
 
 async def test_oauth_steps_need_oauth_mode(mock: Mock) -> None:

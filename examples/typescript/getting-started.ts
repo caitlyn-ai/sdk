@@ -8,6 +8,6 @@ const caitlyn = new Caitlyn({
 });
 
 // Read the draft of an agent: its configuration and its ETag
-const draft = await caitlyn.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+const draft = await caitlyn.agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
 console.log(draft.configuration.instructions);
 // #endregion

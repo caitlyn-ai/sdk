@@ -56,7 +56,7 @@ func listAll(ctx context.Context, c *caitlyn.Client, in *caitlyn.ListDocumentsIn
 
 func draft(t *testing.T, c *caitlyn.Client) *caitlyn.AgentVersion {
 	t.Helper()
-	v, err := c.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+	v, err := c.Agents.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,6 +91,13 @@ func apiError(t *testing.T, err error) *caitlyn.Error {
 	return e
 }
 
+// The mock's cursor the workspace stream cannot carry on from, and the cursor its stream.reset gives instead.
+const (
+	staleCursor = "0190d2a1-0000-7000-8000-000000000001"
+	id11        = "0193a6f3-0a1b-7c2d-8e3f-000000000011"
+	resetCursor = "0193a6f3-0a1b-7c2d-8e3f-000000000010"
+)
+
 func send(t *testing.T, c *caitlyn.Client, ctx context.Context, conversation string) *caitlyn.ConversationEventStream {
 	t.Helper()
 	s, err := c.Conversations.Send(ctx, conversation, &caitlyn.SendMessageInput{Message: "hi"})
@@ -101,8 +108,8 @@ func send(t *testing.T, c *caitlyn.Client, ctx context.Context, conversation str
 	return s
 }
 
-func collect(s *caitlyn.ConversationEventStream) ([]caitlyn.ConversationEvent, error) {
-	var evs []caitlyn.ConversationEvent
+func collect[E, F any](s *core.Stream[E, F]) ([]E, error) {
+	var evs []E
 	for ev, err := range s.Events() {
 		if err != nil {
 			return evs, err
@@ -184,7 +191,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 		c := client(t, m, caitlyn.WithRetryBudget(10))
 		m.faults(t, status("GetAgentVersion", fault(503, 0), fault(503, 0), fault(503, 0), fault(503, 0)))
 		get := func(c *caitlyn.Client) error {
-			_, err := c.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+			_, err := c.Agents.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
 			return err
 		}
 		var su *caitlyn.ServiceUnavailableError
@@ -218,7 +225,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 		c := client(t, m, caitlyn.WithRetryBudget(0))
 		draft(t, c)
 		m.faults(t, status("GetAgentVersion", fault(503, 0)))
-		_, err := c.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+		_, err := c.Agents.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
 		var su *caitlyn.ServiceUnavailableError
 		if !errors.As(err, &su) || len(m.api(t)) != 2 {
 			t.Fatalf("%v after %d requests", err, len(m.api(t)))
@@ -252,7 +259,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 	"retry.above-max-retry-delay": func(t *testing.T, m mock) {
 		m.faults(t, status("GetAgentVersion", fault(429, 120)))
 		t0 := time.Now()
-		_, err := client(t, m).Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+		_, err := client(t, m).Agents.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
 		var tooMany *caitlyn.TooManyRequestsError
 		if !errors.As(err, &tooMany) || tooMany.Status != 429 || tooMany.RetryAfterSeconds == nil || *tooMany.RetryAfterSeconds != 120 {
 			t.Fatalf("got %v", err)
@@ -272,22 +279,107 @@ var protocol = map[string]func(t *testing.T, m mock){
 	},
 
 	// ------------------------------------------------------------------ SSE
-	"sse.resume-finished": func(t *testing.T, m mock) {
+	"sse.resumed-answer-reset": func(t *testing.T, m mock) {
+		// The mock cuts the stream only once the SDK has yielded the two events before the cut, so it always has an
+		// event ID to resume from.
+		m.faults(t, map[string]any{"dropAfterEvents": 2, "dropOnSignal": true, "finishWhileAway": true})
+		stream := send(t, client(t, m), context.Background(), "c-away")
+		var events []caitlyn.ConversationEvent
+		var err error
+		for ev, e := range stream.Events() {
+			if e != nil {
+				err = e
+				break
+			}
+			events = append(events, ev)
+			if len(events) == 2 {
+				m.post(t, "/__mock/drop", map[string]any{})
+			}
+		}
+		if err != nil || len(events) != 3 || events[2].EventType() != "stream.reset" {
+			t.Fatalf("events %d err %v; want two events, then the reset", len(events), err)
+		}
+		var e *caitlyn.Error
+		if _, err := stream.FinalMessage(); !errors.As(err, &e) || e.Code != "NO_FINAL_EVENT" {
+			t.Fatalf("FinalMessage: %v", err)
+		}
+		if gets := m.matching(t, func(r logged) bool { return r.Method == "GET" }); len(gets) != 1 {
+			t.Fatalf("%d reconnects; want one, and none after the reset", len(gets))
+		}
+	},
+	"sse.watch-reconnects": func(t *testing.T, m mock) {
 		c := client(t, m)
-		first, err := collect(send(t, c, context.Background(), "c-done"))
+		if _, err := collect(send(t, c, context.Background(), "c-w")); err != nil {
+			t.Fatal(err)
+		}
+		m.faults(t, map[string]any{"watchCloses": 7})
+		w, err := c.Conversations.Watch(context.Background(), "c-w", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		resumed, err := c.Conversations.Resume(context.Background(), "c-done", &caitlyn.ResumeConversationStreamInput{LastEventID: caitlyn.Ptr(first[len(first)-1].EventID())})
+		defer w.Close()
+		events, err := take(w, func(ev caitlyn.ConversationEvent) bool { return ev.EventType() == "message.completed" })
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer resumed.Close()
-		if evs, err := collect(resumed); err != nil || len(evs) != 0 {
-			t.Fatalf("events %d err %v", len(evs), err)
+		var types []string
+		for _, ev := range events {
+			types = append(types, ev.EventType())
 		}
-		if gets := m.matching(t, func(r logged) bool { return r.Method == "GET" && strings.HasPrefix(r.Path, "/v3/") }); len(gets) != 1 {
-			t.Fatalf("resume requests %d", len(gets))
+		want := "message.started progress.updated tool.started tool.finished text.delta citation.added text.delta message.completed"
+		if strings.Join(types, " ") != want {
+			t.Fatalf("events %v", types)
+		}
+		gets := m.matching(t, func(r logged) bool { return r.Method == "GET" && r.Path == "/v3/conversations/c-w/stream" })
+		if len(gets) != 8 {
+			t.Fatalf("%d requests; want eight: seven reconnects, more than three, because each carried an event", len(gets))
+		}
+		for i, g := range gets[1:] {
+			if g.Headers["last-event-id"] != events[i].EventID() {
+				t.Fatalf("reconnect %d sent Last-Event-ID %q, want %q", i+1, g.Headers["last-event-id"], events[i].EventID())
+			}
+		}
+	},
+	"sse.watch-resends-request": func(t *testing.T, m mock) {
+		m.faults(t, map[string]any{"watchCloses": 1})
+		s, err := client(t, m).Events.Subscribe(context.Background(), &caitlyn.WatchWorkspaceEventsInput{
+			Types: []string{"conversation.created"}, ConversationIDs: []string{"c-11", "c-12"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+		n := 0
+		events, err := take(s, func(caitlyn.WorkspaceEvent) bool { n++; return n == 2 })
+		if err != nil {
+			t.Fatal(err)
+		}
+		reqs := m.matching(t, pathHasSuffix("/v3/events/stream"))
+		if len(reqs) != 2 || reqs[1].Query != reqs[0].Query || !strings.Contains(reqs[1].Query, "type=conversation.created") ||
+			!strings.Contains(reqs[1].Query, "conversationId=c-11") || reqs[1].Headers["last-event-id"] != events[0].EventID() {
+			t.Fatalf("requests %+v", reqs)
+		}
+	},
+	"sse.conversation-reset": func(t *testing.T, m mock) {
+		c := client(t, m)
+		answer, err := collect(send(t, c, context.Background(), "c-r"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		w, err := c.Conversations.Watch(context.Background(), "c-r", &caitlyn.WatchConversationInput{LastEventID: caitlyn.Ptr(answer[len(answer)-1].EventID())})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer w.Close()
+		events, err := take(w, func(ev caitlyn.ConversationEvent) bool { return ev.EventType() == "message.completed" })
+		if err != nil || len(events) < 2 {
+			t.Fatalf("events %d err %v", len(events), err)
+		}
+		reset, ok := events[0].(*caitlyn.StreamReset)
+		if !ok || reset.Cursor != reset.EventID() {
+			t.Fatalf("first event %#v", events[0])
+		}
+		if gets := m.matching(t, func(r logged) bool { return r.Method == "GET" }); len(gets) != 1 {
+			t.Fatalf("%d requests; a reset is not an error and is never retried", len(gets))
 		}
 	},
 	"sse.request-id-and-type": func(t *testing.T, m mock) {
@@ -350,6 +442,166 @@ var protocol = map[string]func(t *testing.T, m mock){
 		resume := m.matching(t, func(r logged) bool { return r.Path == "/v3/conversations/c-2/stream" })
 		if eventName(events[len(events)-1]) != "MessageCompleted" || len(resume) != 1 || resume[0].Headers["last-event-id"] != events[2].EventID() || resume[0].Headers["accept"] != "text/event-stream" {
 			t.Fatalf("events %d resume %+v", len(events), resume)
+		}
+	},
+	"sse.final-ends-watch": func(t *testing.T, m mock) {
+		m.faults(t, map[string]any{"dropAfterEvents": 2})
+		t0 := time.Now()
+		answer, err := send(t, client(t, m), context.Background(), "c-watch").FinalMessage()
+		if err != nil || answer.Text != "Staff receive 20 days of annual leave." {
+			t.Fatalf("answer %+v err %v", answer, err)
+		}
+		if time.Since(t0) > 5*time.Second {
+			t.Fatal("ended when the server closed the watch, not at message.completed")
+		}
+		for i := 0; ; i++ {
+			if len(m.matching(t, func(r logged) bool { return r.Event == "client-disconnected" })) > 0 {
+				break
+			}
+			if i == 100 {
+				t.Fatal("the SDK did not close the watch connection")
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	},
+	"sse.stream-reset": func(t *testing.T, m mock) {
+		s, err := client(t, m).Events.Subscribe(context.Background(), &caitlyn.WatchWorkspaceEventsInput{
+			Types: []string{"conversation.created"}, After: caitlyn.Ptr(staleCursor)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+		n := 0
+		events, err := take(s, func(caitlyn.WorkspaceEvent) bool { n++; return n == 2 }) // a watch carries on until closed
+		if err != nil || len(events) != 2 {
+			t.Fatalf("events %d err %v", len(events), err)
+		}
+		reset, ok := events[0].(*caitlyn.StreamReset)
+		if !ok || reset.EventType() != "stream.reset" || reset.Cursor != resetCursor || reset.EventID() != resetCursor {
+			t.Fatalf("first event %#v", events[0])
+		}
+		created, ok := events[1].(*caitlyn.ConversationCreatedEvent)
+		if !ok || created.Data.AgentID != "GHT7YRWXPL" {
+			t.Fatalf("second event %#v", events[1])
+		}
+		if n := len(m.api(t)); n != 1 {
+			t.Fatalf("%d requests; a reset is not an error and is never retried", n)
+		}
+	},
+	"sse.reconnect-backoff": func(t *testing.T, m mock) {
+		c := client(t, m)
+		if _, err := collect(send(t, c, context.Background(), "c-b")); err != nil {
+			t.Fatal(err)
+		}
+		m.faults(t, map[string]any{"watchEmptyCloses": 4})
+		w, err := c.Conversations.Watch(context.Background(), "c-b", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer w.Close()
+		_, err = collect(w)
+		var e *caitlyn.Error
+		if !errors.As(err, &e) || e.Code != "STREAM_LOST" {
+			t.Fatalf("got %v, want STREAM_LOST", err)
+		}
+		gets := m.matching(t, func(r logged) bool { return r.Method == "GET" })
+		if len(gets) != 4 {
+			t.Fatalf("%d requests; want the first and three reconnects", len(gets))
+		}
+		g1, g2, g3 := gets[1].At-gets[0].At, gets[2].At-gets[1].At, gets[3].At-gets[2].At
+		// The bands (0.25-0.5 s, 0.5-1 s, 1-2 s) do not overlap, so their lower bounds show the pause grows; the upper
+		// bounds, three times each band's top, catch a broken cap.
+		if g1 < 200 || g2 < 450 || g3 < 950 || g1 > 1500 || g2 > 3000 || g3 > 6000 {
+			t.Fatalf("pauses %d, %d, %d ms: want at least 0.25, 0.5 and 1 s, and at most 1.5, 3 and 6 s", g1, g2, g3)
+		}
+	},
+	"sse.reconnect-without-event-id": func(t *testing.T, m mock) {
+		m.faults(t, map[string]any{"watchEmptyCloses": 1})
+		s, err := client(t, m).Events.Subscribe(context.Background(), &caitlyn.WatchWorkspaceEventsInput{
+			Types: []string{"conversation.created"}, After: caitlyn.Ptr(id11)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+		if _, err := take(s, func(caitlyn.WorkspaceEvent) bool { return true }); err != nil {
+			t.Fatal(err)
+		}
+		reqs := m.matching(t, pathHasSuffix("/v3/events/stream"))
+		if len(reqs) < 2 {
+			t.Fatalf("%d requests; want a reconnect", len(reqs))
+		}
+		if _, sent := reqs[1].Headers["last-event-id"]; sent || reqs[1].Query != reqs[0].Query {
+			t.Fatalf("reconnect %+v; want no Last-Event-ID and the same query as %q", reqs[1], reqs[0].Query)
+		}
+	},
+	"sse.reconnect-drops-after": func(t *testing.T, m mock) {
+		m.faults(t, map[string]any{"watchCloses": 1})
+		s, err := client(t, m).Events.Subscribe(context.Background(), &caitlyn.WatchWorkspaceEventsInput{
+			Types: []string{"conversation.created"}, After: caitlyn.Ptr(id11)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+		n := 0
+		events, err := take(s, func(caitlyn.WorkspaceEvent) bool { n++; return n == 2 })
+		if err != nil {
+			t.Fatal(err)
+		}
+		reqs := m.matching(t, pathHasSuffix("/v3/events/stream"))
+		if len(reqs) < 2 || !strings.Contains(reqs[0].Query, "after=") || strings.Contains(reqs[1].Query, "after=") ||
+			!strings.Contains(reqs[1].Query, "type=conversation.created") || reqs[1].Headers["last-event-id"] != events[0].EventID() {
+			t.Fatalf("requests %+v", reqs)
+		}
+	},
+	"sse.duplicate-not-progress": func(t *testing.T, m mock) {
+		c := client(t, m)
+		if _, err := collect(send(t, c, context.Background(), "c-d")); err != nil {
+			t.Fatal(err)
+		}
+		m.faults(t, map[string]any{"watchReplayCloses": 10})
+		w, err := c.Conversations.Watch(context.Background(), "c-d", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer w.Close()
+		events, err := collect(w)
+		var e *caitlyn.Error
+		if !errors.As(err, &e) || e.Code != "STREAM_LOST" || len(events) != 1 {
+			t.Fatalf("events %d err %v; want one event, the duplicates dropped, then STREAM_LOST", len(events), err)
+		}
+		if gets := m.matching(t, func(r logged) bool { return r.Method == "GET" }); len(gets) != 4 {
+			t.Fatalf("%d requests; want the first and three reconnects", len(gets))
+		}
+	},
+	"sse.watch-failed-answer": func(t *testing.T, m mock) {
+		c := client(t, m)
+		m.faults(t, map[string]any{"failStream": true})
+		if _, err := collect(send(t, c, context.Background(), "c-f")); err == nil {
+			t.Fatal("send: want the failure raised")
+		}
+		w, err := c.Conversations.Watch(context.Background(), "c-f", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer w.Close()
+		events, err := take(w, func(ev caitlyn.ConversationEvent) bool { return ev.EventType() == "message.completed" })
+		if err != nil {
+			t.Fatal(err)
+		}
+		failedAt, completedAt := -1, -1
+		for i, ev := range events {
+			if f, ok := ev.(*caitlyn.MessageFailed); ok {
+				if f.Code != "SERVICE_UNAVAILABLE" {
+					t.Fatalf("failed event %+v", f)
+				}
+				failedAt = i
+			}
+			if ev.EventType() == "message.completed" {
+				completedAt = i
+			}
+		}
+		if failedAt < 0 || completedAt < failedAt {
+			t.Fatalf("message.failed at %d, message.completed at %d; want the failure delivered, then the next answer", failedAt, completedAt)
 		}
 	},
 	"sse.clean-end-resumes": func(t *testing.T, m mock) {
@@ -432,11 +684,11 @@ var protocol = map[string]func(t *testing.T, m mock){
 	},
 	"errors.409": func(t *testing.T, m mock) {
 		c := client(t, m)
-		up, err := c.Uploads.Reserve(context.Background(), &caitlyn.CreateUploadInput{FileName: "a.txt", ContentType: "text/plain", ByteSize: 1, SHA256: "x"})
+		up, err := c.Uploads.Reserve(context.Background(), &caitlyn.CreateUploadInput{FileName: "a.pdf", ContentType: "application/pdf", ByteSize: 1, SHA256: "x"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = c.Documents.Create(context.Background(), &caitlyn.CreateDocumentInput{KnowledgeBaseID: kb, UploadID: up.ID, Folder: "hr/"})
+		_, err = c.Documents.Create(context.Background(), &caitlyn.CreateDocumentInput{KnowledgeBaseID: kb, UploadID: up.ID, Folder: "/hr/"})
 		var conflict *caitlyn.ConflictError
 		if !errors.As(err, &conflict) || conflict.Code != "CONFLICT" {
 			t.Fatalf("got %v", err)
@@ -445,10 +697,10 @@ var protocol = map[string]func(t *testing.T, m mock){
 	"errors.412": func(t *testing.T, m mock) {
 		c := client(t, m)
 		d := draft(t, c)
-		if _, err := c.Versions.UpdateDraft(context.Background(), agent, &caitlyn.UpdateDraftVersionInput{Instructions: caitlyn.Ptr("first")}, caitlyn.WithIfMatch(d.ETag)); err != nil {
+		if _, err := c.Agents.Versions.UpdateDraft(context.Background(), agent, &caitlyn.UpdateDraftVersionInput{Instructions: caitlyn.Ptr("first")}, caitlyn.WithIfMatch(d.ETag)); err != nil {
 			t.Fatal(err)
 		}
-		_, err := c.Versions.UpdateDraft(context.Background(), agent, &caitlyn.UpdateDraftVersionInput{Instructions: caitlyn.Ptr("second")}, caitlyn.WithIfMatch(d.ETag))
+		_, err := c.Agents.Versions.UpdateDraft(context.Background(), agent, &caitlyn.UpdateDraftVersionInput{Instructions: caitlyn.Ptr("second")}, caitlyn.WithIfMatch(d.ETag))
 		var pf *caitlyn.PreconditionFailedError
 		if !errors.As(err, &pf) || pf.Code != "PRECONDITION_FAILED" || pf.RequestID == "" {
 			t.Fatalf("got %v", err)
@@ -456,7 +708,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 	},
 	"errors.429-exhausted": func(t *testing.T, m mock) {
 		m.faults(t, status("GetAgentVersion", fault(429, 0), fault(429, 0), fault(429, 0)))
-		_, err := client(t, m).Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+		_, err := client(t, m).Agents.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
 		if e := apiError(t, err); e.Status != 429 || e.Code != "RATE_LIMITED" || e.RetryAfterSeconds == nil || *e.RetryAfterSeconds != 0 || len(m.api(t)) != 3 {
 			t.Fatalf("got %+v", e)
 		}
@@ -471,7 +723,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 	},
 	"errors.empty-405": func(t *testing.T, m mock) {
 		m.faults(t, status("GetAgentVersion", map[string]any{"status": 405, "body": ""}))
-		_, err := client(t, m).Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+		_, err := client(t, m).Agents.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
 		e, ok := err.(*caitlyn.Error)
 		if !ok || e.Status != 405 || e.Code != "HTTP_405" || e.RequestID != "" || e.RawBody != "" {
 			t.Fatalf("got %T %+v", err, err)
@@ -479,7 +731,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 	},
 	"errors.text-502": func(t *testing.T, m mock) {
 		m.faults(t, status("GetAgentVersion", map[string]any{"status": 502, "contentType": "text/plain", "body": "Bad Gateway"}))
-		_, err := client(t, m).Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+		_, err := client(t, m).Agents.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
 		e, ok := err.(*caitlyn.Error)
 		if !ok || e.Status != 502 || e.Code != "HTTP_502" || e.RawBody != "Bad Gateway" || len(m.api(t)) != 1 {
 			t.Fatalf("got %T %+v", err, err)
@@ -496,7 +748,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 	"errors.field-errors": func(t *testing.T, m mock) {
 		c := client(t, m)
 		d := draft(t, c)
-		_, err := c.Versions.UpdateDraft(context.Background(), agent, &caitlyn.UpdateDraftVersionInput{Identity: caitlyn.Ptr("x"), Clear: []caitlyn.ClearableDraftField{"identity"}}, caitlyn.WithIfMatch(d.ETag))
+		_, err := c.Agents.Versions.UpdateDraft(context.Background(), agent, &caitlyn.UpdateDraftVersionInput{Identity: caitlyn.Ptr("x"), Clear: []caitlyn.ClearableDraftField{"identity"}}, caitlyn.WithIfMatch(d.ETag))
 		var ve *caitlyn.ValidationError
 		if !errors.As(err, &ve) || ve.Code != "VALIDATION_FAILED" || len(ve.Errors) != 1 || ve.Errors[0].Pointer != "/identity" || ve.Errors[0].Code != "VALIDATION_FAILED" {
 			t.Fatalf("got %v", err)
@@ -533,7 +785,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 		c := client(t, m)
 		get := func(version string) *caitlyn.NotFoundError {
 			t.Helper()
-			_, err := c.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: version})
+			_, err := c.Agents.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: version})
 			var nf *caitlyn.NotFoundError
 			if !errors.As(err, &nf) {
 				t.Fatalf("got %T %v", err, err)
@@ -556,8 +808,8 @@ var protocol = map[string]func(t *testing.T, m mock){
 		m.faults(t, status("GetAgentVersion", map[string]any{"close": true}))
 		// A transport of its own: net/http resends a GET once by itself when a reused keep-alive connection closes.
 		own := caitlyn.WithHTTPClient(&http.Client{Transport: &http.Transport{}})
-		_, closed := client(t, m, caitlyn.WithMaxAttempts(1), own).Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
-		_, refused := client(t, m, caitlyn.WithMaxAttempts(1), caitlyn.WithEndpoint(refusedEndpoint(t))).Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+		_, closed := client(t, m, caitlyn.WithMaxAttempts(1), own).Agents.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+		_, refused := client(t, m, caitlyn.WithMaxAttempts(1), caitlyn.WithEndpoint(refusedEndpoint(t))).Agents.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
 		for _, err := range []error{closed, refused} {
 			var ce *caitlyn.ConnectionError
 			var ae *caitlyn.Error
@@ -610,7 +862,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 		ctx, cancel := context.WithCancel(context.Background())
 		time.AfterFunc(200*time.Millisecond, cancel)
 		t0 := time.Now()
-		_, err := client(t, m).Versions.Get(ctx, &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+		_, err := client(t, m).Agents.Versions.Get(ctx, &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
 		if !errors.Is(err, context.Canceled) || time.Since(t0) > time.Second {
 			t.Fatalf("err %v after %v", err, time.Since(t0))
 		}
@@ -620,7 +872,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 	"update.if-match": func(t *testing.T, m mock) {
 		c := client(t, m)
 		d := draft(t, c)
-		updated, err := c.Versions.UpdateDraft(context.Background(), agent, &caitlyn.UpdateDraftVersionInput{Instructions: caitlyn.Ptr("x")}, caitlyn.WithIfMatch(d.ETag))
+		updated, err := c.Agents.Versions.UpdateDraft(context.Background(), agent, &caitlyn.UpdateDraftVersionInput{Instructions: caitlyn.Ptr("x")}, caitlyn.WithIfMatch(d.ETag))
 		if err != nil || updated.ETag == d.ETag {
 			t.Fatalf("etag %q err %v", updated.ETag, err)
 		}
@@ -631,7 +883,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 	"update.clear": func(t *testing.T, m mock) {
 		c := client(t, m)
 		d := draft(t, c)
-		updated, err := c.Versions.UpdateDraft(context.Background(), agent, &caitlyn.UpdateDraftVersionInput{Clear: []caitlyn.ClearableDraftField{"identity"}}, caitlyn.WithIfMatch(d.ETag))
+		updated, err := c.Agents.Versions.UpdateDraft(context.Background(), agent, &caitlyn.UpdateDraftVersionInput{Clear: []caitlyn.ClearableDraftField{"identity"}}, caitlyn.WithIfMatch(d.ETag))
 		if err != nil || updated.Configuration.Identity != nil || updated.Configuration.Instructions != "Answer from the HR policies." {
 			t.Fatalf("updated %+v err %v", updated, err)
 		}
@@ -693,7 +945,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 		c := client(t, m)
 		draft(t, c) // no check before the first response
 		before := len(m.api(t))
-		_, err := c.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
+		_, err := c.Agents.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "draft"})
 		var ns *caitlyn.NotSupportedByServerError
 		if !errors.As(err, &ns) || ns.Operation != "GetAgentVersion" || ns.Requires != sdkModel || ns.Server != "5.110.0" || len(m.api(t)) != before {
 			t.Fatalf("got %v", err)
@@ -721,7 +973,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 		exporter := tracetest.NewInMemoryExporter()
 		c := client(t, m, caitlyn.WithTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))))
 		m.faults(t, status("GetAgentVersion", fault(503, 0)))
-		if _, err := c.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "nope"}); err == nil {
+		if _, err := c.Agents.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "nope"}); err == nil {
 			t.Fatal("no error")
 		}
 		if _, err := listAll(context.Background(), c, &caitlyn.ListDocumentsInput{KnowledgeBaseID: kb, Limit: caitlyn.Ptr(int32(100))}); err != nil {
@@ -934,6 +1186,9 @@ type exampleCase struct {
 type labels struct {
 	KnowledgeBaseID string                  `json:"knowledgeBaseId"`
 	ConversationID  string                  `json:"conversationId"`
+	DocumentID      string                  `json:"documentId"`
+	UploadID        string                  `json:"uploadId"`
+	HistoryEntryID  string                  `json:"historyEntryId"`
 	AgentID         string                  `json:"agentId"`
 	Version         string                  `json:"version"`
 	IdempotencyKey  string                  `json:"idempotencyKey"`
@@ -968,18 +1223,40 @@ func (l labels) callOptions() []caitlyn.CallOption {
 	return opts
 }
 
-func drain(s *caitlyn.ConversationEventStream, err error) (any, error) {
+// drain reads a stream's first event, or its error (a watch carries on until it is closed).
+func drain[E, F any](s *core.Stream[E, F], err error) (any, error) {
 	if err != nil {
 		return nil, err
 	}
 	defer s.Close()
-	_, err = collect(s)
-	return nil, err
+	for _, err := range s.Events() {
+		return nil, err
+	}
+	return nil, nil
+}
+
+// take reads events until stop returns true for one, or the stream ends.
+func take[E, F any](s *core.Stream[E, F], stop func(E) bool) ([]E, error) {
+	var evs []E
+	for ev, err := range s.Events() {
+		if err != nil {
+			return evs, err
+		}
+		evs = append(evs, ev)
+		if stop(ev) {
+			break
+		}
+	}
+	return evs, nil
 }
 
 // examples calls each operation with an example's input. A new operation in the model fails TestExamples
 // until it has an entry here.
 var examples = map[string]func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error){
+	"CreateConversation": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
+		l := decode[labels](t, in)
+		return c.Conversations.Create(context.Background(), decode[caitlyn.CreateConversationInput](t, in), l.callOptions()...)
+	},
 	"CreateDocument": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
 		l, body := decode[labels](t, in), decode[caitlyn.CreateDocumentInput](t, in)
 		body.KnowledgeBaseID = l.KnowledgeBaseID
@@ -991,7 +1268,62 @@ var examples = map[string]func(t *testing.T, c *caitlyn.Client, in json.RawMessa
 	},
 	"GetAgentVersion": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
 		l := decode[labels](t, in)
-		return c.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: l.AgentID, Version: l.Version})
+		return c.Agents.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: l.AgentID, Version: l.Version})
+	},
+	"BatchDeleteDocuments": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
+		l, body := decode[labels](t, in), decode[caitlyn.BatchDeleteDocumentsInput](t, in)
+		body.KnowledgeBaseID = l.KnowledgeBaseID
+		return c.Documents.BatchDelete(context.Background(), body, l.callOptions()...)
+	},
+	"DeleteDocument": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
+		l := decode[labels](t, in)
+		return c.Documents.Delete(context.Background(), &caitlyn.DeleteDocumentInput{KnowledgeBaseID: l.KnowledgeBaseID, DocumentID: l.DocumentID}, l.callOptions()...)
+	},
+	"DeleteAgentVersion": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
+		l := decode[labels](t, in)
+		return c.Agents.Versions.Delete(context.Background(), &caitlyn.DeleteAgentVersionInput{AgentID: l.AgentID, Version: l.Version}, l.callOptions()...)
+	},
+	"GetDocument": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
+		l := decode[labels](t, in)
+		return c.Documents.Get(context.Background(), &caitlyn.GetDocumentInput{KnowledgeBaseID: l.KnowledgeBaseID, DocumentID: l.DocumentID})
+	},
+	"GetProductionHistoryEntry": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
+		l := decode[labels](t, in)
+		return c.Agents.ProductionHistory.Get(context.Background(), &caitlyn.GetProductionHistoryEntryInput{AgentID: l.AgentID, HistoryEntryID: l.HistoryEntryID})
+	},
+	"GetUpload": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
+		l := decode[labels](t, in)
+		return c.Uploads.Get(context.Background(), &caitlyn.GetUploadInput{UploadID: l.UploadID})
+	},
+	"ListAgentVersions": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
+		l := decode[labels](t, in)
+		for page, err := range c.Agents.Versions.ListPages(context.Background(), &caitlyn.ListAgentVersionsInput{AgentID: l.AgentID, Limit: l.Limit, Cursor: l.Cursor}) {
+			return page, err // the example is one page
+		}
+		return nil, nil
+	},
+	"ListProductionHistoryEntries": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
+		l := decode[labels](t, in)
+		for page, err := range c.Agents.ProductionHistory.ListPages(context.Background(), &caitlyn.ListProductionHistoryEntriesInput{AgentID: l.AgentID, Limit: l.Limit, Cursor: l.Cursor}) {
+			return page, err // the example is one page
+		}
+		return nil, nil
+	},
+	"PinDraftVersion": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
+		l := decode[labels](t, in)
+		return c.Agents.Versions.Pin(context.Background(), l.AgentID, decode[caitlyn.PinDraftVersionInput](t, in), l.callOptions()...)
+	},
+	"PublishAgentVersion": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
+		l, body := decode[labels](t, in), decode[caitlyn.PublishAgentVersionInput](t, in)
+		body.AgentID, body.Version = l.AgentID, l.Version
+		return c.Agents.Versions.Publish(context.Background(), body, l.callOptions()...)
+	},
+	"ResetDraftVersion": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
+		l := decode[labels](t, in)
+		return c.Agents.Versions.ResetDraft(context.Background(), l.AgentID, decode[caitlyn.ResetDraftVersionInput](t, in), l.callOptions()...)
+	},
+	"GetCaller": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
+		return c.Callers.Get(context.Background(), nil)
 	},
 	"ListDocuments": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
 		l := decode[labels](t, in)
@@ -1002,9 +1334,9 @@ var examples = map[string]func(t *testing.T, c *caitlyn.Client, in json.RawMessa
 		}
 		return nil, nil
 	},
-	"ResumeConversationStream": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
+	"WatchConversation": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
 		l := decode[labels](t, in)
-		return drain(c.Conversations.Resume(context.Background(), l.ConversationID, &caitlyn.ResumeConversationStreamInput{LastEventID: l.LastEventID}))
+		return drain(c.Conversations.Watch(context.Background(), l.ConversationID, &caitlyn.WatchConversationInput{LastEventID: l.LastEventID}))
 	},
 	"SendMessage": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
 		l := decode[labels](t, in)
@@ -1012,7 +1344,17 @@ var examples = map[string]func(t *testing.T, c *caitlyn.Client, in json.RawMessa
 	},
 	"UpdateDraftVersion": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
 		l := decode[labels](t, in)
-		return c.Versions.UpdateDraft(context.Background(), l.AgentID, decode[caitlyn.UpdateDraftVersionInput](t, in), l.callOptions()...)
+		return c.Agents.Versions.UpdateDraft(context.Background(), l.AgentID, decode[caitlyn.UpdateDraftVersionInput](t, in), l.callOptions()...)
+	},
+	"WatchWorkspaceEvents": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
+		l := decode[struct {
+			Types           []string `json:"types"`
+			ConversationIDs []string `json:"conversationIds"`
+			After           *string  `json:"after"`
+			LastEventID     *string  `json:"lastEventId"`
+		}](t, in)
+		return drain(c.Events.Subscribe(context.Background(), &caitlyn.WatchWorkspaceEventsInput{
+			Types: l.Types, ConversationIDs: l.ConversationIDs, After: l.After, LastEventID: l.LastEventID}))
 	},
 }
 
@@ -1130,7 +1472,7 @@ func TestExamples(t *testing.T) {
 // TestGoTypedErrorAlsoMatchesError: errors.As works with the typed error and with *caitlyn.Error.
 func TestGoTypedErrorAlsoMatchesError(t *testing.T) {
 	m := fresh(t)
-	_, err := client(t, m).Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "v99"})
+	_, err := client(t, m).Agents.Versions.Get(context.Background(), &caitlyn.GetAgentVersionInput{AgentID: agent, Version: "v99"})
 	var nf *caitlyn.NotFoundError
 	var e *caitlyn.Error
 	if !errors.As(err, &nf) || !errors.As(err, &e) || e.Status != 404 {
@@ -1154,7 +1496,7 @@ func TestGoFinalMessageAfterBreak(t *testing.T) {
 // TestGoIfMatchRequiredBeforeSending: an update without WithIfMatch fails before anything is sent.
 func TestGoIfMatchRequiredBeforeSending(t *testing.T) {
 	m := fresh(t)
-	_, err := client(t, m).Versions.UpdateDraft(context.Background(), agent, &caitlyn.UpdateDraftVersionInput{Instructions: caitlyn.Ptr("x")})
+	_, err := client(t, m).Agents.Versions.UpdateDraft(context.Background(), agent, &caitlyn.UpdateDraftVersionInput{Instructions: caitlyn.Ptr("x")})
 	var ie *caitlyn.InputError
 	if !errors.As(err, &ie) || len(m.api(t)) != 0 {
 		t.Fatalf("got %v", err)

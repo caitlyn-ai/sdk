@@ -19,6 +19,7 @@ from ._models import CaitlynEvent, CaitlynModel, CaitlynResult, FieldError, Open
 from ._pagination import AsyncPaginator, Paginator
 from ._retry import RetryPolicy
 from ._spec import Member, OperationSpec
+from ._waiter import WaiterError, WaitState, wait_async, wait_sync
 from ._uploads import UploadFile, read_upload
 
 __version__ = "0.7.0"
@@ -53,6 +54,10 @@ __all__ = [
     "SyncAuthSession",
     "SyncClientCore",
     "UploadFile",
+    "WaitState",
+    "WaiterError",
     "read_upload",
+    "wait_async",
+    "wait_sync",
     "workspace_endpoint",
 ]

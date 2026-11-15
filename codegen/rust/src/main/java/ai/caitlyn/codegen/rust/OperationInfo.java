@@ -43,9 +43,15 @@ final class OperationInfo {
 
     final OperationShape op;
     final String name;
-    /** The accessor on Client, for example documents; and its type, DocumentsClient. */
+    /**
+     * The namespace's module and key, for example documents or agents_versions; its client type, DocumentsClient or
+     * AgentsVersionsClient; its path of accessors, outermost first ([agents, versions]); and the call that reaches it
+     * from a Client, agents().versions() (PROTOCOL.md 10).
+     */
     final String namespace;
     final String namespaceType;
+    final List<String> path;
+    final String call;
     /** The method name, for example list or update_draft. */
     final String method;
     final Kind kind;
@@ -83,8 +89,10 @@ final class OperationInfo {
         // Naming, shared with the TypeScript and Python generators (model-support's ClientMethod).
         ClientMethod cm = ClientMethod.of(model, op);
         String positionalMember = cm.positionalMember().orElse(null);
-        this.namespace = Names.snake(cm.namespace());
-        this.namespaceType = Names.pascal(cm.namespace()) + "Client";
+        this.path = cm.path().stream().map(Names::snake).toList();
+        this.namespace = String.join("_", path);
+        this.namespaceType = typeOf(cm.path());
+        this.call = String.join("().", path) + "()";
         this.method = Names.snake(cm.method());
 
         Map<String, HttpBinding> bindings = HttpBindingIndex.of(model).getRequestBindings(op);
@@ -119,6 +127,13 @@ final class OperationInfo {
     }
 
     /** The positional identifier, as a Rust parameter name. */
+    /** The client type of a namespace path: [agents, versions] is AgentsVersionsClient. */
+    static String typeOf(List<String> segments) {
+        StringBuilder t = new StringBuilder();
+        segments.forEach(seg -> t.append(Names.pascal(seg)));
+        return t + "Client";
+    }
+
     Optional<String> positionalParam() {
         return positional.map(p -> Names.snake(p.member().getMemberName()));
     }

@@ -26,24 +26,50 @@ export class Caitlyn {
     this.client = createCaitlynClient(options, this.auth);
   }
 
+  readonly agents = {
+    productionHistory: {
+      get: (...args: Rest<typeof ops.getProductionHistoryEntry>) => ops.getProductionHistoryEntry(this.client, ...args),
+      list: (...args: Rest<typeof ops.listProductionHistoryEntries>) => ops.listProductionHistoryEntries(this.client, ...args),
+    },
+    versions: {
+      delete: (...args: Rest<typeof ops.deleteAgentVersion>) => ops.deleteAgentVersion(this.client, ...args),
+      get: (...args: Rest<typeof ops.getAgentVersion>) => ops.getAgentVersion(this.client, ...args),
+      list: (...args: Rest<typeof ops.listAgentVersions>) => ops.listAgentVersions(this.client, ...args),
+      pin: (...args: Rest<typeof ops.pinDraftVersion>) => ops.pinDraftVersion(this.client, ...args),
+      publish: (...args: Rest<typeof ops.publishAgentVersion>) => ops.publishAgentVersion(this.client, ...args),
+      resetDraft: (...args: Rest<typeof ops.resetDraftVersion>) => ops.resetDraftVersion(this.client, ...args),
+      updateDraft: (...args: Rest<typeof ops.updateDraftVersion>) => ops.updateDraftVersion(this.client, ...args),
+    },
+  };
+
+  readonly callers = {
+    get: (...args: Rest<typeof ops.getCaller>) => ops.getCaller(this.client, ...args),
+  };
+
   readonly conversations = {
-    resume: (...args: Rest<typeof ops.resumeConversationStream>) => ops.resumeConversationStream(this.client, ...args),
+    create: (...args: Rest<typeof ops.createConversation>) => ops.createConversation(this.client, ...args),
     send: (...args: Rest<typeof ops.sendMessage>) => ops.sendMessage(this.client, ...args),
+    watch: (...args: Rest<typeof ops.watchConversation>) => ops.watchConversation(this.client, ...args),
   };
 
   readonly documents = {
+    batchDelete: (...args: Rest<typeof ops.batchDeleteDocuments>) => ops.batchDeleteDocuments(this.client, ...args),
     create: (...args: Rest<typeof ops.createDocument>) => ops.createDocument(this.client, ...args),
+    delete: (...args: Rest<typeof ops.deleteDocument>) => ops.deleteDocument(this.client, ...args),
+    get: (...args: Rest<typeof ops.getDocument>) => ops.getDocument(this.client, ...args),
     list: (...args: Rest<typeof ops.listDocuments>) => ops.listDocuments(this.client, ...args),
     upload: (...args: Rest<typeof ops.uploadDocument>) => ops.uploadDocument(this.client, ...args),
+    waitUntilDeleted: (...args: Rest<typeof ops.waitUntilDeleted>) => ops.waitUntilDeleted(this.client, ...args),
+    waitUntilIndexed: (...args: Rest<typeof ops.waitUntilIndexed>) => ops.waitUntilIndexed(this.client, ...args),
+  };
+
+  readonly events = {
+    subscribe: (...args: Rest<typeof ops.watchWorkspaceEvents>) => ops.watchWorkspaceEvents(this.client, ...args),
   };
 
   readonly uploads = {
     create: (...args: Rest<typeof ops.createUploadFromFile>) => ops.createUploadFromFile(this.client, ...args),
+    get: (...args: Rest<typeof ops.getUpload>) => ops.getUpload(this.client, ...args),
     reserve: (...args: Rest<typeof ops.createUpload>) => ops.createUpload(this.client, ...args),
-  };
-
-  readonly versions = {
-    get: (...args: Rest<typeof ops.getAgentVersion>) => ops.getAgentVersion(this.client, ...args),
-    updateDraft: (...args: Rest<typeof ops.updateDraftVersion>) => ops.updateDraftVersion(this.client, ...args),
   };
 }

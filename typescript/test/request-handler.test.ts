@@ -17,7 +17,7 @@ test('requestHandler: API calls go through the handler the client was given', as
     },
   };
   const c = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 'cait-pat-test' }, requestHandler: handler });
-  const v = await c.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+  const v = await c.agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
   assert.equal(v.name, 'draft');
   assert.equal(v.requestId, 'R1');
   assert.deepEqual(seen, ['GET https://your-company.getcaitlyn.ai/api/v3/agents/GHT7YRWXPL/versions/draft']);
@@ -32,7 +32,7 @@ test('requestHandler: the default fetch handler takes customFetch, which Node cl
     return new Response(JSON.stringify(VERSION), { status: 200, headers: { 'content-type': 'application/json', 'caitlyn-request-id': 'R2' } });
   };
   const c = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 'cait-pat-test' }, requestHandler: { customFetch } as never });
-  const v = await c.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
+  const v = await c.agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
   assert.equal(v.requestId, 'R2');
   assert.deepEqual(seen, ['GET https://your-company.getcaitlyn.ai/api/v3/agents/GHT7YRWXPL/versions/draft Bearer cait-pat-test']);
 });

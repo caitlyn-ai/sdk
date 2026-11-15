@@ -160,7 +160,7 @@ final class CaitlynGoCodegen implements DirectedCodegen<GoContext, GoSettings, G
                 w.l("func (v *" + name + ") ResponseMetadata() core.ResponseMetadata { return v.metadata }\n\n");
             }
             if (!unions.isEmpty()) {
-                w.l("// EventID returns the event's SSE id.\n");
+                w.l("// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.\n");
                 w.l("func (v *" + name + ") EventID() string { return v.eventID }\n\n");
                 java.util.Set<String> names = new java.util.TreeSet<>();
                 for (ShapeId u : unions) {
@@ -279,26 +279,26 @@ final class CaitlynGoCodegen implements DirectedCodegen<GoContext, GoSettings, G
             throw new CodegenException(shape.getId() + ": unions outside @sseEvents are not supported yet");
         }
         String name = Names.exported(shape.getId().getName());
-        List<MemberShape> events = shape.getAllMembers().values().stream()
-                .filter(m -> !facts.sseErrorTargets.contains(m.getTarget())).toList();
+        List<MemberShape> events = List.copyOf(shape.getAllMembers().values());
         ctx.writerDelegator().useFileWriter("types.go", "", w -> {
             w.imp("encoding/json").imp(ctx.settings().coreModule());
             List<String> types = events.stream().map(m -> "*" + ctx.symbolProvider().toSymbol(ctx.model().expectShape(m.getTarget())).getName()).toList();
             w.l(Names.doc(name, doc(shape), false, ""));
             w.l("//\n");
             w.l(Names.comment(name + " is one of" + String.join(", ", types) + ". Switch on its type; event names this "
-                    + "SDK does not know are skipped, and an error event ends the stream with a typed error.", ""));
+                    + "SDK does not know are skipped. On a stream with a final event, an error event ends the stream with a "
+                    + "typed error instead; on a watch it is delivered like any other.", ""));
             w.l("//\n//\tswitch e := ev.(type) {\n//\tcase " + types.get(0) + ":\n//\t\t…\n//\t}\n");
             w.l("type " + name + " interface {\n\t// EventID returns the event's SSE id.\n\tEventID() string\n"
                     + "\t// EventType returns the event's SSE event name, for example \"text.delta\".\n\tEventType() string\n\tis" + name + "()\n}\n\n");
-            w.l("// decode" + name + " decodes one SSE event; ok is false for an event name this SDK does not know.\n");
-            w.l("func decode" + name + "(errorFor core.ErrorFor) func(name, id string, data []byte) (" + name + ", bool, error) {\n");
+            w.l("// decode" + name + " decodes one SSE event; ok is false for an event name this SDK does not know. With raise,\n"
+                    + "// an error event is returned as its typed error (a stream with a final event, PROTOCOL.md 5.5).\n");
+            w.l("func decode" + name + "(errorFor core.ErrorFor, raise bool) func(name, id string, data []byte) (" + name + ", bool, error) {\n");
             w.l("\treturn func(name, id string, data []byte) (" + name + ", bool, error) {\n\t\tswitch name {\n");
             for (MemberShape m : shape.getAllMembers().values()) {
                 w.l("\t\tcase " + Names.str(ModelFacts.wireName(m)) + ":\n");
                 if (facts.sseErrorTargets.contains(m.getTarget())) {
-                    w.l("\t\t\treturn nil, false, core.ProblemFromEvent(data, errorFor)\n");
-                    continue;
+                    w.l("\t\t\tif raise {\n\t\t\t\treturn nil, false, core.ProblemFromEvent(data, errorFor)\n\t\t\t}\n");
                 }
                 String t = ctx.symbolProvider().toSymbol(ctx.model().expectShape(m.getTarget())).getName();
                 w.l("\t\t\tv := &" + t + "{eventID: id}\n\t\t\tif err := json.Unmarshal(data, v); err != nil {\n"

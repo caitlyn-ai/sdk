@@ -8,7 +8,7 @@ use crate::error::Error;
 
 /// The Caitlyn API client. Create one with [`Client::new`] or [`Client::builder`] and share it: clones
 /// are cheap and share the token cache. Operations are grouped by resource, for example
-/// `client.conversations().resume(…)`.
+/// `client.agents().production_history().get(…)`.
 #[derive(Clone, Debug)]
 pub struct Client {
     pub(crate) core: rt::Client,
@@ -54,6 +54,16 @@ impl Client {
         self.core.server_version()
     }
 
+    /// The agents operations.
+    pub fn agents(&self) -> AgentsClient {
+        AgentsClient { core: self.core.clone() }
+    }
+
+    /// The callers operations.
+    pub fn callers(&self) -> CallersClient {
+        CallersClient { core: self.core.clone() }
+    }
+
     /// The conversations operations.
     pub fn conversations(&self) -> ConversationsClient {
         ConversationsClient { core: self.core.clone() }
@@ -64,14 +74,14 @@ impl Client {
         DocumentsClient { core: self.core.clone() }
     }
 
+    /// The events operations.
+    pub fn events(&self) -> EventsClient {
+        EventsClient { core: self.core.clone() }
+    }
+
     /// The uploads operations.
     pub fn uploads(&self) -> UploadsClient {
         UploadsClient { core: self.core.clone() }
-    }
-
-    /// The versions operations.
-    pub fn versions(&self) -> VersionsClient {
-        VersionsClient { core: self.core.clone() }
     }
 }
 
@@ -121,26 +131,62 @@ impl ClientBuilder {
     }
 }
 
-/// The conversations operations (`resume`, `send`). Get one with `client.conversations()`.
+/// The agents operations (`production_history()`, `versions()`). Get one with `client.agents()`.
+#[derive(Clone, Debug)]
+pub struct AgentsClient {
+    pub(crate) core: rt::Client,
+}
+
+impl AgentsClient {
+    /// The agents.production_history operations.
+    pub fn production_history(&self) -> AgentsProductionHistoryClient {
+        AgentsProductionHistoryClient { core: self.core.clone() }
+    }
+
+    /// The agents.versions operations.
+    pub fn versions(&self) -> AgentsVersionsClient {
+        AgentsVersionsClient { core: self.core.clone() }
+    }
+}
+
+/// The agents.production_history operations (`get`, `list`). Get one with `client.agents().production_history()`.
+#[derive(Clone, Debug)]
+pub struct AgentsProductionHistoryClient {
+    pub(crate) core: rt::Client,
+}
+
+/// The agents.versions operations (`delete`, `get`, `list`, `pin`, `publish`, `reset_draft`, `update_draft`). Get one with `client.agents().versions()`.
+#[derive(Clone, Debug)]
+pub struct AgentsVersionsClient {
+    pub(crate) core: rt::Client,
+}
+
+/// The callers operations (`get`). Get one with `client.callers()`.
+#[derive(Clone, Debug)]
+pub struct CallersClient {
+    pub(crate) core: rt::Client,
+}
+
+/// The conversations operations (`create`, `send`, `watch`). Get one with `client.conversations()`.
 #[derive(Clone, Debug)]
 pub struct ConversationsClient {
     pub(crate) core: rt::Client,
 }
 
-/// The documents operations (`create`, `list`). Get one with `client.documents()`.
+/// The documents operations (`batch_delete`, `create`, `delete`, `get`, `list`). Get one with `client.documents()`.
 #[derive(Clone, Debug)]
 pub struct DocumentsClient {
     pub(crate) core: rt::Client,
 }
 
-/// The uploads operations (`reserve`). Get one with `client.uploads()`.
+/// The events operations (`subscribe`). Get one with `client.events()`.
 #[derive(Clone, Debug)]
-pub struct UploadsClient {
+pub struct EventsClient {
     pub(crate) core: rt::Client,
 }
 
-/// The versions operations (`get`, `update_draft`). Get one with `client.versions()`.
+/// The uploads operations (`reserve`, `get`). Get one with `client.uploads()`.
 #[derive(Clone, Debug)]
-pub struct VersionsClient {
+pub struct UploadsClient {
     pub(crate) core: rt::Client,
 }

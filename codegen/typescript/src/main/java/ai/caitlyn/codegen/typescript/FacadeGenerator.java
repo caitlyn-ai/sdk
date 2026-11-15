@@ -19,6 +19,7 @@ import software.amazon.smithy.model.knowledge.PaginatedIndex;
 import software.amazon.smithy.model.knowledge.PaginationInfo;
 import software.amazon.smithy.model.knowledge.TopDownIndex;
 import software.amazon.smithy.model.neighbor.Walker;
+import software.amazon.smithy.model.node.Node;
 import software.amazon.smithy.model.node.ObjectNode;
 import software.amazon.smithy.model.shapes.EnumShape;
 import software.amazon.smithy.model.shapes.ListShape;
@@ -74,6 +75,15 @@ final class FacadeGenerator {
     private final SseEvents sseEvents;
 
     private record Method(String namespace, String name, String positional, ResourceShape resource) {}
+
+    /** smithy.waiters#waitable: an operation's waiters, by name. */
+    private static final ShapeId WAITABLE = ShapeId.from("smithy.waiters#waitable");
+
+    /** The waiter functions of an operation's waiters, in waiter-name order: Indexed gives waitUntilIndexed. */
+    private static List<String> waiterFunctions(OperationShape op) {
+        return op.findTrait(WAITABLE).map(t -> new TreeMap<>(t.toNode().expectObjectNode().getStringMap()).keySet().stream()
+            .map(name -> "waitUntil" + name).toList()).orElse(List.of());
+    }
 
     FacadeGenerator(TypeScriptCodegenContext context) {
         this.context = context;
@@ -264,6 +274,7 @@ final class FacadeGenerator {
 
         PaginatedIndex paginated = PaginatedIndex.of(model);
         OperationShape presigned = null;
+        Set<String> waiterImports = new TreeSet<>(); // error classes the waiters match that ERROR_CLASSES does not import
         for (OperationShape op : methods.keySet()) {
             String opName = op.getId().getName();
             String fn = lowerCamel(opName);
@@ -327,8 +338,20 @@ final class FacadeGenerator {
                                 : rm.getMemberName() + ": (input as Record<string, string>)." + rm.getMemberName());
                         }
                     }
-                    resume = "(lastEventId) =>\n      client.send(new " + r.getId().getName() + "Command({ "
-                        + String.join(", ", fields) + " }), { abortSignal: signal })";
+                    // A watch resumes itself: the same request again (what it listens to included), from the last event.
+                    String lastMember = input(r).getAllMembers().values().stream()
+                        .filter(rm -> rm.getTrait(HttpHeaderTrait.class).map(h -> h.getValue().equalsIgnoreCase("Last-Event-ID")).orElse(false))
+                        .map(MemberShape::getMemberName).findFirst().orElse("lastEventId");
+                    // Once Last-Event-ID carries the position, a cursor the watch started from (`after`) is left out
+                    // (PROTOCOL.md 5.6); before any event, the request goes as it was, with no Last-Event-ID.
+                    boolean hasAfter = input(r).getMember("after").isPresent();
+                    String resumeInput = r.getId().equals(op.getId())
+                        ? commandInput.substring(0, commandInput.length() - 2)
+                            + (hasAfter ? ", ...(lastEventId === undefined ? {} : { after: undefined })" : "")
+                            + ", " + lastMember + ": lastEventId }"
+                        : "{ " + String.join(", ", fields) + " }";
+                    resume = "(lastEventId) =>\n      client.send(new " + r.getId().getName() + "Command(" + resumeInput
+                        + "), { abortSignal: signal })";
                 }
                 body.append("export function ").append(fn).append("(client: CaitlynClient, ").append(positionalParam)
                     .append("input: ").append(inputType).append(", ").append(optionsParam)
@@ -366,6 +389,12 @@ final class FacadeGenerator {
                     .append("  const { signal, ...rest } = options;\n")
                     .append("  return client.send(new ").append(opName).append("Command(").append(commandInput)
                     .append("), { abortSignal: signal }) as Promise<WithRaw<").append(out).append(" & __MetadataBearer>>;\n}\n\n");
+                if (op.hasTrait(WAITABLE)) {
+                    waiters(body, op, fn, positionalParam, m.positional(), inputType, out, byStatus, waiterImports);
+                }
+            }
+            if (op.hasTrait(WAITABLE) && (sse.isPresent() || page.isPresent())) {
+                throw new CodegenException(op.getId() + ": waiters on list or stream operations are not supported yet");
             }
             if (op.hasTrait(PRESIGNED_UPLOAD)) presigned = op;
         }
@@ -397,6 +426,12 @@ final class FacadeGenerator {
         }
 
         imports.add("import type { " + String.join(", ", modelTypes) + " } from \"../models/models_0\";\n");
+        if (methods.keySet().stream().anyMatch(o -> o.hasTrait(WAITABLE))) {
+            imports.add("import { waitUntil, type WaiterOptions, type WaiterState } from \"@caitlyn-ai/sdk-core\";\n");
+        }
+        if (!waiterImports.isEmpty()) {
+            imports.add("import { " + String.join(", ", waiterImports) + " } from \"../models/errors\";\n");
+        }
         if (!eventTypes.isEmpty()) {
             List<String> values = eventTypes.stream().filter(t -> t.endsWith("Names")).toList();
             List<String> types = eventTypes.stream().filter(t -> !t.endsWith("Names")).toList();
@@ -408,17 +443,143 @@ final class FacadeGenerator {
 
     // ------------------------------------------------------------------ client.ts and index.ts
 
+    /**
+     * The waiters of an operation (smithy.waiters#waitable, PROTOCOL.md 10.1): waitUntil<Name>(), which polls the
+     * operation through sdk-core's waitUntil with the waiter's delays and its default limit (its @waitLimits entry,
+     * or five minutes). The acceptors are those the Go SDK supports: success, errorType, and an output path (field
+     * chains with at most one [] projection) compared with stringEquals or booleanEquals, or allStringEquals or
+     * anyStringEquals on a projection. Paths and error types are checked against the model, so a wrong one fails
+     * generation, not a wait.
+     */
+    private void waiters(StringBuilder body, OperationShape op, String fn, String positionalParam, String positional,
+                         String inputType, String out, Map<Integer, String> byStatus, Set<String> waiterImports) {
+        StructureShape output = model.expectShape(op.getOutputShape(), StructureShape.class);
+        Map<String, Node> waiters = new TreeMap<>(op.findTrait(WAITABLE).orElseThrow().toNode().expectObjectNode().getStringMap());
+        for (Map.Entry<String, Node> e : waiters.entrySet()) {
+            String name = e.getKey();
+            ObjectNode waiter = e.getValue().expectObjectNode();
+            int min = waiter.getNumberMemberOrDefault("minDelay", 2).intValue();
+            int max = waiter.getNumberMemberOrDefault("maxDelay", 120).intValue();
+            int limit = ai.caitlyn.codegen.model.CaitlynTraits.waitLimitSeconds(op, name);
+            String text = waiter.getStringMemberOrDefault("documentation", "Waits for " + name + ".");
+            String accept = "accept" + name;
+            String readArgs = "client, " + (positional != null ? positional + ", " : "") + "input, { signal }";
+            // A waiter that succeeds only on an error (Deleted, on NotFoundError) has no output to return; one that mixes
+            // output and error successes is refused (PROTOCOL.md 10.1).
+            boolean onError = ai.caitlyn.codegen.model.Waiters.succeedsOnError(op.getId(), name, waiter);
+            String returns = onError ? "Promise<void>" : "Promise<WithRaw<" + out + " & __MetadataBearer>>";
+            String call = "waitUntil(\"waitUntil" + name + "\", (signal) => " + fn + "(" + readArgs + "), " + accept
+                + ", { minDelayMs: " + (min * 1000) + ", maxDelayMs: " + (max * 1000) + ", ...options }, " + ((long) limit * 1000) + ")";
+            body.append("/** ").append(text.replace("*/", "*\\/").replace("\n", "\n * ")).append("\n *\n * It reads ")
+                .append(op.getId().getName()).append(" at once, then every ").append(min).append(" to ").append(max)
+                .append(onError
+                    ? " seconds, until a success state (it returns nothing: the error it waits for is the success), a failure\n * state, or an error the waiter"
+                    : " seconds, until a success state (it returns that output), a failure state, or an error the waiter")
+                .append(onError ? " " : "\n * ").append("does not expect (a WaiterError). It waits at most ").append(limit)
+                .append(" seconds unless `maxWaitMs` says otherwise; `signal` cancels it. */\n")
+                .append("export ").append(onError ? "async " : "").append("function waitUntil").append(name).append("(client: CaitlynClient, ")
+                .append(positionalParam).append("input: ").append(inputType).append(", options: WaiterOptions = {}): ").append(returns).append(" {\n")
+                .append(onError ? "  await " + call + ";\n}\n\n" : "  return " + call + ";\n}\n\n");
+
+            StringBuilder acc = new StringBuilder("const ").append(accept).append(" = ({ output, error }: { output?: ").append(out)
+                .append("; error?: unknown }): WaiterState | undefined => {\n");
+            for (Node a : waiter.expectArrayMember("acceptors").getElements()) {
+                ObjectNode acceptor = a.expectObjectNode();
+                String state = acceptor.expectStringMember("state").getValue();
+                if (!List.of("success", "failure", "retry").contains(state)) throw new CodegenException(op.getId() + ": unknown waiter state " + state);
+                ObjectNode matcher = acceptor.expectObjectMember("matcher");
+                String cond;
+                if (matcher.getBooleanMember("success").isPresent()) {
+                    cond = matcher.expectBooleanMember("success").getValue() ? "output !== undefined" : "error !== undefined";
+                } else if (matcher.getStringMember("errorType").isPresent()) {
+                    String type = matcher.expectStringMember("errorType").getValue();
+                    boolean declared = java.util.stream.Stream.concat(op.getErrorsSet().stream(), service.getErrorsSet().stream())
+                        .anyMatch(id -> id.getName().equals(type));
+                    if (!declared) throw new CodegenException(op.getId() + ": waiter errorType " + type + " is not an error of the operation");
+                    if (!byStatus.containsValue(type)) waiterImports.add(type);
+                    cond = "error instanceof " + type;
+                } else if (matcher.getObjectMember("output").isPresent()) {
+                    ObjectNode o = matcher.expectObjectMember("output");
+                    cond = "output !== undefined && " + pathCondition(op, output, o.expectStringMember("path").getValue(),
+                        o.expectStringMember("comparator").getValue(), o.expectStringMember("expected").getValue());
+                } else {
+                    throw new CodegenException(op.getId() + ": only success, errorType and output waiter matchers are supported yet");
+                }
+                acc.append("  if (").append(cond).append(") return \"").append(state).append("\";\n");
+            }
+            // PROTOCOL.md 10.1: an output no acceptor matches polls again; an error no acceptor matches ends the wait.
+            acc.append("  return error === undefined ? \"retry\" : undefined;\n};\n\n");
+            body.append(acc);
+        }
+    }
+
+    /** A waiter's output path as a TypeScript condition on `output`, checked against the model. */
+    private String pathCondition(OperationShape op, StructureShape root, String path, String comparator, String expected) {
+        if (!path.matches("[A-Za-z0-9_]+(\\[\\])?(\\.[A-Za-z0-9_]+(\\[\\])?)*") || path.chars().filter(ch -> ch == '[').count() > 1) {
+            throw new CodegenException(op.getId() + ": waiter path " + path + " uses JMESPath beyond field chains and one [] projection");
+        }
+        Shape current = root;
+        String before = "output";   // the expression up to the projection
+        String after = "";          // the expression inside the projection, from its item `item`
+        boolean projected = false;
+        for (String raw : path.split("\\.")) {
+            boolean flatten = raw.endsWith("[]");
+            String seg = flatten ? raw.substring(0, raw.length() - 2) : raw;
+            if (!(current instanceof StructureShape st)) throw new CodegenException(op.getId() + ": waiter path " + path + " walks into a non-structure");
+            MemberShape m = st.getMember(seg).orElseThrow(() -> new CodegenException(op.getId() + ": waiter path " + path + ": no member " + seg));
+            String key = m.getMemberName();
+            // `output` itself is checked first (output !== undefined), so only the members after it may be absent.
+            if (projected) after += "?." + key; else before += (before.equals("output") ? "." : "?.") + key;
+            current = model.expectShape(m.getTarget());
+            if (flatten) {
+                if (!(current instanceof ListShape list)) throw new CodegenException(op.getId() + ": waiter path " + path + ": [] on a non-list");
+                current = model.expectShape(list.getMember().getTarget());
+                projected = true;
+            }
+        }
+        if (!(current.isStringShape() || current.isEnumShape() || current.isBooleanShape())) {
+            throw new CodegenException(op.getId() + ": waiter path " + path + " ends on " + current.getType());
+        }
+        String value = current.isBooleanShape() ? expected : "\"" + expected.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+        if (current.isBooleanShape() && !expected.equals("true") && !expected.equals("false")) {
+            throw new CodegenException(op.getId() + ": waiter path " + path + " expects " + expected + ", not a boolean");
+        }
+        if (projected) {
+            String values = "(" + before + " ?? []).map((item) => item" + after + ")";
+            return switch (comparator) {
+                case "anyStringEquals" -> values + ".some((v) => v === " + value + ")";
+                case "allStringEquals" -> "((vs) => vs.length > 0 && vs.every((v) => v === " + value + "))(" + values + ")";
+                default -> throw new CodegenException(op.getId() + ": comparator " + comparator + " on a projection");
+            };
+        }
+        return switch (comparator) {
+            case "stringEquals", "booleanEquals" -> before + " === " + value;
+            default -> throw new CodegenException(op.getId() + ": comparator " + comparator + " without a projection");
+        };
+    }
+
+    /** One client object: its methods (name to operation function) and the objects nested in it. */
+    private static final class Namespace {
+        final Map<String, String> methods = new TreeMap<>();
+        final Map<String, Namespace> children = new TreeMap<>();
+    }
+
     private String clientFile(Map<OperationShape, Method> methods) {
-        Map<String, Map<String, String>> namespaces = new TreeMap<>();
+        // A namespace may be a dotted path, outermost first (PROTOCOL.md 10): agents.versions nests a versions
+        // object in agents, so caitlyn.agents.versions.get(…).
+        Namespace root = new Namespace();
         for (Map.Entry<OperationShape, Method> e : methods.entrySet()) {
-            namespaces.computeIfAbsent(e.getValue().namespace(), k -> new TreeMap<>())
-                .put(e.getValue().name(), lowerCamel(e.getKey().getId().getName()));
+            Namespace ns = root;
+            for (String segment : e.getValue().namespace().split("\\.")) {
+                ns = ns.children.computeIfAbsent(segment, k -> new Namespace());
+            }
+            ns.methods.put(e.getValue().name(), lowerCamel(e.getKey().getId().getName()));
+            for (String waiter : waiterFunctions(e.getKey())) ns.methods.put(waiter, waiter);
             if (e.getKey().hasTrait(PRESIGNED_UPLOAD)) {
-                namespaces.get(e.getValue().namespace()).put("create", lowerCamel(e.getKey().getId().getName()) + "FromFile");
+                ns.methods.put("create", lowerCamel(e.getKey().getId().getName()) + "FromFile");
             }
             if (e.getKey().hasTrait(UPLOAD_TARGET)) {
-                namespaces.get(e.getValue().namespace()).put("upload",
-                    "upload" + e.getValue().resource().getId().getName().replaceFirst("Resource$", ""));
+                ns.methods.put("upload", "upload" + e.getValue().resource().getId().getName().replaceFirst("Resource$", ""));
             }
         }
         StringBuilder out = new StringBuilder(HEADER)
@@ -440,15 +601,30 @@ final class FacadeGenerator {
             .append("  /** The sign-in session: the current token, and the oauth mode's authorizationUrl(), handleCallback() and signOut(). */\n")
             .append("  readonly auth: AuthSession;\n\n")
             .append("  constructor(options: CaitlynOptions) {\n    this.auth = createAuth(options);\n    this.client = createCaitlynClient(options, this.auth);\n  }\n");
-        for (Map.Entry<String, Map<String, String>> ns : namespaces.entrySet()) {
-            out.append("\n  readonly ").append(ns.getKey()).append(" = {\n");
-            for (Map.Entry<String, String> m : ns.getValue().entrySet()) {
-                out.append("    ").append(m.getKey()).append(": (...args: Rest<typeof ops.").append(m.getValue())
-                    .append(">) => ops.").append(m.getValue()).append("(this.client, ...args),\n");
-            }
-            out.append("  };\n");
+        for (Map.Entry<String, Namespace> ns : root.children.entrySet()) {
+            out.append("\n  readonly ").append(ns.getKey()).append(" = ");
+            namespaceObject(out, ns.getKey(), ns.getValue(), "  ");
+            out.append(";\n");
         }
         return out.append("}\n").toString();
+    }
+
+    /** A namespace as an object literal: its methods, then its nested namespaces, each in name order. */
+    private static void namespaceObject(StringBuilder out, String path, Namespace ns, String indent) {
+        out.append("{\n");
+        for (Map.Entry<String, String> m : ns.methods.entrySet()) {
+            if (ns.children.containsKey(m.getKey())) {
+                throw new CodegenException(path + "." + m.getKey() + " is both a method and a namespace");
+            }
+            out.append(indent).append("  ").append(m.getKey()).append(": (...args: Rest<typeof ops.").append(m.getValue())
+                .append(">) => ops.").append(m.getValue()).append("(this.client, ...args),\n");
+        }
+        for (Map.Entry<String, Namespace> child : ns.children.entrySet()) {
+            out.append(indent).append("  ").append(child.getKey()).append(": ");
+            namespaceObject(out, path + "." + child.getKey(), child.getValue(), indent + "  ");
+            out.append(",\n");
+        }
+        out.append(indent).append("}");
     }
 
     private String indexFile() {

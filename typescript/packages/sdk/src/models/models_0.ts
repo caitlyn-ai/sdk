@@ -3,12 +3,39 @@ import type { DocumentType as __DocumentType, StreamingBlobTypes } from "@smithy
 
 import type {
   ClearableDraftField,
+  CredentialKind,
+  DocumentDeleteStatus,
+  DocumentFailureCode,
   DocumentStatus,
   OperationKind,
   OperationStatus,
   UploadStatus,
   VersionSource,
 } from "./enums";
+
+/**
+ * A person or an API client that made a change.
+ * @public
+ */
+export interface Actor {
+  /**
+   * The person, when a person made the change.
+   * @public
+   */
+  userId?: string | undefined;
+
+  /**
+   * The API client, when one made the change or a person made it through one.
+   * @public
+   */
+  apiClientId?: string | undefined;
+
+  /**
+   * The person's or API client's name, as people saw it when the change was made.
+   * @public
+   */
+  displayName: string;
+}
 
 /**
  * One problem with one request member or query parameter.
@@ -40,6 +67,43 @@ export interface FieldError {
    * @public
    */
   detail?: string | undefined;
+}
+
+/**
+ * @public
+ */
+export interface PinDraftVersionInput {
+  /**
+   * The agent whose draft is pinned.
+   * @public
+   */
+  agentId: string;
+
+  /**
+   * Makes the request safe to retry. The SDKs generate one per call when the caller does not
+   * supply one.
+   * @public
+   */
+  idempotencyKey?: string | undefined;
+
+  /**
+   * The draft's ETag. When given, a draft that has changed since is refused with 412.
+   * @public
+   */
+  ifMatch?: string | undefined;
+
+  /**
+   * The new version's name, unique within the agent, and never `draft`, `production` or
+   * `latest`. A name already used is refused with 409 `ALREADY_EXISTS`.
+   * @public
+   */
+  name: string;
+
+  /**
+   * Why it was pinned, at most 2,000 characters.
+   * @public
+   */
+  note?: string | undefined;
 }
 
 /**
@@ -95,6 +159,452 @@ export interface KnowledgeBaseBinding {
    * @public
    */
   minimumScore?: number | undefined;
+}
+
+/**
+ * An agent version's configuration.
+ * @public
+ */
+export interface AgentConfiguration {
+  /**
+   * The agent's identity statement. Absent when it was never set or was cleared.
+   * @public
+   */
+  identity?: string | undefined;
+
+  /**
+   * The agent's instructions. Empty when none are set.
+   * @public
+   */
+  instructions: string;
+
+  /**
+   * The model the agent answers with.
+   * @public
+   */
+  model?: string | undefined;
+
+  /**
+   * The knowledge bases the agent searches, in no particular order.
+   * @public
+   */
+  knowledgeBases?: KnowledgeBaseBinding[] | undefined;
+
+  /**
+   * Whether people may attach files in chat, and how many.
+   * @public
+   */
+  attachments?: AttachmentSettings | undefined;
+
+  /**
+   * The content safety setting applied to uploads and answers.
+   * @public
+   */
+  contentSafety?: ContentSafety | undefined;
+
+  /**
+   * When true, the answer stream tells the caller which documents were withheld from them.
+   * Defaults to false.
+   * @public
+   */
+  deniedDocuments?: boolean | undefined;
+}
+
+/**
+ * @public
+ */
+export interface PinDraftVersionOutput {
+  /**
+   * The request's identifier. The same value is in every error body; quote it to support.
+   * @public
+   */
+  requestId?: string | undefined;
+
+  /**
+   * The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+   * seen and refuse to call operations or send members newer than it.
+   * @public
+   */
+  apiVersion?: string | undefined;
+
+  /**
+   * The version's current ETag; send it as `If-Match` to change it.
+   * @public
+   */
+  etag: string;
+
+  /**
+   * The agent the version belongs to.
+   * @public
+   */
+  agentId: string;
+
+  /**
+   * `draft`, `production` or the version's name.
+   * @public
+   */
+  name: string;
+
+  /**
+   * How a pinned or published version was made. Absent on the draft.
+   * @public
+   */
+  source?: VersionSource | undefined;
+
+  /**
+   * The version this one was made from, where there is one.
+   * @public
+   */
+  basedOn?: string | undefined;
+
+  /**
+   * True when this version's configuration is the one production currently answers with.
+   * Defaults to false.
+   * @public
+   */
+  matchesProduction?: boolean | undefined;
+
+  /**
+   * When the version was made; for the draft, when it was first created.
+   * @public
+   */
+  createdAt: Date;
+
+  /**
+   * When this configuration became production. Present only on `production`.
+   * @public
+   */
+  publishedAt?: Date | undefined;
+
+  /**
+   * Who made this configuration production. Present only on `production`.
+   * @public
+   */
+  publishedBy?: Actor | undefined;
+
+  /**
+   * The note written when the version was pinned or published.
+   * @public
+   */
+  note?: string | undefined;
+
+  /**
+   * The version's configuration.
+   * @public
+   */
+  configuration: AgentConfiguration;
+
+  /**
+   * The new version, as `/api/v3/agents/\{agentId\}/versions/\{name\}`.
+   * @public
+   */
+  location?: string | undefined;
+}
+
+/**
+ * @public
+ */
+export interface GetProductionHistoryEntryInput {
+  /**
+   * The agent the entry belongs to.
+   * @public
+   */
+  agentId: string;
+
+  /**
+   * The entry to get.
+   * @public
+   */
+  historyEntryId: string;
+}
+
+/**
+ * @public
+ */
+export interface GetProductionHistoryEntryOutput {
+  /**
+   * The request's identifier. The same value is in every error body; quote it to support.
+   * @public
+   */
+  requestId?: string | undefined;
+
+  /**
+   * The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+   * seen and refuse to call operations or send members newer than it.
+   * @public
+   */
+  apiVersion?: string | undefined;
+
+  /**
+   * The entry's identifier.
+   * @public
+   */
+  id: string;
+
+  /**
+   * The agent whose production this was.
+   * @public
+   */
+  agentId: string;
+
+  /**
+   * The name of the version production was published from, kept even if that version has since
+   * been deleted. Absent when production did not come from a named version.
+   * @public
+   */
+  versionName?: string | undefined;
+
+  /**
+   * When this configuration became production.
+   * @public
+   */
+  publishedAt: Date;
+
+  /**
+   * Who made it production.
+   * @public
+   */
+  publishedBy: Actor;
+
+  /**
+   * When a publish replaced it.
+   * @public
+   */
+  unpublishedAt: Date;
+
+  /**
+   * Who published the version that replaced it.
+   * @public
+   */
+  unpublishedBy: Actor;
+
+  /**
+   * The note written when it was published.
+   * @public
+   */
+  note?: string | undefined;
+
+  /**
+   * The configuration production had.
+   * @public
+   */
+  configuration: AgentConfiguration;
+}
+
+/**
+ * @public
+ */
+export interface ListProductionHistoryEntriesInput {
+  /**
+   * The agent whose production history to list.
+   * @public
+   */
+  agentId: string;
+
+  /**
+   * The most entries to return, from 1 to 100. Defaults to 20.
+   * @public
+   */
+  limit?: number | undefined;
+
+  /**
+   * The `nextCursor` from the previous page. Absent for the first page.
+   * @public
+   */
+  cursor?: string | undefined;
+}
+
+/**
+ * A production history entry, without its configuration (read that with GetProductionHistoryEntry).
+ * @public
+ */
+export interface ProductionHistorySummary {
+  /**
+   * The entry's identifier.
+   * @public
+   */
+  id: string;
+
+  /**
+   * The agent whose production this was.
+   * @public
+   */
+  agentId: string;
+
+  /**
+   * The name of the version production was published from, kept even if that version has since
+   * been deleted. Absent when production did not come from a named version.
+   * @public
+   */
+  versionName?: string | undefined;
+
+  /**
+   * When this configuration became production.
+   * @public
+   */
+  publishedAt: Date;
+
+  /**
+   * Who made it production.
+   * @public
+   */
+  publishedBy: Actor;
+
+  /**
+   * When a publish replaced it.
+   * @public
+   */
+  unpublishedAt: Date;
+
+  /**
+   * Who published the version that replaced it.
+   * @public
+   */
+  unpublishedBy: Actor;
+
+  /**
+   * The note written when it was published.
+   * @public
+   */
+  note?: string | undefined;
+}
+
+/**
+ * @public
+ */
+export interface ListProductionHistoryEntriesOutput {
+  /**
+   * The request's identifier. The same value is in every error body; quote it to support.
+   * @public
+   */
+  requestId?: string | undefined;
+
+  /**
+   * The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+   * seen and refuse to call operations or send members newer than it.
+   * @public
+   */
+  apiVersion?: string | undefined;
+
+  /**
+   * This page of entries, newest first.
+   * @public
+   */
+  items: ProductionHistorySummary[];
+
+  /**
+   * The cursor for the next page. Absent on the last page.
+   * @public
+   */
+  nextCursor?: string | undefined;
+}
+
+/**
+ * @public
+ */
+export interface ResetDraftVersionInput {
+  /**
+   * The agent whose draft is reset.
+   * @public
+   */
+  agentId: string;
+
+  /**
+   * The draft's current ETag. A stale value is refused with 412; a missing one with 428.
+   * @public
+   */
+  ifMatch: string;
+
+  /**
+   * The version to copy: a version name, or `production`.
+   * @public
+   */
+  from: string;
+}
+
+/**
+ * @public
+ */
+export interface ResetDraftVersionOutput {
+  /**
+   * The request's identifier. The same value is in every error body; quote it to support.
+   * @public
+   */
+  requestId?: string | undefined;
+
+  /**
+   * The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+   * seen and refuse to call operations or send members newer than it.
+   * @public
+   */
+  apiVersion?: string | undefined;
+
+  /**
+   * The version's current ETag; send it as `If-Match` to change it.
+   * @public
+   */
+  etag: string;
+
+  /**
+   * The agent the version belongs to.
+   * @public
+   */
+  agentId: string;
+
+  /**
+   * `draft`, `production` or the version's name.
+   * @public
+   */
+  name: string;
+
+  /**
+   * How a pinned or published version was made. Absent on the draft.
+   * @public
+   */
+  source?: VersionSource | undefined;
+
+  /**
+   * The version this one was made from, where there is one.
+   * @public
+   */
+  basedOn?: string | undefined;
+
+  /**
+   * True when this version's configuration is the one production currently answers with.
+   * Defaults to false.
+   * @public
+   */
+  matchesProduction?: boolean | undefined;
+
+  /**
+   * When the version was made; for the draft, when it was first created.
+   * @public
+   */
+  createdAt: Date;
+
+  /**
+   * When this configuration became production. Present only on `production`.
+   * @public
+   */
+  publishedAt?: Date | undefined;
+
+  /**
+   * Who made this configuration production. Present only on `production`.
+   * @public
+   */
+  publishedBy?: Actor | undefined;
+
+  /**
+   * The note written when the version was pinned or published.
+   * @public
+   */
+  note?: string | undefined;
+
+  /**
+   * The version's configuration.
+   * @public
+   */
+  configuration: AgentConfiguration;
 }
 
 /**
@@ -165,56 +675,6 @@ export interface UpdateDraftVersionInput {
 }
 
 /**
- * An agent version's configuration.
- * @public
- */
-export interface AgentConfiguration {
-  /**
-   * The agent's identity statement. Absent when it was never set or was cleared.
-   * @public
-   */
-  identity?: string | undefined;
-
-  /**
-   * The agent's instructions. Empty when none are set.
-   * @public
-   */
-  instructions: string;
-
-  /**
-   * The model the agent answers with.
-   * @public
-   */
-  model?: string | undefined;
-
-  /**
-   * The knowledge bases the agent searches, in no particular order.
-   * @public
-   */
-  knowledgeBases?: KnowledgeBaseBinding[] | undefined;
-
-  /**
-   * Whether people may attach files in chat, and how many.
-   * @public
-   */
-  attachments?: AttachmentSettings | undefined;
-
-  /**
-   * The content safety setting applied to uploads and answers.
-   * @public
-   */
-  contentSafety?: ContentSafety | undefined;
-
-  /**
-   * When true, the answer stream tells the caller which documents were withheld from them.
-   * Defaults to false.
-   * @public
-   */
-  deniedDocuments?: boolean | undefined;
-}
-
-/**
- * Headers every v3 response carries. Every operation output uses this mixin.
  * @public
  */
 export interface UpdateDraftVersionOutput {
@@ -275,6 +735,18 @@ export interface UpdateDraftVersionOutput {
   createdAt: Date;
 
   /**
+   * When this configuration became production. Present only on `production`.
+   * @public
+   */
+  publishedAt?: Date | undefined;
+
+  /**
+   * Who made this configuration production. Present only on `production`.
+   * @public
+   */
+  publishedBy?: Actor | undefined;
+
+  /**
    * The note written when the version was pinned or published.
    * @public
    */
@@ -285,6 +757,41 @@ export interface UpdateDraftVersionOutput {
    * @public
    */
   configuration: AgentConfiguration;
+}
+
+/**
+ * @public
+ */
+export interface DeleteAgentVersionInput {
+  /**
+   * The agent whose version is deleted.
+   * @public
+   */
+  agentId: string;
+
+  /**
+   * The version to delete: a version name.
+   * @public
+   */
+  version: string;
+}
+
+/**
+ * @public
+ */
+export interface DeleteAgentVersionOutput {
+  /**
+   * The request's identifier. The same value is in every error body; quote it to support.
+   * @public
+   */
+  requestId?: string | undefined;
+
+  /**
+   * The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+   * seen and refuse to call operations or send members newer than it.
+   * @public
+   */
+  apiVersion?: string | undefined;
 }
 
 /**
@@ -305,7 +812,6 @@ export interface GetAgentVersionInput {
 }
 
 /**
- * Headers every v3 response carries. Every operation output uses this mixin.
  * @public
  */
 export interface GetAgentVersionOutput {
@@ -366,6 +872,18 @@ export interface GetAgentVersionOutput {
   createdAt: Date;
 
   /**
+   * When this configuration became production. Present only on `production`.
+   * @public
+   */
+  publishedAt?: Date | undefined;
+
+  /**
+   * Who made this configuration production. Present only on `production`.
+   * @public
+   */
+  publishedBy?: Actor | undefined;
+
+  /**
    * The note written when the version was pinned or published.
    * @public
    */
@@ -381,25 +899,72 @@ export interface GetAgentVersionOutput {
 /**
  * @public
  */
-export interface ResumeConversationStreamInput {
+export interface ListAgentVersionsInput {
   /**
-   * The conversation whose answer to re-attach to.
+   * The agent whose versions to list.
    * @public
    */
-  conversationId: string;
+  agentId: string;
 
   /**
-   * The `id` of the last event received. Absent means from the start of the answer.
+   * The most versions to return, from 1 to 100. Defaults to 20.
    * @public
    */
-  lastEventId?: string | undefined;
+  limit?: number | undefined;
+
+  /**
+   * The `nextCursor` from the previous page. Absent for the first page.
+   * @public
+   */
+  cursor?: string | undefined;
 }
 
 /**
- * Headers every v3 response carries. Every operation output uses this mixin.
+ * A named version, without its configuration (read that with GetAgentVersion).
  * @public
  */
-export interface ResumeConversationStreamOutput {
+export interface AgentVersionSummary {
+  /**
+   * The version's name.
+   * @public
+   */
+  name: string;
+
+  /**
+   * How the version was made.
+   * @public
+   */
+  source?: VersionSource | undefined;
+
+  /**
+   * The version this one was made from, where there is one.
+   * @public
+   */
+  basedOn?: string | undefined;
+
+  /**
+   * True when production's configuration is this version's. Defaults to false.
+   * @public
+   */
+  matchesProduction?: boolean | undefined;
+
+  /**
+   * When the version was made.
+   * @public
+   */
+  createdAt: Date;
+
+  /**
+   * The note written when the version was pinned or published.
+   * @public
+   */
+  note?: string | undefined;
+}
+
+/**
+ * @public
+ */
+export interface ListAgentVersionsOutput {
   /**
    * The request's identifier. The same value is in every error body; quote it to support.
    * @public
@@ -414,10 +979,377 @@ export interface ResumeConversationStreamOutput {
   apiVersion?: string | undefined;
 
   /**
-   * The rest of the answer, as a stream of `ConversationEvent` events.
+   * This page of versions, oldest first.
    * @public
    */
-  events: StreamingBlobTypes;
+  items: AgentVersionSummary[];
+
+  /**
+   * The cursor for the next page. Absent on the last page.
+   * @public
+   */
+  nextCursor?: string | undefined;
+}
+
+/**
+ * @public
+ */
+export interface PublishAgentVersionInput {
+  /**
+   * The agent whose version is published.
+   * @public
+   */
+  agentId: string;
+
+  /**
+   * The version to publish: a version name, or `draft`.
+   * @public
+   */
+  version: string;
+
+  /**
+   * Production's current ETag. A stale value is refused with 412; a missing one with 428. For
+   * an agent's first publish, when it has no production yet, send `*`: that publish creates
+   * production only where none exists, so two first publishes cannot both succeed. With
+   * production present, `*` publishes without comparing.
+   * @public
+   */
+  ifMatch: string;
+
+  /**
+   * When publishing `draft`: the name of the new version the draft is kept as. Required then,
+   * and refused with 400 `VALIDATION_FAILED` for any other version. A name already used by
+   * this agent is refused with 409 `ALREADY_EXISTS`.
+   * @public
+   */
+  name?: string | undefined;
+
+  /**
+   * Why it was published, recorded with the production change, at most 2,000 characters.
+   * @public
+   */
+  note?: string | undefined;
+}
+
+/**
+ * @public
+ */
+export interface PublishAgentVersionOutput {
+  /**
+   * The request's identifier. The same value is in every error body; quote it to support.
+   * @public
+   */
+  requestId?: string | undefined;
+
+  /**
+   * The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+   * seen and refuse to call operations or send members newer than it.
+   * @public
+   */
+  apiVersion?: string | undefined;
+
+  /**
+   * The version's current ETag; send it as `If-Match` to change it.
+   * @public
+   */
+  etag: string;
+
+  /**
+   * The agent the version belongs to.
+   * @public
+   */
+  agentId: string;
+
+  /**
+   * `draft`, `production` or the version's name.
+   * @public
+   */
+  name: string;
+
+  /**
+   * How a pinned or published version was made. Absent on the draft.
+   * @public
+   */
+  source?: VersionSource | undefined;
+
+  /**
+   * The version this one was made from, where there is one.
+   * @public
+   */
+  basedOn?: string | undefined;
+
+  /**
+   * True when this version's configuration is the one production currently answers with.
+   * Defaults to false.
+   * @public
+   */
+  matchesProduction?: boolean | undefined;
+
+  /**
+   * When the version was made; for the draft, when it was first created.
+   * @public
+   */
+  createdAt: Date;
+
+  /**
+   * When this configuration became production. Present only on `production`.
+   * @public
+   */
+  publishedAt?: Date | undefined;
+
+  /**
+   * Who made this configuration production. Present only on `production`.
+   * @public
+   */
+  publishedBy?: Actor | undefined;
+
+  /**
+   * The note written when the version was pinned or published.
+   * @public
+   */
+  note?: string | undefined;
+
+  /**
+   * The version's configuration.
+   * @public
+   */
+  configuration: AgentConfiguration;
+}
+
+/**
+ * @public
+ */
+export interface BatchDeleteDocumentsInput {
+  /**
+   * The knowledge base the documents are in.
+   * @public
+   */
+  knowledgeBaseId: string;
+
+  /**
+   * The documents to delete: 1 to 100 identifiers, each at most once.
+   * @public
+   */
+  documentIds: string[];
+}
+
+/**
+ * The result of deleting one document in a batch.
+ * @public
+ */
+export interface DocumentDeleteResult {
+  /**
+   * The document the result is for.
+   * @public
+   */
+  documentId: string;
+
+  /**
+   * Whether the delete was accepted.
+   * @public
+   */
+  status: DocumentDeleteStatus;
+
+  /**
+   * Why it failed, as a stable code, for example `NOT_FOUND` or `CONFLICT`. Present only when
+   * `failed`.
+   * @public
+   */
+  code?: string | undefined;
+
+  /**
+   * What went wrong, written for the integrator. Present only when `failed`.
+   * @public
+   */
+  detail?: string | undefined;
+}
+
+/**
+ * @public
+ */
+export interface BatchDeleteDocumentsOutput {
+  /**
+   * The request's identifier. The same value is in every error body; quote it to support.
+   * @public
+   */
+  requestId?: string | undefined;
+
+  /**
+   * The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+   * seen and refuse to call operations or send members newer than it.
+   * @public
+   */
+  apiVersion?: string | undefined;
+
+  /**
+   * One result per identifier, in request order.
+   * @public
+   */
+  results: DocumentDeleteResult[];
+}
+
+/**
+ * @public
+ */
+export interface GetCallerInput {}
+
+/**
+ * The identifier and name of an organisation.
+ * @public
+ */
+export interface OrganisationSummary {
+  /**
+   * The organisation's identifier.
+   * @public
+   */
+  id: string;
+
+  /**
+   * The organisation's name.
+   * @public
+   */
+  name: string;
+}
+
+/**
+ * @public
+ */
+export interface GetCallerOutput {
+  /**
+   * The request's identifier. The same value is in every error body; quote it to support.
+   * @public
+   */
+  requestId?: string | undefined;
+
+  /**
+   * The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+   * seen and refuse to call operations or send members newer than it.
+   * @public
+   */
+  apiVersion?: string | undefined;
+
+  /**
+   * The person the credential acts for. Absent for an API client's own credential, which
+   * acts for no person.
+   * @public
+   */
+  userId?: string | undefined;
+
+  /**
+   * The API client the credential was issued to: an API client's own credential, or an
+   * application a person signed in to with OAuth. Absent otherwise.
+   * @public
+   */
+  apiClientId?: string | undefined;
+
+  /**
+   * The person's name, or the API client's name when no person is involved.
+   * @public
+   */
+  displayName: string;
+
+  /**
+   * What kind of credential made the request.
+   * @public
+   */
+  credential: CredentialKind;
+
+  /**
+   * The scopes the credential was granted, in no particular order. Empty for a browser
+   * sign-in, which scopes do not limit; what the caller may do still depends on its roles.
+   * @public
+   */
+  scopes: string[];
+
+  /**
+   * The organisation the credential belongs to.
+   * @public
+   */
+  organisation: OrganisationSummary;
+}
+
+/**
+ * @public
+ */
+export interface CreateConversationInput {
+  /**
+   * Makes the request safe to retry. The SDKs generate one per call when the caller does not
+   * supply one.
+   * @public
+   */
+  idempotencyKey?: string | undefined;
+
+  /**
+   * The agent to talk to.
+   * @public
+   */
+  agentId: string;
+
+  /**
+   * The version of the agent that answers. Today only `draft`.
+   * @public
+   */
+  version: string;
+
+  /**
+   * A title for the conversation. Absent means the app titles it from the first message.
+   * @public
+   */
+  title?: string | undefined;
+}
+
+/**
+ * @public
+ */
+export interface CreateConversationOutput {
+  /**
+   * The request's identifier. The same value is in every error body; quote it to support.
+   * @public
+   */
+  requestId?: string | undefined;
+
+  /**
+   * The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+   * seen and refuse to call operations or send members newer than it.
+   * @public
+   */
+  apiVersion?: string | undefined;
+
+  /**
+   * The conversation, as `/api/v3/conversations/\{conversationId\}`.
+   * @public
+   */
+  location?: string | undefined;
+
+  /**
+   * The conversation's identifier.
+   * @public
+   */
+  id: string;
+
+  /**
+   * The agent the conversation is with.
+   * @public
+   */
+  agentId: string;
+
+  /**
+   * The version of the agent that answers.
+   * @public
+   */
+  version: string;
+
+  /**
+   * The conversation's title, when it has one yet.
+   * @public
+   */
+  title?: string | undefined;
+
+  /**
+   * When the conversation was created.
+   * @public
+   */
+  createdAt: Date;
 }
 
 /**
@@ -475,7 +1407,6 @@ export interface SendMessageInput {
 }
 
 /**
- * Headers every v3 response carries. Every operation output uses this mixin.
  * @public
  */
 export interface SendMessageOutput {
@@ -502,6 +1433,100 @@ export interface SendMessageOutput {
 /**
  * @public
  */
+export interface WatchConversationInput {
+  /**
+   * The conversation whose answer to re-attach to.
+   * @public
+   */
+  conversationId: string;
+
+  /**
+   * The `id` of the last event received. Absent means from the start of the answer.
+   * @public
+   */
+  lastEventId?: string | undefined;
+}
+
+/**
+ * @public
+ */
+export interface WatchConversationOutput {
+  /**
+   * The request's identifier. The same value is in every error body; quote it to support.
+   * @public
+   */
+  requestId?: string | undefined;
+
+  /**
+   * The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+   * seen and refuse to call operations or send members newer than it.
+   * @public
+   */
+  apiVersion?: string | undefined;
+
+  /**
+   * The rest of the answer, as a stream of `ConversationEvent` events.
+   * @public
+   */
+  events: StreamingBlobTypes;
+}
+
+/**
+ * @public
+ */
+export interface WatchWorkspaceEventsInput {
+  /**
+   * The event types to receive.
+   * @public
+   */
+  types?: string[] | undefined;
+
+  /**
+   * The conversations to receive events about.
+   * @public
+   */
+  conversationIds?: string[] | undefined;
+
+  /**
+   * Carry on after this event. Absent means from now.
+   * @public
+   */
+  after?: string | undefined;
+
+  /**
+   * The `id` of the last event received, sent by a reconnecting client in place of `after`.
+   * @public
+   */
+  lastEventId?: string | undefined;
+}
+
+/**
+ * @public
+ */
+export interface WatchWorkspaceEventsOutput {
+  /**
+   * The request's identifier. The same value is in every error body; quote it to support.
+   * @public
+   */
+  requestId?: string | undefined;
+
+  /**
+   * The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+   * seen and refuse to call operations or send members newer than it.
+   * @public
+   */
+  apiVersion?: string | undefined;
+
+  /**
+   * The events, as a stream of `WorkspaceEvent` events.
+   * @public
+   */
+  events: StreamingBlobTypes;
+}
+
+/**
+ * @public
+ */
 export interface CreateDocumentInput {
   /**
    * The knowledge base to add the document to.
@@ -517,7 +1542,8 @@ export interface CreateDocumentInput {
   idempotencyKey?: string | undefined;
 
   /**
-   * The upload holding the document's bytes. Each upload can be used once.
+   * The upload holding the document's bytes. Each upload can be used once. Refused with 400
+   * `VALIDATION_FAILED` when the bytes are not the file type the document's name says.
    * @public
    */
   uploadId: string;
@@ -529,10 +1555,32 @@ export interface CreateDocumentInput {
   folder: string;
 
   /**
-   * The document's name. Absent means the uploaded file's name.
+   * The document's name. Absent means the uploaded file's name. A name without an extension is
+   * given the one the upload's content type maps to, because ingestion reads the file type
+   * from it. Refused with 400 `VALIDATION_FAILED` when the type maps to no extension, or when
+   * the extension is one a knowledge base cannot ingest.
    * @public
    */
   name?: string | undefined;
+}
+
+/**
+ * Why a document failed, as a stable code and a message telling the caller what to do.
+ * @public
+ */
+export interface DocumentFailure {
+  /**
+   * What went wrong.
+   * @public
+   */
+  code: DocumentFailureCode;
+
+  /**
+   * What went wrong and what to do, written for the integrator. The same for every document
+   * with the same code.
+   * @public
+   */
+  message: string;
 }
 
 /**
@@ -636,6 +1684,13 @@ export interface Document {
    * @public
    */
   partialFailures?: PartialFailure[] | undefined;
+
+  /**
+   * Why the document could not be made searchable. Present only when `status` is `failed`; a
+   * document that is searchable with gaps lists them in `partialFailures` instead.
+   * @public
+   */
+  failure?: DocumentFailure | undefined;
 }
 
 /**
@@ -670,7 +1725,6 @@ export interface Operation {
 }
 
 /**
- * Headers every v3 response carries. Every operation output uses this mixin.
  * @public
  */
 export interface CreateDocumentOutput {
@@ -688,7 +1742,7 @@ export interface CreateDocumentOutput {
   apiVersion?: string | undefined;
 
   /**
-   * The Operation that tracks ingestion, as `/api/v3/operations/\{operationId\}`.
+   * The document, as `/api/v3/knowledge-bases/\{knowledgeBaseId\}/documents/\{documentId\}`.
    * @public
    */
   location?: string | undefined;
@@ -704,6 +1758,236 @@ export interface CreateDocumentOutput {
    * @public
    */
   operation: Operation;
+}
+
+/**
+ * @public
+ */
+export interface DeleteDocumentInput {
+  /**
+   * The knowledge base the document is in.
+   * @public
+   */
+  knowledgeBaseId: string;
+
+  /**
+   * The document to delete.
+   * @public
+   */
+  documentId: string;
+}
+
+/**
+ * @public
+ */
+export interface DeleteDocumentOutput {
+  /**
+   * The request's identifier. The same value is in every error body; quote it to support.
+   * @public
+   */
+  requestId?: string | undefined;
+
+  /**
+   * The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+   * seen and refuse to call operations or send members newer than it.
+   * @public
+   */
+  apiVersion?: string | undefined;
+
+  /**
+   * The document's identifier.
+   * @public
+   */
+  id: string;
+
+  /**
+   * The knowledge base the document is in.
+   * @public
+   */
+  knowledgeBaseId: string;
+
+  /**
+   * The document's name, as people see it.
+   * @public
+   */
+  name: string;
+
+  /**
+   * The folder the document is in.
+   * @public
+   */
+  folder: string;
+
+  /**
+   * Where the document is in its lifecycle.
+   * @public
+   */
+  status: DocumentStatus;
+
+  /**
+   * While `processing`, what the server is doing, for display only.
+   * @public
+   */
+  stage?: string | undefined;
+
+  /**
+   * The media type of the current bytes.
+   * @public
+   */
+  contentType?: string | undefined;
+
+  /**
+   * The size of the current bytes, in bytes.
+   * @public
+   */
+  byteSize?: number | undefined;
+
+  /**
+   * The base64-encoded SHA-256 of the current bytes.
+   * @public
+   */
+  sha256?: string | undefined;
+
+  /**
+   * When the document was created.
+   * @public
+   */
+  createdAt: Date;
+
+  /**
+   * When the document or its bytes last changed.
+   * @public
+   */
+  updatedAt: Date;
+
+  /**
+   * Enrichments that did not complete (a picture description, metadata extraction, a table).
+   * They never fail the document. At most the first 100.
+   * @public
+   */
+  partialFailures?: PartialFailure[] | undefined;
+
+  /**
+   * Why the document could not be made searchable. Present only when `status` is `failed`; a
+   * document that is searchable with gaps lists them in `partialFailures` instead.
+   * @public
+   */
+  failure?: DocumentFailure | undefined;
+}
+
+/**
+ * @public
+ */
+export interface GetDocumentInput {
+  /**
+   * The knowledge base the document is in.
+   * @public
+   */
+  knowledgeBaseId: string;
+
+  /**
+   * The document to get.
+   * @public
+   */
+  documentId: string;
+}
+
+/**
+ * @public
+ */
+export interface GetDocumentOutput {
+  /**
+   * The request's identifier. The same value is in every error body; quote it to support.
+   * @public
+   */
+  requestId?: string | undefined;
+
+  /**
+   * The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+   * seen and refuse to call operations or send members newer than it.
+   * @public
+   */
+  apiVersion?: string | undefined;
+
+  /**
+   * The document's identifier.
+   * @public
+   */
+  id: string;
+
+  /**
+   * The knowledge base the document is in.
+   * @public
+   */
+  knowledgeBaseId: string;
+
+  /**
+   * The document's name, as people see it.
+   * @public
+   */
+  name: string;
+
+  /**
+   * The folder the document is in.
+   * @public
+   */
+  folder: string;
+
+  /**
+   * Where the document is in its lifecycle.
+   * @public
+   */
+  status: DocumentStatus;
+
+  /**
+   * While `processing`, what the server is doing, for display only.
+   * @public
+   */
+  stage?: string | undefined;
+
+  /**
+   * The media type of the current bytes.
+   * @public
+   */
+  contentType?: string | undefined;
+
+  /**
+   * The size of the current bytes, in bytes.
+   * @public
+   */
+  byteSize?: number | undefined;
+
+  /**
+   * The base64-encoded SHA-256 of the current bytes.
+   * @public
+   */
+  sha256?: string | undefined;
+
+  /**
+   * When the document was created.
+   * @public
+   */
+  createdAt: Date;
+
+  /**
+   * When the document or its bytes last changed.
+   * @public
+   */
+  updatedAt: Date;
+
+  /**
+   * Enrichments that did not complete (a picture description, metadata extraction, a table).
+   * They never fail the document. At most the first 100.
+   * @public
+   */
+  partialFailures?: PartialFailure[] | undefined;
+
+  /**
+   * Why the document could not be made searchable. Present only when `status` is `failed`; a
+   * document that is searchable with gaps lists them in `partialFailures` instead.
+   * @public
+   */
+  failure?: DocumentFailure | undefined;
 }
 
 /**
@@ -755,7 +2039,6 @@ export interface ListDocumentsInput {
 }
 
 /**
- * Headers every v3 response carries. Every operation output uses this mixin.
  * @public
  */
 export interface ListDocumentsOutput {
@@ -822,7 +2105,6 @@ export interface CreateUploadInput {
 }
 
 /**
- * Headers every v3 response carries. Every operation output uses this mixin.
  * @public
  */
 export interface CreateUploadOutput {
@@ -840,7 +2122,7 @@ export interface CreateUploadOutput {
   apiVersion?: string | undefined;
 
   /**
-   * The upload, as `/api/v3/uploads/\{uploadId\}`.
+   * The upload, as `/api/v3/uploads/\{uploadId\}`: read its status with GetUpload.
    * @public
    */
   location?: string | undefined;
@@ -880,4 +2162,51 @@ export interface CreateUploadOutput {
    * @public
    */
   status: UploadStatus;
+}
+
+/**
+ * @public
+ */
+export interface GetUploadInput {
+  /**
+   * The upload to read.
+   * @public
+   */
+  uploadId: string;
+}
+
+/**
+ * @public
+ */
+export interface GetUploadOutput {
+  /**
+   * The request's identifier. The same value is in every error body; quote it to support.
+   * @public
+   */
+  requestId?: string | undefined;
+
+  /**
+   * The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+   * seen and refuse to call operations or send members newer than it.
+   * @public
+   */
+  apiVersion?: string | undefined;
+
+  /**
+   * The upload's identifier.
+   * @public
+   */
+  id: string;
+
+  /**
+   * Where the upload is in its lifecycle.
+   * @public
+   */
+  status: UploadStatus;
+
+  /**
+   * When the upload URL stops working. An upload not used by then becomes `expired`.
+   * @public
+   */
+  expiresAt: Date;
 }

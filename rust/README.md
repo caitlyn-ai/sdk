@@ -19,9 +19,9 @@ use caitlyn_sdk::{Auth, Client, GetAgentVersionInput, SendMessageInput, UpdateDr
 let client = Client::new("your-company.getcaitlyn.ai", Auth::token("cait-pat-…"))?;
 
 // One call: options go on the call, then .await it.
-let draft = client.versions().get(GetAgentVersionInput { agent_id: "GHT7YRWXPL".into(), version: "draft".into() }).await?;
+let draft = client.agents().versions().get(GetAgentVersionInput { agent_id: "GHT7YRWXPL".into(), version: "draft".into() }).await?;
 let input = UpdateDraftVersionInput { instructions: Some("Cite clause numbers.".into()), ..Default::default() };
-client.versions().update_draft("GHT7YRWXPL", input).if_match(&draft.etag).await?;
+client.agents().versions().update_draft("GHT7YRWXPL", input).if_match(&draft.etag).await?;
 
 // A stream of typed events; a dropped connection resumes with Last-Event-ID.
 let mut answer = client.conversations().send("c-1", SendMessageInput { message: "How much leave do I get?".into(), ..Default::default() }).await?;

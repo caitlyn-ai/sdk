@@ -144,7 +144,7 @@ impl CallOptions {
 /// A call that has not been sent yet. Set call options on it, then `.await` it.
 ///
 /// ```ignore
-/// let draft = client.versions().update_draft(agent_id, input).if_match(etag).await?;
+/// let draft = client.agents().versions().update_draft(agent_id, input).if_match(etag).await?;
 /// ```
 #[must_use = "a call does nothing until it is awaited"]
 pub struct Call<T, Er> {

@@ -2,8 +2,8 @@
 import type { MetadataBearer as __MetadataBearer, StreamingBlobPayloadOutputTypes } from "@smithy/types";
 
 import { _ep0, _mw0, command } from "../commandBuilder";
-import type { ResumeConversationStreamInput, ResumeConversationStreamOutput } from "../models/models_0";
-import { ResumeConversationStream$ } from "../schemas/schemas_0";
+import type { WatchConversationInput, WatchConversationOutput } from "../models/models_0";
+import { WatchConversation$ } from "../schemas/schemas_0";
 
 /**
  * @public
@@ -12,43 +12,49 @@ export type { __MetadataBearer };
 /**
  * @public
  *
- * The input for {@link ResumeConversationStreamCommand}.
+ * The input for {@link WatchConversationCommand}.
  */
-export interface ResumeConversationStreamCommandInput extends ResumeConversationStreamInput {}
+export interface WatchConversationCommandInput extends WatchConversationInput {}
 /**
  * @public
  *
- * The output of {@link ResumeConversationStreamCommand}.
+ * The output of {@link WatchConversationCommand}.
  */
-export interface ResumeConversationStreamCommandOutput extends Omit<ResumeConversationStreamOutput, "events">, __MetadataBearer {
+export interface WatchConversationCommandOutput extends Omit<WatchConversationOutput, "events">, __MetadataBearer {
   events: StreamingBlobPayloadOutputTypes;
 }
 
 /**
- * Re-attaches to the answer that is being written, from the event after `Last-Event-ID`.
+ * Watches a conversation: the answer being written, if any, then every answer after it, until the
+ * caller closes the stream. An answer whose stream ended moments before the watch opened may still
+ * be delivered, from its `message.started` event; match answers on your own message ID.
  *
- * Used by the SDKs after a dropped connection; callers rarely need it directly. When no answer is
- * being written, the stream ends at once.
+ * With `Last-Event-ID`, it resumes from the event after that one, so a dropped connection loses
+ * nothing; the SDKs use this to re-attach to `SendMessage`, and to reconnect a dropped watch. When
+ * the answer that event belongs to has ended, or can no longer be replayed, the watch sends
+ * `stream.reset` with a new cursor instead, then carries on. Each answer ends with
+ * `message.completed` or `message.failed`, which end that answer but not the stream, so
+ * `waitUntil`-style helpers watch for the event they need and then close.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript
- * import { CaitlynClient, ResumeConversationStreamCommand } from "@caitlyn-ai/sdk"; // ES Modules import
- * // const { CaitlynClient, ResumeConversationStreamCommand } = require("@caitlyn-ai/sdk"); // CommonJS import
+ * import { CaitlynClient, WatchConversationCommand } from "@caitlyn-ai/sdk"; // ES Modules import
+ * // const { CaitlynClient, WatchConversationCommand } = require("@caitlyn-ai/sdk"); // CommonJS import
  * // import type { CaitlynClientConfig } from "@caitlyn-ai/sdk";
  * const config = {}; // type is CaitlynClientConfig
  * const client = new CaitlynClient(config);
- * const input = { // ResumeConversationStreamInput
+ * const input = { // WatchConversationInput
  *   conversationId: "STRING_VALUE", // required
  *   lastEventId: "STRING_VALUE",
  * };
- * const command = new ResumeConversationStreamCommand(input);
+ * const command = new WatchConversationCommand(input);
  * const response = await client.send(command);
  * // consume or destroy the stream to free the socket.
  * const bytes = await response.events.transformToByteArray();
  * // const str = await response.events.transformToString();
  * // response.events.destroy(); // only applicable to Node.js Readable streams.
  *
- * // { // ResumeConversationStreamOutput
+ * // { // WatchConversationOutput
  * //   requestId: "STRING_VALUE",
  * //   apiVersion: "STRING_VALUE",
  * //   events: "<SdkStream>", // see \@smithy/types -> StreamingBlobPayloadOutputTypes // required
@@ -56,10 +62,10 @@ export interface ResumeConversationStreamCommandOutput extends Omit<ResumeConver
  *
  * ```
  *
- * @param ResumeConversationStreamCommandInput - {@link ResumeConversationStreamCommandInput}
- * @returns {@link ResumeConversationStreamCommandOutput}
- * @see {@link ResumeConversationStreamCommandInput} for command's `input` shape.
- * @see {@link ResumeConversationStreamCommandOutput} for command's `response` shape.
+ * @param WatchConversationCommandInput - {@link WatchConversationCommandInput}
+ * @returns {@link WatchConversationCommandOutput}
+ * @see {@link WatchConversationCommandInput} for command's `input` shape.
+ * @see {@link WatchConversationCommandOutput} for command's `response` shape.
  * @see {@link CaitlynClientResolvedConfig | config} for CaitlynClient's `config` shape.
  *
  * @throws {@link NotFoundError} (client fault)
@@ -86,7 +92,8 @@ export interface ResumeConversationStreamCommandOutput extends Omit<ResumeConver
  *
  * @throws {@link ValidationError} (client fault)
  *  The request is malformed: a member is missing, the wrong type or out of range; it has a member,
- * filter or sort field the operation does not define; or its cursor is not valid for this list.
+ * filter or sort field the operation does not define; its cursor is not valid for this list; or it
+ * asks to delete `draft` or `production`, which every agent keeps.
  *
  * @throws {@link CaitlynServiceException}
  * <p>Base exception class for all service exceptions from Caitlyn service.</p>
@@ -94,12 +101,12 @@ export interface ResumeConversationStreamCommandOutput extends Omit<ResumeConver
  *
  * @example Resume after a dropped connection
  * ```javascript
- * // The answer arrives as a stream of events; the example shows only the request.
+ * // The events arrive as a stream; the example shows only the request.
  * const input = {
  *   conversationId: "0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47",
- *   lastEventId: "0193a6f2-9b10-7c3d-8e44-1f2a3b4c5d6e"
+ *   lastEventId: "8f14e45f-ceea-4c6b-9d2a-1b3c5d7e9f20.42"
  * };
- * const command = new ResumeConversationStreamCommand(input);
+ * const command = new WatchConversationCommand(input);
  * const response = await client.send(command);
  * // consume or destroy the stream to free the socket.
  * const bytes = await response.events.transformToByteArray();
@@ -117,7 +124,7 @@ export interface ResumeConversationStreamCommandOutput extends Omit<ResumeConver
  * const input = {
  *   conversationId: "0193a6f2-0000-7000-8000-000000000000"
  * };
- * const command = new ResumeConversationStreamCommand(input);
+ * const command = new WatchConversationCommand(input);
  * const response = await client.send(command);
  * // consume or destroy the stream to free the socket.
  * const bytes = await response.events.transformToByteArray();
@@ -131,21 +138,21 @@ export interface ResumeConversationStreamCommandOutput extends Omit<ResumeConver
  *
  * @public
  */
-export class ResumeConversationStreamCommand extends command<ResumeConversationStreamCommandInput, ResumeConversationStreamCommandOutput>(
+export class WatchConversationCommand extends command<WatchConversationCommandInput, WatchConversationCommandOutput>(
   _ep0,
   _mw0,
-  "ResumeConversationStream",
-  ResumeConversationStream$
+  "WatchConversation",
+  WatchConversation$
 ) {
   /** @internal type navigation helper, not in runtime. */
   protected declare static __types: {
     api: {
-      input: ResumeConversationStreamInput;
-      output: ResumeConversationStreamOutput;
+      input: WatchConversationInput;
+      output: WatchConversationOutput;
     };
     sdk: {
-      input: ResumeConversationStreamCommandInput;
-      output: ResumeConversationStreamCommandOutput;
+      input: WatchConversationCommandInput;
+      output: WatchConversationCommandOutput;
     };
   };
 }

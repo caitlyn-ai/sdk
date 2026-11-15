@@ -4,16 +4,16 @@
 // the Markdown copies. Operation pages show the call in each SDK, the request and response members, the events of
 // a stream, the permission checked, the errors, and every @examples entry as a runnable program per language
 // (scripts/docs-snippets.mjs, compiled in CI) with the HTTP exchange.
-import { C, T, allErrors, binding, callOption, eventsUnion, kebab, local, names, operations, retrySafe } from './docs-model.mjs';
+import { C, T, allErrors, binding, callOption, eventsUnion, kebab, local, names, namespacePath, operations, retrySafe, unreleasedOperations } from './docs-model.mjs';
 import { LANGUAGES, snippets } from './docs-snippets.mjs';
 import { OPTIONS, sinceVersion } from './docs-metadata.mjs';
 import { ERROR_CODES } from '../docs/error-codes.mjs';
 
-/** The operations Caitlyn workspaces serve today; every other operation's page says it is not available yet. */
-export const LIVE_OPERATIONS = new Set([]);
-
 const NOT_YET = '> **Not available yet.** The SDKs have this operation, but Caitlyn workspaces do not serve it yet, so a call\n' +
   '> gets 404. This page describes how it works.';
+
+/** The operations no Caitlyn release serves yet (scripts/docs-model.mjs); every other operation's page is live. */
+const UNRELEASED = unreleasedOperations();
 
 const STABILITY = {
   ga: 'Generally available',
@@ -312,10 +312,10 @@ function permissionText(op) {
 function sdkCalls(ast, op) {
   const input = local(op.shape.input.target);
   const pos = op.positional;
-  const ts = `caitlyn.${op.namespace}.${op.method}(${pos ? `${pos}, ` : ''}{ … })`;
-  const py = `caitlyn.${names.python(op.namespace)}.${names.python(op.method)}(${pos ? `${names.python(pos)}, ` : ''}…)`;
-  const go = `client.${names.go(op.namespace)}.${names.go(op.method)}(ctx, ${pos ? `${names.goParam(pos)}, ` : ''}&caitlyn.${input}{…})`;
-  const rs = `client.${names.rust(op.namespace)}().${names.rust(op.method)}(${pos ? `${names.rust(pos)}, ` : ''}${input} { … })`;
+  const ts = `caitlyn.${namespacePath('typescript', op.namespace)}.${op.method}(${pos ? `${pos}, ` : ''}{ … })`;
+  const py = `caitlyn.${namespacePath('python', op.namespace)}.${names.python(op.method)}(${pos ? `${names.python(pos)}, ` : ''}…)`;
+  const go = `client.${namespacePath('go', op.namespace)}.${names.go(op.method)}(ctx, ${pos ? `${names.goParam(pos)}, ` : ''}&caitlyn.${input}{…})`;
+  const rs = `client.${namespacePath('rust', op.namespace)}.${names.rust(op.method)}(${pos ? `${names.rust(pos)}, ` : ''}${input} { … })`;
   return { TypeScript: ts, Python: py, Go: go, Rust: rs };
 }
 
@@ -327,7 +327,7 @@ function helpers(ast, op) {
   }
   if (t[C('uploadTarget')]) {
     const member = t[C('uploadTarget')].member;
-    return `The SDKs also have \`${op.namespace}.upload(file, …)\` (Python \`${op.namespace}.upload(file=…, …)\`, Go \`${names.go(op.namespace)}.Upload\`, Rust \`${op.namespace}().upload\`), which uploads the file first and then calls this operation with \`${member}\` set to the upload's ID.`;
+    return `The SDKs also have \`${namespacePath('typescript', op.namespace)}.upload(file, …)\` (Python \`${namespacePath('python', op.namespace)}.upload(file=…, …)\`, Go \`${namespacePath('go', op.namespace)}.Upload\`, Rust \`${namespacePath('rust', op.namespace)}.upload\`), which uploads the file first and then calls this operation with \`${member}\` set to the upload's ID.`;
   }
   return null;
 }
@@ -383,22 +383,22 @@ function httpResponse(ast, op, example) {
 
 function operationPage(ast, op, typePages, examples, opsUsingError) {
   const t = op.shape.traits ?? {};
-  const live = LIVE_OPERATIONS.has(op.name);
+  const released = !UNRELEASED.has(op.name);
   const resourceName = op.resource ? local(op.resource).replace(/Resource$/, '') : null;
-  const resources = [...new Set([resourceName && kebab(resourceName), kebab(singular(op.namespace))].filter(Boolean))].filter((k) => OPTIONS.resources.includes(k));
+  const resources = [...new Set([resourceName && kebab(resourceName), kebab(singular(op.namespace.split('.').pop()))].filter(Boolean))].filter((k) => OPTIONS.resources.includes(k));
   const metadata = { pageType: 'reference', sinceVersion: sinceVersion(op.since), resources, integrations: [], operations: [op.name] };
   const out = [];
   // The site's page swaps some Markdown blocks for richer ones (memberTree); the Markdown copy keeps them as written
   const siteParts = new Map();
   out.push(op.doc, '');
-  if (!live) out.push(NOT_YET, '');
+  if (!released) out.push(NOT_YET, '');
   const calls = sdkCalls(ast, op);
   out.push('| | |', '| --- | --- |');
   out.push(`| HTTP | \`${op.http.method} /api${op.http.uri}\` |`);
   for (const [lang, call] of Object.entries(calls)) out.push(`| ${lang} | \`${call}\` |`);
-  // An operation no workspace serves cannot be generally available, whatever an older model snapshot says.
-  out.push(`| Stability | ${live ? (STABILITY[op.stability] ?? STABILITY.beta) : STABILITY.beta} |`);
-  if (live) out.push(`| Since | Caitlyn ${op.since} |`);
+  // An operation no workspace serves cannot be generally available, whatever the model says.
+  out.push(`| Stability | ${released ? (STABILITY[op.stability] ?? STABILITY.beta) : STABILITY.beta} |`);
+  if (released) out.push(`| Since | Caitlyn ${op.since} |`);
   out.push(`| Retried by the SDKs | ${retrySafe(op, ast) ? 'Yes, on 429, 503 and connection failures ([Retries](/retries/))' : 'No: it is not safe to repeat ([Retries](/retries/))'} |`);
   if (t[C('audit')]) out.push(`| Audited | As a write: ${cell(t[C('audit')].reason ?? '')} The call is refused with 503 when its audit event cannot be recorded. |`);
   out.push('');
@@ -585,7 +585,7 @@ function typePage(ast, id, typePages, usedBy) {
     out.push('Unknown members a newer server sends are kept in the object\'s `raw`.', '');
   }
   if (ops.length) out.push(`Used by ${ops.map((o) => `[${o.name}](/reference/${kebab(o.name)}/)`).join(', ')}.`, '');
-  const resources = [...new Set(ops.flatMap((o) => [o.resource && kebab(local(o.resource).replace(/Resource$/, '')), kebab(singular(o.namespace))]).filter(Boolean))].filter((k) => OPTIONS.resources.includes(k));
+  const resources = [...new Set(ops.flatMap((o) => [o.resource && kebab(local(o.resource).replace(/Resource$/, '')), kebab(singular(o.namespace.split('.').pop()))]).filter(Boolean))].filter((k) => OPTIONS.resources.includes(k));
   const since = ops.map((o) => sinceVersion(o.since)).sort((a, b) => a - b)[0] ?? 0;
   return {
     slug: typeSlug(id),
