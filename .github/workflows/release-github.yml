@@ -1,7 +1,8 @@
 # Creates the GitHub release for each version tag on the mirror (github.com/caitlyn-ai/sdk), with the same notes as the
 # GitLab release: the version's section of CHANGELOG.md, which semantic-release writes in the release commit
-# (@semantic-release/changelog, .releaserc.yml). The compare and commit links point at the mirror
-# (scripts/changelog-section.mjs --github).
+# (@semantic-release/changelog, .releaserc.yml). semantic-release writes the mirror's links; as a safety net,
+# scripts/changelog-section.mjs --github points any link left to this repository on git.customd.com at the mirror,
+# and the run fails rather than publish any other git.customd.com address.
 #
 # Runs on every release tag the push mirror brings from GitLab, and by hand (Actions → release-github → Run workflow,
 # from main) with a tag, to backfill a release. A tag made before CHANGELOG.md existed (v0.8.0 and earlier) has no
@@ -58,12 +59,24 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           git fetch --quiet --no-tags --depth=1 origin "refs/tags/$TAG:refs/tags/$TAG"
-          if git show "$TAG:CHANGELOG.md" > "$RUNNER_TEMP/tag-changelog.md" 2> /dev/null \
-              && node scripts/changelog-section.mjs "$TAG" "$RUNNER_TEMP/tag-changelog.md" --github > "$RUNNER_TEMP/notes.md"; then
+          # --github points any link to this repository on git.customd.com at the mirror, and fails (exit 3) on any
+          # other git.customd.com address. Only a missing section (exit 1) falls back to the branch's copy.
+          status=1
+          if git show "$TAG:CHANGELOG.md" > "$RUNNER_TEMP/tag-changelog.md" 2> /dev/null; then
+            status=0
+            node scripts/changelog-section.mjs "$TAG" "$RUNNER_TEMP/tag-changelog.md" --github > "$RUNNER_TEMP/notes.md" || status=$?
+          fi
+          if [ "$status" = 0 ]; then
             echo "Notes from $TAG's CHANGELOG.md."
-          else
+          elif [ "$status" = 1 ]; then
             node scripts/changelog-section.mjs "$TAG" CHANGELOG.md --github > "$RUNNER_TEMP/notes.md"
             echo "$TAG's tree has no notes for it; notes from $GITHUB_REF_NAME's CHANGELOG.md."
+          else
+            exit "$status"
+          fi
+          if grep -qi 'git\.customd\.com' "$RUNNER_TEMP/notes.md"; then
+            echo "The notes still name git.customd.com; not publishing them." >&2
+            exit 1
           fi
           cat "$RUNNER_TEMP/notes.md"
       - name: Create or update the GitHub release
