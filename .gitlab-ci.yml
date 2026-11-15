@@ -135,11 +135,12 @@ typescript:
       junit: [build/conformance/typescript.xml, build/conformance/typescript-browser-build.xml, build/conformance/typescript-runtime.xml]
   rules: !reference [.mr-and-main, rules]
 
-# The browser build in real browsers. Playwright's image carries the browsers for one Playwright version: keep its
-# tag the same as the playwright version in typescript/package.json.
+# The browser build in real browsers. Custom D's Playwright image (custom-d/devops-platform/container-images/playwright,
+# Microsoft's image served from our registry) carries the browsers for one Playwright version: keep the version in its
+# name (playwright-1.64.1) the same as the playwright version in typescript/package.json.
 typescript:browser:
   stage: test
-  image: mcr.microsoft.com/playwright:v1.64.1-noble
+  image: containers.customd.com/custom-d/devops-platform/container-images/playwright/playwright-1.64.1:latest
   interruptible: true
   needs: []
   cache:
