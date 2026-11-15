@@ -83,7 +83,7 @@ func readGetProductionHistoryEntry(resp *core.Response) (*ProductionHistoryEntry
 
 // Get gets one production history entry, with the full configuration production had.
 //
-// The entry is a copy: it reads the same whether or not the version it came from still exists.
+// The entry reads the same whether or not the version it came from still exists.
 //
 // Errors: *InternalError (500), *PermissionDeniedError (403), *ServiceUnavailableError (503),
 // *TooManyRequestsError (429), *UnauthenticatedError (401), *ValidationError (400), *NotFoundError

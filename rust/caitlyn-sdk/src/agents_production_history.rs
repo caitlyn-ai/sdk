@@ -78,7 +78,7 @@ async fn read_get_production_history_entry(resp: rt::Response) -> Result<Product
 impl AgentsProductionHistoryClient {
     /// Gets one production history entry, with the full configuration production had.
     ///
-    /// The entry is a copy: it reads the same whether or not the version it came from still exists.
+    /// The entry reads the same whether or not the version it came from still exists.
     ///
     /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
     /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]

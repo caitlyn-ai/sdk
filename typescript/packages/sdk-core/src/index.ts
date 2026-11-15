@@ -3,7 +3,7 @@ export { getCaitlynSdkPlugin, getCaitlynConnectionErrorPlugin, NotSupportedBySer
 export { CaitlynRetryStrategy, RetryBudget, DEFAULT_RETRY_BUDGET, NO_RETRY } from './retry.js';
 export { caitlynEndpointProvider } from './endpoint.js';
 export { getCaitlynTelemetryPlugin, caitlynTracer } from './telemetry.js';
-export { SseStream, type SseSpec, type SseOpened } from './stream.js';
+export { SseStream, LONG_CONNECTION_MS, streamClock, type SseSpec, type SseOpened } from './stream.js';
 export { parseSse, type SseMessage } from './sse.js';
 export { uploadFile, type UploadMeta, type UploadSlot } from './upload.js';
 export { clientConfig, createAuth, workspaceEndpoint, type CaitlynOptions, type CallOptions, type CaitlynErrorFields, type CaitlynFieldError } from './client.js';

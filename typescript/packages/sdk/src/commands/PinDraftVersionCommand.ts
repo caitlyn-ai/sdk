@@ -23,7 +23,7 @@ export interface PinDraftVersionCommandInput extends PinDraftVersionInput {}
 export interface PinDraftVersionCommandOutput extends PinDraftVersionOutput, __MetadataBearer {}
 
 /**
- * Keeps a copy of the draft as a new named version.
+ * Saves the draft as a new named version.
  *
  * The new version is pinned: it does not change production, and the draft carries on as before.
  * Send the draft's ETag as `If-Match` to pin only the draft you tested; without it, the draft is

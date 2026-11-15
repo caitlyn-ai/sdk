@@ -422,6 +422,17 @@ class Resume:
     last_event_id_param: str
 
 
+LONG_CONNECTION_SECONDS = 60.0
+"""A connection that stayed open at least this long before it ended restarts the reconnect count (PROTOCOL.md 5.6)."""
+
+
+def stream_clock() -> float:
+    """The clock that times each connection, for the rule above, in seconds. Replace it only in tests (set
+    ``caitlyn_core._client.stream_clock``): the conformance cases step it so that a connection lasts an hour, or under a
+    minute, without waiting."""
+    return time.monotonic()
+
+
 class _StreamState[E: CaitlynEvent, F]:
     def __init__(self, spec: OperationSpec, params: dict[str, object], decoder: EventDecoder[E, F], resume: Resume | None, max_reconnects: int) -> None:
         self.spec, self.params, self.decoder, self.resume, self.max_reconnects = spec, params, decoder, resume, max_reconnects
@@ -436,6 +447,18 @@ class _StreamState[E: CaitlynEvent, F]:
         """Reconnects since the last event: at most max_reconnects in a row (PROTOCOL.md 5.6)."""
         self.ended_by_reset = False
         self.request_id: str | None = None
+        self.opened_at: float | None = None
+        """When the current connection's response arrived, on stream_clock; None between connections."""
+
+    def connected(self) -> None:
+        self.opened_at = stream_clock()
+
+    def disconnected(self) -> None:
+        """A connection that stayed open a minute or more starts the count again, like a new event: the server ends
+        every stream within an hour, and a quiet watch must outlive that (PROTOCOL.md 5.6)."""
+        if self.opened_at is not None and stream_clock() - self.opened_at >= LONG_CONNECTION_SECONDS:
+            self.attempts = 0
+        self.opened_at = None
 
     def reconnecting(self) -> float:
         """Counts a reconnect and returns how long to wait before it (PROTOCOL.md 5.6): an exponential backoff
@@ -537,6 +560,7 @@ class EventStream[E: CaitlynEvent, F]:
         if self._response is None:
             spec, params = self._state.opening()
             self._response, self._call = self._core.send(spec, params)
+            self._state.connected()
             self._state.request_id = self._response.headers.get(REQUEST_ID_HEADER)
         return self._response
 
@@ -544,6 +568,7 @@ class EventStream[E: CaitlynEvent, F]:
         if self._response is not None:
             self._response.close()
             self._response = None
+            self._state.disconnected()
         if self._call is not None:
             self._call.finish(error)
             self._call = None
@@ -627,12 +652,15 @@ class AsyncEventStream[E: CaitlynEvent, F]:
         if self._response is None:
             spec, params = self._state.opening()
             self._response, self._call = await self._core.send(spec, params)
+            self._state.connected()
             self._state.request_id = self._response.headers.get(REQUEST_ID_HEADER)
         return self._response
 
     async def _release(self, error: BaseException | None) -> None:
         response, self._response = self._response, None
         call, self._call = self._call, None
+        if response is not None:
+            self._state.disconnected()
         try:
             if response is not None:
                 await response.aclose()

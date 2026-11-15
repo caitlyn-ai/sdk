@@ -14,6 +14,15 @@ import (
 // maxReconnects is PROTOCOL.md 5.6's limit.
 const maxReconnects = 3
 
+// LongConnection is how long a connection must stay open before it ends for its end to restart the reconnect
+// count (PROTOCOL.md 5.6).
+const LongConnection = time.Minute
+
+// StreamClock is the clock that times each stream connection, for the LongConnection rule. Replace it only in tests,
+// and put it back afterwards: the conformance cases step it so that a connection lasts an hour, or under a minute,
+// without waiting.
+var StreamClock = time.Now
+
 // ReconnectDelay is the pause before the nth reconnect in a row (PROTOCOL.md 5.6): an exponential backoff with
 // jitter, 0.25-0.5 s, then 0.5-1 s, then 1-2 s, so each pause is longer than the last.
 func ReconnectDelay(attempt int) time.Duration {
@@ -49,7 +58,9 @@ type Stream[E any, F any] struct {
 	lastID     string
 	reconnects int
 	// attempts counts the reconnects since the last event: at most maxReconnects in a row (PROTOCOL.md 5.6).
-	attempts   int
+	attempts int
+	// openedAt is when the current connection's response arrived (StreamClock), zero between connections.
+	openedAt   time.Time
 	final      *F
 	done       bool
 	err        error
@@ -67,6 +78,7 @@ func OpenStream[E any, F any](ctx context.Context, resp *Response, spec StreamSp
 }
 
 func (s *Stream[E, F]) attach(resp *Response) {
+	s.openedAt = StreamClock()
 	s.resp = resp
 	s.r = bufio.NewReaderSize(resp.Body, 64<<10)
 }
@@ -208,6 +220,12 @@ func (s *Stream[E, F]) reconnect(cause error) error {
 		s.resp.Body.Close()
 		s.resp = nil
 	}
+	// A connection that stayed open a minute or more starts the count again, like a new event: the server ends every
+	// stream within an hour, and a quiet watch must outlive that (PROTOCOL.md 5.6).
+	if !s.openedAt.IsZero() && StreamClock().Sub(s.openedAt) >= LongConnection {
+		s.attempts = 0
+	}
+	s.openedAt = time.Time{}
 	for {
 		if s.attempts >= maxReconnects {
 			return sdkError("STREAM_LOST", "The stream was lost and could not be resumed", cause)

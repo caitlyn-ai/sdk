@@ -25,7 +25,7 @@ export interface GetProductionHistoryEntryCommandOutput extends GetProductionHis
 /**
  * Gets one production history entry, with the full configuration production had.
  *
- * The entry is a copy: it reads the same whether or not the version it came from still exists.
+ * The entry reads the same whether or not the version it came from still exists.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript

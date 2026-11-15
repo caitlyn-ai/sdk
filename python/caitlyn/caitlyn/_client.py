@@ -80,7 +80,7 @@ class AgentsProductionHistoryResource:
     def get(self, *, agent_id: str, history_entry_id: str) -> ProductionHistoryEntry:
         """Gets one production history entry, with the full configuration production had.
 
-        The entry is a copy: it reads the same whether or not the version it came from still exists.
+        The entry reads the same whether or not the version it came from still exists.
 
         Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/production-history-entries/{historyEntryId}`.
 
@@ -155,10 +155,10 @@ class AgentsVersionsResource:
     def delete(self, *, agent_id: str, version: str) -> DeleteAgentVersionResult:
         """Deletes a named version.
 
-        Any named version can be deleted, including one that was published: production is its own
-        copy, so it does not change. `draft` and `production`, which every agent keeps, are refused with
-        400 `VERSION_NOT_DELETABLE`. Production history entries copied from the version are never
-        deleted or changed, and still read as they did. Like every change, it is audited.
+        Any named version can be deleted, including the one production is running; production carries
+        on unchanged. `draft` and `production`, which every agent keeps, are refused with 400
+        `VERSION_NOT_DELETABLE`. Production history entries that name the version are never deleted or
+        changed, and still read as they did. Like every change, it is audited.
 
         Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/agents/{agentId}/versions/{version}`.
 
@@ -260,7 +260,7 @@ class AgentsVersionsResource:
         if_match: str | None = None,
         note: str | None = None,
     ) -> PinDraftVersionResult:
-        """Keeps a copy of the draft as a new named version.
+        """Saves the draft as a new named version.
 
         The new version is pinned: it does not change production, and the draft carries on as before.
         Send the draft's ETag as `If-Match` to pin only the draft you tested; without it, the draft is
@@ -305,12 +305,11 @@ class AgentsVersionsResource:
         name: str | None = None,
         note: str | None = None,
     ) -> AgentVersion:
-        """Publishes a version: production becomes a copy of it.
+        """Publishes a version: it becomes the version production runs.
 
-        `version` is a version name, or `draft`. Publishing the draft first keeps a copy of it as a new
-        version named `name`, then publishes that, so production always matches a named version. The
-        version published is kept as it is; nothing is moved or deleted, and deleting it later does not
-        change production. Send production's current ETag
+        `version` is a version name, or `draft`. Publishing the draft first saves it as a new version
+        named `name`, then publishes that, so production always runs a named version. Deleting the
+        published version later does not change production. Send production's current ETag
         (from `GET /v3/agents/{agentId}/versions/production`) as `If-Match`, so two publishes cannot
         overwrite each other; a stale ETag is refused with 412. Production before the publish is kept as
         a production history entry (ListProductionHistoryEntries), stamped with who replaced it and
@@ -351,18 +350,18 @@ class AgentsVersionsResource:
         )
 
     def reset_draft(self, agent_id: str, *, if_match: str, from_: str) -> AgentVersion:
-        """Resets the draft to a copy of another version; `If-Match` is required.
+        """Resets the draft to another version; `If-Match` is required.
 
         The draft's configuration becomes the configuration of `from`, which is a version name or
-        `production`. Nothing else changes: the version copied from is kept, and production is
-        untouched. Returns the draft and its new ETag.
+        `production`. Nothing else changes: `from` is kept as it is, and production is untouched.
+        Returns the draft and its new ETag.
 
         Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/draft/reset`.
 
         Args:
             agent_id: The agent whose draft is reset.
             if_match: The draft's current ETag. A stale value is refused with 412; a missing one with 428.
-            from_: The version to copy: a version name, or `production`.
+            from_: The version to reset the draft to: a version name, or `production`.
 
         Raises:
             NotFoundError: HTTP 404.
@@ -1081,7 +1080,7 @@ class AsyncAgentsProductionHistoryResource:
     async def get(self, *, agent_id: str, history_entry_id: str) -> ProductionHistoryEntry:
         """Gets one production history entry, with the full configuration production had.
 
-        The entry is a copy: it reads the same whether or not the version it came from still exists.
+        The entry reads the same whether or not the version it came from still exists.
 
         Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/production-history-entries/{historyEntryId}`.
 
@@ -1156,10 +1155,10 @@ class AsyncAgentsVersionsResource:
     async def delete(self, *, agent_id: str, version: str) -> DeleteAgentVersionResult:
         """Deletes a named version.
 
-        Any named version can be deleted, including one that was published: production is its own
-        copy, so it does not change. `draft` and `production`, which every agent keeps, are refused with
-        400 `VERSION_NOT_DELETABLE`. Production history entries copied from the version are never
-        deleted or changed, and still read as they did. Like every change, it is audited.
+        Any named version can be deleted, including the one production is running; production carries
+        on unchanged. `draft` and `production`, which every agent keeps, are refused with 400
+        `VERSION_NOT_DELETABLE`. Production history entries that name the version are never deleted or
+        changed, and still read as they did. Like every change, it is audited.
 
         Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/agents/{agentId}/versions/{version}`.
 
@@ -1261,7 +1260,7 @@ class AsyncAgentsVersionsResource:
         if_match: str | None = None,
         note: str | None = None,
     ) -> PinDraftVersionResult:
-        """Keeps a copy of the draft as a new named version.
+        """Saves the draft as a new named version.
 
         The new version is pinned: it does not change production, and the draft carries on as before.
         Send the draft's ETag as `If-Match` to pin only the draft you tested; without it, the draft is
@@ -1306,12 +1305,11 @@ class AsyncAgentsVersionsResource:
         name: str | None = None,
         note: str | None = None,
     ) -> AgentVersion:
-        """Publishes a version: production becomes a copy of it.
+        """Publishes a version: it becomes the version production runs.
 
-        `version` is a version name, or `draft`. Publishing the draft first keeps a copy of it as a new
-        version named `name`, then publishes that, so production always matches a named version. The
-        version published is kept as it is; nothing is moved or deleted, and deleting it later does not
-        change production. Send production's current ETag
+        `version` is a version name, or `draft`. Publishing the draft first saves it as a new version
+        named `name`, then publishes that, so production always runs a named version. Deleting the
+        published version later does not change production. Send production's current ETag
         (from `GET /v3/agents/{agentId}/versions/production`) as `If-Match`, so two publishes cannot
         overwrite each other; a stale ETag is refused with 412. Production before the publish is kept as
         a production history entry (ListProductionHistoryEntries), stamped with who replaced it and
@@ -1352,18 +1350,18 @@ class AsyncAgentsVersionsResource:
         )
 
     async def reset_draft(self, agent_id: str, *, if_match: str, from_: str) -> AgentVersion:
-        """Resets the draft to a copy of another version; `If-Match` is required.
+        """Resets the draft to another version; `If-Match` is required.
 
         The draft's configuration becomes the configuration of `from`, which is a version name or
-        `production`. Nothing else changes: the version copied from is kept, and production is
-        untouched. Returns the draft and its new ETag.
+        `production`. Nothing else changes: `from` is kept as it is, and production is untouched.
+        Returns the draft and its new ETag.
 
         Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/draft/reset`.
 
         Args:
             agent_id: The agent whose draft is reset.
             if_match: The draft's current ETag. A stale value is refused with 412; a missing one with 428.
-            from_: The version to copy: a version name, or `production`.
+            from_: The version to reset the draft to: a version name, or `production`.
 
         Raises:
             NotFoundError: HTTP 404.

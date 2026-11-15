@@ -3765,7 +3765,7 @@
                 },
                 "ai.caitlyn.traits#since": "next",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Deletes a named version.\n\nAny named version can be deleted, including one that was published: production is its own\ncopy, so it does not change. `draft` and `production`, which every agent keeps, are refused with\n400 `VERSION_NOT_DELETABLE`. Production history entries copied from the version are never\ndeleted or changed, and still read as they did. Like every change, it is audited.",
+                "smithy.api#documentation": "Deletes a named version.\n\nAny named version can be deleted, including the one production is running; production carries\non unchanged. `draft` and `production`, which every agent keeps, are refused with 400\n`VERSION_NOT_DELETABLE`. Production history entries that name the version are never deleted or\nchanged, and still read as they did. Like every change, it is audited.",
                 "smithy.api#examples": [
                     {
                         "title": "Delete a version that is no longer used",
@@ -5044,7 +5044,7 @@
                 },
                 "ai.caitlyn.traits#since": "next",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Gets one production history entry, with the full configuration production had.\n\nThe entry is a copy: it reads the same whether or not the version it came from still exists.",
+                "smithy.api#documentation": "Gets one production history entry, with the full configuration production had.\n\nThe entry reads the same whether or not the version it came from still exists.",
                 "smithy.api#examples": [
                     {
                         "title": "Production as it was in October",
@@ -6527,7 +6527,7 @@
                 },
                 "ai.caitlyn.traits#since": "next",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Keeps a copy of the draft as a new named version.\n\nThe new version is pinned: it does not change production, and the draft carries on as before.\nSend the draft's ETag as `If-Match` to pin only the draft you tested; without it, the draft is\npinned as it is now. Returns the new version, and `Location` names it.",
+                "smithy.api#documentation": "Saves the draft as a new named version.\n\nThe new version is pinned: it does not change production, and the draft carries on as before.\nSend the draft's ETag as `If-Match` to pin only the draft you tested; without it, the draft is\npinned as it is now. Returns the new version, and `Location` names it.",
                 "smithy.api#examples": [
                     {
                         "title": "Pin the tested draft",
@@ -6876,7 +6876,7 @@
                 "target": "ai.caitlyn.v3#ListProductionHistoryEntries"
             },
             "traits": {
-                "smithy.api#documentation": "A record of what an agent's production was before a publish replaced it: a full copy of its\nconfiguration, who published it and when, and who replaced it and when. A record of its own, not\na version: it is never edited or deleted, and never depends on the version it came from."
+                "smithy.api#documentation": "A record of what an agent's production was before a publish replaced it: the full configuration\nit ran, who published it and when, and who replaced it and when. A record of its own, not\na version: it is never edited or deleted, and never depends on the version it came from."
             }
         },
         "ai.caitlyn.v3#ProductionHistoryEntryId": {
@@ -7031,7 +7031,7 @@
                 },
                 "ai.caitlyn.traits#since": "next",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Publishes a version: production becomes a copy of it.\n\n`version` is a version name, or `draft`. Publishing the draft first keeps a copy of it as a new\nversion named `name`, then publishes that, so production always matches a named version. The\nversion published is kept as it is; nothing is moved or deleted, and deleting it later does not\nchange production. Send production's current ETag\n(from `GET /v3/agents/{agentId}/versions/production`) as `If-Match`, so two publishes cannot\noverwrite each other; a stale ETag is refused with 412. Production before the publish is kept as\na production history entry (ListProductionHistoryEntries), stamped with who replaced it and\nwhen; the new production carries `publishedAt` and `publishedBy`. Rolling back is publishing an\nearlier version.",
+                "smithy.api#documentation": "Publishes a version: it becomes the version production runs.\n\n`version` is a version name, or `draft`. Publishing the draft first saves it as a new version\nnamed `name`, then publishes that, so production always runs a named version. Deleting the\npublished version later does not change production. Send production's current ETag\n(from `GET /v3/agents/{agentId}/versions/production`) as `If-Match`, so two publishes cannot\noverwrite each other; a stale ETag is refused with 412. Production before the publish is kept as\na production history entry (ListProductionHistoryEntries), stamped with who replaced it and\nwhen; the new production carries `publishedAt` and `publishedBy`. Rolling back is publishing an\nearlier version.",
                 "smithy.api#examples": [
                     {
                         "title": "Publish the tested draft as a new version",
@@ -7196,7 +7196,7 @@
                 },
                 "ai.caitlyn.traits#since": "next",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Resets the draft to a copy of another version; `If-Match` is required.\n\nThe draft's configuration becomes the configuration of `from`, which is a version name or\n`production`. Nothing else changes: the version copied from is kept, and production is\nuntouched. Returns the draft and its new ETag.",
+                "smithy.api#documentation": "Resets the draft to another version; `If-Match` is required.\n\nThe draft's configuration becomes the configuration of `from`, which is a version name or\n`production`. Nothing else changes: `from` is kept as it is, and production is untouched.\nReturns the draft and its new ETag.",
                 "smithy.api#examples": [
                     {
                         "title": "Start the draft again from the October release",
@@ -7266,7 +7266,7 @@
                 "from": {
                     "target": "ai.caitlyn.v3#AgentVersionName",
                     "traits": {
-                        "smithy.api#documentation": "The version to copy: a version name, or `production`.",
+                        "smithy.api#documentation": "The version to reset the draft to: a version name, or `production`.",
                         "smithy.api#required": {}
                     }
                 }

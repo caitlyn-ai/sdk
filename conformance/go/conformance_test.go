@@ -108,6 +108,19 @@ func send(t *testing.T, c *caitlyn.Client, ctx context.Context, conversation str
 	return s
 }
 
+// connectionsLasting steps the stream clock by step at each reading, so every connection lasts exactly that long (a
+// stream reads the clock when a response arrives and when its connection ends). It returns the function that puts
+// the real clock back.
+func connectionsLasting(step time.Duration) func() {
+	real := core.StreamClock
+	now := time.Unix(0, 0)
+	core.StreamClock = func() time.Time {
+		now = now.Add(step)
+		return now
+	}
+	return func() { core.StreamClock = real }
+}
+
 func collect[E, F any](s *core.Stream[E, F]) ([]E, error) {
 	var evs []E
 	for ev, err := range s.Events() {
@@ -551,6 +564,57 @@ var protocol = map[string]func(t *testing.T, m mock){
 		if len(reqs) < 2 || !strings.Contains(reqs[0].Query, "after=") || strings.Contains(reqs[1].Query, "after=") ||
 			!strings.Contains(reqs[1].Query, "type=conversation.created") || reqs[1].Headers["last-event-id"] != events[0].EventID() {
 			t.Fatalf("requests %+v", reqs)
+		}
+	},
+	"sse.long-connection-resets-count": func(t *testing.T, m mock) {
+		c := client(t, m)
+		if _, err := collect(send(t, c, context.Background(), "c-l")); err != nil {
+			t.Fatal(err)
+		}
+		// Five quiet responses in a row (the first and four reconnects), each open just over a minute: one more than
+		// the limit, so the watch carries on only because each long connection restarts the count. The sixth carries
+		// events.
+		m.faults(t, map[string]any{"watchEmptyCloses": 5})
+		defer connectionsLasting(core.LongConnection + time.Second)()
+		w, err := c.Conversations.Watch(context.Background(), "c-l", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer w.Close()
+		var first string
+		for ev, err := range w.Events() {
+			if err != nil {
+				t.Fatalf("got %v, want the watch to reach its events", err)
+			}
+			first = fmt.Sprintf("%T", ev)
+			break
+		}
+		if !strings.Contains(first, "MessageStarted") {
+			t.Fatalf("first event %s, want message.started", first)
+		}
+		if gets := m.matching(t, func(r logged) bool { return r.Method == "GET" }); len(gets) != 6 {
+			t.Fatalf("%d requests; want the first and five reconnects", len(gets))
+		}
+	},
+	"sse.short-connections-stream-lost": func(t *testing.T, m mock) {
+		c := client(t, m)
+		if _, err := collect(send(t, c, context.Background(), "c-s")); err != nil {
+			t.Fatal(err)
+		}
+		m.faults(t, map[string]any{"watchEmptyCloses": 4})
+		defer connectionsLasting(core.LongConnection - time.Second)()
+		w, err := c.Conversations.Watch(context.Background(), "c-s", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer w.Close()
+		_, err = collect(w)
+		var e *caitlyn.Error
+		if !errors.As(err, &e) || e.Code != "STREAM_LOST" {
+			t.Fatalf("got %v, want STREAM_LOST", err)
+		}
+		if gets := m.matching(t, func(r logged) bool { return r.Method == "GET" }); len(gets) != 4 {
+			t.Fatalf("%d requests; want the first and three reconnects", len(gets))
 		}
 	},
 	"sse.duplicate-not-progress": func(t *testing.T, m mock) {

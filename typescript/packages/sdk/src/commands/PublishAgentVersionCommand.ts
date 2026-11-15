@@ -23,12 +23,11 @@ export interface PublishAgentVersionCommandInput extends PublishAgentVersionInpu
 export interface PublishAgentVersionCommandOutput extends PublishAgentVersionOutput, __MetadataBearer {}
 
 /**
- * Publishes a version: production becomes a copy of it.
+ * Publishes a version: it becomes the version production runs.
  *
- * `version` is a version name, or `draft`. Publishing the draft first keeps a copy of it as a new
- * version named `name`, then publishes that, so production always matches a named version. The
- * version published is kept as it is; nothing is moved or deleted, and deleting it later does not
- * change production. Send production's current ETag
+ * `version` is a version name, or `draft`. Publishing the draft first saves it as a new version
+ * named `name`, then publishes that, so production always runs a named version. Deleting the
+ * published version later does not change production. Send production's current ETag
  * (from `GET /v3/agents/\{agentId\}/versions/production`) as `If-Match`, so two publishes cannot
  * overwrite each other; a stale ETag is refused with 412. Production before the publish is kept as
  * a production history entry (ListProductionHistoryEntries), stamped with who replaced it and

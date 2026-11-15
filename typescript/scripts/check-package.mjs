@@ -54,7 +54,7 @@ const client = createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', au
 export const ask = async (id, message, onText) => { for await (const e of sendMessage(client, id, { message })) if (e.type === 'text.delta') onText(e.delta); };`,
   },
   'Caitlyn class (every operation)': {
-    budget: 28_700, // grows with every operation the model gains: raise it with the model change that needs it
+    budget: 28_800, // grows with every operation the model gains, and with the stream runtime: raise it with the change that needs it
     code: `import { Caitlyn } from '@caitlyn-ai/sdk';
 export const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 't' } });`,
   },

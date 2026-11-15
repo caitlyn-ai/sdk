@@ -25,10 +25,10 @@ export interface DeleteAgentVersionCommandOutput extends DeleteAgentVersionOutpu
 /**
  * Deletes a named version.
  *
- * Any named version can be deleted, including one that was published: production is its own
- * copy, so it does not change. `draft` and `production`, which every agent keeps, are refused with
- * 400 `VERSION_NOT_DELETABLE`. Production history entries copied from the version are never
- * deleted or changed, and still read as they did. Like every change, it is audited.
+ * Any named version can be deleted, including the one production is running; production carries
+ * on unchanged. `draft` and `production`, which every agent keeps, are refused with 400
+ * `VERSION_NOT_DELETABLE`. Production history entries that name the version are never deleted or
+ * changed, and still read as they did. Like every change, it is audited.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript
