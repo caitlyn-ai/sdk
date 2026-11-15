@@ -19,13 +19,20 @@ export const collections = {
         section: z.string().optional(),
         whatsNext: z.array(z.object({ link: z.string(), title: z.string(), description: z.string(), section: z.string(), icon: z.string() })).optional(),
         whatsNextNotes: z.array(z.string()).optional(),
-        // An SDK reference operation's header strip (src/components/OperationHeader.astro)
+        // The API reference's overview: its Server block, and the old addresses of its operations (#tag/...) to send on
+        server: z.boolean().optional(),
+        apiAnchors: z.record(z.string(), z.string()).optional(),
+        // An operation's header strip (src/components/OperationHeader.astro), in the SDK reference or the API reference
         operation: z
-          .object({ name: z.string(), method: z.string(), calls: z.record(z.string(), z.string()), http: z.object({ method: z.string(), path: z.string() }),
-            api: z.string(),
-            // Each example's code per language, its response status and body, and a stream's sample events, for the code
-            // panel (src/components/OperationPanel.astro)
-            panel: z.array(z.object({ title: z.string(), code: z.record(z.string(), z.string()), status: z.number(), result: z.string().nullable(), events: z.string().nullable() })),
+          .object({ kind: z.enum(['sdk', 'api']).optional(), name: z.string(), method: z.string(), calls: z.record(z.string(), z.string()), http: z.object({ method: z.string(), path: z.string() }),
+            // The same operation in the other reference
+            other: z.object({ label: z.string(), link: z.string() }),
+            // Each example's code per language, its response status and body (or, in the API reference, the HTTP
+            // response), and a stream's sample events, for the code panel (src/components/OperationPanel.astro)
+            panel: z.array(z.object({ title: z.string(), code: z.record(z.string(), z.string()), status: z.number(), result: z.string().nullable(), response: z.string().nullable().optional(), events: z.string().nullable() })),
+            // Every status the operation documents, with its body: an example's, or the problem details every error has
+            // (sample, with the status's first code)
+            responses: z.array(z.object({ status: z.number(), result: z.string().nullable().optional(), response: z.string().nullable().optional(), events: z.string().nullable(), sample: z.boolean(), code: z.string().optional() })).optional(),
           })
           .optional(),
       }),

@@ -25,6 +25,9 @@ const singular = (n) => (n.endsWith('ies') ? `${n.slice(0, -3)}y` : n.endsWith('
 const oneLine = (s) => s.replace(/\s*\n\s*/g, ' ').trim();
 const cell = (s) => oneLine(s ?? '').replace(/\|/g, '\\|');
 const firstSentence = (s) => (/^(.+?\.)(\s|$)/s.exec(oneLine(s))?.[1] ?? oneLine(s));
+/** A heading's id as the site gives it (github-slugger, as Astro's rehypeHeadingIds): lower case, without punctuation,
+ * spaces as hyphens. scripts/docs-build.mjs checks each example link against its heading's id in the built page. */
+export const headingId = (text) => text.toLowerCase().replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, '').replace(/ /g, '-');
 
 /** A shape's members, with its mixins' members first (the JSON AST does not copy them into the shape). */
 export function members(ast, id) {
@@ -136,59 +139,93 @@ const GROUPS = [
   { in: 'header', label: 'Headers', icon: 'header' },
   { in: 'body', label: 'Body', icon: 'body' },
 ];
-export function memberTree(ast, mems, typePages, { grouped = false, bodyLabel = 'Body', wireNames = false, depth = 0, seen = new Set() } = {}) {
+/** A small label over a group of rows, with its icon */
+export const groupLabel = (icon, label) => `<p class="caitlyn-param-group"><span class="caitlyn-icon" data-icon="${icon}" aria-hidden="true"></span>${label}</p>`;
+
+export function memberTree(ast, mems, typePages, { grouped = false, bodyLabel = 'Body', wireNames = false, depth = 0, seen = new Set(), extraMeta = null } = {}) {
   const rows = Object.entries(mems).filter(([, m]) => binding(m).in !== 'status');
   if (!rows.length) return '';
   const where = (m) => { const b = binding(m).in; return b === 'payload' ? 'body' : b; };
   const sets = grouped ? GROUPS.map((g) => ({ ...g, label: g.in === 'body' ? bodyLabel : g.label, rows: rows.filter(([, m]) => where(m) === g.in) })).filter((g) => g.rows.length) : [{ rows }];
   const out = [];
   for (const set of sets) {
-    if (set.label) out.push(`<p class="caitlyn-param-group"><span class="caitlyn-icon" data-icon="${set.icon}" aria-hidden="true"></span>${set.label}</p>`, '');
+    if (set.label) out.push(groupLabel(set.icon, set.label), '');
     out.push(`<div class="caitlyn-params">`, '');
-    for (const [name, m] of set.rows) out.push(...memberRow(ast, name, m, typePages, { wireNames, depth, seen }));
+    for (const [name, m] of set.rows) out.push(...memberRow(ast, name, m, typePages, { wireNames, depth, seen, extraMeta }));
     out.push('</div>', '');
   }
   return out.join('\n');
 }
 
-function memberRow(ast, name, m, typePages, { wireNames, depth, seen }) {
+function memberRow(ast, name, m, typePages, { wireNames, depth, seen, extraMeta }) {
   const S = ast.shapes;
   const t = m.traits ?? {};
   const b = binding(m);
   const shown = wireNames || depth ? (t[T('jsonName')] ?? name) : name;
   const wire = !depth && (b.in === 'query' || b.in === 'header') && b.name !== shown ? b.name : null;
-  const head = [`<span class="caitlyn-param-name">\`${shown}\`</span>`];
-  if (wire) head.push(`<span class="caitlyn-param-wire" title="Sent as"><span class="caitlyn-icon" data-icon="wire" aria-hidden="true"></span><span class="sr-only">sent as </span>\`${wire}\`</span>`);
-  if (t[T('required')]) head.push('<span class="caitlyn-param-required">Required</span>');
   // The one muted line: type, then the constraints, each said once
   const shape = S[m.target];
   const all = { ...shape?.traits, ...t };
-  const meta = [typeText(ast, m.target, typePages)];
   const len = all[T('length')];
-  const unit = shape?.type === 'list' ? 'items' : shape?.type === 'map' ? 'entries' : 'characters';
-  if (len && (len.min !== undefined || len.max !== undefined)) meta.push(len.min !== undefined && len.max !== undefined ? `${len.min} to ${len.max} ${unit}` : len.max !== undefined ? `at most ${len.max} ${unit}` : `at least ${len.min} ${unit}`);
   const range = all[T('range')];
-  if (range) meta.push(range.min !== undefined && range.max !== undefined ? `${range.min} to ${range.max}` : range.max !== undefined ? `at most ${range.max}` : `at least ${range.min}`);
   const def = t[T('default')];
   const hasDefault = def !== undefined && def !== null && !(typeof def === 'object' && !Object.keys(def).length);
-  if (hasDefault) meta.push(`default \`${JSON.stringify(def)}\``);
-  if (all[T('pattern')]) meta.push(`pattern \`${all[T('pattern')]}\``);
+  const unit = shape?.type === 'list' ? 'items' : shape?.type === 'map' ? 'entries' : 'characters';
+  const meta = [typeText(ast, m.target, typePages), ...limitParts({ len, range, def: hasDefault ? def : undefined, pattern: all[T('pattern')], unit })];
+  if (extraMeta) meta.push(...extraMeta(m));
   const doc = withoutRepeats(oneLine(t[T('documentation')] ?? ''), { len, range, def: hasDefault ? def : undefined });
-  const values = enumValues(ast, m);
-  const lines = [head.join(' '), '', `<span class="caitlyn-param-meta">${meta.join(' · ')}</span>`, ''];
-  if (doc) lines.push(`<span class="caitlyn-param-doc">${doc}</span>`, '');
-  if (values.length) lines.push(`<span class="caitlyn-param-values">${values.map((v) => `\`${v}\``).join(' ')}</span>`, '');
   const inner = nestedTarget(ast, m.target);
   const children = inner && depth < 3 && !seen.has(inner) ? memberTree(ast, members(ast, inner), typePages, { depth: depth + 1, seen: new Set([...seen, inner]) }) : '';
+  return paramRow({ name: shown, chip: wire ? { text: wire, title: 'Sent as', sr: 'sent as' } : null, required: !!t[T('required')], meta, doc, values: enumValues(ast, m), children });
+}
+
+/** A member's limits for the muted line, each said once: length, range, default and pattern. Shared with the API
+ * reference (scripts/docs-api.mjs), which reads them from the OpenAPI document. */
+export function limitParts({ len, range, def, pattern, unit = 'characters' }) {
+  const out = [];
+  if (len && (len.min !== undefined || len.max !== undefined)) out.push(len.min !== undefined && len.max !== undefined ? `${len.min} to ${len.max} ${unit}` : len.max !== undefined ? `at most ${len.max} ${unit}` : `at least ${len.min} ${unit}`);
+  if (range && (range.min !== undefined || range.max !== undefined)) out.push(range.min !== undefined && range.max !== undefined ? `${range.min} to ${range.max}` : range.max !== undefined ? `at most ${range.max}` : `at least ${range.min}`);
+  if (def !== undefined) out.push(`default \`${JSON.stringify(def)}\``);
+  if (pattern) out.push(`pattern \`${pattern}\``);
+  return out;
+}
+
+/**
+ * One stacked row, as Markdown inside HTML blocks: the name, a secondary name as a chip (the wire name on the SDK
+ * reference, the SDK's name on the API reference), Required, the muted type and limits line, the description, an
+ * enum's values as chips, and the row's own members, which it opens in place to show.
+ */
+export function paramRow({ name, chip = null, required = false, meta = [], doc = '', values = [], children = '' }) {
+  const head = [`<span class="caitlyn-param-name">\`${name}\`</span>`];
+  if (chip) head.push(`<span class="caitlyn-param-wire" title="${chip.title}"><span class="caitlyn-icon" data-icon="${chip.icon ?? 'wire'}" aria-hidden="true"></span><span class="sr-only">${chip.sr} </span>\`${chip.text}\`</span>`);
+  if (required) head.push('<span class="caitlyn-param-required">Required</span>');
+  const lines = [head.join(' '), ''];
+  if (meta.length) lines.push(`<span class="caitlyn-param-meta">${meta.join(' · ')}</span>`, '');
+  if (doc) lines.push(`<span class="caitlyn-param-doc">${doc}</span>`, '');
+  if (values.length) lines.push(`<span class="caitlyn-param-values">${values.map((v) => `\`${v}\``).join(' ')}</span>`, '');
   if (children) return ['<details class="caitlyn-param">', '<summary>', '', head.join(' '), '', '</summary>', '', ...lines.slice(2), children, '</details>', ''];
   return ['<div class="caitlyn-param">', '', ...lines, '</div>', ''];
 }
 
-const STATUS_TEXT = { 200: 'OK', 201: 'Created', 202: 'Accepted', 204: 'No content' };
+/** An error's problem details, as every error body has them: the shape a response pane shows for a status the model has
+ * no example of. Its title is the code in words (NOT_FOUND, "Not found"), its detail what the code means. */
+export function problemDetails(code, status) {
+  const meaning = ERROR_CODES[code]?.meaning;
+  return {
+    type: `https://build.caitlyn.ai/errors/${code}`,
+    title: code.charAt(0) + code.slice(1).toLowerCase().replace(/_/g, ' '),
+    status,
+    code,
+    ...(meaning ? { detail: firstSentence(meaning) } : {}),
+    requestId: '01JC9Q2W7R4M0H2T6N1S8V3B70',
+  };
+}
+
+export const STATUS_TEXT = { 200: 'OK', 201: 'Created', 202: 'Accepted', 204: 'No content' };
 
 /** A response status as a row that opens to what it carries: the status by its class (src/styles/components.css), its
  * name, then the body. Markdown inside HTML blocks. */
-function statusRow(status, label, body, { open = false } = {}) {
+export function statusRow(status, label, body, { open = false } = {}) {
   return [`<details class="caitlyn-param caitlyn-status-row"${open ? ' open' : ''}>`, '<summary>', '', `<span class="caitlyn-status" data-status-class="${String(status).charAt(0)}">${status}</span> ${label}`, '', '</summary>', '', ...body, '</details>', ''].join('\n');
 }
 
@@ -197,7 +234,7 @@ const numberText = (n) => `(?:${n}|${Number(n).toLocaleString('en-GB')})`;
 
 /** The description without what the muted line already says: a "Defaults to 20." sentence, or a ", from 1 to 100" or
  * ", at most 32,000 characters" phrase, when the constraint is the same. */
-function withoutRepeats(doc, { len, range, def }) {
+export function withoutRepeats(doc, { len, range, def }) {
   let out = doc;
   if (def !== undefined) out = out.replace(new RegExp(`\\s*Defaults? to \`?${String(def).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\`?\\.`, 'i'), '');
   for (const c of [range, len]) {
@@ -534,11 +571,14 @@ function operationPage(ast, op, typePages, examples, opsUsingError) {
     ...out.slice(errorsEnd, examplesAt < 0 ? out.length : examplesAt),
   ];
   if (examplesAt >= 0) {
-    siteLines.push('## Examples', '', 'Each example\'s code, request and response are in the code panel, in the site\'s code language.', '');
+    // Each example's title is a link to its own heading, which shows that example in the code panel
+    // (src/scripts/operation-panel.ts marks the one shown); its heading and anchor stay as the Markdown copy has them.
+    siteLines.push('## Examples', '', 'Each example\'s code, request and response are in the code panel, in the site\'s code language. Choose an example to show it there.', '', '<div class="caitlyn-example-list">', '');
     for (const ex of exs) {
-      siteLines.push(`### ${ex.example.title}`, '');
+      siteLines.push(`### [${ex.example.title}](#${headingId(ex.example.title)})`, '');
       if (ex.example.documentation) siteLines.push(ex.example.documentation, '');
     }
+    siteLines.push('</div>', '');
   }
   const siteBody = siteLines.filter((line) => !stripRows.has(line)).map((line) => siteParts.get(line) ?? line).join('\n');
   const events = eventsUnion(ast, op);
@@ -551,8 +591,23 @@ function operationPage(ast, op, typePages, examples, opsUsingError) {
     // labelled as a sample
     events: events && !ex.example.error ? sampleEvents(ast, events) : null,
   }));
+  // Every status the operation documents, each with a body to show in the panel's response pane: an example's own when
+  // the model has one with that status, otherwise the problem details every error carries, with the status's first code
+  // (marked as an illustration)
+  const success = t[T('http')]?.code ?? 200;
+  const errorClasses = opsUsingError.errorsOf(op);
+  const statuses = [...new Set([success, ...errorClasses.map((e) => e.status)])].sort((a, b) => a - b);
+  const responses = statuses.map((status) => {
+    const own = panel.find((p) => p.status === status);
+    if (own) return { status, result: own.result, events: own.events, sample: false };
+    const err = errorClasses.find((e) => e.status === status);
+    const code = err?.codes[0];
+    if (!code) return { status, result: null, events: null, sample: true };
+    return { status, result: JSON.stringify(problemDetails(code, status), null, 2), events: null, sample: true, code };
+  });
   const operation = {
     name: op.name,
+    responses,
     method: `${op.namespace}.${op.method}`,
     calls: Object.fromEntries(Object.entries(calls).map(([lang, call]) => [lang.toLowerCase(), call])),
     http: { method: op.http.method, path: `/api${op.http.uri}` },
@@ -569,22 +624,41 @@ function typePage(ast, id, typePages, usedBy) {
   const doc = s.traits?.[T('documentation')];
   if (doc) out.push(doc.trim(), '');
   const ops = usedBy.get(id) ?? [];
+  // The site's page shows the members, values or events as the operation pages' stacked rows; the Markdown copy keeps
+  // the tables
+  const site = [...out];
   if (s.type === 'enum') {
     const open = /Open: new values may be added/.test(doc ?? '');
-    out.push(`A string. ${open ? '' : ''}The SDKs keep a value they do not know yet as the string itself (Python: an unknown member carrying it), so a newer server never breaks an older SDK.`, '');
+    const lead = `A string. ${open ? '' : ''}The SDKs keep a value they do not know yet as the string itself (Python: an unknown member carrying it), so a newer server never breaks an older SDK.`;
+    out.push(lead, '');
     out.push('| Value | Description |', '| --- | --- |');
     for (const [, m] of Object.entries(s.members)) out.push(`| \`${m.traits?.[T('enumValue')]}\` | ${cell(m.traits?.[T('documentation')])} |`);
     out.push('');
+    site.push(lead, '', groupLabel('values', 'Values'), '', '<div class="caitlyn-params">', '');
+    for (const [, m] of Object.entries(s.members)) {
+      const d = oneLine(m.traits?.[T('documentation')] ?? '');
+      site.push('<div class="caitlyn-param">', '', `<span class="caitlyn-param-name">\`${m.traits?.[T('enumValue')]}\`</span>`, '', ...(d ? [`<span class="caitlyn-param-doc">${d}</span>`, ''] : []), '</div>', '');
+    }
+    site.push('</div>', '');
   } else if (s.type === 'union') {
-    out.push('Exactly one of these, named by the SSE `event:` line. The SDKs skip an event name they do not know.', '');
+    const lead = 'Exactly one of these, named by the SSE `event:` line. The SDKs skip an event name they do not know.';
+    out.push(lead, '');
     out.push('| Event | Data | Visibility | Description |', '| --- | --- | --- | --- |');
     for (const [, m] of Object.entries(s.members)) out.push(`| \`${m.traits?.[T('jsonName')]}\` | [${local(m.target)}](/${typeSlug(m.target)}/) | ${m.traits?.[C('eventClass')] ?? 'public'} | ${cell(m.traits?.[T('documentation')])} |`);
     out.push('');
+    site.push(lead, '', groupLabel('events', 'Events'), '', memberTree(ast, Object.fromEntries(Object.values(s.members).map((m) => [m.traits?.[T('jsonName')], m])), typePages, { wireNames: true, extraMeta: (m) => [`${m.traits?.[C('eventClass')] ?? 'public'} event`] }));
   } else {
-    out.push(memberTable(ast, members(ast, id), typePages, { wireNames: true }) || 'No members.', '');
+    const table = memberTable(ast, members(ast, id), typePages, { wireNames: true });
+    out.push(table || 'No members.', '');
     out.push('Unknown members a newer server sends are kept in the object\'s `raw`.', '');
+    site.push(...(table ? [groupLabel('body', 'Members'), '', memberTree(ast, members(ast, id), typePages, { wireNames: true })] : ['No members.']), '');
+    site.push('Unknown members a newer server sends are kept in the object\'s `raw`.', '');
   }
-  if (ops.length) out.push(`Used by ${ops.map((o) => `[${o.name}](/reference/${kebab(o.name)}/)`).join(', ')}.`, '');
+  if (ops.length) {
+    const line = `Used by ${ops.map((o) => `[${o.name}](/reference/${kebab(o.name)}/)`).join(', ')}.`;
+    out.push(line, '');
+    site.push(line, '');
+  }
   const resources = [...new Set(ops.flatMap((o) => [o.resource && kebab(local(o.resource).replace(/Resource$/, '')), kebab(singular(o.namespace.split('.').pop()))]).filter(Boolean))].filter((k) => OPTIONS.resources.includes(k));
   const since = ops.map((o) => sinceVersion(o.since)).sort((a, b) => a - b)[0] ?? 0;
   return {
@@ -592,6 +666,7 @@ function typePage(ast, id, typePages, usedBy) {
     title: name,
     metadata: { pageType: 'reference', sinceVersion: since, resources, integrations: [], operations: ops.map((o) => o.name) },
     body: out.join('\n'),
+    siteBody: site.join('\n'),
     group: 'types',
     label: name,
   };
@@ -665,7 +740,89 @@ export function referencePages(ast) {
       pages.push(errorPage(ast, code, err, listing));
     }
   }
-  return { pages, ops, examples };
+  return { pages, ops, examples, typePages };
+}
+
+/**
+ * The SDK reference's overview at /sdk/: installing each SDK and creating a client (both from Getting started, as its
+ * readers already know them), the server and workspace (the page's Server block), the sign-in modes (Authentication's
+ * table), every namespace with its operations by SDK method, the waiters, and how errors and retries behave. The site's
+ * page lists the operations as rows; the Markdown copy as a list. `pages` are the SDK reference's operation pages.
+ * ctx: { install, firstCall, modes } (Markdown taken from the hand-written pages), tree (scripts/docs-api.mjs
+ * namespaceTree: the namespaces as the sidebars nest them)
+ */
+export function sdkOverview(ast, ops, pages, { install, firstCall, modes, tree }) {
+  const head = [
+    'The SDKs for TypeScript, Python, Go and Rust call the Caitlyn v3 API for you: they sign in, retry what is safe to repeat, page through lists, follow streams and raise a typed error for each failure. Each operation is a method on a client, grouped by what it acts on.',
+    '',
+    '## Install',
+    '',
+    install.trim(),
+    '',
+    '## Create a client',
+    '',
+    'A client is for one workspace and one way of signing in. This program creates one and makes a first call; [Getting started](/getting-started/) walks through it.',
+    '',
+    firstCall.trim(),
+    '',
+    '## Server and workspace',
+    '',
+    "The client sends every request to its workspace's own hostname, `https://{workspace}/api`. Give your workspace in the Server block and every example on this site uses it. [The workspace](/getting-started/#the-workspace) explains what it decides.",
+    '',
+    '## Sign-in modes',
+    '',
+    'The `auth` option chooses how the client signs in; [Authentication](/authentication/) has each mode in full.',
+    '',
+    modes.trim(),
+    '',
+    '## Namespaces and operations',
+    '',
+  ];
+  const md = [...head];
+  const site = [...head];
+  const W = 'smithy.waiters#waitable';
+  const waiters = [];
+  const group = (label, ns, level) => {
+    const list = ops.filter((o) => o.namespace === ns);
+    const path = `caitlyn.${namespacePath('typescript', ns)}`;
+    md.push(`${level} ${label}`, '', `\`${path}\`:`, '');
+    site.push(`${level} ${label}`, '', `<div class="caitlyn-api-ops">`, '');
+    for (const op of list) {
+      const page = pages.find((p) => p.title === op.name);
+      const summary = firstSentence(op.doc ?? '');
+      md.push(`- [\`${path}.${op.method}\`](/${page.slug}/) (${op.name}): ${summary}`);
+      site.push('<div class="caitlyn-api-op">', '', `[\`${path}.${op.method}\`](/${page.slug}/) <code class="caitlyn-api-op-path">${op.name}</code>`, '', `<span class="caitlyn-param-doc">${summary}</span>`, '', '</div>', '');
+      for (const [name, w] of Object.entries(op.shape.traits?.[W] ?? {})) waiters.push({ ns, op, page, name, doc: oneLine(w.documentation ?? '') });
+    }
+    md.push('');
+    site.push('</div>', '');
+  };
+  for (const node of tree) {
+    if (!node.children) {
+      group(node.label, node.ns, '###');
+      continue;
+    }
+    md.push(`### ${node.label}`, '');
+    site.push(`### ${node.label}`, '');
+    for (const child of node.children) group(child.label, child.ns, '####');
+  }
+  const tail = [];
+  if (waiters.length) {
+    tail.push('## Waiters', '', 'A waiter reads a resource until it reaches the state you are waiting for, backing off between reads, and returns it; it raises a `WaiterError` when the resource reaches a state it can never leave, or the wait runs out of time.', '');
+    tail.push('| Waiter | Reads | Waits until |', '| --- | --- | --- |');
+    for (const w of waiters) {
+      const m = `waitUntil${w.name}`;
+      tail.push(`| \`caitlyn.${namespacePath('typescript', w.ns)}.${m}\` (Python \`${namespacePath('python', w.ns)}.${names.python(m)}\`, Go \`${namespacePath('go', w.ns)}.${names.go(m)}\`, Rust \`${namespacePath('rust', w.ns)}.${names.rust(m)}\`) | [${w.op.name}](/${w.page.slug}/) | ${cell(w.doc)} |`);
+    }
+    tail.push('');
+  }
+  tail.push(
+    '## Errors and retries',
+    '',
+    'A failed call raises the error class for its HTTP status, carrying the error\'s `code`, `detail` and `requestId` ([Errors](/errors/)); each code has its own page under Error codes. A call that is safe to repeat is retried on 429, 503 and connection failures, with backoff ([Retries](/retries/)). A stream resumes from the last event it received ([Streaming](/streaming/)), and a list is paged through for you ([Pagination](/pagination/)).',
+    '',
+  );
+  return { body: [...md, ...tail].join('\n'), siteBody: [...site, ...tail].join('\n') };
 }
 
 export { plural };

@@ -6,11 +6,13 @@
 //
 // Which language a group opens on, first match wins:
 //   1. the one holding the target of a `:~:text=` link (a citation from Ask Caitlyn quotes the code it means);
-//   2. `?lang=<key>` in the URL (typescript, python, go, rust);
+//   2. `?lang=<key>` in the URL (typescript, python, go, rust, curl);
 //   3. the reader's last choice on this site (localStorage);
 //   4. the first tab.
 // Browsers scroll to a `:~:text=` target themselves, but not into a panel that is hidden, and some browsers do
 // not support text fragments at all. In both cases this script finds the text, scrolls to it and highlights it.
+
+import { setPicker } from './language-select';
 
 const STORE = 'caitlyn-docs-lang';
 const HIGHLIGHT = 'caitlyn-fragment';
@@ -148,13 +150,16 @@ function activate(group: Element, key: string): boolean {
   return true;
 }
 
-const LANGUAGES = ['typescript', 'python', 'go', 'rust'];
+// curl is the API reference's: chosen there, it is the site's language, and wherever curl is not offered (the SDK
+// reference, a guide's tabs) TypeScript shows in its place (src/styles/components.css)
+const LANGUAGES = ['typescript', 'python', 'go', 'rust', 'curl'];
 
-/** Makes a language the site's: on the page root, in every language menu, and remembered. */
+/** Makes a language the site's: on the page root, in every language menu (which shows TypeScript when it has no
+ * curl), and remembered. */
 function setSiteLang(key: string, remember: boolean): void {
   if (!LANGUAGES.includes(key)) return;
   document.documentElement.dataset.lang = key;
-  for (const select of document.querySelectorAll<HTMLSelectElement>('caitlyn-language-select select')) select.value = key;
+  for (const picker of document.querySelectorAll<HTMLElement>('caitlyn-language-select')) setPicker(picker, key);
   if (remember) storeLang(key);
 }
 
@@ -168,12 +173,12 @@ function setUp(): void {
   const fromUrl = new URLSearchParams(location.search).get('lang');
   const preferred = fromUrl ?? storedLang();
   setSiteLang(preferred ?? LANGUAGES[0]!, false);
-  for (const select of document.querySelectorAll<HTMLSelectElement>('caitlyn-language-select select')) {
-    select.addEventListener('change', () => {
-      setSiteLang(select.value, true);
-      for (const g of groups) activate(g, select.value);
-    });
-  }
+  // A language chosen in a code panel's menu (src/scripts/language-select.ts)
+  document.addEventListener('caitlyn-lang', (e) => {
+    const key = (e as CustomEvent<string>).detail;
+    setSiteLang(key, true);
+    for (const g of groups) activate(g, key);
+  });
   const pinned = new Map<Element, string>();
   for (const range of targets) {
     const panel = (range.startContainer.parentElement ?? null)?.closest<HTMLElement>('.lang-panel');

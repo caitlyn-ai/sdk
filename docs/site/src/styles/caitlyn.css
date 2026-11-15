@@ -8,8 +8,8 @@
 /* ------------------------------------------------------------- web fonts */
 /* The licensed Euclid Circular web fonts. The files are not in this repository (it is mirrored publicly, and the
    licence covers serving them, not publishing them): the hosting uploads them to /_fonts/v1/ on build.caitlyn.ai
-   and on every preview (production-demo-infrastructure, developer-docs/fonts.tf). Anywhere else, such as the
-   GitLab Pages copy or `astro preview`, the request 404s and the fallback stack is used. Only Regular (400) and
+   and on every preview (production-demo-infrastructure, developer-docs/fonts.tf). Anywhere else, such as
+   `astro preview`, the request 404s and the fallback stack is used. Only Regular (400) and
    Medium (500) have web files, so text set at Light (300), the body's token weight, renders in Regular. */
 @font-face {
   font-family: 'Euclid Circular';

@@ -13,21 +13,16 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { frontMatter, metadataProblems } from './docs-metadata.mjs';
+import { frontMatter, metadataProblems, sinceVersion } from './docs-metadata.mjs';
 import { MARKER, readPages } from './docs-guides.mjs';
-import { loadModel, root } from './docs-model.mjs';
-import { referencePages } from './docs-reference.mjs';
-import { LANGUAGES } from './docs-snippets.mjs';
+import { kebab, loadModel, root } from './docs-model.mjs';
+import { referencePages, sdkOverview } from './docs-reference.mjs';
+import { apiOverview, apiPages, namespaceLabel, namespaceTree, publishedOpenapi } from './docs-api.mjs';
+import { documentProblems, lineProblems } from './docs-wording.mjs';
 
-// Where the site is served. Production is https://build.caitlyn.ai at the root. A merge request's GitLab Pages
-// preview (the `pages` CI job) serves it under a path instead: DOCS_SITE_URL is that address and DOCS_BASE its
-// path, and site-relative links in the pages, the sidebar, the Markdown copies and llms.txt are written under it.
-// pages.json always names the production addresses, which the knowledge base cites.
+// Where the site is served: https://build.caitlyn.ai, at the root; a merge request's preview is the same build at the
+// root of its own host (docs:preview). pages.json, llms.txt and the moved pages name these addresses.
 const PROD_URL = 'https://build.caitlyn.ai';
-const SITE_URL = (process.env.DOCS_SITE_URL ?? PROD_URL).replace(/\/+$/, '');
-const BASE = `/${(process.env.DOCS_BASE ?? '/').replace(/^\/+|\/+$/g, '')}/`.replace(/^\/\/$/, '/');
-/** Site-relative Markdown links (`](/errors/)`) moved under BASE; unchanged at the root. */
-const rebase = (md) => (BASE === '/' ? md : md.replace(/\]\(\/(?!\/)/g, `](${BASE}`));
 const out = path.join(root, 'build/docs');
 const site = path.join(out, 'site');
 const project = path.join(root, 'docs/site');
@@ -90,23 +85,59 @@ for (const p of reference.pages) {
   for (const problem of metadataProblems(p.metadata)) fail(`${p.slug} (generated)`, problem);
   pages.push({ ...p, source: 'the model', kind: p.group === 'errors' ? 'errors' : p.group === 'types' ? 'types' : 'reference' });
 }
-// A namespace's place in the sidebars and the HTTP API's tags follows the client: a nested namespace
-// (caitlyn.agents.versions) is a group inside its first segment's group (Agents, then Versions). A group is labelled by
-// its own segment, in words where the SDK's name is not what a reader looks for. The SDK names in the pages stay as
-// they are.
-const SEGMENT_LABELS = { productionHistory: 'Production history' };
-const segmentLabel = (s) => SEGMENT_LABELS[s] ?? s.charAt(0).toUpperCase() + s.slice(1);
-const namespaceLabel = (ns) => segmentLabel(ns.split('.').pop());
-// The order of the groups inside a parent group: versions before production history, then any other alphabetically
-const NESTED_ORDER = ['versions', 'productionHistory'];
-const nestedRank = (ns) => {
-  const i = NESTED_ORDER.indexOf(ns.split('.').pop());
-  return i < 0 ? NESTED_ORDER.length : i;
-};
-// An operation's address in the HTTP API's reference (/api/, Scalar's own anchors: tag, method and path). Scalar
-// slugs the tag as @scalar/helpers' slugify does: lower case, punctuation dropped, spaces as hyphens.
-const tagSlug = (group) => group.toLowerCase().replace(/[^\p{L}\p{M}\p{N}\s_-]/gu, '').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '');
-const apiAnchor = (group, method, path) => `/api/#tag/${tagSlug(group)}/${method.toUpperCase()}${path}`;
+const namespaces = [...new Set(reference.ops.map((o) => o.namespace))];
+const tree = namespaceTree(reference.ops);
+
+// The SDK reference's overview (/sdk/): Getting started's install and first call, and Authentication's modes table
+// (its links made to point at that page), as their readers know them
+const gettingStarted = pages.find((p) => p.slug === 'getting-started')?.body ?? '';
+const mdSection = (body, heading) => new RegExp(`^## ${heading}\\n([\\s\\S]*?)(?=^## )`, 'm').exec(body)?.[1] ?? '';
+const tabGroup = (md) => /((?:^```\w+ tab="[^"]+"\n[\s\S]*?^```\n?)+)/m.exec(md)?.[1] ?? '';
+const authBody = pages.find((p) => p.slug === 'authentication')?.body ?? '';
+const modesTable = /^\| Mode \|[\s\S]*?(?=\n\n)/m.exec(authBody)?.[0] ?? '';
+const overviewParts = { install: tabGroup(mdSection(gettingStarted, 'Install')), firstCall: tabGroup(mdSection(gettingStarted, 'Make a first call')), modes: modesTable.replace(/\]\(#/g, '](/authentication/#') };
+for (const [part, md] of Object.entries(overviewParts)) if (!md.trim()) fail('scripts/docs-build.mjs', `the SDK reference's overview found no ${part} in Getting started or Authentication`);
+pages.push({
+  slug: 'sdk',
+  title: 'Caitlyn v3 SDKs',
+  metadata: { pageType: 'sdk', sinceVersion: Math.min(...reference.ops.map((o) => sinceVersion(o.since))), resources: [...new Set(reference.pages.filter((p) => p.operation).flatMap((p) => p.metadata.resources))], integrations: [], operations: reference.ops.map((o) => o.name) },
+  ...sdkOverview(ast, reference.ops, reference.pages, { ...overviewParts, tree }),
+  source: 'the model',
+  kind: 'reference',
+  group: 'overview',
+  server: true,
+});
+
+// The HTTP API's reference (/api/, scripts/docs-api.mjs): the site's copy of the model's OpenAPI document, published at
+// /api/openapi.json, and an overview and a page per operation built from it. Its text passes the same public-wording
+// check as the pages.
+const { doc: openapi, problems: openapiProblems } = publishedOpenapi(JSON.parse(fs.readFileSync(path.join(root, 'model/openapi.json'), 'utf8')), {
+  ops: reference.ops,
+  namespaceLabel,
+  sdkSlug: (op) => `sdk/${kebab(op.name)}`,
+  examples: reference.examples,
+});
+for (const problem of openapiProblems) fail('model/openapi.json', problem);
+for (const problem of documentProblems(openapi)) fail('the published OpenAPI document', problem);
+const api = apiPages(openapi, {
+  ast,
+  ops: reference.ops,
+  sdkPages: new Map(reference.pages.filter((p) => p.operation).map((p) => [p.title, p])),
+  typePages: reference.typePages,
+  namespaceLabel,
+});
+pages.push({
+  slug: 'api',
+  title: 'Caitlyn v3 HTTP API',
+  metadata: { pageType: 'reference', sinceVersion: Math.min(...api.pages.map((p) => p.metadata.sinceVersion)), resources: [...new Set(api.pages.flatMap((p) => p.metadata.resources))], integrations: [], operations: api.pages.map((p) => p.title) },
+  ...apiOverview(api.pages, { tree }),
+  source: 'the OpenAPI document',
+  kind: 'api',
+  group: 'overview',
+  server: true,
+  apiAnchors: api.anchors,
+});
+for (const p of api.pages) pages.push({ ...p, source: 'the OpenAPI document', kind: 'api' });
 // The SDK reference lives under /sdk/ (the HTTP API's reference is /api/). Its pages were /reference/, which the pages
 // and the generator still write: each slug and link moves here, and every old address redirects to its new one.
 const SDK_REFERENCE = 'sdk';
@@ -151,44 +182,26 @@ for (const p of pages) {
 }
 // No raw HTML headings: Astro gives them no id, while citation anchors count them (docs/site/test/heading-ids.test.mjs)
 for (const p of pages) if (/^\s*<h[1-6][\s>]/im.test(p.body)) fail(p.source, 'a raw HTML heading; write it as a Markdown heading');
-// Nothing on a page points readers at how Caitlyn is built: the protocol document, the model and its traits, the
-// generators, CI, repository paths, merge requests, internal hosts, or release plans. Say what the SDK does instead.
-// Prose is checked outside code; hosts and merge request links are checked everywhere.
-const INTERNAL_PROSE = [
-  [/PROTOCOL\.md/, 'PROTOCOL.md'],
-  [/\bsmithy\b/i, 'Smithy'],
-  [/\bconformance\b/i, 'the conformance suites'],
-  [/`@[a-z][A-Za-z]*`/, 'a model trait'],
-  [/\bcode owners\b/i, 'code owners'],
-  [/\b(?:codegen|generators?)\b/i, 'the generators'],
-  [/\bexamples:live\b/, 'a CI job of this repository'],
-  [/(?:^|[\s(`])(?:scripts|codegen|conformance|model)\/[\w.-]/, 'a repository path'],
-  [/\bnext release\b|\bnot in a release\b|\bno Caitlyn release\b|\breleased yet\b/i, 'release plans'],
-];
-const INTERNAL_ANYWHERE = [
-  [/merge_requests\/\d+|\b[\w-]+![0-9]{2,}\b/, 'a merge request'],
-  [/\bgit\.customd\.com\b|\bcustomd\.com\b|\blndo\.site\b|\bmr-\d+\.labs\b/i, 'an internal host'],
-];
+// Nothing on a page points readers at how Caitlyn is built (scripts/docs-wording.mjs). Prose is checked outside code;
+// hosts and merge request links are checked everywhere.
 for (const p of pages) {
-  const where = p.source === 'the model' ? `${p.slug} (generated)` : p.source;
+  const where = p.source === 'the model' || p.source === 'the OpenAPI document' ? `${p.slug} (generated)` : p.source;
   let fence = false;
   for (const line of p.body.split('\n')) {
     if (/^\s*```/.test(line)) fence = !fence;
-    const prose = fence || /^<!-- example:/.test(line) ? '' : line.replace(/`[^`]*`/g, (c) => (/^`@[a-z]/.test(c) ? c : '``'));
-    for (const [re, what] of INTERNAL_PROSE) if (re.test(prose)) fail(where, `mentions ${what}: "${line.trim().slice(0, 100)}"`);
-    for (const [re, what] of INTERNAL_ANYWHERE) if (re.test(line)) fail(where, `names ${what}: "${line.trim().slice(0, 100)}"`);
+    for (const problem of lineProblems(line, { prose: !(fence || /^<!-- example:/.test(line)) })) fail(where, problem);
   }
 }
 // Every site-relative link must name a page (with its trailing slash), an anchor on it, or a published file.
 for (const p of pages) {
   for (const m of p.body.matchAll(/\]\((\/[^)\s]*)\)/g)) {
     const [target, anchor] = m[1].split('#');
-    if (target === '/llms.txt' || target === '/llms-full.txt') continue;
+    if (target === '/llms.txt' || target === '/llms-full.txt' || target === '/api/openapi.json') continue;
     // A file the site publishes as it is, such as a screenshot in docs/site/public/images/
     if (!target.endsWith('/') && fs.existsSync(path.join(project, 'public', target))) continue;
     const slug = target.replace(/^\/|\/$/g, '');
-    if (!target.endsWith('/') || !slugs.has(slug)) fail(p.source === 'the model' ? `${p.slug} (generated)` : p.source, `the link ${m[1]} names no page (page links end in /)`);
-    else if (anchor !== undefined && !anchors(bySlugEarly.get(slug)).has(anchor)) fail(p.source === 'the model' ? `${p.slug} (generated)` : p.source, `the link ${m[1]} names no heading on that page`);
+    if (!target.endsWith('/') || !slugs.has(slug)) fail((p.source === 'the model' || p.source === 'the OpenAPI document') ? `${p.slug} (generated)` : p.source, `the link ${m[1]} names no page (page links end in /)`);
+    else if (anchor !== undefined && !anchors(bySlugEarly.get(slug)).has(anchor)) fail((p.source === 'the model' || p.source === 'the OpenAPI document') ? `${p.slug} (generated)` : p.source, `the link ${m[1]} names no heading on that page`);
   }
 }
 if (invalid) {
@@ -232,6 +245,7 @@ const START_LABELS = {
 const sectionLabel = (page) => {
   if (page.kind === 'guides') return 'Guide';
   if (page.kind === 'reference') return 'SDK reference';
+  if (page.kind === 'api') return 'API reference';
   if (page.kind === 'types') return 'Type';
   if (page.kind === 'errors') return 'Error code';
   if (page.kind === 'pages') return START_LABELS[page.slug] ?? 'Start here';
@@ -255,7 +269,7 @@ const ICONS = {
   'sign-in': 'padlock',
   tools: 'setting',
 };
-const KIND_ICONS = { guides: 'open-book', reference: 'puzzle', types: 'document', errors: 'warning' };
+const KIND_ICONS = { guides: 'open-book', reference: 'puzzle', api: 'puzzle', types: 'document', errors: 'warning' };
 const cardIcon = (page) => ICONS[page.slug] ?? ICONS[page.slug.split('/')[0]] ?? KIND_ICONS[page.kind] ?? 'information';
 
 // "What's next" on each page: the site's own map (docs/site/src/whats-next.json), resolved to titles and
@@ -270,7 +284,7 @@ const whatsNext = (slug) =>
       fail('docs/site/src/whats-next.json', `"${slug}" lists "${target}", which is no page`);
       return null;
     }
-    return { link: `${BASE}${target ? `${target}/` : ''}`, title: entry.label ?? t.title, description: description(t.body), section: sectionLabel(t), icon: cardIcon(t) };
+    return { link: `/${target ? `${target}/` : ''}`, title: entry.label ?? t.title, description: description(t.body), section: sectionLabel(t), icon: cardIcon(t) };
   }).filter(Boolean);
 
 /**
@@ -299,7 +313,7 @@ const contentNext = (p) => {
       continue;
     }
     cards.push({
-      link: `${BASE}${target.slug ? `${target.slug}/` : ''}`,
+      link: `/${target.slug ? `${target.slug}/` : ''}`,
       title: target.title,
       description: sentence(plainText(link[3])) || description(target.body),
       section: sectionLabel(target),
@@ -310,7 +324,7 @@ const contentNext = (p) => {
   return { cards, notes, body: p.body.slice(0, match.index).trimEnd() + '\n' };
 };
 
-const card = (t) => ({ link: `${BASE}${t.slug ? `${t.slug}/` : ''}`, title: t.title, description: description(t.body), section: sectionLabel(t), icon: cardIcon(t) });
+const card = (t) => ({ link: `/${t.slug ? `${t.slug}/` : ''}`, title: t.title, description: description(t.body), section: sectionLabel(t), icon: cardIcon(t) });
 /** The pages in the same sidebar group as this one, starting after it and wrapping round */
 const neighbours = (p) => {
   const rank = (q) => (q.kind === 'pages' && START.includes(q.slug) ? START.indexOf(q.slug) : START.length);
@@ -319,7 +333,7 @@ const neighbours = (p) => {
   return [...group.slice(at + 1), ...group.slice(0, Math.max(at, 0))].filter((q) => q.slug !== p.slug).map(card);
 };
 const dedupe = (cards, p) => {
-  const seen = new Set([`${BASE}${p.slug}/`]);
+  const seen = new Set([`/${p.slug}/`]);
   return cards.filter((c) => !seen.has(c.link) && seen.add(c.link)).slice(0, 6);
 };
 
@@ -329,7 +343,7 @@ const inlineHtml = (md) =>
   md
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, href) => `<a href="${rebase(`](${href}`).slice(2)}">${text}</a>`)
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, href) => `<a href="${href}">${text}</a>`)
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\s+/g, ' ')
@@ -351,7 +365,7 @@ for (const p of pages) {
       `  title: ${yaml(p.title)}`,
       `  tagline: ${yaml(inlineHtml(lead))}`,
       '  actions:',
-      `    - { text: "Get started", link: ${yaml(`${BASE}getting-started/`)}, variant: primary }`,
+      `    - { text: "Get started", link: ${yaml('/getting-started/')}, variant: primary }`,
     );
   }
   // The page's own "Next" section wins over the site's map: it is what its author wrote
@@ -378,11 +392,16 @@ for (const p of pages) {
     `operations: ${yaml(p.metadata.operations ?? [])}`,
     // An operation page's header strip (src/components/OperationHeader.astro): each SDK's call, the HTTP call and the
     // same operation in the HTTP API's reference
-    ...(p.operation ? [`operation: ${yaml({ ...p.operation, api: `${BASE}${apiAnchor(namespaceLabel(p.group), p.operation.http.method, p.operation.http.path.replace(/^\/api/, '')).slice(1)}` })}`] : []),
+    // the same operation in the other reference: the API reference's page from the SDK reference, and back
+    ...(p.operation ? [`operation: ${yaml({ ...p.operation, other: p.kind === 'api' ? { label: 'In the SDK reference', link: `/sdk/${kebab(p.title)}/` } : { label: 'In the API reference', link: `/api/${kebab(p.title)}/` } })}`] : []),
+    // The API reference's overview: its Server block (src/components/PageTitle.astro), and Scalar's old anchors
+    // (#tag/documents/GET/v3/...), each sent on to its operation's page
+    ...(p.server ? ['server: true'] : []),
+    ...(p.apiAnchors ? [`apiAnchors: ${yaml(p.apiAnchors)}`] : []),
     '---',
     '',
   ].join('\n');
-  fs.writeFileSync(file, `${fm}${rebase(body).trimEnd()}\n`);
+  fs.writeFileSync(file, `${fm}${body.trimEnd()}\n`);
 }
 
 // The sidebar, as topics (starlight-sidebar-topics): each topic is a section of the site with its own sidebar, and
@@ -396,20 +415,6 @@ const link = (p, label = p.title) => ({ label, link: `/${p.slug ? `${p.slug}/` :
 // (src/styles/components.css), and carries its full name for the tooltip shown when it is cut (src/scripts/sidebar-cut.ts).
 // The full name is the link's own text either way, so a screen reader reads all of it.
 const refLink = (p, label = p.label ?? p.title) => ({ ...link(p, label), attrs: { 'data-ref': '', 'data-full': label } });
-const namespaces = [...new Set(reference.ops.map((o) => o.namespace))];
-/** The namespaces as the sidebars nest them: [{ label, ns }] for a namespace, [{ label, children }] for a parent. */
-const namespaceTree = [];
-for (const ns of namespaces) {
-  if (!ns.includes('.')) {
-    namespaceTree.push({ label: namespaceLabel(ns), ns });
-    continue;
-  }
-  const parent = segmentLabel(ns.split('.')[0]);
-  let node = namespaceTree.find((n) => n.children && n.label === parent);
-  if (!node) namespaceTree.push((node = { label: parent, children: [] }));
-  node.children.push({ label: namespaceLabel(ns), ns });
-}
-for (const node of namespaceTree) node.children?.sort((a, b) => nestedRank(a.ns) - nestedRank(b.ns) || a.label.localeCompare(b.label));
 const TOPIC_START = {
   'how-the-api-works': ['streaming', 'pagination', 'retries', 'errors', 'telemetry'],
   guides: ['guides-in-the-app'],
@@ -418,7 +423,7 @@ const placed = new Set(Object.values(TOPIC_START).flat());
 const startPagesOf = (slugs) => slugs.filter((s) => bySlug.has(s)).map((s) => bySlug.get(s));
 const getStarted = [bySlug.get(''), ...startPagesOf(START.filter((s) => !placed.has(s))), ...pages.filter((p) => p.kind === 'pages' && p.slug !== '' && !START.includes(p.slug))];
 const referenceGroups = [
-  ...namespaceTree.map(function group(node) {
+  ...tree.map(function group(node) {
     if (node.children) return { label: node.label, items: node.children.map(group) };
     return { label: node.label, items: pages.filter((p) => p.kind === 'reference' && p.group === node.ns).map((p) => refLink(p)) };
   }),
@@ -428,7 +433,8 @@ const referenceGroups = [
 const guidePages = pages.filter((p) => p.kind === 'guides');
 const howItWorks = startPagesOf(TOPIC_START['how-the-api-works']);
 const sidebar = [
-  { label: 'Get started', link: '/', icon: 'rocket', items: getStarted.map((p) => link(p, p.slug === '' ? 'Overview' : p.title)) },
+  // The section's own link is Getting started; the logo and the section's Overview item are the landing page (/)
+  { label: 'Get started', link: '/getting-started/', icon: 'rocket', items: getStarted.map((p) => link(p, p.slug === '' ? 'Overview' : p.title)) },
   {
     label: 'Guides',
     link: link(guidePages[0] ?? sectionPages(SECTIONS[0], pages)[0]).link,
@@ -440,89 +446,23 @@ const sidebar = [
     ],
   },
   { label: 'How the API works', link: link(howItWorks[0]).link, icon: 'puzzle', items: howItWorks.map((p) => link(p)) },
-  { label: 'SDK reference', link: bySlug.has('sdk/send-message') ? '/sdk/send-message/' : referenceGroups[0].items[0].link, icon: 'seti:json', badge: { text: 'Beta', variant: 'default' }, items: referenceGroups },
+  { label: 'SDK reference', link: '/sdk/', icon: 'seti:json', badge: { text: 'Beta', variant: 'default' }, items: [link(bySlug.get('sdk'), 'Overview'), ...referenceGroups] },
 ];
-// The HTTP API's reference (/api/, rendered by Scalar from src/generated/openapi.json): a copy of the model's
-// OpenAPI document made for the site. The model's file is unchanged. The copy groups the operations by the SDK
-// reference's groups, titles each with its operation name, names the bearer scheme plainly, and opens each
-// operation's description with a link to the same operation in the SDK reference, taken from the SDK reference's
-// own pages so the two cannot drift. Each operation carries its first example in every SDK language as
-// x-codeSamples (the programs the SDK reference shows), and the document's info names each SDK's install, from
-// Getting started, for Scalar's Client Libraries box (x-scalar-sdk-installation). Its text passes the same
-// public-wording check as the pages.
-const openapi = JSON.parse(fs.readFileSync(path.join(root, 'model/openapi.json'), 'utf8'));
-const opByName = new Map(reference.ops.map((o) => [o.name, o]));
-// Each namespace is a tag, and a nested one names its parent tag (OpenAPI 3.2's `parent`, which Scalar nests by)
-openapi.tags = namespaceTree.flatMap((node) =>
-  node.children ? [{ name: node.label }, ...node.children.map((c) => ({ name: c.label, parent: node.label }))] : [{ name: node.label }],
-);
-for (const methods of Object.values(openapi.paths ?? {})) {
-  for (const operation of Object.values(methods)) {
-    const op = opByName.get(operation.operationId);
-    if (!op) {
-      fail('model/openapi.json', `${operation.operationId} is not an operation of the SDK reference`);
-      continue;
-    }
-    operation.summary = op.name;
-    operation.tags = [namespaceLabel(op.namespace)];
-    const sdkPage = pages.find((p) => p.kind === 'reference' && p.title === op.name);
-    const example = reference.examples.find((e) => e.op.id === op.id);
-    if (example) operation['x-codeSamples'] = LANGUAGES.map((l) => ({ lang: l.key, label: l.label, source: example.code[l.key].trimEnd() }));
-    if (!sdkPage) fail('model/openapi.json', `${op.name} has no page in the SDK reference`);
-    else operation.description = [`Using an SDK? See [\`${op.namespace}.${op.method}\`](${BASE}${sdkPage.slug}/) in the SDK reference.`, operation.description].filter(Boolean).join('\n\n');
-  }
-}
-// Each SDK's install, as Getting started gives it (its Install section's tabs)
-const installSection = /## Install\n([\s\S]*?)\n## /.exec(bySlugEarly.get('getting-started')?.body ?? '')?.[1] ?? '';
-const installs = [...installSection.matchAll(/```\w+ tab="([^"]+)"\n([\s\S]*?)```/g)].map(([, label, source]) => ({ label, source: source.trimEnd() }));
-openapi.info['x-scalar-sdk-installation'] = LANGUAGES.map((l) => installs.find((i) => i.label === l.label))
-  .filter(Boolean)
-  .map((i) => ({ lang: LANGUAGES.find((l) => l.label === i.label).key, label: i.label, source: i.source }));
-if (openapi.info['x-scalar-sdk-installation'].length !== LANGUAGES.length) fail('docs/getting-started.md', 'the Install section needs a tab for each SDK, for the API reference');
-const SCHEME = 'bearerAuth';
-const schemes = openapi.components?.securitySchemes ?? {};
-for (const name of Object.keys(schemes)) {
-  if (name === SCHEME) continue;
-  schemes[SCHEME] = { ...schemes[name], description: 'A Caitlyn access token, sent as `Authorization: Bearer <token>`. See [Authentication](/authentication/).' };
-  delete schemes[name];
-}
-const renameScheme = (security) => security?.map((req) => Object.fromEntries(Object.entries(req).map(([k, v]) => [k in schemes ? k : SCHEME, v])));
-openapi.security = renameScheme(openapi.security);
-for (const methods of Object.values(openapi.paths ?? {})) for (const operation of Object.values(methods)) if (operation.security) operation.security = renameScheme(operation.security);
-// The public-wording check over every key and string the reference renders (code samples are programs, not prose)
-const checkApiText = (value, where) => {
-  if (typeof value === 'string') {
-    const prose = value.replace(/`[^`]*`/g, (c) => (/^`@[a-z]/.test(c) ? c : '``'));
-    for (const [re, what] of INTERNAL_PROSE) if (re.test(prose)) fail(`the API reference (${where})`, `mentions ${what}: "${value.trim().slice(0, 100)}"`);
-    for (const [re, what] of INTERNAL_ANYWHERE) if (re.test(value)) fail(`the API reference (${where})`, `names ${what}: "${value.trim().slice(0, 100)}"`);
-  } else if (Array.isArray(value)) value.forEach((v, i) => checkApiText(v, `${where}[${i}]`));
-  else if (value && typeof value === 'object') {
-    for (const [k, v] of Object.entries(value)) {
-      checkApiText(k, `${where} key`);
-      if (k !== 'x-codeSamples' && k !== 'x-scalar-sdk-installation') checkApiText(v, `${where}/${k}`);
-    }
-  }
-};
-checkApiText(openapi, '');
-fs.writeFileSync(path.join(generated, 'openapi.json'), JSON.stringify(openapi, null, 2) + '\n');
+// The HTTP API's reference: its overview, its operations by the SDK reference's groups, then shortcuts to the types and
+// the error codes, which are the SDK reference's pages. The published OpenAPI document is beside the pages.
+fs.mkdirSync(path.join(project, 'public/api'), { recursive: true });
+fs.writeFileSync(path.join(project, 'public/api/openapi.json'), JSON.stringify(openapi, null, 2) + '\n');
 const apiTopic = {
   label: 'API reference',
   link: '/api/',
   icon: 'seti:json',
   items: [
-    { label: 'Overview', link: '/api/' },
-    ...namespaceTree.map(function group(node) {
+    link(bySlug.get('api'), 'Overview'),
+    ...tree.map(function group(node) {
       if (node.children) return { label: node.label, items: node.children.map(group) };
-      return {
-        label: node.label,
-        items: Object.entries(openapi.paths).flatMap(([route, methods]) =>
-          Object.entries(methods)
-            .filter(([, o]) => o.tags?.[0] === node.label)
-            .map(([method, o]) => ({ label: o.summary, link: apiAnchor(node.label, method, route) })),
-        ),
-      };
+      return { label: node.label, items: pages.filter((p) => p.kind === 'api' && p.group === node.ns).map((p) => refLink(p)) };
     }),
-    // The types and error codes are the SDK reference's pages (Scalar's own models list is off): shortcuts to them
+    // The types and error codes are the SDK reference's pages: shortcuts to them
     ...referenceGroups.filter((g) => g.label === 'Types' || g.label === 'Error codes'),
   ],
 };
@@ -578,9 +518,9 @@ for (const p of pages) {
     fence = !fence;
     if (!fence) continue;
     const lang = open[1] || 'plaintext';
-    if (!CODE_ICONS[lang]) fail(p.source === 'the model' ? `${p.slug} (generated)` : p.source, `a \`${lang}\` code block has no icon: add it to CODE_ICONS in scripts/docs-build.mjs`);
+    if (!CODE_ICONS[lang]) fail((p.source === 'the model' || p.source === 'the OpenAPI document') ? `${p.slug} (generated)` : p.source, `a \`${lang}\` code block has no icon: add it to CODE_ICONS in scripts/docs-build.mjs`);
     const tab = /(?:^|\s)tab="([^"]+)"/.exec(open[2])?.[1];
-    if (tab && !TAB_ICONS[tabKey(tab)]) fail(p.source === 'the model' ? `${p.slug} (generated)` : p.source, `the "${tab}" tab has no icon: add it to TAB_ICONS in scripts/docs-build.mjs`);
+    if (tab && !TAB_ICONS[tabKey(tab)]) fail((p.source === 'the model' || p.source === 'the OpenAPI document') ? `${p.slug} (generated)` : p.source, `the "${tab}" tab has no icon: add it to TAB_ICONS in scripts/docs-build.mjs`);
   }
 }
 const topicKey = (label) => label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -604,24 +544,26 @@ for (const [lang, icon] of Object.entries(CODE_ICONS)) {
   iconRules.push(masked(`.expressive-code:has(pre[data-language='${lang}']) figcaption .title::before`, icon));
 }
 for (const [key, icon] of Object.entries(TAB_ICONS)) iconRules.push(masked(`.lang-tab[data-lang='${key}']::before`, icon));
-// The code panel's language menu shows the site's language's logo (<html data-lang>, TypeScript until one is chosen)
-for (const lang of ['typescript', 'python', 'go', 'rust']) iconRules.push(masked(`:root[data-lang='${lang}'] .caitlyn-lang-picker-icon`, `simple-icons:${LANGUAGE_ICONS[lang]}`));
-iconRules.push(masked(`:root:not([data-lang]) .caitlyn-lang-picker-icon`, 'simple-icons:typescript'));
-// The API reference's client picker (Scalar): its trigger names the language in its aria-label, and each option is an
-// id ending in the client, so each shows the language's logo as the code panel's menu does
-const SCALAR_CLIENTS = [['TypeScript', 'typescript', 'custom/typescript'], ['Python', 'python', 'custom/python'], ['Go', 'go', 'custom/go'], ['Rust', 'rust', 'custom/rust'], ['Curl', 'gnubash', 'shell/curl']];
-for (const [label, icon, id] of SCALAR_CLIENTS) {
-  iconRules.push(masked(`[data-testid='client-picker'][aria-label$=': ${label}']::before`, `simple-icons:${icon}`));
-  iconRules.push(masked(`li[role='option'][id$='-${id}'] > span::before`, `simple-icons:${icon}`));
+// The code panel's language menu shows its chosen language's logo (src/scripts/lang-tabs.ts sets data-value; before it
+// runs, the site's language on <html data-lang>, TypeScript until one is chosen)
+const PICKER_ICONS = { ...Object.fromEntries(Object.entries(LANGUAGE_ICONS).map(([k, v]) => [k, `simple-icons:${v}`])), curl: 'simple-icons:gnubash' };
+for (const [lang, icon] of Object.entries(PICKER_ICONS)) {
+  iconRules.push(masked(`caitlyn-language-select[data-value='${lang}'] .caitlyn-lang-picker-icon, :root[data-lang='${lang}'] caitlyn-language-select:not([data-value]) .caitlyn-lang-picker-icon`, icon));
 }
+iconRules.push(masked(`:root:not([data-lang]) caitlyn-language-select:not([data-value]) .caitlyn-lang-picker-icon`, 'simple-icons:typescript'));
+// Each language in the menu's open list, and the check on the chosen one
+for (const [lang, icon] of Object.entries(PICKER_ICONS)) iconRules.push(masked(`.caitlyn-lang-option[data-value='${lang}'] .caitlyn-lang-option-icon`, icon));
+iconRules.push(masked('.caitlyn-lang-option-check', 'material-symbols:check-rounded'));
 // The SDK reference's member rows (scripts/docs-reference.mjs memberTree): where a group is sent, and a wire name
-const UI_ICONS = { path: 'route-outline-rounded', query: 'search-rounded', header: 'subject-rounded', body: 'data-object-outline-rounded', events: 'stream-rounded', wire: 'swap-horiz-rounded' };
+const UI_ICONS = { path: 'route-outline-rounded', query: 'search-rounded', header: 'subject-rounded', body: 'data-object-outline-rounded', events: 'stream-rounded', wire: 'swap-horiz-rounded', values: 'list-rounded', sdk: 'code-rounded' };
 for (const [name, icon] of Object.entries(UI_ICONS)) iconRules.push(masked(`.caitlyn-icon[data-icon='${name}']`, `material-symbols:${icon}`));
+// An operation page's example links (scripts/docs-reference.mjs) and the code panel's example buttons
+// (src/components/OperationPanel.astro): the code icon, </>
+iconRules.push(masked('.sl-markdown-content .caitlyn-example-list h3 > a::before, .caitlyn-op-panel-examples button::before', 'material-symbols:code-rounded'));
 fs.writeFileSync(path.join(generated, 'icons.css'), `/* Generated by scripts/docs-build.mjs: the site's icons, as masks (src/styles/components.css draws them). */\n${iconRules.join('\n')}\n`);
 fs.writeFileSync(path.join(generated, 'sidebar.json'), JSON.stringify(sidebar, null, 2) + '\n');
 // The SDK reference's old addresses, for astro.config.mjs's redirects
-// Astro reads each old address under the base itself, but takes the new one as written, so it carries the base
-fs.writeFileSync(path.join(generated, 'redirects.json'), JSON.stringify(Object.fromEntries([...moved].map(([from, to]) => [from, `${BASE}${to.slice(1)}`])), null, 2) + '\n');
+fs.writeFileSync(path.join(generated, 'redirects.json'), JSON.stringify(Object.fromEntries(moved), null, 2) + '\n');
 
 // ---------------------------------------------------------------------------------------------- the build
 
@@ -637,7 +579,7 @@ for (const cache of ['node_modules/.astro', '.astro']) fs.rmSync(path.join(proje
 execFileSync('npx', ['--no-install', 'astro', 'build'], {
   cwd: project,
   stdio: 'inherit',
-  env: { ...process.env, ASTRO_TELEMETRY_DISABLED: '1', DOCS_SITE_ORIGIN: new URL(SITE_URL).origin, DOCS_BASE: BASE },
+  env: { ...process.env, ASTRO_TELEMETRY_DISABLED: '1' },
 });
 
 // ------------------------------------------------------------------- Markdown copies, llms.txt, pages.json
@@ -646,8 +588,14 @@ const entries = [];
 for (const p of pages) {
   const html = path.join(site, p.slug, 'index.html');
   if (!fs.existsSync(html)) fail(p.slug, `Starlight wrote no ${path.relative(root, html)}`);
+  // An operation page's example titles link to their own headings (scripts/docs-reference.mjs headingId)
+  else if (p.operation) {
+    for (const [, id, href] of fs.readFileSync(html, 'utf8').matchAll(/<h3 id="([^"]*)"><a href="#([^"]*)"/g)) {
+      if (id !== href) fail(`${p.slug} (generated)`, `the example link #${href} is not its heading's id, #${id}`);
+    }
+  }
   const mdPath = p.slug ? `${p.slug}.md` : 'index.md';
-  const md = rebase(canonical(p));
+  const md = canonical(p);
   fs.mkdirSync(path.dirname(path.join(site, mdPath)), { recursive: true });
   fs.writeFileSync(path.join(site, mdPath), md);
   entries.push({ path: mdPath, url: `${PROD_URL}/${p.slug ? `${p.slug}/` : ''}`, title: p.title, metadata: p.metadata, page: p, markdown: md });
@@ -658,14 +606,14 @@ for (const [from, to] of moved) {
   const p = pages.find((q) => `/${q.slug}/` === to);
   const file = path.join(site, `${from.replace(/^\/|\/$/g, '')}.md`);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `# ${p?.title ?? to}\n\nThis page has moved to ${SITE_URL}${to.replace(/\/$/, '')}.md (the page itself: ${SITE_URL}${to}).\n`);
+  fs.writeFileSync(file, `# ${p?.title ?? to}\n\nThis page has moved to ${PROD_URL}${to.replace(/\/$/, '')}.md (the page itself: ${PROD_URL}${to}).\n`);
 }
 if (invalid) {
   console.error(`docs-build: ${invalid} problems.`);
   process.exit(1);
 }
 
-const mdUrl = (e) => `${SITE_URL}/${e.path}`;
+const mdUrl = (e) => `${PROD_URL}/${e.path}`;
 const section = (title, list) => [`## ${title}`, '', ...list.map((e) => `- [${e.title}](${mdUrl(e)}): ${description(e.page.body)}`), ''];
 const kind = (k) => entries.filter((e) => e.page.kind === k);
 const startOrder = (e) => (e.page.slug === '' ? -1 : START.includes(e.page.slug) ? START.indexOf(e.page.slug) : START.length);
@@ -682,22 +630,23 @@ const llms = [
   ...section('Guides', kind('guides')),
   ...SECTIONS.flatMap((s) => section(s.label, sectionPages(s, entries.map((e) => e.page)).map((pg) => entries.find((e) => e.page === pg)))),
   ...section('SDK reference', kind('reference')),
+  ...section('HTTP API reference', kind('api')),
   ...section('Types', kind('types')),
   '## Optional',
   '',
   ...kind('errors').map((e) => `- [${e.title}](${mdUrl(e)}): ${description(e.page.body)}`),
-  `- [Everything in one file](${SITE_URL}/llms-full.txt): every page above, in this order`,
+  `- [Everything in one file](${PROD_URL}/llms-full.txt): every page above, in this order`,
   '',
 ];
 fs.writeFileSync(path.join(site, 'llms.txt'), llms.join('\n'));
-const ordered = [...startPages, ...kind('guides'), ...SECTIONS.flatMap((s) => kind(s.dir)), ...kind('reference'), ...kind('types'), ...kind('errors')];
+const ordered = [...startPages, ...kind('guides'), ...SECTIONS.flatMap((s) => kind(s.dir)), ...kind('reference'), ...kind('api'), ...kind('types'), ...kind('errors')];
 fs.writeFileSync(
   path.join(site, 'llms-full.txt'),
-  ordered.map((e) => `<!-- ${SITE_URL}/${e.page.slug ? `${e.page.slug}/` : ''} -->\n${e.markdown.replace(/^---\n[\s\S]*?\n---\n\n?/, '')}`).join('\n'),
+  ordered.map((e) => `<!-- ${PROD_URL}/${e.page.slug ? `${e.page.slug}/` : ''} -->\n${e.markdown.replace(/^---\n[\s\S]*?\n---\n\n?/, '')}`).join('\n'),
 );
 fs.writeFileSync(
   path.join(out, 'pages.json'),
   JSON.stringify({ pages: entries.map(({ path: p, url, title, metadata }) => ({ path: p, url, title, metadata })) }, null, 2) + '\n',
 );
-const counts = ['pages', 'guides', ...SECTIONS.map((s) => s.dir), 'reference', 'types', 'errors'].map((k) => `${entries.filter((e) => e.page.kind === k).length} ${k === 'pages' ? 'start pages' : k}`);
+const counts = ['pages', 'guides', ...SECTIONS.map((s) => s.dir), 'reference', 'api', 'types', 'errors'].map((k) => `${entries.filter((e) => e.page.kind === k).length} ${k === 'pages' ? 'start pages' : k}`);
 console.log(`docs-build: ${entries.length} pages (${counts.join(', ')}) in build/docs/site, each with its Markdown copy; llms.txt; release ${release}`);

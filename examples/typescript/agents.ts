@@ -13,7 +13,7 @@ export async function updateDraft(caitlyn: Caitlyn, agentId: string, instruction
   return updated;
 }
 
-/** Keeps a copy of the draft as a new named version, pinning exactly the draft that was read. */
+/** Keeps the draft as a new named version, pinning exactly the draft that was read. */
 export async function pinDraft(caitlyn: Caitlyn, agentId: string, name: string) {
   // #region pin-draft
   const draft = await caitlyn.agents.versions.get({ agentId, version: 'draft' });
@@ -36,7 +36,7 @@ export async function listVersions(caitlyn: Caitlyn, agentId: string) {
   return names;
 }
 
-/** Publishes a named version: production becomes a copy of it. */
+/** Publishes a named version: production runs it from now on. */
 export async function publishVersion(caitlyn: Caitlyn, agentId: string, version: string) {
   // #region publish-version
   // Send production's current ETag, so two publishes cannot overwrite each other; for an agent's first
@@ -69,18 +69,18 @@ export async function getProductionHistory(caitlyn: Caitlyn, agentId: string, hi
   return entry;
 }
 
-/** Resets the draft to a copy of another version: a named version, or production. */
+/** Starts the draft again from another version: a named version, or production. */
 export async function resetDraft(caitlyn: Caitlyn, agentId: string, from: string) {
   // #region reset-draft
   const draft = await caitlyn.agents.versions.get({ agentId, version: 'draft' });
-  // The version copied from, and production, are untouched
+  // The version the draft starts from, and production, are untouched
   const reset = await caitlyn.agents.versions.resetDraft(agentId, { from }, { ifMatch: draft.etag });
-  console.log(`the draft is a copy of ${from} again; its ETag is now ${reset.etag}`);
+  console.log(`the draft matches ${from} again; its ETag is now ${reset.etag}`);
   // #endregion
   return reset;
 }
 
-/** Deletes a named version. Production is its own copy, so it does not change. */
+/** Deletes a named version. What production runs does not change. */
 export async function deleteVersion(caitlyn: Caitlyn, agentId: string, version: string) {
   // #region delete-version
   // draft and production cannot be deleted (400 VERSION_NOT_DELETABLE)

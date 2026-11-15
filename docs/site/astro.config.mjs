@@ -13,27 +13,6 @@ import rehypeTables from './src/plugins/rehype-tables.mjs';
 import rehypeLead from './src/plugins/rehype-lead.mjs';
 import rehypeLanding from './src/plugins/rehype-landing.mjs';
 import { caitlynCodeTheme } from './src/code-theme.mjs';
-import { SCALAR_BUNDLE, SCALAR_BUNDLE_FILE } from './src/scalar-bundle.mjs';
-
-// Scalar's standalone bundle, served by this site at SCALAR_BUNDLE: copied into the build, and answered by the dev
-// server, so the API reference never loads it from a CDN.
-const scalarBundle = {
-  name: 'caitlyn:scalar-bundle',
-  hooks: {
-    'astro:server:setup': ({ server }) => {
-      server.middlewares.use((req, res, next) => {
-        if (!req.url?.endsWith(SCALAR_BUNDLE)) return next();
-        res.setHeader('Content-Type', 'text/javascript');
-        fs.createReadStream(SCALAR_BUNDLE_FILE).pipe(res);
-      });
-    },
-    'astro:build:done': ({ dir }) => {
-      const to = new URL(`.${SCALAR_BUNDLE}`, dir);
-      fs.mkdirSync(new URL('./', to), { recursive: true });
-      fs.copyFileSync(SCALAR_BUNDLE_FILE, to);
-    },
-  },
-};
 
 // The site's sections, each with its own sidebar (starlight-sidebar-topics), as scripts/docs-build.mjs writes them
 const topics = JSON.parse(fs.readFileSync(new URL('./src/generated/sidebar.json', import.meta.url), 'utf8'));
@@ -41,15 +20,12 @@ const topics = JSON.parse(fs.readFileSync(new URL('./src/generated/sidebar.json'
 const redirects = JSON.parse(fs.readFileSync(new URL('./src/generated/redirects.json', import.meta.url), 'utf8'));
 
 export default defineConfig({
-  // scripts/docs-build.mjs sets these for a merge request's GitLab Pages preview, which is served under a path;
-  // production is https://build.caitlyn.ai at the root.
-  site: process.env.DOCS_SITE_ORIGIN ?? 'https://build.caitlyn.ai',
-  base: process.env.DOCS_BASE ?? '/',
+  // Served at the root: build.caitlyn.ai, and each merge request's preview on its own host
+  site: 'https://build.caitlyn.ai',
   // Directory pages with a trailing slash: /guides/x/ is guides/x/index.html, which the hosting serves for
   // /guides/x and /guides/x/, and the canonical address its Markdown copies' Link header names.
   trailingSlash: 'always',
   redirects,
-  vite: { define: { 'import.meta.env.SCALAR_BUNDLE': JSON.stringify(SCALAR_BUNDLE) } },
   outDir: '../../build/docs/site',
   markdown: {
     processor: unified({
@@ -61,7 +37,6 @@ export default defineConfig({
     }),
   },
   integrations: [
-    scalarBundle,
     starlight({
       title: 'Caitlyn developer docs',
       description: 'The Caitlyn v3 API and its SDKs.',
@@ -133,11 +108,11 @@ export default defineConfig({
       tableOfContents: { minHeadingLevel: 2, maxHeadingLevel: 3 },
       head: [
         // The site's code language (src/scripts/lang-tabs.ts) on <html> before the page paints: ?lang=, then the
-        // reader's last choice, then TypeScript
+        // reader's last choice, then TypeScript; curl is the API reference's
         {
           tag: 'script',
           content:
-            "(()=>{const L=['typescript','python','go','rust'];let k=new URLSearchParams(location.search).get('lang');if(!L.includes(k)){try{k=localStorage.getItem('caitlyn-docs-lang')}catch{}}document.documentElement.dataset.lang=L.includes(k)?k:L[0]})()",
+            "(()=>{const L=['typescript','python','go','rust','curl'];let k=new URLSearchParams(location.search).get('lang');if(!L.includes(k)){try{k=localStorage.getItem('caitlyn-docs-lang')}catch{}}document.documentElement.dataset.lang=L.includes(k)?k:L[0]})()",
         },
         { tag: 'meta', attrs: { name: 'robots', content: 'index, follow' } },
         // The two Euclid web fonts start downloading with the HTML rather than after the CSS is parsed. crossorigin

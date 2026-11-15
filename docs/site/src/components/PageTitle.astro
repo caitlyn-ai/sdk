@@ -1,17 +1,43 @@
 ---
-// The page header: a kicker naming where the page sits (Start here, Guide, API reference, Type, Error code), then
-// the title at cover-title. The page's first paragraph follows as its lead, and a strong rule closes the opening
-// (src/styles/components.css). A guide's sections are steps, so only a guide numbers them (data-steps).
+// The page header: a kicker naming where the page sits (Start here, Guide, SDK reference, API reference, Type, Error
+// code), then the title at cover-title. The page's first paragraph follows as its lead, and a strong rule closes the
+// opening (src/styles/components.css). A guide's sections are steps, so only a guide numbers them (data-steps). The API
+// reference's overview has its Server block under the header, and sends Scalar's old addresses (/api/#tag/...) on to
+// the operation's own page before the page paints.
 import OperationHeader from './OperationHeader.astro';
-const data = Astro.locals.starlightRoute.entry.data as { title: string; section?: string; pageType?: string; operation?: Parameters<typeof OperationHeader>[0]['operation'] };
+import ServerBlock from './ServerBlock.astro';
+const data = Astro.locals.starlightRoute.entry.data as {
+  title: string;
+  section?: string;
+  pageType?: string;
+  server?: boolean;
+  apiAnchors?: Record<string, string>;
+  operation?: Parameters<typeof OperationHeader>[0]['operation'];
+};
 const steps = data.pageType === 'guide';
-// The SDK reference's operation, type and error-code pages: a title at the size of the API reference's operation
-// headings
-const reference = data.pageType === 'reference' || data.pageType === 'error';
+// The reference's operation, type and error-code pages: a title at the size of an operation heading
+const reference = data.pageType === 'reference' || data.pageType === 'error' || data.pageType === 'sdk';
 ---
 
+{
+  data.apiAnchors && (
+    <script is:inline define:vars={{ anchors: data.apiAnchors }}>
+      // An operation's old address goes to its page; a group's to its list on this page. On arrival, and when only the
+      // fragment changes (a link to an old address on this page)
+      const go = () => {
+        const id = decodeURIComponent(location.hash.slice(1)).replace(/^api-1\//, '').replace(/\/$/, '');
+        const group = /^tag\/([a-z-]+)$/.exec(id);
+        if (anchors[id]) location.replace(anchors[id]);
+        else if (group) location.replace(`#${group[1]}`);
+      };
+      go();
+      addEventListener('hashchange', go);
+    </script>
+  )
+}
 <header class="caitlyn-page-header" data-steps={steps ? '' : undefined} data-reference={reference ? '' : undefined}>
   {data.section && <p class="caitlyn-kicker caitlyn-page-section">{data.section}</p>}
   <h1 id="_top">{data.title}</h1>
   {data.operation && <OperationHeader operation={data.operation} />}
 </header>
+{data.server && <div class="caitlyn-page-server"><ServerBlock id="caitlyn-page-server" /></div>}

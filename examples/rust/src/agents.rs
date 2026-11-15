@@ -34,7 +34,7 @@ pub async fn update_draft(client: &Client, agent_id: &str, instructions: &str) -
     Ok(updated)
 }
 
-/// Keeps a copy of the draft you tested under a name, to publish later.
+/// Keeps the draft you tested under a name, to publish later.
 pub async fn pin_draft(client: &Client, agent_id: &str, draft_etag: &str, name: &str) -> Result<PinDraftVersionResult, Error> {
     // #region pin-draft
     let input = PinDraftVersionInput {
@@ -120,7 +120,7 @@ pub async fn get_production_history(client: &Client, agent_id: &str, entry_id: &
     Ok(entry)
 }
 
-/// Replaces the draft with a copy of another version.
+/// Starts the draft again from another version.
 pub async fn reset_draft(client: &Client, agent_id: &str, draft_etag: &str, from: &str) -> Result<AgentVersion, Error> {
     // #region reset-draft
     let input = ResetDraftVersionInput { from: from.into() }; // a version name, or production

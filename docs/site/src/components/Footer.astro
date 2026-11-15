@@ -1,6 +1,7 @@
 ---
 // The end of every page: what to read next, "Was this page useful?", then previous and next (Starlight's
-// footer renders Pagination). Then the place the Caitlyn widget will go, and the language-tab script.
+// footer renders Pagination). Then the place the Caitlyn widget will go, and the site's scripts: the language tabs,
+// the sidebar's popover and the reader's workspace in the examples.
 import Default from '@astrojs/starlight/components/Footer.astro';
 import WhatsNext from './WhatsNext.astro';
 import Feedback from './Feedback.astro';
@@ -18,4 +19,5 @@ const landing = Boolean(Astro.locals.starlightRoute.entry.data.hero);
 <script>
   import '../scripts/lang-tabs.ts';
   import '../scripts/sidebar-cut.ts';
+  import '../scripts/workspace.ts';
 </script>
