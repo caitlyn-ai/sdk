@@ -1,0 +1,87 @@
+# Creates the GitHub release for each version tag on the mirror (github.com/caitlyn-ai/sdk), with the same notes as the
+# GitLab release: the version's section of CHANGELOG.md, which semantic-release writes in the release commit
+# (@semantic-release/changelog, .releaserc.yml). The compare and commit links point at the mirror
+# (scripts/changelog-section.mjs --github).
+#
+# Runs on every release tag the push mirror brings from GitLab, and by hand (Actions → release-github → Run workflow,
+# from main) with a tag, to backfill a release. A tag made before CHANGELOG.md existed (v0.8.0 and earlier) has no
+# CHANGELOG.md in its tree, so the notes then come from the copy on the branch the run starts from (main).
+#
+# Running it again for a tag edits the release instead of failing. Only the highest version tag is marked the latest
+# release, so a backfill of an older tag never takes that from a newer one.
+#
+# It uses the workflow's own GITHUB_TOKEN, with permission to write releases (contents: write) and nothing else; no
+# secret is stored for it.
+name: release-github
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The release tag to create or update the GitHub release for, such as v0.8.0'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-github-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # create and edit releases
+    steps:
+      - name: Choose the tag
+        id: tag
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "\"$TAG\" is not a release tag (vX.Y.Z)" >&2; exit 1; }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      # The ref the run started from: the tag on a push, main on a run by hand. Its scripts/changelog-section.mjs reads
+      # the notes, and its CHANGELOG.md is the fallback for a tag without one.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Write the release notes from CHANGELOG.md
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          git fetch --quiet --no-tags --depth=1 origin "refs/tags/$TAG:refs/tags/$TAG"
+          if git show "$TAG:CHANGELOG.md" > "$RUNNER_TEMP/tag-changelog.md" 2> /dev/null \
+              && node scripts/changelog-section.mjs "$TAG" "$RUNNER_TEMP/tag-changelog.md" --github > "$RUNNER_TEMP/notes.md"; then
+            echo "Notes from $TAG's CHANGELOG.md."
+          else
+            node scripts/changelog-section.mjs "$TAG" CHANGELOG.md --github > "$RUNNER_TEMP/notes.md"
+            echo "$TAG's tree has no notes for it; notes from $GITHUB_REF_NAME's CHANGELOG.md."
+          fi
+          cat "$RUNNER_TEMP/notes.md"
+      - name: Create or update the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          # The latest release is the highest vX.Y.Z tag on the mirror, whatever order releases are made in.
+          highest="$(git ls-remote --tags --refs origin 'v*' | sed 's#.*refs/tags/##' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+          latest=false
+          [ "$TAG" = "$highest" ] && latest=true
+          echo "$TAG; the highest tag is $highest, so latest=$latest."
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" --latest="$latest"
+            echo "Updated the release $TAG."
+          else
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" --latest="$latest"
+            echo "Created the release $TAG."
+          fi
