@@ -1,0 +1,139 @@
+# Publishes caitlyn-core and caitlyn to PyPI with PyPI trusted publishing (OpenID Connect) and attestations. No
+# PyPI token is stored anywhere.
+#
+# Runs on the GitHub mirror of custom-d/caitlyn/sdk (github.com/caitlyn-ai/sdk), never on GitLab, for the reason
+# release-npm.yml gives: PyPI trusted publishing accepts OpenID Connect tokens from GitHub Actions, not from
+# git.customd.com. Setting up the PyPI publishers and the `pypi` and `pypi-core` environments is in CONTRIBUTING.md,
+# "Releasing", "PyPI".
+#
+# Runs on every release tag semantic-release pushes (v<version>), and by hand (Actions → release-pypi → Run workflow,
+# from main) with a tag, to publish a release whose run failed. Either way it builds from the tag's tree, which
+# already carries its version in every stamped file (the release commit): the job fails unless every one of them,
+# and every built file, names the tag's version.
+#
+# caitlyn pins caitlyn-core to the same version, so caitlyn-core is uploaded first. A file PyPI already has is skipped,
+# so running it again after a part-failed upload finishes the release instead of failing on the first file.
+name: release-pypi
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The release tag to publish, such as v0.9.0'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-pypi-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - name: Choose the tag
+        id: tag
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "\"$TAG\" is not a release tag (vX.Y.Z)" >&2; exit 1; }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      # The check that decides a release, as in release-npm.yml: every stamped file names the tag's version.
+      - name: Check the tag's files carry its version
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: node scripts/version.mjs check "$VERSION"
+      # The uv the toolchain image (docker/Dockerfile) carries. A release builds without a cache.
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.8.0'
+          enable-cache: false
+      - name: Build caitlyn-core and caitlyn (sdist and wheel)
+        working-directory: python
+        run: |
+          uv build --package caitlyn-core --out-dir ../dist/caitlyn-core
+          uv build --package caitlyn --out-dir ../dist/caitlyn
+          rm -f ../dist/*/.gitignore
+      - name: Check the built files carry the tag's version
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          expect() {
+            local dir="$1"; shift
+            local want; want="$(printf '%s\n' "$@" | sort)"
+            local have; have="$(find "$dir" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)"
+            [ "$have" = "$want" ] || { printf '%s holds:\n%s\nexpected:\n%s\n' "$dir" "$have" "$want" >&2; exit 1; }
+          }
+          expect dist/caitlyn-core "caitlyn_core-$VERSION.tar.gz" "caitlyn_core-$VERSION-py3-none-any.whl"
+          expect dist/caitlyn "caitlyn-$VERSION.tar.gz" "caitlyn-$VERSION-py3-none-any.whl"
+          unzip -p "dist/caitlyn/caitlyn-$VERSION-py3-none-any.whl" '*.dist-info/METADATA' \
+            | grep -qx "Requires-Dist: caitlyn-core==$VERSION" \
+            || { echo "caitlyn's wheel does not pin caitlyn-core==$VERSION" >&2; exit 1; }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-dists
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  # Jobs of their own, as PyPA recommends: only the uploads hold an OpenID Connect token, never the build. Each
+  # package has its own job and environment because each PyPI trusted publisher is bound to one (repository,
+  # workflow, environment), and PyPI takes only one pending publisher per combination: caitlyn-core's is
+  # `pypi-core`, caitlyn's is `pypi`. Each job gets its own token.
+  #
+  # caitlyn-core first: caitlyn depends on that exact version.
+  publish-core:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi-core
+      url: https://pypi.org/project/caitlyn-core/${{ needs.build.outputs.version }}/
+    permissions:
+      id-token: write # the OpenID Connect token PyPI exchanges for a short-lived upload token
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: python-dists
+          path: dist/
+      - name: Publish caitlyn-core
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: dist/caitlyn-core/
+          attestations: true
+          skip-existing: true
+
+  publish-sdk:
+    needs: [build, publish-core]
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/caitlyn/${{ needs.build.outputs.version }}/
+    permissions:
+      id-token: write # the OpenID Connect token PyPI exchanges for a short-lived upload token
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: python-dists
+          path: dist/
+      - name: Publish caitlyn
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: dist/caitlyn/
+          attestations: true
+          skip-existing: true

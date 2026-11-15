@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/caitlyn-ai/caitlyn-go"
-	"github.com/caitlyn-ai/caitlyn-go/core"
+	"github.com/caitlyn-ai/sdk/go"
+	"github.com/caitlyn-ai/sdk/go/core"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"

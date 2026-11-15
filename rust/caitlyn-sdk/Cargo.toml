@@ -8,6 +8,7 @@ license = "Apache-2.0"
 authors = ["Custom D Ltd"]
 repository = "https://github.com/caitlyn-ai/sdk"
 homepage = "https://build.caitlyn.ai/"
+readme = "../README.md"
 keywords = ["caitlyn", "sdk", "api", "ai", "agents"]
 categories = ["api-bindings", "web-programming::http-client"]
 

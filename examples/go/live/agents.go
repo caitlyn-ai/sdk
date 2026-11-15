@@ -7,8 +7,8 @@ import (
 	"slices"
 	"time"
 
-	caitlyn "github.com/caitlyn-ai/caitlyn-go"
-	"github.com/caitlyn-ai/caitlyn-go/examples/agents"
+	"github.com/caitlyn-ai/sdk/examples/go/agents"
+	caitlyn "github.com/caitlyn-ai/sdk/go"
 )
 
 // agentChecks runs the docs' code in examples/go/agents on CAITLYN_AGENT_ID and leaves that agent as it found it:

@@ -1,4 +1,4 @@
-module github.com/caitlyn-ai/caitlyn-go
+module github.com/caitlyn-ai/sdk/go
 
 go 1.23.0
 

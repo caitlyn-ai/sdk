@@ -7,7 +7,7 @@ import (
 	"iter"
 	"strconv"
 
-	"github.com/caitlyn-ai/caitlyn-go/core"
+	"github.com/caitlyn-ai/sdk/go/core"
 )
 
 // DeleteAgentVersionInput is the input of Agents.Versions.Delete.

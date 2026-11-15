@@ -229,7 +229,8 @@ node scripts/version.mjs files           # the stamped files, which the release 
 version would commit.
 
 **Installed from git**, an SDK reports the version of the commit it was built from. A release tag's tree is its
-release commit, so every SDK installed from a tag reports that version: Go (`go get …@v0.1.1`), Python
+release commit, so every SDK installed from a tag reports that version: Go (`go get
+github.com/caitlyn-ai/sdk/go@v0.1.1`, which resolves the tag `go/v0.1.1` on the same commit), Python
 (`pip install "git+…@v0.1.1#subdirectory=python/caitlyn"`, with `caitlyn-core` from the same tag, since `caitlyn`
 pins `caitlyn-core==0.1.1`) and Rust (a `git` dependency with `tag = "v0.1.1"`). Installed from a branch or another
 commit, they report 0.0.0, except Go, which reads the module version Go records in the binary
@@ -272,10 +273,18 @@ cuts it, in the order the app repository's pipeline does:
 2. `stamp-version` stamps it into every SDK file (`scripts/version.mjs release`), as artifacts.
 3. `release` (semantic-release) checks the stamped files name that version, adds the release notes to the top of
    `CHANGELOG.md` (`@semantic-release/changelog`), commits both to `main` as `chore(release): x.y.z`
-   (`@semantic-release/git`), tags that commit `v<version>` and creates the GitLab release with the same notes.
-4. The push mirror takes `main` and the protected tag to `github.com/caitlyn-ai/sdk`.
-5. On GitHub, `release-npm` checks the tag's files carry its version (`scripts/version.mjs check`), tests, builds
-   and checks the packages, then stages `sdk-core` and then `sdk`.
+   (`@semantic-release/git`), tags that commit `v<version>`, tags the same commit `go/v<version>` for the Go
+   module (`scripts/go-tag.mjs`), and creates the GitLab release with the same notes.
+4. The push mirror takes `main` and the protected tags to `github.com/caitlyn-ai/sdk`. The Go release is done:
+   `go get github.com/caitlyn-ai/sdk/go@v<version>` resolves the `go/` tag from GitHub.
+5. On GitHub, three workflows publish from the tag, and each first checks the tag's files carry its version
+   (`scripts/version.mjs check`):
+   - `release-npm` tests, builds and checks the packages, then stages `sdk-core` and then `sdk`;
+   - `release-pypi` builds `caitlyn-core` and `caitlyn` (sdist and wheel) and publishes them to PyPI, core first;
+   - `release-crates` packages and verifies both crates (`cargo publish --dry-run`), then publishes
+     `caitlyn-sdk-core` and then `caitlyn-sdk` to crates.io.
+
+   `release-github` creates the GitHub release (below).
 6. On npmjs.com, account settings → Staged Packages: check both versions (name, version, dist-tag `latest`,
    publisher), then approve them, `sdk-core` with or before `sdk`, since the SDK depends on that exact
    `sdk-core` version. A batch approves both with one two-factor challenge.
@@ -310,7 +319,7 @@ The `release` job pushes the release commit and the tag with `GITLAB_TOKEN`, a C
 holding a project access token (`GITLAB_TOKEN`, bot user `project_857_bot_f4d639af535f0bcf131cd87b09f601c5`) with
 the **Maintainer** role and the `api` and `write_repository` scopes. Two protections must let that bot through:
 
-- the protected `v*` tags allow Maintainers to create them;
+- the protected `v*` and `go/v*` tags allow Maintainers to create them;
 - the protected branch `main` must allow the bot to push (Settings → Repository → Protected branches → `main` →
   "Allowed to push and merge"). Merges stay as they are.
 
@@ -338,12 +347,13 @@ What is set up (by the maintainers who own the `caitlyn-ai` GitHub organisation 
    - In GitHub, create a fine-grained personal access token with resource owner `caitlyn-ai`, repository
      access "Only select repositories" → `caitlyn-ai/sdk`, and permissions **Contents: read and write** and
      **Workflows: read and write**. GitHub refuses a push that adds or changes a file under `.github/workflows/`
-     from a token without the Workflows permission, and this repository carries `release-npm.yml`.
+     from a token without the Workflows permission, and this repository carries the release workflows.
    - In GitLab, `custom-d/caitlyn/sdk` → Settings → Repository → Mirroring repositories → Add new: Git repository
      URL `https://github.com/caitlyn-ai/sdk.git`, direction Push, authentication method "Username and Password",
      username the GitHub account that owns the token, password the token.
    - Turn on "Mirror only protected branches", so `main` reaches GitHub and work-in-progress branches do not.
-     Protect the release tags `v*` too (Settings → Repository → Protected tags) so they are mirrored.
+     Protect the release tags `v*` and the Go tags `go/v*` too (Settings → Repository → Protected tags, allowed to
+     create: Maintainers) so they are mirrored.
    - **The token expires.** Fine-grained tokens have an expiry date. Note it, and replace the token in the
      mirror's settings before then: once it expires the mirror stops (GitLab shows the error on the mirror),
      and a release tag pushed after that never reaches GitHub.
@@ -359,6 +369,125 @@ What is set up (by the maintainers who own the `caitlyn-ai` GitHub organisation 
 
 The steps of a release are under "Releasing" above. The GitLab job `release:npm` is a placeholder that says where
 npm releases run.
+
+### PyPI
+
+`caitlyn-core` and `caitlyn` are published to PyPI from the GitHub mirror by `.github/workflows/release-pypi.yml`,
+with PyPI trusted publishing and attestations, for the same reason as npm: PyPI accepts OpenID Connect tokens from
+GitHub Actions, not from this GitLab, and no PyPI token is stored anywhere. Unlike npm there is no staging step: the
+workflow uploads, and the version is public. `caitlyn` pins `caitlyn-core` to the same version, so the workflow
+uploads `caitlyn-core` first (job `publish-core`, environment `pypi-core`), then `caitlyn` (job `publish-sdk`,
+environment `pypi`). Each package has its own environment because PyPI takes only one pending publisher for each
+repository, workflow and environment. It skips files PyPI already has, so running it again after a part-failed upload finishes
+the release.
+
+It runs on every release tag, and by hand: in GitHub, Actions → `release-pypi` → Run workflow, from `main`, with the
+tag (such as `v0.9.0`). Running it by hand publishes a release whose run failed. Either way it builds the tag's tree.
+
+**The first PyPI release is the first release tag cut after this workflow and the packages' metadata (readme, licence,
+project URLs) were added.** Releases up to v0.8.0 are not published to PyPI: their `pyproject.toml` files have none
+of that metadata, and PyPI never lets a published version's metadata change.
+
+To set it up, once (a maintainer of the `caitlyn-ai` GitHub organisation, with a PyPI account that has two-factor
+authentication):
+
+1. **Pending publishers on PyPI.** On pypi.org, Your account → Publishing → "Add a new pending publisher" → GitHub,
+   once for each package, with owner `caitlyn-ai`, repository name `sdk` and workflow name `release-pypi.yml`:
+   - PyPI project name `caitlyn`, environment name `pypi`;
+   - PyPI project name `caitlyn-core`, environment name `pypi-core`.
+
+   A pending publisher does not reserve the name: the first upload through it creates the project and makes that
+   account its owner, and the pending publisher becomes the project's trusted publisher
+   (https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).
+2. **The `pypi` and `pypi-core` environments.** In the GitHub repository, Settings → Environments → New environment,
+   once for each, with deployment branches and tags limited to `v*` tags and the `main` branch (`main`, because a run
+   by hand starts from `main`: without it, publishing an existing tag by hand is refused), and no required reviewer.
+3. **The first release.** Nothing to do: the next release tag runs the workflow, which publishes both projects.
+4. **Co-maintainers.** Once both projects exist, add the other maintainers on each: the project → Manage →
+   Collaborators, role Owner, so more than one person can manage each project.
+
+The GitLab job `release:pypi` is a placeholder that says where PyPI releases run.
+
+### crates.io
+
+`caitlyn-sdk-core` and `caitlyn-sdk` are published to crates.io from the GitHub mirror by
+`.github/workflows/release-crates.yml`, with crates.io trusted publishing: the workflow exchanges the job's OpenID
+Connect token for a publish token that lasts 30 minutes and is revoked when the job ends
+(https://crates.io/docs/trusted-publishing). No crates.io token is stored anywhere. `caitlyn-sdk` depends on
+`caitlyn-sdk-core` at the same version, so `caitlyn-sdk-core` goes first. A version crates.io already has is skipped.
+
+The workflow has two jobs:
+
+- `package` runs on every release tag. It checks the versions, then packages both crates and builds each from its
+  package (`cargo publish --dry-run --workspace`, which builds `caitlyn-sdk` against the packaged
+  `caitlyn-sdk-core`), so a crate that would not build from crates.io fails before anything is published.
+- `publish` runs only when the repository variable `CRATES_IO_TRUSTED_PUBLISHING` is `true`. crates.io lets a
+  trusted publisher be added only to a crate that already exists, so the first version of each crate is published by
+  hand, and the workflow stops after the dry run until then.
+
+Run by hand (Actions → `release-crates` → Run workflow, from `main`, with the tag) to publish a release whose run
+failed or that was tagged before the variable was set.
+
+**The first crates.io release is the first release tag cut after this workflow and `caitlyn-sdk`'s `readme` were
+added**; releases up to v0.8.0 are not published, since `caitlyn-sdk` there has no README for its crates.io page.
+Do the setup below once that tag exists.
+
+To set it up, once (a maintainer of the `caitlyn-ai` GitHub organisation, with a crates.io account signed in through
+GitHub and a verified email address):
+
+1. **A short-lived token.** On crates.io, Account Settings → API Tokens → New Token: name it for this, the shortest
+   expiry offered, scopes `publish-new` and `publish-update`, crates `caitlyn-sdk*`.
+2. **The first publish, by hand, core first,** from a clean checkout of that first release tag (the tag's files
+   carry its version; its `release-crates` run has already passed the dry run):
+
+   ```bash
+   git fetch --tags && git checkout v0.9.0   # the first release tag after this workflow
+   cd rust
+   read -rs CARGO_REGISTRY_TOKEN && export CARGO_REGISTRY_TOKEN   # paste the token; it is not echoed or stored
+   cargo publish --locked -p caitlyn-sdk-core
+   cargo publish --locked -p caitlyn-sdk
+   unset CARGO_REGISTRY_TOKEN
+   ```
+
+3. **Trusted publishers.** On crates.io, for each of `caitlyn-sdk-core` and `caitlyn-sdk`: the crate → Settings →
+   Trusted Publishing → Add: GitHub, repository owner `caitlyn-ai`, repository name `sdk`, workflow filename
+   `release-crates.yml`, environment `crates`.
+4. **Revoke the token** (Account Settings → API Tokens → Revoke).
+5. **The `crates` environment.** In the GitHub repository, Settings → Environments → New environment → `crates`,
+   with deployment branches and tags limited to the `main` branch and `v*` tags, and no required reviewer.
+6. **Turn publishing on.** In the GitHub repository, Settings → Secrets and variables → Actions → Variables → New
+   repository variable: `CRATES_IO_TRUSTED_PUBLISHING`, value `true`.
+7. **Co-owners.** Add the other maintainers as owners of each crate, on crates.io under the crate's Settings →
+   Owners (or `cargo owner --add <github-login> <crate>`, with a token that has the `change-owners` scope).
+
+The GitLab job `release:crates` is a placeholder that says where crates.io releases run.
+
+### Go
+
+The Go SDK is the module `github.com/caitlyn-ai/sdk/go`: the `go/` directory of the GitHub mirror, with its runtime
+at `github.com/caitlyn-ai/sdk/go/core`. Nothing is uploaded anywhere. Go finds a version of a module in a
+subdirectory by a tag with the directory as its prefix (https://go.dev/ref/mod#vcs-version), so every release has
+two tags on the release commit: `v<version>` for everything else, and `go/v<version>` for Go. The Go module proxy
+(proxy.golang.org) fetches a version from GitHub the first time someone asks for it, and pkg.go.dev lists it after
+that.
+
+`semantic-release` creates the Go tag right after it pushes `v<version>` (`.releaserc.yml`, `publishCmd`, which runs
+`scripts/go-tag.mjs` with the release job's `GITLAB_TOKEN`). The script tags the commit `v<version>` points at, leaves
+a Go tag that is already there alone, and fails if one is on another commit. It also refuses a release whose
+`go/go.mod` declares another module path, since Go would reject that version.
+
+The import path changed from `github.com/caitlyn-ai/caitlyn-go` to `github.com/caitlyn-ai/sdk/go` before anything
+was published under the old one. Every release up to v0.8.0 still declares the old path in its `go/go.mod`, so they
+have no Go release: **the first Go release is the first release tag cut after the move**.
+
+To tag a release by hand, when its Go tag failed: in GitLab, Build → Pipelines → Run pipeline, on `main`, with the
+variable `GO_TAG` set to the release tag (such as `v0.9.0`), then start the manual `release:go` job.
+
+To set it up, once, before the first release after the move:
+
+1. **Protect the Go tags.** In GitLab, `custom-d/caitlyn/sdk` → Settings → Repository → Protected tags → `go/v*`,
+   allowed to create: Maintainers. The push mirror sends only protected tags, and `v*` does not match `go/v0.9.0`.
+2. **After that release**, check it resolves: `go list -m github.com/caitlyn-ai/sdk/go@v<version>`.
 
 ## Commit messages
 

@@ -80,6 +80,7 @@ final class ServiceGenerator {
         writeInit();
         ctx.fileManifest().writeFile(settings.packageName() + "/py.typed", "");
         writePyproject();
+        writeReadme();
     }
 
     private String module(String name) {
@@ -1013,6 +1014,9 @@ final class ServiceGenerator {
                 name = "%s"
                 version = "%s"
                 description = "Python SDK for the %s (v3)."
+                readme = "README.md"
+                license = "Apache-2.0"
+                authors = [{ name = "Custom D Ltd" }]
                 requires-python = ">=3.12"
                 dependencies = [
                   "caitlyn-core==%s",
@@ -1020,6 +1024,11 @@ final class ServiceGenerator {
                   "pydantic>=2.11,<3",
                   "opentelemetry-api>=1.38,<2",
                 ]
+
+                [project.urls]
+                Homepage = "https://build.caitlyn.ai/"
+                Documentation = "https://build.caitlyn.ai/"
+                Repository = "https://github.com/caitlyn-ai/sdk"
 
                 [build-system]
                 requires = ["hatchling"]
@@ -1032,6 +1041,38 @@ final class ServiceGenerator {
                 packages = ["%s"]
                 """.formatted(settings.distribution(), settings.version(), title, settings.version(), settings.packageName());
         ctx.fileManifest().writeFile("pyproject.toml", text);
+    }
+
+    // The package's PyPI page (pyproject.toml's readme). Public text: what the package is, how to install and call it,
+    // and where the documentation is.
+    private void writeReadme() {
+        String text = """
+                # %1$s
+
+                The Python SDK for the %2$s (v3): typed clients, synchronous (`Caitlyn`) and asynchronous
+                (`AsyncCaitlyn`), with sign-in, retries, streamed answers and OpenTelemetry tracing.
+
+                ```sh
+                pip install %1$s
+                ```
+
+                ```python
+                import os
+
+                from %3$s import Caitlyn
+                from %3$s.auth import Token
+
+                caitlyn = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token(os.environ["CAITLYN_TOKEN"]))
+
+                # Read the draft of an agent: its configuration and its ETag
+                draft = caitlyn.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
+                print(draft.configuration.instructions)
+                ```
+
+                Python 3.12 and later. The documentation, with getting started and every operation, is at
+                https://build.caitlyn.ai/. The source is at https://github.com/caitlyn-ai/sdk. Apache-2.0.
+                """.formatted(settings.distribution(), title, settings.packageName());
+        ctx.fileManifest().writeFile("README.md", text);
     }
 
     static boolean isHeader(MemberShape m) {

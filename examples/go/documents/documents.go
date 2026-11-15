@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	caitlyn "github.com/caitlyn-ai/caitlyn-go"
+	caitlyn "github.com/caitlyn-ai/sdk/go"
 )
 
 // CreateUpload sends a file's bytes to Caitlyn, ready to become a document.

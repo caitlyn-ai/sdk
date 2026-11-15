@@ -9,7 +9,7 @@ import (
 	"log"
 	"os"
 
-	caitlyn "github.com/caitlyn-ai/caitlyn-go"
+	caitlyn "github.com/caitlyn-ai/sdk/go"
 )
 
 func main() {

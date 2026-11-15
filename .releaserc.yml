@@ -3,7 +3,9 @@
 #   1. checks that the stamp-version job's files carry that version (scripts/version.mjs check);
 #   2. adds the release notes to the top of CHANGELOG.md (@semantic-release/changelog);
 #   3. commits the stamped files and CHANGELOG.md to main as `chore(release): <version>` (@semantic-release/git);
-#   4. tags that commit vX.Y.Z and creates a GitLab release with the same notes (@semantic-release/gitlab).
+#   4. tags that commit vX.Y.Z, then tags the same commit go/vX.Y.Z for the Go module, which lives in go/ and so
+#      takes its versions from go/-prefixed tags (scripts/go-tag.mjs), and creates a GitLab release with the same
+#      notes (@semantic-release/gitlab).
 # The tag's tree carries the real version, so installs from git (Go, Python, Rust) report it, and the push mirror
 # takes the tag to GitHub, where .github/workflows/release-npm.yml checks the stamp and stages the npm packages, and
 # .github/workflows/release-github.yml creates the GitHub release from the tag's CHANGELOG.md (CONTRIBUTING.md,
@@ -72,10 +74,12 @@ plugins:
           {{~/if}}
 
   # VERSION.txt is the fetch-semantic-version job's artifact: the version the next release would have. Before the
-  # release commit, the files stamp-version wrote from it must name exactly the version being released.
+  # release commit, the files stamp-version wrote from it must name exactly the version being released. Once vX.Y.Z
+  # is pushed, publishCmd tags the same commit go/vX.Y.Z (the `release:go` job does the same by hand).
   - - '@semantic-release/exec'
     - verifyReleaseCmd: 'echo ${nextRelease.version} > VERSION.txt'
       prepareCmd: 'node scripts/version.mjs check ${nextRelease.version}'
+      publishCmd: 'node scripts/go-tag.mjs ${nextRelease.version}'
   # The notes go into CHANGELOG.md, newest first, in the release commit; its message stays free of them (below).
   # CHANGELOG.md was seeded with the GitLab releases' notes for v0.3.0 to v0.8.0.
   - - '@semantic-release/changelog'

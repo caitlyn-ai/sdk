@@ -8,10 +8,10 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * <pre>
  * "caitlyn-go-client-codegen": {
  *   "service": "ai.caitlyn.v3#Caitlyn",
- *   "module": "github.com/caitlyn-ai/caitlyn-go",   // Go module path of the generated SDK
+ *   "module": "github.com/caitlyn-ai/sdk/go",   // Go module path of the generated SDK
  *   "package": "caitlyn",                // package name
  *   "version": "0.0.1",
- *   "coreModule": "github.com/caitlyn-ai/caitlyn-go/core", "coreVersion": "v0.0.1",
+ *   "coreModule": "github.com/caitlyn-ai/sdk/go/core", "coreVersion": "v0.0.1",
  *   "coreReplace": "../caitlyn-core"     // optional: a replace directive, for development
  * }
  * </pre>
@@ -22,10 +22,10 @@ record GoSettings(ShapeId service, String module, String packageName, String ver
     static GoSettings from(ObjectNode node) {
         return new GoSettings(
                 ShapeId.from(node.expectStringMember("service").getValue()),
-                node.getStringMemberOrDefault("module", "github.com/caitlyn-ai/caitlyn-go"),
+                node.getStringMemberOrDefault("module", "github.com/caitlyn-ai/sdk/go"),
                 node.getStringMemberOrDefault("package", "caitlyn"),
                 node.getStringMemberOrDefault("version", "0.0.1"),
-                node.getStringMemberOrDefault("coreModule", "github.com/caitlyn-ai/caitlyn-go/core"),
+                node.getStringMemberOrDefault("coreModule", "github.com/caitlyn-ai/sdk/go/core"),
                 node.getStringMemberOrDefault("coreVersion", "v0.0.1"),
                 node.getStringMemberOrDefault("coreReplace", ""));
     }

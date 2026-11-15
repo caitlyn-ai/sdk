@@ -3,7 +3,7 @@
 package caitlyn
 
 import (
-	"github.com/caitlyn-ai/caitlyn-go/core"
+	"github.com/caitlyn-ai/sdk/go/core"
 )
 
 // ConflictError is returned for HTTP 409 (ConflictError in the model). The resource's state does not

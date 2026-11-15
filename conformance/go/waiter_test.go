@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/caitlyn-ai/caitlyn-go"
+	"github.com/caitlyn-ai/sdk/go"
 )
 
 func documentStatuses(t *testing.T, m mock, id string, statuses ...string) {

@@ -1,4 +1,4 @@
-// Package core is the hand-written runtime behind the generated Caitlyn Go SDK (github.com/caitlyn-ai/caitlyn-go).
+// Package core is the hand-written runtime behind the generated Caitlyn Go SDK (github.com/caitlyn-ai/sdk/go).
 //
 // It implements the wire protocol ai.caitlyn.protocols#restJson as model/PROTOCOL.md describes it: request
 // headers, bearer authentication, retries, RFC 9457 errors chosen by status, server-sent event streams with
@@ -148,7 +148,7 @@ func NewClient(sdk SDKInfo, workspace string, auth Auth, opts ...Option) (*Clien
 	c := &Client{s: s, sdk: sdk, budget: newRetryBudget(s.retryBudget)}
 	c.userAgent = userAgent(sdk.Version, s.appID)
 	c.auth = newAuthSession(auth, s.endpoint, workspace, s.httpClient, c.userAgent)
-	c.tracer = s.tracerProvider.Tracer("github.com/caitlyn-ai/caitlyn-go", trace.WithInstrumentationVersion(sdk.Version))
+	c.tracer = s.tracerProvider.Tracer("github.com/caitlyn-ai/sdk/go", trace.WithInstrumentationVersion(sdk.Version))
 	return c, nil
 }
 

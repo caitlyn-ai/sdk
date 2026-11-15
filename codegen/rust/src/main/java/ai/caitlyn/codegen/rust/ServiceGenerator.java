@@ -997,7 +997,8 @@ final class ServiceGenerator {
                 + "[package]\nname = " + Names.str(s.crateName()) + "\nversion = " + Names.str(s.version()) + "\nedition = \"2021\"\n"
                 + "description = " + Names.str("The Rust SDK for the " + title() + ", generated from its Smithy model.") + "\n"
                 + "license = \"Apache-2.0\"\nauthors = [\"Custom D Ltd\"]\nrepository = " + Names.str(s.repository()) + "\n"
-                + "homepage = \"https://build.caitlyn.ai/\"\nkeywords = [\"caitlyn\", \"sdk\", \"api\", \"ai\", \"agents\"]\n"
+                // The crate's crates.io page: the Rust SDK's README (rust/README.md), which cargo packages as README.md.
+                + "homepage = \"https://build.caitlyn.ai/\"\nreadme = \"../README.md\"\nkeywords = [\"caitlyn\", \"sdk\", \"api\", \"ai\", \"agents\"]\n"
                 + "categories = [\"api-bindings\", \"web-programming::http-client\"]\n\n"
                 + "[dependencies]\n" + s.coreCrate() + " = " + core + "\n"
                 + "serde = { version = \"1\", features = [\"derive\"] }\nserde_json = \"1\"\n"

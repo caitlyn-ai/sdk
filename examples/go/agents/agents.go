@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 
-	caitlyn "github.com/caitlyn-ai/caitlyn-go"
+	caitlyn "github.com/caitlyn-ai/sdk/go"
 )
 
 // UpdateDraft changes the draft's instructions, failing if someone else changed the draft since it was read.

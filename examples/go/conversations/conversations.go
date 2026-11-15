@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 
-	caitlyn "github.com/caitlyn-ai/caitlyn-go"
+	caitlyn "github.com/caitlyn-ai/sdk/go"
 )
 
 // GetCaller checks who the client's credential belongs to.

@@ -50,7 +50,7 @@ SDKs you install.
 | --- | --- | --- |
 | TypeScript | `@caitlyn-ai/sdk` on npm | Node 20 and later, Bun, Deno, browsers and edge runtimes |
 | Python | `caitlyn` (installed from the GitHub repository until it is on PyPI) | Python 3.12 and later |
-| Go | `github.com/caitlyn-ai/caitlyn-go` (from the GitHub repository until the module path is published) | Go 1.23 and later |
+| Go | `github.com/caitlyn-ai/sdk/go` (from the GitHub repository until the module path is published) | Go 1.23 and later |
 | Rust | `caitlyn-sdk` (from the GitHub repository until it is on crates.io) | Rust with tokio |
 
 The SDKs share one version number and behave the same way: the same sign-in modes, retries, errors and
