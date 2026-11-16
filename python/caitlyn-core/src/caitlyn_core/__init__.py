@@ -22,7 +22,7 @@ from ._spec import Member, OperationSpec
 from ._waiter import WaiterError, WaitState, wait_async, wait_sync
 from ._uploads import UploadFile, read_upload
 
-__version__ = "0.8.1"
+__version__ = "0.8.2"
 
 __all__ = [
     "AsyncAuthSession",

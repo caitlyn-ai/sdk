@@ -11,7 +11,7 @@ type Ctx = HandlerExecutionContext & { __caitlynSpan?: Span; __attempt?: number 
 
 /** The tracer every Caitlyn span comes from. */
 export function caitlynTracer(provider?: TracerProvider): Tracer {
-  return (provider ?? trace.getTracerProvider()).getTracer('@caitlyn-ai/sdk', '0.8.1');
+  return (provider ?? trace.getTracerProvider()).getTracer('@caitlyn-ai/sdk', '0.8.2');
 }
 
 /** `url.full` without the query or fragment, which can carry secrets (a presigned URL's signature). */

@@ -1,3 +1,10 @@
+## [0.8.2](https://github.com/caitlyn-ai/sdk/compare/v0.8.1...v0.8.2) (2026-11-16)
+
+
+### Bug Fixes
+
+* **docs:** code in a table never breaks mid-word, and a table too wide for a phone scrolls ([f2bfd62](https://github.com/caitlyn-ai/sdk/commit/f2bfd62956ac75deb72950096003b53703816bf5))
+
 ## [0.8.1](https://github.com/caitlyn-ai/sdk/compare/v0.8.0...v0.8.1) (2026-11-15)
 
 
