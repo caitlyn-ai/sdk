@@ -4,6 +4,9 @@
 //     and stacks below a narrow container width;
 //   - a cell holding only code spans separated by commas (an error's codes, for example) becomes a list of them,
 //     one per line, instead of a comma-joined run that wraps mid-name;
+//   - a long path or URL in code (`/settings/documentation/api`, `https://app.example.com/callback`) may break
+//     before a slash and nowhere else: each segment is a span that never breaks, with a break opportunity between
+//     them, so a path wraps at its separators and every other code in a table stays on one line;
 //   - a table laid out as a table (not the wide tables' entries) sits in a scrolling wrapper, so the table itself can
 //     be full width, its rows' hairlines flush with its strong rule, and still scroll when it cannot fit.
 // The Markdown copies are untouched: this only shapes the HTML.
@@ -60,6 +63,18 @@ function toRows(table, rows, header) {
   delete table.properties.dataColumns;
 }
 
+// A slash that starts a path segment: not the second of `//`, and not straight after a scheme's colon
+const SEGMENT = /(?<![:/])(?=\/)/;
+/** A code element in a table cell whose text is a long path or URL, made breakable before each segment's slash */
+function breakablePath(code) {
+  if (code.children.length !== 1 || code.children[0].type !== 'text') return;
+  const value = code.children[0].value;
+  const parts = value.split(SEGMENT);
+  if (value.length < 24 || parts.length < 3) return;
+  code.properties.className = [...(code.properties.className ?? []), 'caitlyn-code-path'];
+  code.children = parts.flatMap((part, i) => [...(i ? [{ type: 'element', tagName: 'wbr', properties: {}, children: [] }] : []), { type: 'element', tagName: 'span', properties: {}, children: [{ type: 'text', value: part }] }]);
+}
+
 const text = (node) => (node.type === 'text' ? node.value : (node.children ?? []).map(text).join(''));
 const isCode = (n) => n.type === 'element' && (n.tagName === 'code' || (n.tagName === 'a' && n.children?.length === 1 && n.children[0].tagName === 'code'));
 
@@ -85,6 +100,9 @@ export default function rehypeTables() {
           .filter((c) => c.type === 'element' && c.tagName === 'td')
           .forEach((td, i) => {
             if (header[i]) td.properties.dataLabel = header[i];
+            visit(td, 'element', (n) => {
+              if (n.tagName === 'code') breakablePath(n);
+            });
             const parts = td.children.filter((c) => !(c.type === 'text' && /^[\s,]*$/.test(c.value)));
             const commas = td.children.filter((c) => c.type === 'text' && c.value.trim() === ',').length;
             if (parts.length > 1 && commas === parts.length - 1 && parts.every(isCode)) {

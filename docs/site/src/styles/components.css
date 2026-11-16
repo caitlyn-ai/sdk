@@ -189,9 +189,17 @@
 }
 /* Starlight makes a table a scrolling block, so its rows shrink to their content while its strong rule spans the
    column. A plain table is a table again, full width, so every row's hairline ends flush with the rule; the wrapper
-   around it (rehype-tables.mjs) scrolls when it cannot fit. The wide tables and the SDK cards lay out their own rows. */
+   around it (rehype-tables.mjs) scrolls sideways when the table cannot fit, so the page itself never does. Where it
+   scrolls, a soft shadow at the edge that has more shows that it does: the ground-coloured covers move with the
+   content (local) and hide each shadow (fixed to the box) at the end the reader has reached. The wide tables and the
+   SDK cards lay out their own rows. */
 .sl-markdown-content .caitlyn-table-scroll {
   overflow-x: auto;
+  background:
+    linear-gradient(to right, var(--caitlyn-ground) 40%, transparent) left / 32px 100% no-repeat local,
+    linear-gradient(to left, var(--caitlyn-ground) 40%, transparent) right / 32px 100% no-repeat local,
+    linear-gradient(to right, color-mix(in srgb, var(--caitlyn-ink) 24%, transparent), transparent) left / 16px 100% no-repeat scroll,
+    linear-gradient(to left, color-mix(in srgb, var(--caitlyn-ink) 24%, transparent), transparent) right / 16px 100% no-repeat scroll;
 }
 .sl-markdown-content .caitlyn-table-scroll:has(> .caitlyn-sdk-cards) {
   overflow: visible; /* the cards' focus outlines stay whole */
@@ -203,8 +211,24 @@
   padding: 12px 16px; /* space-3, space-4 */
   vertical-align: top;
 }
+/* Code in a table is an identifier (a mode, a header, a member, a URL) and never breaks: its column is at least as
+   wide as its longest code, so a column of code is never starved by the prose beside it, and a table that cannot then
+   fit scrolls in its wrapper. Prose in a cell still breaks a long word, without narrowing its column's minimum. */
+.sl-markdown-content :is(th, td) {
+  overflow-wrap: break-word;
+}
 .sl-markdown-content :is(th, td) code {
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+/* A long path or URL in code breaks only before a segment's slash (src/plugins/rehype-tables.mjs): its segments never
+   break, and the code between them may */
+.sl-markdown-content :is(th, td) code.caitlyn-code-path {
+  white-space: normal;
+}
+.sl-markdown-content :is(th, td) code.caitlyn-code-path > span {
+  white-space: nowrap;
 }
 .sl-markdown-content .caitlyn-code-list ul {
   margin: 0;
@@ -295,9 +319,45 @@
   .sl-markdown-content table.caitlyn-table-wide td:not(:first-child) {
     grid-column: 1;
   }
-  .sl-markdown-content table.caitlyn-table-wide td:not(:last-child) code {
-    white-space: normal;
-    overflow-wrap: anywhere;
+  /* Stacked, a cell is the column's width: code still never breaks, and one too long for it scrolls in its cell */
+  .sl-markdown-content table.caitlyn-table-wide td {
+    min-width: 0;
+    overflow-x: auto;
+  }
+}
+/* On a phone the cells keep less padding, so the columns have more of the width: the first and last cells sit on the
+   text's edge, as the table's rules do */
+@media (max-width: 50rem) {
+  .sl-markdown-content :is(th, td) {
+    padding: 10px 8px;
+  }
+  .sl-markdown-content :is(th, td):first-child {
+    padding-inline-start: 0;
+  }
+  .sl-markdown-content :is(th, td):last-child {
+    padding-inline-end: 0;
+  }
+  /* A table of facts with no header (an error code's status, class and retries; an operation's stability) stacks on a
+     phone: each fact's name as a small muted line over its value, so a long class name keeps the full width */
+  .sl-markdown-content table.caitlyn-table-headless,
+  .sl-markdown-content table.caitlyn-table-headless :is(tbody, tr, td) {
+    display: block;
+  }
+  .sl-markdown-content table.caitlyn-table-headless tr {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--caitlyn-rule);
+  }
+  .sl-markdown-content table.caitlyn-table-headless td {
+    padding: 0;
+    border: 0;
+  }
+  .sl-markdown-content table.caitlyn-table-headless td:first-child {
+    margin-bottom: 2px;
+    color: var(--caitlyn-muted);
+    font-size: var(--caitlyn-text-body);
+  }
+  .sl-markdown-content table.caitlyn-table-headless td:last-child {
+    overflow-x: auto;
   }
 }
 
