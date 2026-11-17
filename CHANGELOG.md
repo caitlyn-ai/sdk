@@ -1,3 +1,15 @@
+# [0.9.0](https://github.com/caitlyn-ai/sdk/compare/v0.8.2...v0.9.0) (2026-11-17)
+
+
+### Features
+
+* SDK 0.9.0: callable scopes, one type per thing, watch and wait, sync and batch upload, and the developer docs ([92e92e5](https://github.com/caitlyn-ai/sdk/commit/92e92e567a38736d5ec757f5a56526a4b35401bd))
+
+
+### BREAKING CHANGES
+
+* SDK 0.9.0: callable scopes, one type per thing, watch and wait, sync and batch upload, and the developer docs
+
 ## [0.8.2](https://github.com/caitlyn-ai/sdk/compare/v0.8.1...v0.8.2) (2026-11-16)
 
 
