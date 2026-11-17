@@ -1,3 +1,10 @@
+# [0.10.0](https://github.com/caitlyn-ai/sdk/compare/v0.9.0...v0.10.0) (2026-11-17)
+
+
+### Features
+
+* SDK 0.10.0, aligned error codes and safer batch uploads ([314e0dd](https://github.com/caitlyn-ai/sdk/commit/314e0ddc0d287e44ea77ce5eaa0a8aaed4218859))
+
 # [0.9.0](https://github.com/caitlyn-ai/sdk/compare/v0.8.2...v0.9.0) (2026-11-17)
 
 
