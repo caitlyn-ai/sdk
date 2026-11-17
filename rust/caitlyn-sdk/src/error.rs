@@ -4,17 +4,19 @@ use caitlyn_sdk_core as rt;
 
 /// Everything a call can fail with. A problem response is the variant for its HTTP status, whether or
 /// not the operation lists that error (PROTOCOL.md 6.2); any other status, and errors the SDK raises
-/// itself (`STREAM_LOST`, `NO_FINAL_EVENT`, `UPLOAD_PUT_FAILED`, with status 0), are [`Error::Api`].
-/// Every problem variant carries an [`ApiError`](rt::ApiError) with `status`, `code` and `request_id`;
-/// [`Error::api`] reads it whichever variant it is. A call that got no response is
-/// [`Error::Connection`], with status 0 and code `CONNECTION_ERROR` (PROTOCOL.md 6.5).
+/// itself (`STREAM_LOST`, `NO_FINAL_EVENT`, `UPLOAD_PUT_FAILED`, `CANCELLED` for work that was
+/// cancelled, with status 0), are [`Error::Api`]. A job that failed while you waited for it is the
+/// variant for its code's status. Every problem variant carries an [`ApiError`](rt::ApiError) with
+/// `status`, `code` and `request_id`; [`Error::api`] reads it whichever variant it is. A call that got
+/// no response is [`Error::Connection`], with status 0 and code `CONNECTION_ERROR` (PROTOCOL.md 6.5).
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Error {
     /// HTTP 400 (`ValidationError` in the model). The request is malformed: a member is missing, the wrong
     /// type or out of range; it has a member,
-    /// filter or sort field the operation does not define; its cursor is not valid for this list; or it
-    /// asks to delete `draft` or `production`, which every agent keeps.
+    /// filter or sort field the operation does not define; its cursor is not valid for this list; it
+    /// asks to delete `draft` or `live`, which every agent keeps; an agent configuration would be
+    /// larger than 256 KiB; or a file is meant for a conversation whose agent takes no attachments.
     Validation(Box<rt::ApiError>),
     /// HTTP 401 (`UnauthenticatedError` in the model). No credential was sent, or it is expired or not
     /// valid.
@@ -30,7 +32,12 @@ pub enum Error {
     NotFound(Box<rt::ApiError>),
     /// HTTP 409 (`ConflictError` in the model). The resource's state does not allow the request, a unique
     /// name is taken, or a request with the
-    /// same idempotency key is still in progress.
+    /// same idempotency key is still in progress. An agent version that live points at
+    /// (`VERSION_IN_USE`) or that live history names (`VERSION_IN_HISTORY`) cannot be deleted. A
+    /// document still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an
+    /// ingestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document
+    /// an ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry
+    /// `Retry-After`.
     Conflict(Box<rt::ApiError>),
     /// HTTP 412 (`PreconditionFailedError` in the model). `If-Match` does not match the resource's current
     /// ETag: it changed since the caller read it.
@@ -39,7 +46,12 @@ pub enum Error {
     /// documented limit.
     PayloadTooLarge(Box<rt::ApiError>),
     /// HTTP 422 (`UnprocessableContentError` in the model). The idempotency key was already used with a
-    /// different request body.
+    /// different request body; supplied metadata does not
+    /// fit the knowledge base's field definitions or limits (`METADATA_FIELD_UNDEFINED`,
+    /// `METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one
+    /// entry per field in `errors`; an ingestion batch item gives both or neither of its content's
+    /// description and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused
+    /// a file (`CONTENT_REJECTED`).
     UnprocessableContent(Box<rt::ApiError>),
     /// HTTP 428 (`PreconditionRequiredError` in the model). The update sent no `If-Match` header; read the
     /// resource and send its ETag.
@@ -66,9 +78,14 @@ pub enum Error {
     Connection(rt::ConnectionError),
     /// The call's cancellation token fired.
     Cancelled,
-    /// A waiter (`wait_until_…`) reached a failure state or ran out of time (PROTOCOL.md 10.1). It names the waiter
-    /// and carries the reason, the number of reads and the last read's output or error.
-    Waiter(Box<rt::WaiterError<Error>>),
+    /// A `kb.ingestion().sync(…)` whose cancellation token fired, with the report so far ([`Error::report`]): every
+    /// item with its last status, those accepted but not yet final included, and the batch.
+    SyncCancelled(Box<crate::SyncReport>),
+    /// A `kb.ingestion().sync(…)` whose `confirm` declined the plan: the SDK's own `CANCELLED` (status 0), with the
+    /// report as planned ([`Error::report`]).
+    SyncDeclined(Box<rt::ApiError>, Box<crate::SyncReport>),
+    /// A wait's time limit (`.timeout(…)`) passed; the watch it read is closed.
+    Timeout,
 }
 
 impl Error {
@@ -88,6 +105,7 @@ impl Error {
             Error::Internal(e) => Some(e),
             Error::ServiceUnavailable(e) => Some(e),
             Error::Api(e) => Some(e),
+            Error::SyncDeclined(e, _) => Some(e),
             _ => None,
         }
     }
@@ -96,6 +114,7 @@ impl Error {
     pub fn status(&self) -> Option<u16> {
         match self {
             Error::Connection(e) => Some(e.status()),
+            Error::Timeout => Some(0),
             other => other.api().map(|e| e.status),
         }
     }
@@ -104,6 +123,7 @@ impl Error {
     pub fn code(&self) -> Option<&str> {
         match self {
             Error::Connection(e) => Some(e.code()),
+            Error::Timeout => Some(rt::WAIT_TIMEOUT),
             other => other.api().map(|e| e.code.as_str()),
         }
     }
@@ -132,6 +152,27 @@ impl Error {
         }
     }
 
+    /// Whether the thing is not there (404).
+    pub fn is_not_found(&self) -> bool {
+        self.status() == Some(404)
+    }
+
+    /// Whether the call was cancelled: [`Error::Cancelled`], or a cancelled sync ([`Error::SyncCancelled`]).
+    pub fn is_cancelled(&self) -> bool {
+        matches!(self, Error::Cancelled | Error::SyncCancelled(_))
+    }
+
+    /// A cancelled sync's report so far: every item with its last status, those accepted but not yet final included,
+    /// and the batch with its counts. A declined `confirm` carries the report as planned. Only a sync stopped through
+    /// its cancellation token or a declined `confirm` returns an error to carry it: dropping the sync's future ends it
+    /// at once, with nothing returned.
+    pub fn report(&self) -> Option<&crate::SyncReport> {
+        match self {
+            Error::SyncCancelled(r) | Error::SyncDeclined(_, r) => Some(r),
+            _ => None,
+        }
+    }
+
     /// Maps a runtime error to its typed variant, among `statuses` (an operation's modelled errors).
     pub(crate) fn from_core(e: rt::Error, statuses: &[u16]) -> Self {
         match e {
@@ -155,6 +196,15 @@ impl Error {
             rt::Error::Input(e) => Error::Input(e),
             rt::Error::Auth(e) => Error::Auth(e),
             rt::Error::Connection(e) => Error::Connection(e),
+            rt::Error::Timeout => Error::Timeout,
+            rt::Error::CancelledWith(p) => match p.0.downcast::<crate::SyncReport>() {
+                Ok(report) => Error::SyncCancelled(report),
+                Err(_) => Error::Cancelled,
+            },
+            rt::Error::ApiWith(a, p) => match p.0.downcast::<crate::SyncReport>() {
+                Ok(report) => Error::SyncDeclined(a, report),
+                Err(_) => Error::Api(a),
+            },
             _ => Error::Cancelled,
         }
     }
@@ -182,6 +232,45 @@ pub(crate) const ERROR_SHAPES: &[(u16, &str)] = &[
     (503, "ServiceUnavailableError"),
 ];
 
+/// Every error code the model lists, with its HTTP status: a job that failed with a code is that status's variant.
+pub(crate) const ERROR_CODES: &[(&str, u16)] = &[
+    ("VALIDATION_FAILED", 400),
+    ("UNKNOWN_FIELD", 400),
+    ("UNKNOWN_FILTER", 400),
+    ("UNKNOWN_SORT", 400),
+    ("INVALID_CURSOR", 400),
+    ("VERSION_NOT_DELETABLE", 400),
+    ("CONFIGURATION_TOO_LARGE", 400),
+    ("ATTACHMENTS_NOT_ACCEPTED", 400),
+    ("UNAUTHENTICATED", 401),
+    ("PERMISSION_DENIED", 403),
+    ("NOT_AVAILABLE_TO_CREDENTIALS", 403),
+    ("PRIMARY_WORKSPACE_REQUIRED", 403),
+    ("NOT_FOUND", 404),
+    ("CONFLICT", 409),
+    ("ALREADY_EXISTS", 409),
+    ("IDEMPOTENCY_KEY_IN_USE", 409),
+    ("OPERATION_NOT_CANCELLABLE", 409),
+    ("VERSION_IN_USE", 409),
+    ("VERSION_IN_HISTORY", 409),
+    ("DOCUMENT_INGESTION_IN_PROGRESS", 409),
+    ("INGESTION_BATCH_UNRESOLVED", 409),
+    ("TARGET_IN_USE", 409),
+    ("PRECONDITION_FAILED", 412),
+    ("PAYLOAD_TOO_LARGE", 413),
+    ("IDEMPOTENCY_KEY_REUSED", 422),
+    ("METADATA_FIELD_UNDEFINED", 422),
+    ("METADATA_VALUE_INVALID", 422),
+    ("METADATA_FIELD_PASSAGE_SCOPED", 422),
+    ("METADATA_LIMIT_EXCEEDED", 422),
+    ("BATCH_ITEM_CONTENT_AMBIGUOUS", 422),
+    ("CONTENT_REJECTED", 422),
+    ("PRECONDITION_REQUIRED", 428),
+    ("RATE_LIMITED", 429),
+    ("INTERNAL", 500),
+    ("SERVICE_UNAVAILABLE", 503),
+];
+
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -190,7 +279,8 @@ impl std::fmt::Display for Error {
             Error::Auth(e) => e.fmt(f),
             Error::Connection(e) => e.fmt(f),
             Error::Cancelled => f.write_str("caitlyn: the call was cancelled"),
-            Error::Waiter(e) => e.fmt(f),
+            Error::SyncCancelled(_) => f.write_str("caitlyn: the sync was cancelled"),
+            Error::Timeout => f.write_str("caitlyn: the wait's time limit passed"),
             other => other.api().expect("a problem variant").fmt(f),
         }
     }
@@ -200,7 +290,6 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Connection(e) => Some(e),
-            Error::Waiter(e) => Some(e.as_ref()),
             other => other.api().and_then(|e| e.source.as_deref()).map(|s| s as _),
         }
     }

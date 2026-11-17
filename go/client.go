@@ -3,18 +3,21 @@
 package caitlyn
 
 import (
+	"context"
+	"encoding/json"
+
 	"github.com/caitlyn-ai/sdk/go/core"
 )
 
 // Client is the Caitlyn API client. Create one with NewClient and share it: it is safe for concurrent
-// use. Operations are grouped by resource, for example client.Agents.ProductionHistory.Get.
+// use. Its calls are scopes (PROTOCOL.md 10): c.KnowledgeBases.List(ctx) for the collection,
+// c.KnowledgeBase(id) for one knowledge base, whose calls fill its identifier in, such as
+// c.KnowledgeBase(id).Document(docID).Get(ctx). Making a scope sends nothing.
 type Client struct {
-	Agents        *AgentsClient
-	Callers       *CallersClient
-	Conversations *ConversationsClient
-	Documents     *DocumentsClient
-	Events        *EventsClient
-	Uploads       *UploadsClient
+	Agents         *Agents
+	Events         *Events
+	KnowledgeBases *KnowledgeBases
+	Core           *Core
 
 	core *core.Client
 }
@@ -30,14 +33,10 @@ func NewClient(workspace string, auth Auth, opts ...Option) (*Client, error) {
 		return nil, err
 	}
 	c := &Client{core: cc}
-	c.Agents = &AgentsClient{}
-	c.Agents.ProductionHistory = &AgentsProductionHistoryClient{c: c}
-	c.Agents.Versions = &AgentsVersionsClient{c: c}
-	c.Callers = &CallersClient{c: c}
-	c.Conversations = &ConversationsClient{c: c}
-	c.Documents = &DocumentsClient{c: c}
-	c.Events = &EventsClient{c: c}
-	c.Uploads = &UploadsClient{c: c}
+	c.Agents = newAgents(c)
+	c.Events = newEvents(c)
+	c.KnowledgeBases = newKnowledgeBases(c)
+	c.Core = newCore(c)
 	return c, nil
 }
 
@@ -51,33 +50,314 @@ func (c *Client) Endpoint() string { return c.core.Endpoint() }
 // HandleCallback, SignOut).
 func (c *Client) Auth() *AuthSession { return c.core.Auth() }
 
-// AgentsClient groups ProductionHistory and Versions. Use Client.Agents.
-type AgentsClient struct {
-	ProductionHistory *AgentsProductionHistoryClient
-	Versions          *AgentsVersionsClient
+// Agent is one of caitlyn.agents by its agent id: a reference made without sending anything, whose
+// calls fill it in.
+func (c *Client) Agent(agentID string) *AgentScope {
+	return newAgentScope(c, agentID)
 }
 
-// AgentsProductionHistoryClient holds the agents production history operations (Get, List). Use
-// Client.Agents.ProductionHistory.
-type AgentsProductionHistoryClient struct{ c *Client }
+// Conversation is one of caitlyn.conversations by its conversation id: a reference made without
+// sending anything, whose calls fill it in.
+func (c *Client) Conversation(conversationID string) *ConversationScope {
+	return newConversationScope(c, conversationID)
+}
 
-// AgentsVersionsClient holds the agents versions operations (Delete, Get, List, Pin, Publish,
-// ResetDraft, UpdateDraft). Use Client.Agents.Versions.
-type AgentsVersionsClient struct{ c *Client }
+// KnowledgeBase is one of caitlyn.knowledgeBases by its knowledge base id: a reference made without
+// sending anything, whose calls fill it in.
+func (c *Client) KnowledgeBase(knowledgeBaseID string) *KnowledgeBaseScope {
+	return newKnowledgeBaseScope(c, knowledgeBaseID)
+}
 
-// CallersClient holds the callers operations (Get). Use Client.Callers.
-type CallersClient struct{ c *Client }
+// Me describes the caller: who the credential belongs to, what kind of credential it is, its scopes
+// and its organisation.
+//
+// Any valid credential may call it, with no particular scope, so an integration can check its
+// credential before doing anything else. It only describes the credential that made the request;
+// it never reads another person's or client's record.
+//
+// Since Caitlyn 5.115.0; beta.
+func (c *Client) Me(ctx context.Context, opts ...CallOption) (*Caller, error) {
+	p := &getCallerParams{}
+	return c.callGetCaller(ctx, p, opts)
+}
 
-// ConversationsClient holds the conversations operations (Create, Send, Watch). Use
-// Client.Conversations.
-type ConversationsClient struct{ c *Client }
+// getCallerParams is every member of GetCaller's input: the caller's, and those the scope fills.
+type getCallerParams struct {
+}
 
-// DocumentsClient holds the documents operations (BatchDelete, Create, Delete, Get, List). Use
-// Client.Documents.
-type DocumentsClient struct{ c *Client }
+var opGetCaller = &core.Operation{
+	Name:      "GetCaller",
+	Method:    "GET",
+	Since:     "5.115.0",
+	RetrySafe: true,
+	Retryable: []int{503, 429},
+	Errors:    errorForStatus,
+}
 
-// EventsClient holds the events operations (Subscribe). Use Client.Events.
-type EventsClient struct{ c *Client }
+func buildGetCaller(in *getCallerParams) (*core.Request, error) {
+	req := core.NewRequest("/v3/me")
+	return req, nil
+}
 
-// UploadsClient holds the uploads operations (Reserve, Get). Use Client.Uploads.
-type UploadsClient struct{ c *Client }
+func readGetCaller(resp *core.Response) (*Caller, error) {
+	out := &Caller{}
+	if err := resp.DecodeJSON(out); err != nil {
+		return nil, err
+	}
+	out.APIVersion = resp.HeaderPtr("Caitlyn-Api-Version")
+	out.RequestID = resp.HeaderPtr("Caitlyn-Request-Id")
+	out.metadata = resp.Metadata()
+	return out, nil
+}
+
+func (c *Client) callGetCaller(ctx context.Context, p *getCallerParams, opts []CallOption) (*Caller, error) {
+	req, err := buildGetCaller(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opGetCaller, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	return readGetCaller(resp)
+}
+
+// errorForStatus is the typed error for an HTTP status (PROTOCOL.md 6.2): every operation's, whether or not it lists it.
+func errorForStatus(status int, e *core.APIError) error {
+	switch status {
+	case 400:
+		return &ValidationError{e}
+	case 401:
+		return &UnauthenticatedError{e}
+	case 403:
+		return &PermissionDeniedError{e}
+	case 404:
+		return &NotFoundError{e}
+	case 409:
+		return &ConflictError{e}
+	case 412:
+		return &PreconditionFailedError{e}
+	case 413:
+		return &PayloadTooLargeError{e}
+	case 422:
+		return &UnprocessableContentError{e}
+	case 428:
+		return &PreconditionRequiredError{e}
+	case 429:
+		return &TooManyRequestsError{e}
+	case 500:
+		return &InternalError{e}
+	case 503:
+		return &ServiceUnavailableError{e}
+	}
+	return e
+}
+
+// statusForCode is the HTTP status of the error class a problem code belongs to (the model's @errorCodes), or 0 for a
+// code no class lists: a failed job's error is raised as that class (PROTOCOL.md 16).
+func statusForCode(code string) int {
+	switch code {
+	case "VALIDATION_FAILED", "UNKNOWN_FIELD", "UNKNOWN_FILTER", "UNKNOWN_SORT", "INVALID_CURSOR", "VERSION_NOT_DELETABLE", "CONFIGURATION_TOO_LARGE", "ATTACHMENTS_NOT_ACCEPTED":
+		return 400
+	case "UNAUTHENTICATED":
+		return 401
+	case "PERMISSION_DENIED", "NOT_AVAILABLE_TO_CREDENTIALS", "PRIMARY_WORKSPACE_REQUIRED":
+		return 403
+	case "NOT_FOUND":
+		return 404
+	case "CONFLICT", "ALREADY_EXISTS", "IDEMPOTENCY_KEY_IN_USE", "OPERATION_NOT_CANCELLABLE", "VERSION_IN_USE", "VERSION_IN_HISTORY", "DOCUMENT_INGESTION_IN_PROGRESS", "INGESTION_BATCH_UNRESOLVED", "TARGET_IN_USE":
+		return 409
+	case "PRECONDITION_FAILED":
+		return 412
+	case "PAYLOAD_TOO_LARGE":
+		return 413
+	case "IDEMPOTENCY_KEY_REUSED", "METADATA_FIELD_UNDEFINED", "METADATA_VALUE_INVALID", "METADATA_FIELD_PASSAGE_SCOPED", "METADATA_LIMIT_EXCEEDED", "BATCH_ITEM_CONTENT_AMBIGUOUS", "CONTENT_REJECTED":
+		return 422
+	case "PRECONDITION_REQUIRED":
+		return 428
+	case "RATE_LIMITED":
+		return 429
+	case "INTERNAL":
+		return 500
+	case "SERVICE_UNAVAILABLE":
+		return 503
+	}
+	return 0
+}
+
+// Send uploads a file (PROTOCOL.md 10, 14): it reads the file once to compute its size and SHA-256 (a
+// stream is copied aside while it is read, to memory up to 8 MiB and past that to a temporary file
+// removed when the call ends), reserves the upload with Reserve (purpose is nil for a document), then
+// sends the bytes to the upload URL with exactly the required headers, and no Caitlyn credentials. The
+// send is retried like any retry-safe call. A file over 2 GB is an *Error with the code
+// FILE_TOO_LARGE, a file changed on disk since it was read FILE_CHANGED, both before anything is sent;
+// bytes the upload URL would not take after retries UPLOAD_PUT_FAILED.
+func (s *Uploads) Send(ctx context.Context, file File, purpose *UploadPurpose, opts ...CallOption) (*CreateUploadResult, error) {
+	f, err := core.FileOf(file)
+	if err != nil {
+		return nil, err
+	}
+	if f == nil {
+		return nil, core.NewError("VALIDATION_FAILED", "Send needs a file, not an upload that was already sent", nil)
+	}
+	var up *CreateUploadResult
+	err = s.c.core.SendFile(ctx, f, func(ctx context.Context, fi core.FileInfo) (core.PresignedPut, error) {
+		var err error
+		up, err = s.c.callCreateUpload(ctx, &createUploadParams{FileName: fi.Name, ContentType: fi.ContentType, ByteSize: fi.Size, SHA256: fi.SHA256, Purpose: purpose}, opts)
+		if err != nil {
+			return core.PresignedPut{}, err
+		}
+		return core.PresignedPut{Method: up.UploadMethod, URL: up.UploadURL, Headers: up.RequiredHeaders}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return up, nil
+}
+
+// uploadID sends file as Uploads.Send does and returns its upload's id; an UploadID is returned as it is.
+func (c *Client) uploadID(ctx context.Context, file File, purpose *UploadPurpose) (string, error) {
+	f, err := core.FileOf(file)
+	if err != nil {
+		return "", err
+	}
+	if f == nil {
+		return string(file.(UploadID)), nil
+	}
+	up, err := c.Core.Uploads.Send(ctx, f, purpose)
+	if err != nil {
+		return "", err
+	}
+	return up.ID, nil
+}
+
+// describeFile is the description of a file an estimate sends in place of its bytes: its name, content type and size.
+func (c *Client) describeFile(ctx context.Context, file File) (*UploadDescription, error) {
+	f, err := core.FileOf(file)
+	if err != nil {
+		return nil, err
+	}
+	if f == nil {
+		return nil, core.NewError("VALIDATION_FAILED", "An estimate needs the file, not an upload's id", nil)
+	}
+	fi, err := f.Describe(ctx)
+	if err != nil {
+		return nil, err
+	}
+	d := &UploadDescription{Name: fi.Name, ContentType: fi.ContentType, ByteSize: fi.Size}
+	// The hints the caller gave the file (WithHints): the SDK reads none from the bytes itself.
+	if h, ok := f.Hints().(*IngestionHints); ok {
+		d.Hints = h
+	}
+	return d, nil
+}
+
+// WithHints gives what an estimate sends about a file's contents besides its size, such as its page
+// count: caitlyn.WithHints(&caitlyn.IngestionHints{Pages: caitlyn.Ptr[int64](14)}). The SDK reads none
+// from the bytes itself, so without hints the server prices a typical file of that size, and says so.
+func WithHints(h *IngestionHints) FileOption { return core.WithHints(h) }
+
+// CreatedAgent is what CreateAgent returns: the new thing's scope (AgentScope), embedded, and the new
+// Agent, with the response's metadata, as Result.
+type CreatedAgent struct {
+	*AgentScope
+	// Result is the new Agent, as the call returned it.
+	Result *Agent
+}
+
+// MarshalJSON writes the new Agent.
+func (s *CreatedAgent) MarshalJSON() ([]byte, error) { return json.Marshal(s.Result) }
+
+// CreatedConversation is what CreateConversation returns: the new thing's scope (ConversationScope),
+// embedded, and the new Conversation, with the response's metadata, as Result.
+type CreatedConversation struct {
+	*ConversationScope
+	// Result is the new Conversation, as the call returned it.
+	Result *Conversation
+}
+
+// MarshalJSON writes the new Conversation.
+func (s *CreatedConversation) MarshalJSON() ([]byte, error) { return json.Marshal(s.Result) }
+
+// CreatedKnowledgeBase is what CreateKnowledgeBase returns: the new thing's scope
+// (KnowledgeBaseScope), embedded, and the new KnowledgeBase, with the response's metadata, as Result.
+type CreatedKnowledgeBase struct {
+	*KnowledgeBaseScope
+	// Result is the new KnowledgeBase, as the call returned it.
+	Result *KnowledgeBase
+
+	job string
+}
+
+// MarshalJSON writes the new KnowledgeBase.
+func (s *CreatedKnowledgeBase) MarshalJSON() ([]byte, error) { return json.Marshal(s.Result) }
+
+// Wait waits until the work CreateKnowledgeBase started is done, then returns the thing as Get returns it, as KnowledgeBaseScope.Wait does.
+func (s *CreatedKnowledgeBase) Wait(ctx context.Context, opts ...WaitOption) (*KnowledgeBase, error) {
+	return s.KnowledgeBaseScope.wait(ctx, s.job, false, opts)
+}
+
+// CreatedDocument is what CreateDocument returns: the new thing's scope (DocumentScope), embedded, and
+// the response (CreateDocumentResult) as Result.
+type CreatedDocument struct {
+	*DocumentScope
+	// Result is the call's response.
+	Result *CreateDocumentResult
+
+	job string
+}
+
+// MarshalJSON writes the response, as CreateDocument answered it.
+func (s *CreatedDocument) MarshalJSON() ([]byte, error) { return json.Marshal(s.Result) }
+
+// Wait waits until the work CreateDocument started is done, then returns the thing as Get returns it, as DocumentScope.Wait does.
+func (s *CreatedDocument) Wait(ctx context.Context, opts ...WaitOption) (*Document, error) {
+	return s.DocumentScope.wait(ctx, s.job, false, opts)
+}
+
+// CreatedField is what CreateField returns: the new thing's scope (FieldScope), embedded, and the new
+// Field, with the response's metadata, as Result.
+type CreatedField struct {
+	*FieldScope
+	// Result is the new Field, as the call returned it.
+	Result *Field
+}
+
+// MarshalJSON writes the new Field.
+func (s *CreatedField) MarshalJSON() ([]byte, error) { return json.Marshal(s.Result) }
+
+// CreatedFolder is what CreateFolder returns: the new thing's scope (FolderScope), embedded, and the
+// response (CreateFolderResult) as Result.
+type CreatedFolder struct {
+	*FolderScope
+	// Result is the call's response.
+	Result *CreateFolderResult
+
+	job string
+}
+
+// MarshalJSON writes the response, as CreateFolder answered it.
+func (s *CreatedFolder) MarshalJSON() ([]byte, error) { return json.Marshal(s.Result) }
+
+// Wait waits until the work CreateFolder started is done, then returns the thing as the watch's snapshot shows it, as FolderScope.Wait does.
+func (s *CreatedFolder) Wait(ctx context.Context, opts ...WaitOption) (*Folder, error) {
+	return s.FolderScope.wait(ctx, s.job, false, opts)
+}
+
+// CreatedBatch is what CreateIngestionBatch returns: the new thing's scope (BatchScope), embedded, and
+// the new IngestionBatch, with the response's metadata, as Result.
+type CreatedBatch struct {
+	*BatchScope
+	// Result is the new IngestionBatch, as the call returned it.
+	Result *IngestionBatch
+
+	job string
+}
+
+// MarshalJSON writes the new IngestionBatch.
+func (s *CreatedBatch) MarshalJSON() ([]byte, error) { return json.Marshal(s.Result) }
+
+// Wait waits until the work CreateIngestionBatch started is done, then returns the thing as Get returns it, as BatchScope.Wait does.
+func (s *CreatedBatch) Wait(ctx context.Context, opts ...WaitOption) (*IngestionBatch, error) {
+	return s.BatchScope.wait(ctx, s.job, false, opts)
+}

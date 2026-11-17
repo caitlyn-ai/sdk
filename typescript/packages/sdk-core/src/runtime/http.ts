@@ -40,6 +40,9 @@ export interface FetchHttpHandlerOptions {
 
 let keepAliveSupported: boolean | undefined;
 
+/** The header the fetch handler puts on a redirect a browser hid from the page, for the protocol to raise. */
+export const OPAQUE_REDIRECT = 'x-caitlyn-opaque-redirect';
+
 /** @smithy/fetch-http-handler's FetchHttpHandler, with the same options and behaviour. */
 export class FetchHttpHandler {
   private config?: FetchHttpHandlerOptions;
@@ -77,6 +80,9 @@ export class FetchHttpHandler {
     if (body) init.duplex = 'half';
     if (typeof AbortController !== 'undefined') init.signal = abortSignal;
     if (keepAliveSupported) init.keepalive = config.keepAlive === true;
+    // The API answers a redirect only where it means to hand out an address (GetDocumentContent's 302, which the SDK
+    // returns and never follows): see it, rather than fetch what it points at.
+    init.redirect = 'manual';
     if (typeof config.requestInit === 'function') Object.assign(init, config.requestInit(request));
 
     const timeoutMs = requestTimeout ?? config.requestTimeout;
@@ -84,6 +90,9 @@ export class FetchHttpHandler {
     let removeAbort = () => {};
     const race: Promise<{ response: HttpResponse }>[] = [
       (config.customFetch ?? fetch)(new Request(url, init)).then(async (res) => {
+        // A browser hides a redirect's status, headers and body from a page (an opaque redirect). It is a response, so
+        // never a connection error and never retried: the protocol raises REDIRECT_UNREADABLE for it (PROTOCOL.md 16).
+        if (res.type === 'opaqueredirect') return { response: new HttpResponse({ headers: { [OPAQUE_REDIRECT]: '1' }, statusCode: 0, body: new Uint8Array() }) };
         const headers: Record<string, string> = {};
         res.headers.forEach((v, k) => (headers[k] = v));
         return { response: new HttpResponse({ headers, reason: res.statusText, statusCode: res.status, body: res.body ?? (await res.blob()) }) };

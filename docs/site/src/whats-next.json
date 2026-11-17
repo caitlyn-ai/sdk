@@ -51,5 +51,10 @@
     "authentication",
     "sdk/send-message",
     "errors"
+  ],
+  "how-to-integrate": [
+    "getting-started",
+    "authentication",
+    "embed/quick-start"
   ]
 }

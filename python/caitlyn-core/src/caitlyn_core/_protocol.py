@@ -17,7 +17,7 @@ import pydantic
 from pydantic import BaseModel
 
 from ._errors import CaitlynError, NotSupportedByServer
-from ._models import CaitlynModel, CaitlynResult, FieldError, ResponseMetadata
+from ._models import CaitlynModel, FieldError, ResponseMetadata
 from ._retry import parse_retry_after
 from ._spec import OperationSpec
 
@@ -147,16 +147,22 @@ def parse_json_object(content: bytes) -> dict[str, Any]:
 def read_result[M: CaitlynModel](spec: OperationSpec, response: httpx.Response, result: type[M]) -> M:
     body = parse_json_object(response.content)
     data: dict[str, Any] = dict(body)
-    for wire, header in spec.response_headers:
-        value = response.headers.get(header)
-        if value is not None:
-            data[wire] = value
+    if spec.thing:
+        # The body is the thing: its etag is the ETag header's when the body has none (PROTOCOL.md 4.2).
+        etag = response.headers.get("ETag")
+        if "etag" not in data and etag is not None:
+            data["etag"] = etag
+    else:
+        for wire, header in spec.response_headers:
+            value = response.headers.get(header)
+            if value is not None:
+                data[wire] = value
     model = result.from_wire(data)
     model._set_raw(body)  # pyright: ignore[reportPrivateUsage]
-    if isinstance(model, CaitlynResult):
-        model._set_response_metadata(  # pyright: ignore[reportPrivateUsage]
-            ResponseMetadata(response.status_code, response.headers.get(REQUEST_ID_HEADER), response.headers.get("ETag"))
-        )
+    model._set_response_metadata(  # pyright: ignore[reportPrivateUsage]
+        ResponseMetadata(response.status_code, response.headers.get(REQUEST_ID_HEADER), response.headers.get("ETag"),
+                         response.headers.get(API_VERSION_HEADER))
+    )
     return model
 
 

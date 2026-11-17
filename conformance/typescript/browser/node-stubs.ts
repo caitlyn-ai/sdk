@@ -1,4 +1,4 @@
-// The Node modules the conformance harness imports, for a browser page. The harness reads three repository files
+// The Node modules the conformance harness imports, for a browser page. The harness reads a few repository files
 // (embedded at build time as `caitlyn:files`); the mock server is started by the runner, not by the harness; and the
 // cases that need a file system or a socket are skipped in a page (NOT_IN_A_PAGE in the harness).
 import files from 'caitlyn:files';

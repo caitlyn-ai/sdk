@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use caitlyn_sdk::auth::ProviderFn;
+use caitlyn_sdk::scope;
 use caitlyn_sdk::*;
 use caitlyn_sdk_core::reqwest;
 use serde_json::{json, Value};
@@ -141,24 +142,15 @@ fn client_with(m: &Mock, auth: impl Into<Auth>) -> Client {
 }
 
 async fn list_all(c: &Client, kb: &str, limit: Option<i32>) -> Result<Vec<Document>, Error> {
-    c.documents()
-        .list(ListDocumentsInput {
-            knowledge_base_id: kb.into(),
-            limit,
-            ..Default::default()
-        })
-        .collect()
-        .await
+    let mut list = c.knowledge_base(kb).documents().list();
+    if let Some(n) = limit {
+        list = list.limit(n);
+    }
+    list.collect().await
 }
 
 async fn draft(c: &Client) -> Result<AgentVersion, Error> {
-    c.agents()
-        .versions()
-        .get(GetAgentVersionInput {
-            agent_id: AGENT.into(),
-            version: "draft".into(),
-        })
-        .await
+    c.agent(AGENT).draft().get().await
 }
 
 /// The mock's cursor the workspace stream cannot carry on from, and the cursor its stream.reset gives instead.
@@ -167,15 +159,7 @@ const RESET_CURSOR: &str = "0193a6f3-0a1b-7c2d-8e3f-000000000010";
 const ID_11: &str = "0193a6f3-0a1b-7c2d-8e3f-000000000011";
 
 async fn send(c: &Client, conversation: &str) -> Result<ConversationEventStream, Error> {
-    c.conversations()
-        .send(
-            conversation,
-            SendMessageInput {
-                message: "hi".into(),
-                ..Default::default()
-            },
-        )
-        .await
+    c.conversation(conversation).send("hi").await
 }
 
 /// Steps the stream clock by `step` at each reading while it lives, so every connection lasts exactly that long (a
@@ -422,7 +406,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
         "retry.idempotency-key-kept" => Box::pin(async move {
             m.faults(status("CreateUpload", &[(503, 0), (429, 0)])).await;
             let f = UploadFile::from_path(temp_file("hello.txt", b"hello")).map_err(s)?;
-            client(m).uploads().create(f).await.map_err(s)?;
+            client(m).core().uploads().send(f).await.map_err(s)?;
             let reqs = m.matching(|r| str_at(r, "path") == "/v3/uploads").await;
             let keys: Vec<_> = reqs.iter().map(|r| header(r, "idempotency-key").unwrap_or_default()).collect();
             let uuid = regex_lite::Regex::new("^[0-9a-f-]{36}$").unwrap();
@@ -516,7 +500,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let (_, err) = collect(&mut first).await;
             ensure!(err.is_none(), "send: {err:?}");
             m.faults(json!({"watchCloses": 7})).await;
-            let mut watch = c.conversations().watch("c-w", WatchConversationInput::default()).await.map_err(s)?;
+            let mut watch = c.conversation("c-w").watch().await.map_err(s)?;
             let events = take(&mut watch, |e| e.event_type() == "message.completed").await.map_err(s)?;
             let types: Vec<_> = events.iter().map(|e| e.event_type()).collect();
             ensure!(
@@ -545,7 +529,8 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             m.faults(json!({"watchCloses": 1})).await;
             let mut stream = client(m)
                 .events()
-                .subscribe(WatchWorkspaceEventsInput {
+                .watch()
+                .input(WatchWorkspaceEventsInput {
                     types: Some(vec!["conversation.created".into()]),
                     conversation_ids: Some(vec!["c-11".into(), "c-12".into()]),
                     ..Default::default()
@@ -578,8 +563,12 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             ensure!(err.is_none(), "send: {err:?}");
             let last = answer.last().and_then(|e| e.event_id()).ok_or("no last event id")?.to_owned();
             let mut watch = c
-                .conversations()
-                .watch("c-r", WatchConversationInput { last_event_id: Some(last) })
+                .conversation("c-r")
+                .watch()
+                .input(WatchConversationInput {
+                    last_event_id: Some(last),
+                    ..Default::default()
+                })
                 .await
                 .map_err(s)?;
             let events = take(&mut watch, |e| e.event_type() == "message.completed").await.map_err(s)?;
@@ -675,104 +664,6 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             );
             Ok(())
         }),
-        "waiter.success" => {
-            Box::pin(async move {
-                m.faults(json!({"documentStatus": {"doc-0002": ["queued", "indexing", "indexed"], "doc-0003": ["indexing", "partially_indexed"]}}))
-                .await;
-                let d = wait_indexed(m, "doc-0002").await.map_err(s)?;
-                let reads = m.api().await.len();
-                ensure!(
-                    d.status.as_str() == "indexed" && reads == 3,
-                    "status {} after {reads} reads",
-                    d.status.as_str()
-                );
-                let d = wait_indexed(m, "doc-0003").await.map_err(s)?;
-                ensure!(d.status.as_str() == "partially_indexed", "status {}", d.status.as_str());
-                Ok(())
-            })
-        }
-        "waiter.failure" => Box::pin(async move {
-            m.faults(json!({"documentStatus": {"doc-0002": ["indexing", "failed"]}})).await;
-            let e = wait_indexed(m, "doc-0002").await.err().ok_or("a failed document succeeded")?;
-            let Error::Waiter(w) = &e else { return Err(format!("got {e:?}")) };
-            let last = w.last_output::<GetDocumentResult>().map(|d| d.status.as_str().to_owned());
-            ensure!(
-                w.waiter == "Indexed" && w.reason == WaitReason::Failure && w.attempts == 2 && last.as_deref() == Some("failed"),
-                "got {w:?}, last {last:?}"
-            );
-            ensure!(e.to_string() == "Indexed: reached a failure state", "message {e}");
-            let e = wait_indexed(m, "doc-9999").await.err().ok_or("a missing document succeeded")?;
-            let Error::Waiter(w) = &e else { return Err(format!("got {e:?}")) };
-            ensure!(
-                w.reason == WaitReason::Failure && w.attempts == 1 && matches!(w.last_error, Some(Error::NotFound(_))),
-                "missing document: {w:?}"
-            );
-            Ok(())
-        }),
-        "waiter.timeout" => Box::pin(async move {
-            m.faults(json!({"documentStatus": {"doc-0002": ["indexing"]}})).await;
-            let r = client(m)
-                .documents()
-                .wait_until_indexed(GetDocumentInput {
-                    knowledge_base_id: "KB4T7YQ2WL".into(),
-                    document_id: "doc-0002".into(),
-                })
-                .delays(Duration::from_millis(20), Duration::from_millis(20))
-                .max_wait(Duration::from_millis(150))
-                .await;
-            let e = r.err().ok_or("succeeded")?;
-            let Error::Waiter(w) = &e else { return Err(format!("got {e:?}")) };
-            let last = w.last_output::<GetDocumentResult>().map(|d| d.status.as_str().to_owned());
-            ensure!(
-                w.reason == WaitReason::Timeout && w.attempts >= 3 && last.as_deref() == Some("indexing"),
-                "got {w:?}, last {last:?}"
-            );
-            Ok(())
-        }),
-        "waiter.success-on-error" => Box::pin(async move {
-            let doc = || GetDocumentInput {
-                knowledge_base_id: "KB4T7YQ2WL".into(),
-                document_id: "doc-0002".into(),
-            };
-            let gone = client(m).documents().wait_until_deleted(doc());
-            ensure!(gone.limit() == Duration::from_secs(900), "Deleted's limit {:?}", gone.limit());
-            let deleted = client(m)
-                .documents()
-                .delete(DeleteDocumentInput {
-                    knowledge_base_id: "KB4T7YQ2WL".into(),
-                    document_id: "doc-0002".into(),
-                })
-                .await
-                .map_err(s)?;
-            ensure!(deleted.status.as_str() == "deleting", "delete returned {}", deleted.status.as_str());
-            let before = m.api().await.len();
-            // The wait has no output: `()` once the document is gone.
-            let () = client(m)
-                .documents()
-                .wait_until_deleted(doc())
-                .delays(Duration::from_millis(10), Duration::from_millis(10))
-                .await
-                .map_err(s)?;
-            let reads = m.api().await.len() - before;
-            ensure!(reads == 2, "{reads} reads: one deleting, then 404");
-            Ok(())
-        }),
-        "waiter.default-limit" => Box::pin(async move {
-            let wait = client(m).documents().wait_until_indexed(GetDocumentInput {
-                knowledge_base_id: "KB4T7YQ2WL".into(),
-                document_id: "doc-0002".into(),
-            });
-            ensure!(wait.limit() == Duration::from_secs(3600), "Indexed's limit {:?}", wait.limit());
-            ensure!(
-                caitlyn_sdk_core::waiter::DEFAULT_LIMIT == Duration::from_secs(300),
-                "the default without waitLimits"
-            );
-            ensure!(
-                wait.max_wait(Duration::from_secs(5)).limit() == Duration::from_secs(5),
-                "max_wait replaces it"
-            );
-            Ok(())
-        }),
         "sse.final-ends-watch" => Box::pin(async move {
             m.faults(json!({"dropAfterEvents": 2})).await;
             let t0 = Instant::now();
@@ -796,7 +687,8 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
         "sse.stream-reset" => Box::pin(async move {
             let mut stream = client(m)
                 .events()
-                .subscribe(WatchWorkspaceEventsInput {
+                .watch()
+                .input(WatchWorkspaceEventsInput {
                     types: Some(vec!["conversation.created".into()]),
                     after: Some(STALE_CURSOR.into()),
                     ..Default::default()
@@ -819,7 +711,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 events[0].event_type() == "stream.reset" && reset.cursor == RESET_CURSOR && events[0].event_id() == Some(RESET_CURSOR),
                 "reset {reset:?}"
             );
-            let WorkspaceEvent::ConversationCreatedEvent(created) = &events[1] else {
+            let WorkspaceEvent::ConversationCreated(created) = &events[1] else {
                 return Err(format!("second event {:?}", events[1]));
             };
             ensure!(created.data.agent_id == "GHT7YRWXPL", "created {created:?}");
@@ -833,7 +725,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let (_, err) = collect(&mut first).await;
             ensure!(err.is_none(), "send: {err:?}");
             m.faults(json!({"watchEmptyCloses": 4})).await;
-            let mut watch = c.conversations().watch("c-b", WatchConversationInput::default()).await.map_err(s)?;
+            let mut watch = c.conversation("c-b").watch().await.map_err(s)?;
             let (_, err) = collect(&mut watch).await;
             ensure!(
                 matches!(&err, Some(e) if e.code() == Some("STREAM_LOST")),
@@ -859,7 +751,8 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             m.faults(json!({"watchEmptyCloses": 1})).await;
             let mut stream = client(m)
                 .events()
-                .subscribe(WatchWorkspaceEventsInput {
+                .watch()
+                .input(WatchWorkspaceEventsInput {
                     types: Some(vec!["conversation.created".into()]),
                     after: Some(ID_11.into()),
                     ..Default::default()
@@ -880,7 +773,8 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             m.faults(json!({"watchCloses": 1})).await;
             let mut stream = client(m)
                 .events()
-                .subscribe(WatchWorkspaceEventsInput {
+                .watch()
+                .input(WatchWorkspaceEventsInput {
                     types: Some(vec!["conversation.created".into()]),
                     after: Some(ID_11.into()),
                     ..Default::default()
@@ -916,7 +810,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             // carries events.
             m.faults(json!({"watchEmptyCloses": 5})).await;
             let _clock = ConnectionsLasting::new(caitlyn_sdk_core::stream::LONG_CONNECTION + Duration::from_secs(1));
-            let mut watch = c.conversations().watch("c-l", WatchConversationInput::default()).await.map_err(s)?;
+            let mut watch = c.conversation("c-l").watch().await.map_err(s)?;
             let first = watch.next().await;
             ensure!(
                 matches!(&first, Some(Ok(e)) if e.event_type() == "message.started"),
@@ -933,7 +827,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             ensure!(err.is_none(), "send: {err:?}");
             m.faults(json!({"watchEmptyCloses": 4})).await;
             let _clock = ConnectionsLasting::new(caitlyn_sdk_core::stream::LONG_CONNECTION - Duration::from_secs(1));
-            let mut watch = c.conversations().watch("c-s", WatchConversationInput::default()).await.map_err(s)?;
+            let mut watch = c.conversation("c-s").watch().await.map_err(s)?;
             let (_, err) = collect(&mut watch).await;
             ensure!(
                 matches!(&err, Some(e) if e.code() == Some("STREAM_LOST")),
@@ -949,7 +843,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let (_, err) = collect(&mut first).await;
             ensure!(err.is_none(), "send: {err:?}");
             m.faults(json!({"watchReplayCloses": 10})).await;
-            let mut watch = c.conversations().watch("c-d", WatchConversationInput::default()).await.map_err(s)?;
+            let mut watch = c.conversation("c-d").watch().await.map_err(s)?;
             let (events, err) = collect(&mut watch).await;
             ensure!(
                 events.len() == 1 && matches!(&err, Some(e) if e.code() == Some("STREAM_LOST")),
@@ -966,7 +860,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let mut first = send(&c, "c-f").await.map_err(s)?;
             let (_, err) = collect(&mut first).await;
             ensure!(err.is_some(), "send: want the failure raised");
-            let mut watch = c.conversations().watch("c-f", WatchConversationInput::default()).await.map_err(s)?;
+            let mut watch = c.conversation("c-f").watch().await.map_err(s)?;
             let events = take(&mut watch, |e| e.event_type() == "message.completed").await.map_err(s)?;
             let failed = events
                 .iter()
@@ -1041,6 +935,167 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             );
             Ok(())
         }),
+        // ------------------------------------------------------------------ one type per thing (PROTOCOL.md 4.2)
+        "result.thing" => Box::pin(async move {
+            // The types are the point: each binding below names the thing's own type, so a wrapper would not compile.
+            let c = client(m);
+            let kb: KnowledgeBase = c.knowledge_base(KB).get().await.map_err(s)?;
+            let kbs: Vec<KnowledgeBase> = c.knowledge_bases().list().collect().await.map_err(s)?;
+            let doc: Document = c.knowledge_base(KB).document("doc-0001").get().await.map_err(s)?;
+            let waited: Document = c.knowledge_base(KB).document("doc-0001").wait().await.map_err(s)?;
+            let docs: Vec<Document> = list_all(&c, KB, None).await.map_err(s)?;
+            let agent: Agent = c.agent(AGENT).get().await.map_err(s)?;
+            let draft: AgentVersion = c.agent(AGENT).draft().get().await.map_err(s)?;
+            let versions: Vec<AgentVersion> = c.agent(AGENT).versions().list().collect().await.map_err(s)?;
+            let created: Created<caitlyn_sdk::scope::KnowledgeBaseScope, KnowledgeBase> =
+                c.knowledge_bases().create("Policies").await.map_err(s)?;
+            let new_kb: &KnowledgeBase = created.result();
+            let mut watch = c.knowledge_base(KB).watch().await.map_err(s)?;
+            let first = watch.next().await.ok_or("no snapshot")?.map_err(s)?;
+            let KnowledgeBaseEvent::Snapshot(snap) = first else {
+                return Err(format!("first event {first:?}"));
+            };
+            let snap_kb: Option<KnowledgeBase> = snap.knowledge_base.clone();
+            // Fields at the top level, no wrapper member.
+            for (what, v) in [
+                ("kb", serde_json::to_value(&kb).map_err(s)?),
+                ("doc", serde_json::to_value(&doc).map_err(s)?),
+                ("agent", serde_json::to_value(&agent).map_err(s)?),
+                ("draft", serde_json::to_value(&draft).map_err(s)?),
+                ("created", serde_json::to_value(new_kb).map_err(s)?),
+            ] {
+                ensure!(
+                    v.get("id").or_else(|| v.get("name")).is_some()
+                        && ["knowledgeBase", "document", "agent", "version"]
+                            .iter()
+                            .all(|k| v.get(*k).is_none_or(|x| !x.is_object())),
+                    "{what} {v}"
+                );
+            }
+            ensure!(
+                kb.id == KB
+                    && kbs.iter().any(|k| k.id == KB)
+                    && doc.id == "doc-0001"
+                    && waited.id == doc.id
+                    && docs.iter().any(|d| d.id == doc.id)
+                    && agent.id == AGENT
+                    && draft.name == "draft"
+                    && versions.iter().any(|v| v.name == "draft")
+                    && created.id() == new_kb.id
+                    && snap_kb.is_some_and(|k| k.id == KB),
+                "things"
+            );
+            // A call whose output is not a thing keeps its named result.
+            let _: PublishAgentVersionResult = c.agent(AGENT).draft().publish().name("v9").await.map_err(s)?;
+            Ok(())
+        }),
+        "result.thing-metadata" => Box::pin(async move {
+            let c = client(m);
+            let kb = c.knowledge_base(KB).get().await.map_err(s)?;
+            let reqs = m.api().await;
+            let md = kb.response_metadata().ok_or("no metadata on a read")?;
+            ensure!(
+                md.http_status_code == 200 && md.request_id.as_deref() == Some(str_at(reqs.last().unwrap(), "requestId")),
+                "metadata {md:?}"
+            );
+            let waited = c.knowledge_base(KB).document("doc-0001").wait().await.map_err(s)?;
+            ensure!(
+                waited.response_metadata().is_some_and(|m| m.http_status_code == 200),
+                "wait() {:?}",
+                waited.response_metadata()
+            );
+            let created = c.knowledge_bases().create("Policies").await.map_err(s)?;
+            ensure!(
+                created
+                    .result()
+                    .response_metadata()
+                    .is_some_and(|m| m.http_status_code == 202 && m.request_id.is_some()),
+                "create {:?}",
+                created.result().response_metadata()
+            );
+            let listed = c.knowledge_bases().list().collect().await.map_err(s)?;
+            ensure!(listed.iter().all(|k| k.response_metadata().is_none()), "a list item has metadata");
+            let mut watch = c.knowledge_base(KB).watch().await.map_err(s)?;
+            let first = watch.next().await.ok_or("no snapshot")?.map_err(s)?;
+            let KnowledgeBaseEvent::Snapshot(snap) = first else {
+                return Err(format!("first event {first:?}"));
+            };
+            let entry = snap.knowledge_base.as_ref().ok_or("no knowledge base in the snapshot")?;
+            ensure!(entry.response_metadata().is_none(), "a snapshot entry has metadata");
+            let v = serde_json::to_value(&kb).map_err(s)?;
+            ensure!(
+                v.get("responseMetadata").is_none() && v.get("response_metadata").is_none() && v.get("$metadata").is_none(),
+                "metadata serialised: {v}"
+            );
+            Ok(())
+        }),
+        "result.thing-etag" => Box::pin(async move {
+            let c = client(m);
+            let kb = c.knowledge_base(KB).get().await.map_err(s)?;
+            let header = kb.response_metadata().and_then(|m| m.etag.clone()).ok_or("no ETag header")?;
+            ensure!(kb.etag == header, "etag {} header {header}", kb.etag);
+            let listed = c.knowledge_bases().list().collect().await.map_err(s)?;
+            let row = listed.iter().find(|k| k.id == KB).ok_or("not listed")?;
+            ensure!(row.etag == kb.etag, "list row etag {} read {}", row.etag, kb.etag);
+            let mut watch = c.knowledge_base(KB).watch().await.map_err(s)?;
+            let first = watch.next().await.ok_or("no snapshot")?.map_err(s)?;
+            let KnowledgeBaseEvent::Snapshot(snap) = first else {
+                return Err(format!("first event {first:?}"));
+            };
+            let entry = snap.knowledge_base.ok_or("no knowledge base in the snapshot")?;
+            ensure!(entry.etag == kb.etag, "snapshot etag {} read {}", entry.etag, kb.etag);
+            // The body without its etag: the SDK fills it from the header.
+            m.faults(json!({"etagHeaderOnly": true})).await;
+            let doc = c.knowledge_base(KB).document("doc-0001").get().await.map_err(s)?;
+            let header = doc.response_metadata().and_then(|m| m.etag.clone()).ok_or("no ETag header")?;
+            ensure!(!doc.etag.is_empty() && doc.etag == header, "etag {:?} header {header}", doc.etag);
+            ensure!(
+                !doc.raw().get().is_some_and(|r| r.contains_key("etag")),
+                "the body had an etag after all"
+            );
+            Ok(())
+        }),
+        "result.thing-raw" => Box::pin(async move {
+            m.faults(json!({"unknownField": true})).await;
+            let v = draft(&client(m)).await.map_err(s)?;
+            let raw = v.raw().get().ok_or("no raw")?;
+            ensure!(raw.get("reviewState") == Some(&json!({"required": false})), "raw {raw:?}");
+            Ok(())
+        }),
+        "result.list-etag-if-match" => Box::pin(async move {
+            let c = client(m);
+            let docs = list_all(&c, KB, None).await.map_err(s)?;
+            let row = docs.iter().find(|d| d.id == "doc-0001").ok_or("not listed")?;
+            let updated = c
+                .knowledge_base(KB)
+                .document("doc-0001")
+                .update()
+                .name("renamed.pdf")
+                .if_match(&row.etag)
+                .await
+                .map_err(s)?;
+            ensure!(updated.output.document.name == "renamed.pdf", "updated {updated:?}");
+            let sent = m.matching(|r| str_at(r, "method") == "PATCH").await;
+            ensure!(
+                sent.last().and_then(|r| header(r, "if-match")) == Some(row.etag.as_str()),
+                "If-Match {:?}",
+                sent.last().map(|r| &r["headers"])
+            );
+            // An agent's version row the same way: the draft from the versions list.
+            let versions = c.agent(AGENT).versions().list().collect().await.map_err(s)?;
+            let row = versions.iter().find(|v| v.name == "draft").ok_or("no draft row")?;
+            c.agent(AGENT)
+                .draft()
+                .update()
+                .guidance(AgentGuidance {
+                    instructions: Some("Be brief.".into()),
+                    ..Default::default()
+                })
+                .if_match(&row.etag)
+                .await
+                .map_err(s)?;
+            Ok(())
+        }),
         "tolerance.unknown-field-raw" => Box::pin(async move {
             m.faults(json!({"unknownField": true})).await;
             let c = client(m);
@@ -1051,7 +1106,6 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 "reviewState {:?}",
                 raw.get("reviewState")
             );
-            ensure!(!raw.contains_key("etag"), "raw holds the header-bound etag");
             let answer = send(&c, "c-6").await.map_err(s)?.final_message().await.map_err(s)?;
             ensure!(
                 answer.raw.get().and_then(|r| r.get("sentiment")) == Some(&json!("neutral")),
@@ -1069,7 +1123,13 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 "item raw {:?}",
                 docs[0].raw
             );
-            let kbs = draft(&c).await.map_err(s)?.configuration.knowledge_bases.unwrap_or_default();
+            let kbs = draft(&c)
+                .await
+                .map_err(s)?
+                .configuration
+                .unwrap_or_default()
+                .knowledge_bases
+                .unwrap_or_default();
             ensure!(
                 kbs[0].raw.get().and_then(|r| r.get("reranker")) == Some(&json!("cohere")),
                 "nested raw {:?}",
@@ -1101,24 +1161,13 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
         }),
         "errors.409" => Box::pin(async move {
             let c = client(m);
-            let up = c
-                .uploads()
-                .reserve(CreateUploadInput {
-                    file_name: "a.pdf".into(),
-                    content_type: "application/pdf".into(),
-                    byte_size: 1,
-                    sha256: "x".into(),
-                })
-                .await
-                .map_err(s)?;
+            let up = c.core().uploads().reserve("a.pdf", "application/pdf", 1, "x").await.map_err(s)?;
             let r = c
+                .knowledge_base(KB)
                 .documents()
-                .create(CreateDocumentInput {
-                    knowledge_base_id: KB.into(),
-                    upload_id: up.id,
-                    folder: "/hr/".into(),
-                    ..Default::default()
-                })
+                .create("a.pdf")
+                .upload_id(up.id)
+                .folder("/hr/")
                 .await;
             ensure!(matches!(&r, Err(Error::Conflict(e)) if e.code == "CONFLICT"), "got {:?}", r.err());
             Ok(())
@@ -1127,16 +1176,20 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let c = client(m);
             let d = draft(&c).await.map_err(s)?;
             let update = |text: &str| UpdateDraftVersionInput {
-                instructions: Some(text.into()),
+                guidance: Some(AgentGuidance {
+                    instructions: Some(text.into()),
+                    ..Default::default()
+                }),
                 ..Default::default()
             };
-            c.agents()
-                .versions()
-                .update_draft(AGENT, update("first"))
+            c.agent(AGENT)
+                .draft()
+                .update()
+                .input(update("first"))
                 .if_match(&d.etag)
                 .await
                 .map_err(s)?;
-            let r = c.agents().versions().update_draft(AGENT, update("second")).if_match(&d.etag).await;
+            let r = c.agent(AGENT).draft().update().input(update("second")).if_match(&d.etag).await;
             ensure!(
                 matches!(&r, Err(Error::PreconditionFailed(e)) if e.code == "PRECONDITION_FAILED" && e.request_id.is_some()),
                 "got {:?}",
@@ -1203,15 +1256,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             Box::pin(async move {
                 m.faults(json!({"status": {"CreateUpload": [{"status": 409, "contentType": "application/problem+json", "body": MISMATCHED_409}]}}))
                 .await;
-                let r = client(m)
-                    .uploads()
-                    .reserve(CreateUploadInput {
-                        file_name: "a.txt".into(),
-                        content_type: "text/plain".into(),
-                        byte_size: 1,
-                        sha256: "x".into(),
-                    })
-                    .await;
+                let r = client(m).core().uploads().reserve("a.txt", "text/plain", 1, "x").await;
                 let Err(Error::Conflict(e)) = &r else {
                     return Err(format!("got {:?}", r.err()));
                 };
@@ -1226,16 +1271,17 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let c = client(m);
             let d = draft(&c).await.map_err(s)?;
             let r = c
-                .agents()
-                .versions()
-                .update_draft(
-                    AGENT,
-                    UpdateDraftVersionInput {
+                .agent(AGENT)
+                .draft()
+                .update()
+                .input(UpdateDraftVersionInput {
+                    guidance: Some(AgentGuidance {
                         identity: Some("x".into()),
-                        clear: Some(vec![ClearableDraftField::Identity]),
                         ..Default::default()
-                    },
-                )
+                    }),
+                    clear: Some(vec![ClearableDraftField::GuidanceIdentity]),
+                    ..Default::default()
+                })
                 .if_match(&d.etag)
                 .await;
             let Err(Error::Validation(e)) = &r else {
@@ -1244,26 +1290,22 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             ensure!(
                 e.code == "VALIDATION_FAILED"
                     && e.errors.len() == 1
-                    && e.errors[0].pointer.as_deref() == Some("/identity")
+                    && e.errors[0].pointer.as_deref() == Some("/guidance/identity")
                     && e.errors[0].code == "VALIDATION_FAILED",
                 "got {e:?}"
             );
             let (_, body) = last_patch(m).await;
-            ensure!(body == json!({"identity": "x", "clear": ["identity"]}), "body {body}");
+            ensure!(
+                body == json!({"guidance": {"identity": "x"}, "clear": ["guidance.identity"]}),
+                "body {body}"
+            );
             Ok(())
         }),
         "errors.unmodelled-status" => Box::pin(async move {
             m.faults(json!({"status": {"CreateUpload": [{"status": 404}, {"status": 405, "body": ""}]}}))
                 .await;
             let c = client(m);
-            let reserve = || {
-                c.uploads().reserve(CreateUploadInput {
-                    file_name: "a.txt".into(),
-                    content_type: "text/plain".into(),
-                    byte_size: 1,
-                    sha256: "x".into(),
-                })
-            };
+            let reserve = || c.core().uploads().reserve("a.txt", "text/plain", 1, "x");
             let r = reserve().await;
             let Err(Error::NotFound(e)) = &r else {
                 return Err(format!("404: got {:?}", r.err()));
@@ -1286,15 +1328,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let get = |version: &'static str| {
                 let c = c.clone();
                 async move {
-                    match c
-                        .agents()
-                        .versions()
-                        .get(GetAgentVersionInput {
-                            agent_id: AGENT.into(),
-                            version: version.into(),
-                        })
-                        .await
-                    {
+                    match c.agent(AGENT).version(version).get().await {
                         Err(Error::NotFound(e)) => Ok(e),
                         other => Err(format!("got {:?}", other.err())),
                     }
@@ -1359,18 +1393,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
         "cancel.stream" => Box::pin(async move {
             m.faults(json!({"streamDelayMs": 150})).await;
             let token = CancellationToken::new();
-            let mut stream = client(m)
-                .conversations()
-                .send(
-                    "c-4",
-                    SendMessageInput {
-                        message: "hi".into(),
-                        ..Default::default()
-                    },
-                )
-                .cancel_on(token.clone())
-                .await
-                .map_err(s)?;
+            let mut stream = client(m).conversation("c-4").send("hi").cancel_on(token.clone()).await.map_err(s)?;
             let mut n = 0;
             let mut last = None;
             while let Some(r) = stream.next().await {
@@ -1402,15 +1425,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 t.cancel();
             });
             let t0 = Instant::now();
-            let r = client(m)
-                .agents()
-                .versions()
-                .get(GetAgentVersionInput {
-                    agent_id: AGENT.into(),
-                    version: "draft".into(),
-                })
-                .cancel_on(token)
-                .await;
+            let r = client(m).agent(AGENT).version("draft").get().cancel_on(token).await;
             ensure!(
                 matches!(r, Err(Error::Cancelled)) && t0.elapsed() < Duration::from_secs(1),
                 "got {:?} after {:?}",
@@ -1425,22 +1440,23 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let c = client(m);
             let d = draft(&c).await.map_err(s)?;
             let updated = c
-                .agents()
-                .versions()
-                .update_draft(
-                    AGENT,
-                    UpdateDraftVersionInput {
+                .agent(AGENT)
+                .draft()
+                .update()
+                .input(UpdateDraftVersionInput {
+                    guidance: Some(AgentGuidance {
                         instructions: Some("x".into()),
                         ..Default::default()
-                    },
-                )
+                    }),
+                    ..Default::default()
+                })
                 .if_match(&d.etag)
                 .await
                 .map_err(s)?;
             ensure!(!updated.etag.is_empty() && updated.etag != d.etag, "etag {:?}", updated.etag);
             let (p, body) = last_patch(m).await;
             ensure!(
-                header(&p, "if-match") == Some(d.etag.as_str()) && body == json!({"instructions": "x"}),
+                header(&p, "if-match") == Some(d.etag.as_str()) && body == json!({"guidance": {"instructions": "x"}}),
                 "patch {p}"
             );
             Ok(())
@@ -1449,25 +1465,27 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let c = client(m);
             let d = draft(&c).await.map_err(s)?;
             let updated = c
-                .agents()
-                .versions()
-                .update_draft(
-                    AGENT,
-                    UpdateDraftVersionInput {
-                        clear: Some(vec![ClearableDraftField::Identity]),
-                        ..Default::default()
-                    },
-                )
+                .agent(AGENT)
+                .draft()
+                .update()
+                .input(UpdateDraftVersionInput {
+                    clear: Some(vec![ClearableDraftField::GuidanceIdentity]),
+                    ..Default::default()
+                })
                 .if_match(&d.etag)
                 .await
                 .map_err(s)?;
             ensure!(
-                updated.configuration.identity.is_none() && updated.configuration.instructions == "Answer from the HR policies.",
+                updated
+                    .configuration
+                    .as_ref()
+                    .and_then(|c| c.guidance.as_ref())
+                    .is_some_and(|g| g.identity.is_none() && g.instructions.as_deref() == Some("Answer from the HR policies.")),
                 "updated {:?}",
                 updated.configuration
             );
             let (_, body) = last_patch(m).await;
-            ensure!(body == json!({"clear": ["identity"]}), "body {body}");
+            ensure!(body == json!({"clear": ["guidance.identity"]}), "body {body}");
             Ok(())
         }),
 
@@ -1566,20 +1584,35 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             Ok(())
         }),
         "headers.request-id" => Box::pin(async move {
-            let v = draft(&client(m)).await.map_err(s)?;
+            // A named result has them as members; a thing has them in its response metadata (PROTOCOL.md 4.2).
+            let c = client(m);
+            let est = c
+                .knowledge_base(KB)
+                .documents()
+                .estimate_create(pdf("a.pdf", b"a"))
+                .await
+                .map_err(s)?;
             let reqs = m.api().await;
             ensure!(
-                v.request_id.as_deref() == Some(str_at(reqs.last().unwrap(), "requestId")) && v.api_version.as_deref() == Some("5.120.0"),
+                est.request_id.as_deref() == Some(str_at(reqs.last().unwrap(), "requestId"))
+                    && est.api_version.as_deref() == Some("5.120.0"),
                 "request id {:?} api version {:?}",
-                v.request_id,
-                v.api_version
+                est.request_id,
+                est.api_version
+            );
+            let v = draft(&c).await.map_err(s)?;
+            let reqs = m.api().await;
+            let md = v.response_metadata().ok_or("no response metadata on the thing")?;
+            ensure!(
+                md.request_id.as_deref() == Some(str_at(reqs.last().unwrap(), "requestId")) && md.api_version.as_deref() == Some("5.120.0"),
+                "thing's metadata {md:?}"
             );
             Ok(())
         }),
         "headers.response-metadata" => Box::pin(async move {
             let v = draft(&client(m)).await.map_err(s)?;
             let reqs = m.api().await;
-            let md = &v.response_metadata;
+            let md = v.response_metadata().ok_or("no response metadata")?;
             ensure!(
                 md.http_status_code == 200
                     && md.request_id.as_deref() == Some(str_at(reqs.last().unwrap(), "requestId"))
@@ -1588,7 +1621,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 "metadata {md:?}"
             );
             ensure!(
-                AgentVersion::default().response_metadata.http_status_code == 0,
+                AgentVersion::default().response_metadata().is_none(),
                 "a value built in code has metadata"
             );
             ensure!(
@@ -1603,18 +1636,11 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let _guard = tracing::subscriber::set_default(tracing_subscriber::registry().with(capture.clone()));
             let c = client(m);
             m.faults(status("GetAgentVersion", &[(503, 0)])).await;
-            let r = c
-                .agents()
-                .versions()
-                .get(GetAgentVersionInput {
-                    agent_id: AGENT.into(),
-                    version: "nope".into(),
-                })
-                .await;
+            let r = c.agent(AGENT).version("nope").get().await;
             ensure!(r.is_err(), "no error");
             list_all(&c, KB, Some(100)).await.map_err(s)?;
             let f = UploadFile::from_path(temp_file("hello.txt", b"hello")).map_err(s)?;
-            c.uploads().create(f).await.map_err(s)?;
+            c.core().uploads().send(f).await.map_err(s)?;
             let spans = capture.0.lock().unwrap().clone();
             let field = |r: &SpanRec, k: &str| r.fields.get(k).cloned().unwrap_or_default();
             let ours: Vec<&SpanRec> = spans.iter().filter(|r| r.name.starts_with("caitlyn.")).collect();
@@ -1793,14 +1819,3067 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             );
             Ok(())
         }),
+        // ------------------------------------------------------------------ the client tree (PROTOCOL.md 10)
+        // ------------------------------------------------------------------ scopes (PROTOCOL.md 10)
+        "scope.sends-nothing" => Box::pin(async move {
+            let c = client(m);
+            let kb = c.knowledge_base(KB);
+            let _ = kb.document("doc-0001").version("1");
+            let _ = kb.folder("/hr/leave/").access();
+            let _ = kb.ingestion().batch("b-1").item("i-1");
+            let _ = c.agent(AGENT).draft().conversations();
+            let _ = c.agent(AGENT).version("v13");
+            let _ = c.conversation("c-1").message("m-1");
+            let _ = c.core().operation(KB, "op-1");
+            // A request built and never sent sends nothing either.
+            let _ = kb.document("doc-0001").get();
+            ensure!(m.requests().await.is_empty(), "requests {:?}", m.requests().await);
+            Ok(())
+        }),
+        "scope.fills-identifiers" => Box::pin(async move {
+            let c = client(m);
+            let doc = c.knowledge_base(KB).document("doc-0002").get().await.map_err(s)?;
+            ensure!(doc.id == "doc-0002", "document {doc:?}");
+            let _ = c.knowledge_base(KB).folder("/hr/investigations/").delete().await;
+            let paths: Vec<String> = m
+                .api()
+                .await
+                .iter()
+                .map(|r| format!("{} {}", str_at(r, "method"), str_at(r, "path")))
+                .collect();
+            ensure!(
+                paths
+                    == [
+                        format!("GET /v3/knowledge-bases/{KB}/documents/doc-0002"),
+                        format!("DELETE /v3/knowledge-bases/{KB}/folders/hr/investigations"),
+                    ],
+                "requests {paths:?}"
+            );
+            Ok(())
+        }),
+        "scope.named" => Box::pin(async move {
+            let c = client(m);
+            let agent = c.agent(AGENT);
+            let live = agent.live().get().await.map_err(s)?;
+            let draft = agent.draft().get().await.map_err(s)?;
+            agent
+                .draft()
+                .update()
+                .guidance(AgentGuidance {
+                    instructions: Some("Answer from the HR policies.".into()),
+                    ..Default::default()
+                })
+                .await
+                .map_err(s)?;
+            let paths: Vec<String> = m
+                .api()
+                .await
+                .iter()
+                .map(|r| format!("{} {}", str_at(r, "method"), str_at(r, "path")))
+                .collect();
+            ensure!(
+                paths
+                    == [
+                        format!("GET /v3/agents/{AGENT}/versions/live"),
+                        format!("GET /v3/agents/{AGENT}/versions/draft"),
+                        format!("PATCH /v3/agents/{AGENT}/versions/draft"),
+                    ],
+                "requests {paths:?}, live {live:?}, draft {draft:?}"
+            );
+            // Rust checks the rest when it compiles: the live scope has no publish or delete, and the draft no delete.
+            let src = std::fs::read_to_string(root().join("rust/caitlyn-sdk/src/scope.rs")).map_err(s)?;
+            let block = |ty: &str| {
+                let at = src.find(&format!("impl {ty} {{")).unwrap_or(0);
+                let end = src[at..].find("\n}\n").map(|e| at + e).unwrap_or(src.len());
+                src[at..end].to_owned()
+            };
+            let (live_src, draft_src) = (block("AgentLiveScope"), block("AgentDraftScope"));
+            ensure!(
+                !live_src.contains("pub fn publish(")
+                    && !live_src.contains("pub fn delete(")
+                    && live_src.contains("pub fn get(")
+                    && !draft_src.contains("pub fn delete(")
+                    && draft_src.contains("pub fn publish(")
+                    && draft_src.contains("pub fn update("),
+                "the named scopes' calls"
+            );
+            Ok(())
+        }),
+        "scope.from-scope" => Box::pin(async move {
+            let c = client(m);
+            let kb = c.knowledge_base(KB);
+            kb.folder("/hr/").access().get().await.map_err(s)?;
+            let doc_access = kb.document("doc-0001").access().get().await.map_err(s)?;
+            kb.document("doc-0001")
+                .access()
+                .set()
+                .readers("inherit")
+                .if_match(&doc_access.etag)
+                .await
+                .map_err(s)?;
+            kb.access().get().await.map_err(s)?;
+            let reqs = m.api().await;
+            let seen: Vec<String> = reqs
+                .iter()
+                .map(|r| format!("{} {} {}", str_at(r, "method"), str_at(r, "path"), str_at(r, "query")))
+                .collect();
+            let access = format!("/v3/knowledge-bases/{KB}/access");
+            ensure!(
+                seen == [
+                    format!("GET {access} ?folder=%2Fhr%2F"),
+                    format!("GET {access} ?document=doc-0001"),
+                    format!("PUT {access} ?document=doc-0001"),
+                    format!("GET {access} "),
+                ],
+                "requests {seen:?}"
+            );
+            Ok(())
+        }),
+        "scope.create-returns-scope" => Box::pin(async move {
+            let c = client(m);
+            let agent = c.agents().create("HR assistant").await.map_err(s)?;
+            ensure!(
+                agent.id() == agent.result().id && agent.result().name == "HR assistant",
+                "agent {agent:?}"
+            );
+            let draft = agent.draft().get().await.map_err(s)?;
+            ensure!(draft.agent_id == agent.result().id, "draft {draft:?}");
+            let kb = c.knowledge_base(KB);
+            let doc = kb.documents().create(pdf("leave.pdf", b"leave")).folder("/hr/").await.map_err(s)?;
+            ensure!(
+                doc.id() == doc.result().document.id && doc.knowledge_base_id() == KB && doc.result().document.folder == "/hr/",
+                "document {doc:?}"
+            );
+            let folder = kb.folders().create("/hr/leave/").await.map_err(s)?;
+            ensure!(
+                folder.folder_path() == "/hr/leave/" && folder.knowledge_base_id() == KB,
+                "folder {folder:?}"
+            );
+            let conversation = c.agent(AGENT).live().conversations().create().title("Leave").await.map_err(s)?;
+            ensure!(conversation.id() == conversation.result().id, "conversation {conversation:?}");
+            Ok(())
+        }),
+        "scope.core" => Box::pin(async move {
+            let c = client(m);
+            let up = c.core().uploads().reserve("a.pdf", "application/pdf", 1, "x").await.map_err(s)?;
+            let got = c.core().upload(&up.id).get().await.map_err(s)?;
+            ensure!(got.id == up.id, "upload {got:?}");
+            let batch = c
+                .knowledge_base(KB)
+                .ingestion()
+                .batches()
+                .create()
+                .start(StartMode::Manual)
+                .await_more_items(true)
+                .await
+                .map_err(s)?;
+            let item: IngestionItemInput =
+                serde_json::from_value(json!({"action": "remove", "path": "/policies/policy-1.pdf"})).map_err(s)?;
+            c.core()
+                .ingestion()
+                .add_items(KB, batch.id(), vec![item])
+                .last(true)
+                .await
+                .map_err(s)?;
+            let retried = c.knowledge_base(KB).document("doc-0002").retry().await.map_err(s)?;
+            let op = c.core().operation(KB, &retried.operation.id).get().await.map_err(s)?;
+            ensure!(op.id == retried.operation.id, "operation {op:?}");
+            let paths: Vec<String> = m
+                .api()
+                .await
+                .iter()
+                .map(|r| format!("{} {}", str_at(r, "method"), str_at(r, "path")))
+                .collect();
+            let want = [
+                "POST /v3/uploads".to_owned(),
+                format!("GET /v3/uploads/{}", up.id),
+                format!("POST /v3/knowledge-bases/{KB}/ingestion-batches"),
+                format!("POST /v3/knowledge-bases/{KB}/ingestion-batches/{}/items:batch-create", batch.id()),
+                format!("POST /v3/knowledge-bases/{KB}/documents/doc-0002/retry"),
+                format!("GET /v3/knowledge-bases/{KB}/operations/{}", op.id),
+            ];
+            ensure!(paths == want, "requests {paths:?}");
+            Ok(())
+        }),
+        "scope.estimate" => Box::pin(async move {
+            let kb = client(m).knowledge_base(KB);
+            let fill = kb.fields().estimate_fill_in(["policyOwner"]).await.map_err(s)?;
+            let est = kb.documents().estimate_create(pdf("leave.pdf", b"twenty days")).await.map_err(s)?;
+            let reqs = m.requests().await;
+            let paths: Vec<String> = reqs
+                .iter()
+                .map(|r| format!("{} {}", str_at(r, "method"), str_at(r, "path")))
+                .collect();
+            ensure!(
+                paths
+                    == [
+                        format!("POST /v3/knowledge-bases/{KB}/fields:estimate-fill-in"),
+                        format!("POST /v3/knowledge-bases/{KB}/ingestions:estimate"),
+                    ],
+                "requests {paths:?}: an estimate uploads nothing"
+            );
+            let bodies: Vec<Value> = reqs
+                .iter()
+                .map(|r| serde_json::from_str(str_at(r, "body")).unwrap_or(Value::Null))
+                .collect();
+            ensure!(bodies[0] == json!({"keys": ["policyOwner"]}), "fill-in {}", bodies[0]);
+            ensure!(
+                bodies[1] == json!({"documents": [{"name": "leave.pdf", "contentType": "application/pdf", "byteSize": 11}]}),
+                "estimate {}",
+                bodies[1]
+            );
+            ensure!(fill.documents >= 0 && est.documents == 1, "estimates {fill:?} {est:?}");
+            Ok(())
+        }),
+        "if-match.optional-set" => Box::pin(async move {
+            // The set is read from the model: an operation with an If-Match header takes it optionally exactly when the
+            // model marks it @ifMatchOptional. The generated request says which (its if_match_required, checked before
+            // anything is sent, and "(required)" in its docs); a call without it on an optional operation sends none.
+            let model: Value = serde_json::from_str(&std::fs::read_to_string(root().join("model/model.json")).map_err(s)?).map_err(s)?;
+            let shapes = model["shapes"].as_object().ok_or("no shapes")?;
+            let ops = std::fs::read_to_string(root().join("rust/caitlyn-sdk/src/operations.rs")).map_err(s)?;
+            let mut wrong = Vec::new();
+            let mut optional = Vec::new();
+            for (id, shape) in shapes {
+                if shape["type"] != "operation" {
+                    continue;
+                }
+                let Some(input) = shape["input"]["target"].as_str().and_then(|t| shapes.get(t)) else {
+                    continue;
+                };
+                let has_header = input["members"].as_object().into_iter().flatten().any(|(_, m)| {
+                    m["traits"]["smithy.api#httpHeader"]
+                        .as_str()
+                        .is_some_and(|h| h.eq_ignore_ascii_case("if-match"))
+                });
+                if !has_header {
+                    continue;
+                }
+                let name = id.rsplit('#').next().unwrap_or_default();
+                let want_optional = shape["traits"].get("ai.caitlyn.traits#ifMatchOptional").is_some();
+                let at = ops.find(&format!("name: \"{name}\",")).ok_or(format!("{name} not generated"))?;
+                let window = &ops[at..ops.len().min(at + 600)];
+                let required = window.contains("if_match_required: true");
+                if required == want_optional {
+                    wrong.push(format!("{name}: model optional {want_optional}, SDK required {required}"));
+                }
+                if want_optional {
+                    optional.push(name.to_owned());
+                }
+            }
+            ensure!(wrong.is_empty(), "If-Match: {wrong:?}");
+            ensure!(optional.iter().any(|o| o == "StartIngestionBatch"), "optional set {optional:?}");
+            // An optional one sent without it carries no If-Match; a required one without it fails before sending.
+            let c = client(m);
+            c.knowledge_base(KB)
+                .folder("/hr/")
+                .access()
+                .set()
+                .readers("inherit")
+                .await
+                .map_err(s)?;
+            let put = m.matching(|r| str_at(r, "method") == "PUT").await.pop().unwrap_or_default();
+            ensure!(header(&put, "if-match").is_none(), "PutAccess sent If-Match");
+            let before = m.api().await.len();
+            let r = c.knowledge_base(KB).update().name("Renamed").await;
+            ensure!(
+                r.is_err() && m.api().await.len() == before,
+                "UpdateKnowledgeBase without if_match: {r:?}"
+            );
+            Ok(())
+        }),
+        "start.if-match-optional" => Box::pin(async move {
+            // StartIngestionBatch with no If-Match sends none and reads nothing first; a given one is sent as it is;
+            // a stale one is refused with 412.
+            let kb = client(m).knowledge_base(KB);
+            let remove = |p: &str| -> Result<IngestionItemInput, String> {
+                serde_json::from_value(json!({"action": "remove", "path": p})).map_err(s)
+            };
+            let make = |p: &'static str| {
+                let kb = kb.clone();
+                async move {
+                    let batch = kb
+                        .ingestion()
+                        .batches()
+                        .create()
+                        .start(StartMode::Manual)
+                        .items(vec![remove(p)?])
+                        .await
+                        .map_err(s)?;
+                    let planned = batch.planned().await.map_err(s)?;
+                    Ok::<_, String>((batch, planned))
+                }
+            };
+            let (plain, _) = make("/policies/policy-5.pdf").await?;
+            let before = m.api().await.len();
+            plain.start().await.map_err(s)?;
+            let after = m.api().await;
+            let sent = &after[before..];
+            ensure!(
+                sent.len() == 1 && str_at(&sent[0], "path").ends_with("/start") && header(&sent[0], "if-match").is_none(),
+                "requests {sent:?}: one start, no read first, no If-Match"
+            );
+            let (given, planned) = make("/policies/policy-6.pdf").await?;
+            given.start().if_match(&planned.etag).await.map_err(s)?;
+            let last = m
+                .matching(|r| str_at(r, "method") == "POST" && str_at(r, "path").ends_with("/start"))
+                .await
+                .pop()
+                .unwrap_or_default();
+            ensure!(header(&last, "if-match") == Some(planned.etag.as_str()), "start {last}");
+            // A stale ETag: the batch's as the create gave it, before planning changed the batch.
+            let (stale, planned) = make("/policies/policy-7.pdf").await?;
+            let created_etag = stale.result().etag.clone();
+            ensure!(created_etag != planned.etag, "planning left the ETag {created_etag}");
+            let r = stale.start().if_match(&created_etag).await;
+            ensure!(matches!(r, Err(Error::PreconditionFailed(_))), "stale: got {:?}", r.err());
+            Ok(())
+        }),
+        "access.set-no-if-match" => Box::pin(async move {
+            let folder = client(m).knowledge_base(KB).folder("/hr/investigations/");
+            folder.access().set().readers(Readers::roles(["hr-team"])).await.map_err(s)?;
+            let reqs = m.api().await;
+            ensure!(
+                reqs.len() == 1 && str_at(&reqs[0], "method") == "PUT" && header(&reqs[0], "if-match").is_none(),
+                "requests {reqs:?}: one PUT, no read first, no If-Match"
+            );
+            // A given If-Match is sent as it is, and a stale one is refused with 412.
+            let current = folder.access().get().await.map_err(s)?;
+            folder
+                .access()
+                .set()
+                .readers(Readers::everyone())
+                .if_match(&current.etag)
+                .await
+                .map_err(s)?;
+            let put = m.matching(|r| str_at(r, "method") == "PUT").await.pop().unwrap_or_default();
+            ensure!(header(&put, "if-match") == Some(current.etag.as_str()), "put {put}");
+            let r = folder.access().set().readers("inherit").if_match(&current.etag).await;
+            ensure!(matches!(r, Err(Error::PreconditionFailed(_))), "stale: got {:?}", r.err());
+            Ok(())
+        }),
+        "access.readers-shorthand" => Box::pin(async move {
+            let kb = client(m).knowledge_base(KB);
+            let folder = kb.folder("/hr/investigations/");
+            for readers in [
+                Readers::from("inherit"),
+                Readers::everyone(),
+                Readers::specific(["hr-team"], ["user-7"]),
+            ] {
+                let current = folder.access().get().await.map_err(s)?;
+                folder.access().set().readers(readers).if_match(&current.etag).await.map_err(s)?;
+            }
+            let puts: Vec<Value> = m
+                .matching(|r| str_at(r, "method") == "PUT")
+                .await
+                .iter()
+                .map(|r| serde_json::from_str(str_at(r, "body")).unwrap_or(Value::Null))
+                .collect();
+            ensure!(
+                puts == [
+                    json!({"readers": {"kind": "inherit"}}),
+                    json!({"readers": {"kind": "everyone"}}),
+                    json!({"readers": {"kind": "specific", "roles": ["hr-team"], "people": ["user-7"]}}),
+                ],
+                "bodies {puts:?}"
+            );
+            Ok(())
+        }),
+
+        // ------------------------------------------------------------------ watch and wait (PROTOCOL.md 16)
+        "watch.event-types" => Box::pin(async move {
+            // Snapshot entries and change events are the model's types: the bindings below are chrono date-times, so
+            // a string would not compile. A folder's wait() and its ListFolders row are equal Folders.
+            type When = chrono::DateTime<chrono::Utc>;
+            let c = client(m);
+            let kb = c.knowledge_base(KB);
+            let mut watch = kb.folder("/hr/").watch().await.map_err(s)?;
+            let first = watch.next().await.ok_or("no snapshot")?.map_err(s)?;
+            drop(watch);
+            let KnowledgeBaseEvent::Snapshot(snap) = first else {
+                return Err(format!("first event {first:?}"));
+            };
+            let entry = snap.folder.ok_or("no folder in the snapshot")?;
+            let _: When = entry.updated_at;
+            m.faults(json!({"busyWithoutJob": {"doc-0004": 1}})).await;
+            let mut watch = kb.document("doc-0004").watch().await.map_err(s)?;
+            let events = take(&mut watch, |e| matches!(e, KnowledgeBaseEvent::DocumentUpdated(_)))
+                .await
+                .map_err(s)?;
+            drop(watch);
+            let KnowledgeBaseEvent::Snapshot(snap) = &events[0] else {
+                return Err(format!("first event {:?}", events[0]));
+            };
+            let doc = snap.document.as_ref().ok_or("no document in the snapshot")?;
+            let (_, _): (When, When) = (doc.created_at, doc.updated_at);
+            let Some(KnowledgeBaseEvent::DocumentUpdated(changed)) = events.last() else {
+                return Err(format!("no document.updated: {events:?}"));
+            };
+            let (_, _): (When, When) = (changed.document.created_at, changed.document.updated_at);
+            ensure!(changed.document.updated_at >= doc.updated_at, "updated {changed:?} after {doc:?}");
+            let waited: Folder = kb.folder("/hr/").wait().await.map_err(s)?;
+            let listed = kb.folders().list().collect().await.map_err(s)?;
+            let row = listed.into_iter().find(|f| f.path == "/hr/").ok_or("/hr/ not listed")?;
+            ensure!(waited == row, "wait() {waited:?} but ListFolders {row:?}");
+            Ok(())
+        }),
+        "watch.break-closes" => Box::pin(async move {
+            // Dropping a watch after its first event closes its connection at once, with no request after it.
+            let c = client(m);
+            let mut watch = c.knowledge_base(KB).document("doc-0001").watch().await.map_err(s)?;
+            watch.next().await.ok_or("no first event")?.map_err(s)?;
+            let before = m.requests().await.len();
+            drop(watch);
+            let t0 = Instant::now();
+            loop {
+                if !m.matching(|r| str_at(r, "event") == "client-disconnected").await.is_empty() {
+                    break;
+                }
+                ensure!(t0.elapsed() < Duration::from_secs(1), "no disconnect within a second");
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            let after: Vec<Value> = m.requests().await.into_iter().skip(before).collect();
+            ensure!(
+                after.iter().all(|r| r.get("method").is_none()),
+                "requests after the drop: {after:?}"
+            );
+            Ok(())
+        }),
+        "send.break-then-final" => Box::pin(async move {
+            // Stopping after the first event (or the first piece of text) leaves the stream open: final_message()
+            // reads the rest, gives the completed message and the server finishes the response (no disconnect).
+            // Dropping a stream after the first event closes it: the mock sees the disconnect within a second.
+            m.faults(json!({"streamDelayMs": 30})).await;
+            let c = client(m);
+            let disconnects = || m.matching(|r| str_at(r, "event") == "client-disconnected");
+            let mut events = send(&c, "c-4").await.map_err(s)?;
+            events.next().await.ok_or("no first event")?.map_err(s)?;
+            let message = events.final_message().await.map_err(s)?;
+            ensure!(!message.id.is_empty() && !message.text.is_empty(), "final {message:?}");
+            ensure!(events.next().await.is_none(), "the stream had more after its final message");
+            drop(events);
+            let mut text = send(&c, "c-4").await.map_err(s)?.text();
+            let piece = text.next().await.ok_or("no first text")?.map_err(s)?;
+            let message = text.final_message().await.map_err(s)?;
+            ensure!(message.text.starts_with(&piece), "final {message:?} after {piece:?}");
+            drop(text);
+            ensure!(disconnects().await.is_empty(), "a drained stream was cut off");
+            // The mock holds the stream after the first event until the client leaves, so the drop, not the answer's
+            // end, is what closes it.
+            m.faults(json!({"holdAfterEvents": 1})).await;
+            let mut left = send(&c, "c-4").await.map_err(s)?;
+            left.next().await.ok_or("no first event")?.map_err(s)?;
+            let before = m.requests().await.len();
+            drop(left);
+            let t0 = Instant::now();
+            while disconnects().await.is_empty() {
+                ensure!(t0.elapsed() < Duration::from_secs(5), "no disconnect within 5 s of the drop");
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            let log = m.requests().await;
+            let holding = log.iter().position(|r| str_at(r, "event") == "server-holding-stream");
+            let left_at = log.iter().position(|r| str_at(r, "event") == "client-disconnected");
+            ensure!(
+                holding.is_some_and(|h| left_at.is_some_and(|l| h < l)) && !log.iter().any(|r| str_at(r, "event") == "server-ended-stream"),
+                "the server was not still holding the stream: {:?}",
+                log.iter().filter(|r| r.get("event").is_some()).collect::<Vec<_>>()
+            );
+            let after: Vec<Value> = log.into_iter().skip(before).collect();
+            ensure!(
+                after.iter().all(|r| r.get("method").is_none()),
+                "requests after the drop: {after:?}"
+            );
+            Ok(())
+        }),
+        "watch.snapshot-first" => Box::pin(async move {
+            m.faults(json!({"busyDocuments": {"doc-0004": true}})).await;
+            let mut watch = client(m).knowledge_base(KB).document("doc-0004").watch().await.map_err(s)?;
+            let events = take(&mut watch, |e| e.event_type() == "job.finished").await.map_err(s)?;
+            let types: Vec<_> = events.iter().map(|e| e.event_type()).collect();
+            let KnowledgeBaseEvent::Snapshot(snap) = &events[0] else {
+                return Err(format!("first event {types:?}"));
+            };
+            ensure!(
+                snap.document.as_ref().is_some_and(|d| d.id == "doc-0004") && types[1..].contains(&"job.progress"),
+                "events {types:?}"
+            );
+            let req = m
+                .matching(|r| str_at(r, "path") == format!("/v3/knowledge-bases/{KB}/events"))
+                .await;
+            ensure!(req.len() == 1 && str_at(&req[0], "query") == "?document=doc-0004", "watch {req:?}");
+            Ok(())
+        }),
+        "watch.reconnect-snapshot" => Box::pin(async move {
+            m.faults(json!({"busyDocuments": {"doc-0004": true}, "watchDrops": {"count": 1, "afterEvents": 2}}))
+                .await;
+            let mut watch = client(m).knowledge_base(KB).document("doc-0004").watch().await.map_err(s)?;
+            let events = take(&mut watch, |e| e.event_type() == "job.finished").await.map_err(s)?;
+            let types: Vec<_> = events.iter().map(|e| e.event_type()).collect();
+            ensure!(
+                types[0] == "snapshot" && types[2] == "snapshot",
+                "events {types:?}: a new snapshot first after the drop"
+            );
+            let reqs = m
+                .matching(|r| str_at(r, "path") == format!("/v3/knowledge-bases/{KB}/events"))
+                .await;
+            ensure!(
+                reqs.len() == 2
+                    && reqs
+                        .iter()
+                        .all(|r| header(r, "last-event-id").is_none() && str_at(r, "query") == "?document=doc-0004"),
+                "connections {reqs:?}: a reconnect sends no cursor"
+            );
+            Ok(())
+        }),
+        "wait.done" => Box::pin(async move {
+            m.faults(json!({"busyDocuments": {"doc-0004": true}})).await;
+            let doc = client(m).knowledge_base(KB).document("doc-0004").wait().await.map_err(s)?;
+            ensure!(doc.id == "doc-0004" && doc.status.as_str() == "indexed", "document {doc:?}");
+            let last = m.api().await.pop().unwrap_or_default();
+            ensure!(
+                str_at(&last, "method") == "GET" && str_at(&last, "path") == format!("/v3/knowledge-bases/{KB}/documents/doc-0004"),
+                "the thing as its get returns it: last request {last}"
+            );
+            // A folder has no get: its wait returns its summary from the watch's snapshot.
+            let folder = client(m).knowledge_base(KB).folder("/hr/").wait().await.map_err(s)?;
+            ensure!(folder.path == "/hr/", "folder {folder:?}");
+            Ok(())
+        }),
+        "wait.partial" => Box::pin(async move {
+            m.faults(json!({"busyDocuments": {"doc-0004": true}, "jobOutcomes": {"doc-0004": "completed_with_failures"}}))
+                .await;
+            let doc = client(m).knowledge_base(KB).document("doc-0004").wait().await.map_err(s)?;
+            ensure!(
+                doc.status.as_str() == "partially_indexed" && doc.partial_failures.as_ref().is_some_and(|p| !p.is_empty()),
+                "document {doc:?}"
+            );
+            Ok(())
+        }),
+        "wait.failed" => Box::pin(async move {
+            m.faults(json!({
+                "busyDocuments": {"doc-0004": true, "doc-0005": true},
+                "jobOutcomes": {"doc-0004": "failed", "doc-0005": "cancelled"},
+            }))
+            .await;
+            let kb = client(m).knowledge_base(KB);
+            let r = kb.document("doc-0004").wait().await;
+            ensure!(
+                matches!(&r, Err(Error::UnprocessableContent(e)) if e.code == "CONTENT_REJECTED" && e.status == 422),
+                "failed: got {:?}",
+                r.err()
+            );
+            let r = kb.document("doc-0005").wait().await;
+            ensure!(
+                r.as_ref().err().and_then(Error::code) == Some("CANCELLED") && r.as_ref().err().and_then(Error::status) == Some(0),
+                "cancelled: got {:?}",
+                r.err()
+            );
+            Ok(())
+        }),
+        "wait.gone" => Box::pin(async move {
+            let kb = client(m).knowledge_base(KB);
+            let deleted = kb.document("doc-0006").delete().await.map_err(s)?;
+            let () = deleted.wait().await.map_err(s)?;
+            let r = kb.document("doc-9999").wait().await;
+            ensure!(matches!(&r, Err(Error::NotFound(_))), "a missing document: got {:?}", r.err());
+            Ok(())
+        }),
+        "wait.started-work" => Box::pin(async move {
+            let kb = client(m).knowledge_base(KB);
+            // The request's own wait(): send, then follow the work it started.
+            let doc = kb
+                .documents()
+                .create(pdf("leave.pdf", b"leave"))
+                .folder("/hr/")
+                .wait()
+                .await
+                .map_err(s)?;
+            ensure!(doc.status.as_str() == "indexed" && doc.folder == "/hr/", "document {doc:?}");
+            // Or send(), then the handle: its result() is the call's response, and it has wait() and watch().
+            let started = kb.fields().fill_in(["policyOwner"]).send().await.map_err(s)?;
+            let job = started.result().job.id.clone();
+            let mut watch = started.watch().await.map_err(s)?;
+            let first = watch.next().await.ok_or("no event")?.map_err(s)?;
+            ensure!(matches!(first, KnowledgeBaseEvent::Snapshot(_)), "first event {first:?}");
+            drop(watch);
+            let after = started.wait().await.map_err(s)?;
+            ensure!(after.id == KB && !job.is_empty(), "knowledge base {after:?}");
+            // And the request's watch(): send, then watch the new thing.
+            let mut watch = kb.documents().create(pdf("pay.pdf", b"pay")).watch().await.map_err(s)?;
+            let first = watch.next().await.ok_or("no event")?.map_err(s)?;
+            ensure!(matches!(first, KnowledgeBaseEvent::Snapshot(_)), "first event {first:?}");
+            Ok(())
+        }),
+        "wait.delete-processing" => Box::pin(async move {
+            // A document deleted while it is still being processed: the delete is accepted, its job ends cancelled as
+            // part of the delete, and the wait ends on the gone rule with no CANCELLED.
+            let kb = client(m).knowledge_base(KB);
+            let doc = kb.documents().create(pdf("leave.pdf", b"leave")).folder("/hr/").await.map_err(s)?;
+            doc.delete().wait().await.map_err(s)?;
+            let r = doc.get().await;
+            ensure!(matches!(r, Err(Error::NotFound(_))), "after the delete: {:?}", r.map(|d| d.status));
+            let listed = kb.documents().list().folder("/hr/").collect().await.map_err(s)?;
+            ensure!(!listed.iter().any(|d| d.id == doc.id()), "the document came back");
+            Ok(())
+        }),
+        "wait.busy-status" => Box::pin(async move {
+            // A knowledge base being created has no job: its status alone says it is busy.
+            let kb = client(m).knowledge_bases().create("Contracts").await.map_err(s)?;
+            ensure!(kb.result().status.as_str() == "creating", "created {:?}", kb.result().status);
+            let ready = kb.wait().await.map_err(s)?;
+            ensure!(ready.status.as_str() == "ready", "waited {:?}", ready.status);
+            // A document that reads processing with no job listed on it is busy too.
+            m.faults(json!({"busyWithoutJob": {"doc-0004": 3}})).await;
+            let doc = client(m).knowledge_base(KB).document("doc-0004").wait().await.map_err(s)?;
+            ensure!(doc.status.as_str() == "indexed", "document {:?}", doc.status);
+            Ok(())
+        }),
+        "wait.timeout" => Box::pin(async move {
+            m.faults(json!({"busyDocuments": {"doc-0004": true}, "jobSteps": 100000})).await;
+            let r = client(m)
+                .knowledge_base(KB)
+                .document("doc-0004")
+                .wait()
+                .timeout(Duration::from_millis(300))
+                .await;
+            let e = r.err().ok_or("the wait ended")?;
+            ensure!(
+                matches!(e, Error::Timeout) && e.code() == Some("WAIT_TIMEOUT") && e.status() == Some(0),
+                "got {e:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            let closed = m
+                .matching(|r| str_at(r, "event") == "client-disconnected" && str_at(r, "subject") == format!("kb:{KB}"))
+                .await;
+            ensure!(!closed.is_empty(), "the watch was not closed");
+            Ok(())
+        }),
+        "scope.download" => Box::pin(async move {
+            // A server of this case's own, which also answers the content's 302 (the mock has no download route yet).
+            let address = "https://downloads.example.com/doc-1?signature=abc";
+            let body = json!({"url": address, "expiresAt": "2026-11-16T01:17:03.000Z"}).to_string();
+            let fake = Fake::start(vec![(200, "application/json", body.clone()), (302, "application/json", body)]).await;
+            let c = fake.client();
+            let download = c.knowledge_base(KB).document("doc-1").download().await.map_err(s)?;
+            ensure!(download.url == address, "download {download:?}");
+            // GetDocumentContent, the 302, is the building block core.documents.content; it is not followed either.
+            let content = c.core().documents().content(KB, "doc-1").await.map_err(s)?;
+            ensure!(content.url == address, "content {content:?}");
+            let reqs = fake.requests();
+            ensure!(
+                reqs == [
+                    format!("GET /api/v3/knowledge-bases/{KB}/documents/doc-1/download HTTP/1.1"),
+                    format!("GET /api/v3/knowledge-bases/{KB}/documents/doc-1/content HTTP/1.1"),
+                ] || reqs
+                    == [
+                        format!("GET /v3/knowledge-bases/{KB}/documents/doc-1/download HTTP/1.1"),
+                        format!("GET /v3/knowledge-bases/{KB}/documents/doc-1/content HTTP/1.1"),
+                    ],
+                "requests {reqs:?}: nothing goes to the address"
+            );
+            Ok(())
+        }),
+        "core.content-redirect" => Box::pin(async move {
+            // A server of this case's own: a 302 whose Location points back at that server, so a client that followed
+            // it would be seen asking for the address.
+            let fake = Fake::start_for(|base| {
+                let address = format!("{base}/bytes/doc-1?signature=abc");
+                let body = json!({"url": address, "expiresAt": "2026-11-16T01:17:03.000Z"}).to_string();
+                vec![
+                    (302, format!("application/json\r\nLocation: {address}"), body),
+                    (200, "application/octet-stream".to_owned(), "the bytes".to_owned()),
+                ]
+            })
+            .await;
+            let address = format!("{}/bytes/doc-1?signature=abc", fake.base);
+            let content = fake.client().core().documents().content(KB, "doc-1").await.map_err(s)?;
+            ensure!(content.location == address && content.url == address, "content {content:?}");
+            let reqs = fake.requests();
+            ensure!(
+                reqs.len() == 1 && reqs[0].contains("/documents/doc-1/content"),
+                "requests {reqs:?}: the address must not be requested"
+            );
+            Ok(())
+        }),
+        "wait.progress" => Box::pin(async move {
+            m.faults(json!({"busyDocuments": {"doc-0004": true}, "jobSteps": 3})).await;
+            let seen = Arc::new(Mutex::new(Vec::<Processing>::new()));
+            let log = seen.clone();
+            let doc = client(m)
+                .knowledge_base(KB)
+                .document("doc-0004")
+                .wait()
+                .on_progress(move |p| log.lock().unwrap().push(p.clone()))
+                .await
+                .map_err(s)?;
+            ensure!(doc.status.as_str() == "indexed", "document {:?}", doc.status);
+            let calls = seen.lock().unwrap().clone();
+            let percents: Vec<i32> = calls.iter().filter_map(Processing::percent).collect();
+            ensure!(
+                calls.len() >= 2 && calls.iter().all(|p| matches!(p, Processing::Document(_))) && percents.windows(2).all(|w| w[0] <= w[1]),
+                "progress {calls:?}"
+            );
+            // The snapshot's processing came first: the job was running when the watch connected.
+            ensure!(calls[0].stage().is_some(), "first {:?}", calls[0]);
+            let n = calls.len();
+            tokio::task::yield_now().await;
+            ensure!(seen.lock().unwrap().len() == n, "called after the wait returned");
+            Ok(())
+        }),
+        "watch.processing" => Box::pin(async move {
+            m.faults(json!({"busyDocuments": {"doc-0004": true}})).await;
+            let c = client(m);
+            let mut watch = c.knowledge_base(KB).document("doc-0004").watch().await.map_err(s)?;
+            let events = take(&mut watch, |e| e.event_type() == "job.finished").await.map_err(s)?;
+            let snap = events.first().and_then(KnowledgeBaseEvent::processing);
+            ensure!(matches!(snap, Some(Processing::Document(_))), "snapshot {snap:?}");
+            let progress: Vec<_> = events.iter().filter(|e| e.event_type() == "document.progress").collect();
+            ensure!(
+                !progress.is_empty() && progress.iter().all(|e| matches!(e.processing(), Some(Processing::Document(_)))),
+                "document.progress {progress:?}"
+            );
+            ensure!(events.iter().any(|e| e.processing().is_none()), "an event carrying none gives none");
+            // The knowledge base's own watch: the accessor takes the document's identifier.
+            // Enough steps that the job is still running when the knowledge base's watch connects, however slowly it reads
+            m.faults(json!({"busyDocuments": {"doc-0005": true}, "jobSteps": 50})).await;
+            let mut doc_watch = c.knowledge_base(KB).document("doc-0005").watch().await.map_err(s)?;
+            let mut kb_watch = c.knowledge_base(KB).watch().await.map_err(s)?;
+            let kb_events = take(&mut kb_watch, |e| e.event_type() == "document.progress").await.map_err(s)?;
+            drop(doc_watch.next().await);
+            let last = kb_events.last().ok_or("no events")?;
+            ensure!(
+                matches!(last.processing_of("doc-0005"), Some(Processing::Document(_))) && last.processing_of("doc-0001").is_none(),
+                "processing_of {last:?}"
+            );
+            Ok(())
+        }),
+        "send.attachments" => Box::pin(async move {
+            let c = client(m);
+            let conversation = c.conversation("c-att");
+            // An upload made beforehand, reserved for this conversation, passes straight through.
+            let purpose = UploadPurpose {
+                conversation_id: Some("c-att".into()),
+                ..Default::default()
+            };
+            let made = c
+                .core()
+                .uploads()
+                .send_for(pdf("made.pdf", b"made before"), purpose)
+                .await
+                .map_err(s)?;
+            let before = m.requests().await.len();
+            let files = || {
+                [
+                    Attachment::file(pdf("leave.pdf", b"a leave form")),
+                    Attachment::upload_id(&made.id),
+                    Attachment::file(pdf("pay.pdf", b"a pay slip")),
+                ]
+            };
+            let answer = conversation
+                .send("Does this leave form match our policy?")
+                .attachments(files())
+                .await
+                .map_err(s)?;
+            let text = answer.text().collect().await.map_err(s)?;
+            ensure!(text == ANSWER, "text {text:?}");
+            let reqs = m.requests().await[before..].to_vec();
+            let body = |r: &Value| serde_json::from_str::<Value>(str_at(r, "body")).unwrap_or(Value::Null);
+            let reserves: Vec<Value> = reqs.iter().filter(|r| str_at(r, "path") == "/v3/uploads").map(body).collect();
+            ensure!(
+                reserves.len() == 2
+                    && reserves.iter().all(|r| r["purpose"] == json!({"conversationId": "c-att"}))
+                    && reserves[0]["fileName"] == "leave.pdf"
+                    && reserves[1]["fileName"] == "pay.pdf",
+                "reserves {reserves:?}"
+            );
+            let sends: Vec<Value> = reqs
+                .iter()
+                .filter(|r| str_at(r, "path") == "/v3/conversations/c-att/messages")
+                .map(body)
+                .collect();
+            let ids: Vec<&str> = sends
+                .first()
+                .and_then(|b| b["attachments"].as_array())
+                .into_iter()
+                .flatten()
+                .map(|a| str_at(a, "uploadId"))
+                .collect();
+            ensure!(
+                sends.len() == 1 && ids.len() == 3 && ids[1] == made.id && ids[0] != ids[2] && !ids.contains(&""),
+                "message {sends:?}: every upload, in the order given"
+            );
+            // The SendMessage came after every upload's bytes.
+            let last_put = reqs.iter().rposition(|r| str_at(r, "method") == "PUT").ok_or("no upload")?;
+            let message = reqs
+                .iter()
+                .position(|r| str_at(r, "path") == "/v3/conversations/c-att/messages")
+                .ok_or("no message")?;
+            ensure!(last_put < message, "the message went before the uploads");
+            // Each upload is used up: sending the same files again uploads them again.
+            let before = m.requests().await.len();
+            let again = [Attachment::file(pdf("leave.pdf", b"a leave form"))];
+            conversation
+                .send("And this one?")
+                .attachments(again)
+                .await
+                .map_err(s)?
+                .final_message()
+                .await
+                .map_err(s)?;
+            let reserved = m.requests().await[before..]
+                .iter()
+                .filter(|r| str_at(r, "path") == "/v3/uploads")
+                .count();
+            ensure!(reserved == 1, "{reserved} uploads on the second send");
+            // A file whose bytes cannot be sent: no message, and that file's error.
+            m.faults(status("PutUpload", &[(503, 0), (503, 0), (503, 0), (503, 0), (503, 0)]))
+                .await;
+            let before = m.requests().await.len();
+            let r = conversation
+                .send("And this?")
+                .attachments([Attachment::file(pdf("bad.pdf", b"never arrives"))])
+                .await;
+            ensure!(
+                r.as_ref().err().and_then(Error::code) == Some("UPLOAD_PUT_FAILED"),
+                "got {:?}",
+                r.err()
+            );
+            let sent = m.requests().await[before..]
+                .iter()
+                .filter(|r| str_at(r, "path").ends_with("/messages"))
+                .count();
+            ensure!(sent == 0, "a message was sent after a failed upload");
+            Ok(())
+        }),
+        "send.text" => Box::pin(async move {
+            let stream = client(m).conversation("c-text").send("hi").await.map_err(s)?;
+            let text = stream.text().collect().await.map_err(s)?;
+            ensure!(text == ANSWER, "text {text:?}");
+            Ok(())
+        }),
+        "wait.expired" => Box::pin(async move {
+            // A server of this case's own: the batch's watch shows its plan expired.
+            let snapshot = json!({"batch": batch_json("expired"), "jobs": [], "progress": []});
+            let sse = format!("id: s-1\nevent: snapshot\ndata: {snapshot}\n\n");
+            let fake = Fake::start(vec![(200, "text/event-stream", sse.clone()), (200, "text/event-stream", sse)]).await;
+            let batch = fake.client().knowledge_base(KB).ingestion().batch("batch-1");
+            for (which, r) in [("planned", batch.planned().await), ("wait", batch.wait().await)] {
+                let e = r.err().ok_or(format!("{which} returned"))?;
+                ensure!(e.code() == Some("EXPIRED") && e.status() == Some(0), "{which}: got {e:?}");
+            }
+            Ok(())
+        }),
+        "watch.gone" => Box::pin(async move {
+            // A server of this case's own: a snapshot, a clean end, then 404 on the reconnect.
+            let snapshot = json!({"document": document_json("processing"), "jobs": [], "progress": []});
+            let sse = format!("id: s-1\nevent: snapshot\ndata: {snapshot}\n\n");
+            let gone = || (404, "application/problem+json", PROBLEM_404.to_owned());
+            let fake = Fake::start(vec![(200, "text/event-stream", sse.clone()), gone()]).await;
+            let doc = fake.client().knowledge_base(KB).document("doc-1");
+            let mut watch = doc.watch().await.map_err(s)?;
+            let first = watch.next().await.ok_or("no snapshot")?.map_err(s)?;
+            ensure!(matches!(first, KnowledgeBaseEvent::Snapshot(_)), "first {first:?}");
+            let end = watch.next().await.ok_or("the watch ended without the 404")?;
+            ensure!(matches!(end, Err(Error::NotFound(_))), "got {end:?}");
+            ensure!(watch.next().await.is_none(), "the watch carried on");
+            ensure!(fake.requests().len() == 2, "requests {:?}: one reconnect, no more", fake.requests());
+            // wait() ends by the gone rule: the 404, or success after a delete.
+            let fake = Fake::start(vec![(200, "text/event-stream", sse.clone()), gone()]).await;
+            let r = fake.client().knowledge_base(KB).document("doc-1").wait().await;
+            ensure!(matches!(r, Err(Error::NotFound(_))), "wait: got {:?}", r.err());
+            let deleting = document_json("deleting").to_string();
+            let fake = Fake::start(vec![(202, "application/json", deleting), (200, "text/event-stream", sse), gone()]).await;
+            fake.client()
+                .knowledge_base(KB)
+                .document("doc-1")
+                .delete()
+                .wait()
+                .await
+                .map_err(s)?;
+            ensure!(fake.requests().len() == 3, "requests {:?}", fake.requests());
+            Ok(())
+        }),
+        "wait.snapshot-entry" => Box::pin(async move {
+            // A batch, a document and a folder already done: each wait finds its thing in the first snapshot (under
+            // batch, document and folder), ends there with no further event, and gives the thing's own type.
+            let c = client(m);
+            let kb = c.knowledge_base(KB);
+            let item: IngestionItemInput =
+                serde_json::from_value(json!({"action": "remove", "path": "/policies/policy-7.pdf"})).map_err(s)?;
+            let batch = kb
+                .ingestion()
+                .batches()
+                .create()
+                .start(StartMode::Manual)
+                .items(vec![item])
+                .await
+                .map_err(s)?;
+            let planned = batch.planned().await.map_err(s)?;
+            batch.start().if_match(&planned.etag).send().await.map_err(s)?;
+            let _: IngestionBatch = batch.wait().await.map_err(s)?;
+            let events_path = format!("/v3/knowledge-bases/{KB}/events");
+            let before = m.matching(|r| str_at(r, "path") == events_path).await.len();
+            let ended: IngestionBatch = batch.wait().await.map_err(s)?;
+            ensure!(
+                ended.id == batch.id() && !matches!(ended.status.as_str(), "planned" | "planning" | "running"),
+                "batch {ended:?}"
+            );
+            let doc: Document = kb.document("doc-0001").wait().await.map_err(s)?;
+            ensure!(doc.id == "doc-0001", "document {doc:?}");
+            let folder: Folder = kb.folder("/hr/").wait().await.map_err(s)?;
+            ensure!(folder.path == "/hr/", "folder {folder:?}");
+            let opened = m.matching(|r| str_at(r, "path") == events_path).await.len() - before;
+            ensure!(opened == 3, "{opened} watches for three waits");
+            let queries: Vec<String> = m
+                .matching(|r| str_at(r, "path") == events_path)
+                .await
+                .iter()
+                .rev()
+                .take(3)
+                .map(|r| str_at(r, "query").to_owned())
+                .collect();
+            ensure!(
+                queries.iter().any(|q| q.starts_with("?batch="))
+                    && queries.iter().any(|q| q == "?document=doc-0001")
+                    && queries.iter().any(|q| q.starts_with("?folder=")),
+                "watches {queries:?}"
+            );
+            Ok(())
+        }),
+        "wait.cancel-returns" => Box::pin(async move {
+            // A cancel's own wait returns the thing, not CANCELLED; every other wait on it still raises CANCELLED.
+            let c = client(m);
+            let batch = hand_batch(&c, vec![ingest_item("/new/x.pdf", b"x")], false).await?;
+            let cancelled: IngestionBatch = batch.cancel().wait().await.map_err(s)?;
+            ensure!(
+                cancelled.id == batch.id() && cancelled.status.as_str() == "cancelled",
+                "cancel().wait() {cancelled:?}"
+            );
+            let e = batch.wait().await.err().ok_or("batch.wait() on a cancelled batch returned")?;
+            ensure!(e.code() == Some("CANCELLED") && e.status() == Some(0), "batch.wait(): {e:?}");
+            // A document whose processing job ends cancelled (a fake server: the mock cannot stop processing yet).
+            let job = json!({"id": "op-1", "kind": "ingest", "status": "cancelled", "target": {"documentId": "doc-1"},
+                "createdAt": "2026-11-01T00:00:00.000Z", "endedAt": "2026-11-01T00:00:01.000Z"});
+            let snapshot = format!(
+                "event: snapshot\ndata: {}\n\n",
+                json!({"document": document_json("indexed"), "jobs": [job], "progress": []})
+            );
+            let fake = Fake::start(vec![
+                (200, "application/json", document_json("processing").to_string()),
+                (200, "text/event-stream", snapshot.clone()),
+                (200, "application/json", document_json("indexed").to_string()),
+                (200, "text/event-stream", snapshot),
+            ])
+            .await;
+            let doc = fake.client().knowledge_base(KB).document("doc-1");
+            let stopped: Document = doc.cancel_processing().wait().await.map_err(s)?;
+            ensure!(stopped.id == "doc-1", "cancel_processing().wait() {stopped:?}");
+            let e = doc.wait().await.err().ok_or("doc.wait() after a cancelled job returned")?;
+            ensure!(e.code() == Some("CANCELLED"), "doc.wait(): {e:?}");
+            Ok(())
+        }),
+        "wait.planned" => Box::pin(async move {
+            let kb = client(m).knowledge_base(KB);
+            let item: IngestionItemInput =
+                serde_json::from_value(json!({"action": "remove", "path": "/policies/policy-1.pdf"})).map_err(s)?;
+            let batch = kb
+                .ingestion()
+                .batches()
+                .create()
+                .start(StartMode::Manual)
+                .items(vec![item])
+                .await
+                .map_err(s)?;
+            let planned = batch.planned().await.map_err(s)?;
+            ensure!(
+                planned.status.as_str() == "planned" && planned.id == batch.id(),
+                "batch {planned:?}"
+            );
+            // A batch's watch finds the batch in its snapshot under `batch`, its filter's name.
+            let mut watch = batch.watch().send().await.map_err(s)?;
+            let first = watch.next().await.ok_or("no snapshot")?.map_err(s)?;
+            let KnowledgeBaseEvent::Snapshot(snap) = first else {
+                return Err(format!("first event {first:?}"));
+            };
+            ensure!(snap.batch.as_ref().is_some_and(|b| b.id == batch.id()), "snapshot {snap:?}");
+            drop(watch);
+            // And its wait follows it there to the end.
+            batch.start().if_match(&planned.etag).send().await.map_err(s)?;
+            let ended = batch.wait().await.map_err(s)?;
+            ensure!(
+                ended.id == batch.id() && !matches!(ended.status.as_str(), "planned" | "running" | "planning"),
+                "waited {ended:?}"
+            );
+            Ok(())
+        }),
+        "send.eager" => Box::pin(async move {
+            // A Rust request is sent when it is awaited, as every future is; the stream it returns need not be read.
+            let c = client(m);
+            let stream = c.conversation("c-e").send("hi").await.map_err(s)?;
+            drop(stream);
+            let posts = m
+                .matching(|r| str_at(r, "method") == "POST" && str_at(r, "path") == "/v3/conversations/c-e/messages")
+                .await;
+            ensure!(posts.len() == 1, "{} messages sent", posts.len());
+            let mut watch = c.conversation("c-e").watch().await.map_err(s)?;
+            let events = take(&mut watch, |e| e.event_type() == "message.completed").await.map_err(s)?;
+            ensure!(
+                events.iter().any(|e| e.event_type() == "message.completed"),
+                "the answer {events:?}"
+            );
+            Ok(())
+        }),
+
+        "files.sources" => Box::pin(async move {
+            let data: Vec<u8> = (0..70_000u32).map(|i| (i % 253) as u8).collect();
+            let path = temp_file("same.pdf", &data);
+            let c = client(m);
+            c.core().uploads().send(UploadFile::from_path(&path).map_err(s)?).await.map_err(s)?;
+            c.core()
+                .uploads()
+                .send(UploadFile::from_bytes("same.pdf", data.clone()))
+                .await
+                .map_err(s)?;
+            let reader = UploadFile::from_reader("same.pdf", std::io::Cursor::new(data.clone()));
+            c.core().uploads().send(reader).await.map_err(s)?;
+            let reserves = bodies(m, "POST", "/v3/uploads").await;
+            let puts = m
+                .matching(|r| str_at(r, "method") == "PUT" && str_at(r, "path").starts_with("/__s3/"))
+                .await;
+            ensure!(
+                reserves.len() == 3 && puts.len() == 3,
+                "{} reserves, {} puts",
+                reserves.len(),
+                puts.len()
+            );
+            for (r, p) in reserves.iter().zip(&puts) {
+                ensure!(
+                    r["fileName"] == "same.pdf"
+                        && r["byteSize"] == json!(data.len())
+                        && r["contentType"] == "application/pdf"
+                        && r["sha256"] == reserves[0]["sha256"]
+                        && r["sha256"].as_str().is_some_and(|h| h.len() == 44 && h.ends_with('='))
+                        && p["bodySha256"] == r["sha256"],
+                    "reserve {r}, put {}",
+                    p["bodySha256"]
+                );
+            }
+            Ok(())
+        }),
+        "files.content-type" => Box::pin(async move {
+            let c = client(m);
+            for (name, set) in [
+                ("a.pdf", None),
+                ("b.docx", None),
+                ("c.md", None),
+                ("d.unknownext", None),
+                ("e.pdf", Some("text/plain")),
+            ] {
+                let mut f = UploadFile::from_bytes(name, &b"content"[..]);
+                if let Some(t) = set {
+                    f = f.content_type(t);
+                }
+                c.core().uploads().send(f).await.map_err(s)?;
+            }
+            let types: Vec<String> = bodies(m, "POST", "/v3/uploads")
+                .await
+                .iter()
+                .map(|b| str_at(b, "contentType").to_owned())
+                .collect();
+            ensure!(
+                types
+                    == [
+                        "application/pdf",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        "text/markdown",
+                        "application/octet-stream",
+                        "text/plain",
+                    ],
+                "types {types:?}"
+            );
+            // Every extension in the table every SDK shares
+            let shared = read_json("conformance/cases/content-types.json");
+            for (ext, want) in shared["contentTypes"].as_object().into_iter().flatten() {
+                let got = caitlyn_sdk_core::content_type_for(&format!("file.{ext}"));
+                ensure!(Some(got) == want.as_str(), ".{ext}: {got}, want {want}");
+            }
+            Ok(())
+        }),
+        "files.spool" => Box::pin(async move {
+            let dir = fresh_dir("spool");
+            let seen = Arc::new(Mutex::new(None));
+            let size = 9 * 1024 * 1024 + 123;
+            let reader = Generated {
+                left: size,
+                sent: 0,
+                dir: dir.clone(),
+                seen: seen.clone(),
+            };
+            let c = Client::builder(WORKSPACE, Auth::token(PAT))
+                .endpoint(&m.base)
+                .spool_dir(&dir)
+                .build()
+                .map_err(s)?;
+            c.core()
+                .uploads()
+                .send(UploadFile::from_reader("big.pdf", reader))
+                .await
+                .map_err(s)?;
+            let during = *seen.lock().unwrap();
+            let left = std::fs::read_dir(&dir).map_err(s)?.count();
+            let reserve = bodies(m, "POST", "/v3/uploads").await.remove(0);
+            let put = m.matching(|r| str_at(r, "method") == "PUT").await.remove(0);
+            ensure!(
+                during == Some((1, 0o600)),
+                "spool files while reading past 8 MiB (count, mode): {during:?}"
+            );
+            ensure!(left == 0, "{left} files left in the spool directory");
+            ensure!(
+                put["bodyLength"] == json!(size) && reserve["byteSize"] == json!(size) && put["bodySha256"] == reserve["sha256"],
+                "put {} bytes {}, reserved {reserve}",
+                put["bodyLength"],
+                put["bodySha256"]
+            );
+            Ok(())
+        }),
+        "files.too-large" => Box::pin(async move {
+            let path = root().join("build/rust-conformance-tmp/too-large.pdf");
+            std::fs::create_dir_all(path.parent().unwrap()).map_err(s)?;
+            std::fs::File::create(&path).and_then(|f| f.set_len(2_147_483_649)).map_err(s)?;
+            let r = client(m).core().uploads().send(UploadFile::from_path(&path).map_err(s)?).await;
+            let _ = std::fs::remove_file(&path);
+            ensure!(
+                r.as_ref().err().and_then(Error::code) == Some("FILE_TOO_LARGE"),
+                "got {:?}",
+                r.err()
+            );
+            ensure!(m.requests().await.is_empty(), "requests were sent");
+            Ok(())
+        }),
+        "files.changed" => Box::pin(async move {
+            m.faults(json!({"reserveDelayMs": 800})).await;
+            let path = temp_file("changing.pdf", b"before");
+            let c = client(m);
+            let f = UploadFile::from_path(&path).map_err(s)?;
+            let call = tokio::spawn(async move { c.core().uploads().send(f).await });
+            // Change the file once the reservation has arrived (the mock holds it 800 ms).
+            let t0 = Instant::now();
+            while m.matching(|r| str_at(r, "path") == "/v3/uploads").await.is_empty() {
+                ensure!(t0.elapsed() < Duration::from_secs(5), "CreateUpload never arrived");
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            std::fs::write(&path, b"after, and longer").map_err(s)?;
+            let r = call.await.map_err(s)?;
+            ensure!(r.as_ref().err().and_then(Error::code) == Some("FILE_CHANGED"), "got {:?}", r.err());
+            ensure!(m.matching(|r| str_at(r, "method") == "PUT").await.is_empty(), "the bytes were sent");
+            Ok(())
+        }),
+        "files.put-retry" => Box::pin(async move {
+            m.faults(status("PutUpload", &[(503, 0)])).await;
+            let up = client(m).core().uploads().send(pdf("retry.pdf", b"retry me")).await.map_err(s)?;
+            let puts = m.matching(|r| str_at(r, "method") == "PUT").await;
+            ensure!(puts.len() == 2, "{} PUTs", puts.len());
+            ensure!(
+                puts[0]["headers"] == puts[1]["headers"] && puts[0]["bodySha256"] == puts[1]["bodySha256"],
+                "PUTs differ: {} / {}",
+                puts[0],
+                puts[1]
+            );
+            ensure!(
+                header(&puts[1], "x-amz-checksum-sha256") == up.required_headers.get("x-amz-checksum-sha256").map(String::as_str)
+                    && header(&puts[1], "authorization").is_none(),
+                "headers {}",
+                puts[1]["headers"]
+            );
+            Ok(())
+        }),
+
+        // ------------------------------------------------------------------ upload targets (PROTOCOL.md 10)
+        "upload-target.top-level" => Box::pin(async move {
+            let doc = client(m)
+                .knowledge_base(KB)
+                .documents()
+                .create(pdf("leave-policy.pdf", b"twenty days"))
+                .folder("/hr/")
+                .send()
+                .await
+                .map_err(s)?;
+            let reqs = m.requests().await;
+            let seq: Vec<String> = reqs
+                .iter()
+                .map(|r| format!("{} {}", str_at(r, "method"), str_at(r, "path")))
+                .collect();
+            ensure!(seq.len() == 3, "requests {seq:?}");
+            let reserve: Value = serde_json::from_str(str_at(&reqs[0], "body")).map_err(s)?;
+            let create: Value = serde_json::from_str(str_at(&reqs[2], "body")).map_err(s)?;
+            let put = &reqs[1];
+            let upload_id = put["path"].as_str().unwrap_or_default().trim_start_matches("/__s3/").to_owned();
+            ensure!(
+                seq[0] == "POST /v3/uploads"
+                    && seq[1].starts_with("PUT /__s3/")
+                    && seq[2] == format!("POST /v3/knowledge-bases/{KB}/documents"),
+                "requests {seq:?}"
+            );
+            ensure!(
+                header(put, "content-type") == Some("application/pdf")
+                    && header(put, "x-amz-checksum-sha256") == reserve["sha256"].as_str()
+                    && header(put, "authorization").is_none()
+                    && put["headerNames"]
+                        .as_array()
+                        .is_some_and(|h| !h.iter().any(|n| n == "caitlyn-sdk-model")),
+                "PUT {put}"
+            );
+            ensure!(
+                create["uploadId"] == json!(upload_id) && create["folder"] == "/hr/" && create.get("file").is_none(),
+                "create {create}"
+            );
+            ensure!(
+                !doc.result().document.id.is_empty() && doc.id() == doc.result().document.id && !doc.result().operation.id.is_empty(),
+                "the new document's scope {doc:?}"
+            );
+            // kb.documents(id).replace(file) adds a version the same way: reserve, PUT, then CreateDocumentVersion.
+            let before = m.requests().await.len();
+            let existing = client(m).knowledge_base(KB).document("doc-0002");
+            let v = existing.replace(pdf("policy-2.pdf", b"twenty-one days")).send().await.map_err(s)?;
+            let seq: Vec<String> = m.requests().await[before..]
+                .iter()
+                .map(|r| format!("{} {}", str_at(r, "method"), str_at(r, "path")))
+                .collect();
+            let versions = format!("/v3/knowledge-bases/{KB}/documents/doc-0002/versions");
+            ensure!(
+                seq.len() == 3 && seq[0] == "POST /v3/uploads" && seq[1].starts_with("PUT /__s3/") && seq[2] == format!("POST {versions}"),
+                "replace requests {seq:?}"
+            );
+            let version: Value = bodies(m, "POST", &versions).await.remove(0);
+            ensure!(
+                version["uploadId"].as_str().is_some_and(|u| seq[1].ends_with(u)),
+                "version {version}, {v:?}"
+            );
+            Ok(())
+        }),
+        "upload-target.nested" => Box::pin(async move {
+            let png = b"\x89PNG\r\n\x1a\nnot really a picture";
+            let a = client(m)
+                .agents()
+                .create("Ava")
+                .avatar(AgentAvatarInput {
+                    mark: Some(AgentMarkInput {
+                        picture: Some(UploadFile::from_bytes("ava.png", &png[..])),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })
+                .await
+                .map_err(s)?;
+            let reserve = bodies(m, "POST", "/v3/uploads").await.remove(0);
+            let create = bodies(m, "POST", "/v3/agents").await.remove(0);
+            let put = m.matching(|r| str_at(r, "method") == "PUT").await;
+            let upload_id = put
+                .first()
+                .map(|p| str_at(p, "path").trim_start_matches("/__s3/").to_owned())
+                .unwrap_or_default();
+            ensure!(
+                reserve["purpose"] == json!({"agentAvatar": true}) && reserve["contentType"] == "image/png",
+                "reserve {reserve}"
+            );
+            ensure!(
+                create["avatar"]["mark"] == json!({"pictureUploadId": upload_id}) && create["name"] == "Ava",
+                "create {create}"
+            );
+            let url = a
+                .result()
+                .avatar
+                .as_ref()
+                .and_then(|v| v.mark.as_ref())
+                .and_then(|k| k.picture_url.clone());
+            ensure!(url.is_some_and(|u| u.contains(&upload_id)), "agent {:?}", a.result().avatar);
+            Ok(())
+        }),
+
+        // ------------------------------------------------------------------ ingest (PROTOCOL.md 15)
+        "sync.flow" => Box::pin(async move {
+            let dir = folder_of(&[("leave.pdf", "leave"), ("pay/pay.pdf", "pay"), ("notes.md", "# notes")]);
+            let report = client(m)
+                .knowledge_base(KB)
+                .ingestion()
+                .sync(SyncInput::dir(&dir).folder("/new/"))
+                .await
+                .map_err(s)?;
+            let seq: Vec<String> = m
+                .requests()
+                .await
+                .iter()
+                .map(|r| {
+                    format!(
+                        "{} {}",
+                        str_at(r, "method"),
+                        str_at(r, "path")
+                            .split('/')
+                            .filter(|p| !p.contains('-') || p.len() < 30)
+                            .collect::<Vec<_>>()
+                            .join("/")
+                    )
+                })
+                .collect();
+            let first = |p: &str| seq.iter().position(|x| x.starts_with(p));
+            let last = |p: &str| seq.iter().rposition(|x| x.starts_with(p));
+            let order = [
+                first(&format!("POST /v3/knowledge-bases/{KB}/ingestion-batches")),
+                first(&format!("GET /v3/knowledge-bases/{KB}/ingestion-batches")),
+                first(&format!("POST /v3/knowledge-bases/{KB}/ingestion-batches/start")),
+                first("POST /__s3"),
+                first(&format!("POST /v3/knowledge-bases/{KB}/ingestion-batches/complete-uploads")),
+                last(&format!("GET /v3/knowledge-bases/{KB}/ingestion-batches/items")),
+            ];
+            ensure!(
+                order.iter().all(Option::is_some) && order.windows(2).all(|w| w[0] < w[1]),
+                "order {order:?} in {seq:?}"
+            );
+            let posts = m.matching(|r| str_at(r, "method") == "POST" && str_at(r, "path") == "/__s3/").await;
+            ensure!(posts.len() == 3, "{} uploads", posts.len());
+            for p in &posts {
+                let form = p["form"].as_array().ok_or("no form")?;
+                let names: Vec<&str> = form.iter().map(|f| str_at(f, "name")).collect();
+                let value = |n: &str| {
+                    form.iter()
+                        .find(|f| f["name"] == n)
+                        .map(|f| str_at(f, "value").to_owned())
+                        .unwrap_or_default()
+                };
+                let file = form.last().ok_or("no file")?;
+                let sha = str_at(file, "sha256");
+                let url_safe = sha.trim_end_matches('=').replace('+', "-").replace('/', "_");
+                ensure!(
+                    names
+                        == [
+                            "x-amz-algorithm",
+                            "x-amz-credential",
+                            "x-amz-date",
+                            "policy",
+                            "x-amz-signature",
+                            "key",
+                            "Content-Type",
+                            "x-amz-checksum-algorithm",
+                            "x-amz-checksum-sha256",
+                            "file"
+                        ],
+                    "fields {names:?}"
+                );
+                ensure!(
+                    value("x-amz-checksum-algorithm") == "SHA256"
+                        && value("x-amz-checksum-sha256") == sha
+                        && sha.len() == 44
+                        && value("key").contains(&url_safe),
+                    "form {form:?}"
+                );
+            }
+            ensure!(
+                report.items.len() == 3 && report.items.iter().all(|i| i.status.as_str() == "indexed"),
+                "items {:?}",
+                report.items
+            );
+            ensure!(report.batch.status.as_str() == "succeeded", "batch {:?}", report.batch.status);
+            Ok(())
+        }),
+        "sync.many-items" => Box::pin(async move {
+            let items: Vec<SyncItem> = (0..20_001).map(|i| SyncItem::remove(format!("/gone/old-{i}.pdf"))).collect();
+            let report = client(m)
+                .knowledge_base(KB)
+                .ingestion()
+                .sync(SyncInput::items(items))
+                .await
+                .map_err(s)?;
+            let create = bodies(m, "POST", &format!("/v3/knowledge-bases/{KB}/ingestion-batches")).await;
+            let create = create.first().ok_or("no create")?;
+            let adds = bodies(m, "POST", "/items:batch-create").await;
+            let count = |b: &Value| b["items"].as_array().map_or(0, Vec::len);
+            ensure!(
+                count(create) == 10_000 && create["awaitMoreItems"] == true && create["start"] == "manual",
+                "create: {} items, awaitMoreItems {}, start {}",
+                count(create),
+                create["awaitMoreItems"],
+                create["start"]
+            );
+            ensure!(
+                adds.len() == 2
+                    && count(&adds[0]) == 10_000
+                    && adds[0].get("last").is_none()
+                    && count(&adds[1]) == 1
+                    && adds[1]["last"] == true,
+                "addItems: {:?}",
+                adds.iter().map(|b| (count(b), b["last"].clone())).collect::<Vec<_>>()
+            );
+            ensure!(
+                m.matching(|r| str_at(r, "method") == "PATCH").await.is_empty(),
+                "no UpdateIngestionBatch: last ends the draft"
+            );
+            ensure!(
+                report.items.len() == 20_001 && report.batch.item_count == 20_001,
+                "{} items",
+                report.items.len()
+            );
+            Ok(())
+        }),
+        "sync.cancelled-item" => Box::pin(async move {
+            // An item whose document was deleted while it was being ingested ends cancelled (the mock's cancelItems).
+            m.faults(json!({"cancelItems": {"/new/b.pdf": true}})).await;
+            let seen = Arc::new(Mutex::new(Vec::<(String, String, Option<String>)>::new()));
+            let phases = Arc::new(Mutex::new(Vec::<String>::new()));
+            let (log, steps) = (seen.clone(), phases.clone());
+            let items = vec![
+                SyncItem::file("/new/a.pdf", pdf("a.pdf", b"alpha")),
+                SyncItem::file("/new/b.pdf", pdf("b.pdf", b"bravo")),
+            ];
+            let input = SyncInput::items(items)
+                .on_item(move |it: &IngestionBatchItem| {
+                    log.lock().unwrap().push((
+                        it.path.clone().unwrap_or_default(),
+                        it.status.as_str().to_owned(),
+                        it.failure_code.clone(),
+                    ))
+                })
+                .on_progress(move |p: &IngestionProgress| steps.lock().unwrap().push(p.phase.as_str().to_owned()));
+            let report = client(m).knowledge_base(KB).ingestion().sync(input).await.map_err(s)?;
+            let b = report
+                .items
+                .iter()
+                .find(|i| i.path.as_deref() == Some("/new/b.pdf"))
+                .ok_or("no b")?;
+            let a = report
+                .items
+                .iter()
+                .find(|i| i.path.as_deref() == Some("/new/a.pdf"))
+                .ok_or("no a")?;
+            ensure!(
+                b.status.as_str() == "cancelled"
+                    && b.failure_code.is_none()
+                    && a.status.as_str() == "indexed"
+                    && report.batch.status.as_str() == "succeeded",
+                "report {:?} {:?}",
+                report.items,
+                report.batch.status
+            );
+            let on_b: Vec<_> = seen.lock().unwrap().iter().filter(|x| x.0 == "/new/b.pdf").cloned().collect();
+            ensure!(
+                on_b.len() == 1 && on_b[0].1 == "cancelled" && on_b[0].2.is_none(),
+                "on_item for b {on_b:?}"
+            );
+            ensure!(
+                phases.lock().unwrap().last().map(String::as_str) == Some("succeeded"),
+                "progress {:?}",
+                phases.lock().unwrap()
+            );
+            // Never uploaded or completed again: one form POST each, and b named once by CompleteIngestionBatchUploads.
+            let posts = m.matching(|r| str_at(r, "method") == "POST" && str_at(r, "path") == "/__s3/").await;
+            ensure!(posts.len() == 2, "{} uploads", posts.len());
+            let completed: Vec<Value> = bodies(m, "POST", "complete-uploads")
+                .await
+                .iter()
+                .flat_map(|x| x["itemIds"].as_array().cloned().unwrap_or_default())
+                .collect();
+            ensure!(
+                completed.len() == 2 && completed.iter().filter(|id| id.as_str() == Some(b.id.as_str())).count() == 1,
+                "completed {completed:?}"
+            );
+            Ok(())
+        }),
+        "sync.on-item-once" => Box::pin(async move {
+            // A failed upload reaches on_item at once, as failed; the other item once it has finished, with its final
+            // status; neither twice, and never when its upload is accepted.
+            m.faults(json!({"failUploads": {"/new/b.pdf": true}})).await;
+            let seen = Arc::new(Mutex::new(Vec::<(String, String, Option<String>)>::new()));
+            let log = seen.clone();
+            let items = vec![
+                SyncItem::file("/new/a.pdf", pdf("a.pdf", b"alpha")),
+                SyncItem::file("/new/b.pdf", pdf("b.pdf", b"bravo")),
+            ];
+            let input = SyncInput::items(items).on_item(move |it: &IngestionBatchItem| {
+                log.lock().unwrap().push((
+                    it.path.clone().unwrap_or_default(),
+                    it.status.as_str().to_owned(),
+                    it.failure_code.clone(),
+                ))
+            });
+            client(m).knowledge_base(KB).ingestion().sync(input).await.map_err(s)?;
+            let seen = seen.lock().unwrap().clone();
+            ensure!(
+                seen == [
+                    ("/new/b.pdf".to_owned(), "failed".to_owned(), Some("UPLOAD_FAILED".to_owned())),
+                    ("/new/a.pdf".to_owned(), "indexed".to_owned(), None),
+                ],
+                "on_item {seen:?}"
+            );
+            Ok(())
+        }),
+        "sync.cancel-report" => Box::pin(async move {
+            // The cancellation error carries the report so far: every item with its last status (those accepted but
+            // not yet final included) and the batch; on_item has had only final items (none here).
+            //
+            // The cancellation point is fixed: one upload at a time, cancelled once the second upload has reached the
+            // mock. With one upload at a time the second starts only after the first's CompleteIngestionBatchUploads
+            // has answered, so exactly one item has been accepted (ingesting) and the eleven others are still
+            // awaiting_upload (the second's upload is never reported to Complete). The upload progress event is not
+            // a fixed point: it fires before Complete, so a cancellation there may or may not follow the acceptance.
+            m.faults(json!({"uploadDelayMs": 2000})).await;
+            let token = CancellationToken::new();
+            let on_item = Arc::new(AtomicUsize::new(0));
+            let f = on_item.clone();
+            let items = (0..12)
+                .map(|i| {
+                    SyncItem::file(
+                        format!("/new/r{i}.pdf"),
+                        pdf(&format!("r{i}.pdf"), format!("report {i}").as_bytes()),
+                    )
+                })
+                .collect();
+            let input = SyncInput::items(items).concurrency(1).on_item(move |_| {
+                f.fetch_add(1, Ordering::SeqCst);
+            });
+            let c = client(m);
+            let t = token.clone();
+            let call = tokio::spawn(async move { c.knowledge_base(KB).ingestion().sync(input).cancel_on(t).await });
+            let t0 = Instant::now();
+            while m
+                .matching(|r| str_at(r, "method") == "POST" && str_at(r, "path") == "/__s3/")
+                .await
+                .len()
+                < 2
+            {
+                ensure!(t0.elapsed() < Duration::from_secs(10), "the second upload never started");
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            let completes = m.matching(|r| str_at(r, "path").ends_with("/complete-uploads")).await.len();
+            ensure!(
+                completes == 1,
+                "{completes} CompleteIngestionBatchUploads calls before the cancellation"
+            );
+            token.cancel();
+            let e = call.await.map_err(s)?.err().ok_or("the sync finished")?;
+            ensure!(e.is_cancelled(), "got {e:?}");
+            let report = e.report().ok_or("no report on the cancelled error")?;
+            let statuses: Vec<&str> = report.items.iter().map(|i| i.status.as_str()).collect();
+            ensure!(report.items.len() == 12, "{} items in the report", report.items.len());
+            ensure!(
+                statuses.iter().filter(|s| **s == "ingesting").count() == 1
+                    && statuses.iter().filter(|s| **s == "awaiting_upload").count() == 11,
+                "statuses {statuses:?}"
+            );
+            ensure!(
+                !report.batch.id.is_empty() && report.batch.item_count == 12,
+                "batch {:?}",
+                report.batch
+            );
+            let completes = m.matching(|r| str_at(r, "path").ends_with("/complete-uploads")).await.len();
+            ensure!(
+                completes == 1,
+                "{completes} CompleteIngestionBatchUploads calls after the cancellation"
+            );
+            ensure!(
+                on_item.load(Ordering::SeqCst) == 0,
+                "{} items reached on_item",
+                on_item.load(Ordering::SeqCst)
+            );
+            Ok(())
+        }),
+        "sync.report-shape" => Box::pin(async move {
+            // One report type, SyncReport: report.batch (the batch as reading it gives it) and report.items (every
+            // item as listing the batch's items gives it). A declined confirm's and a cancellation's errors carry the
+            // same type, reached through report().
+            #[allow(clippy::type_complexity)]
+            fn item_view(
+                i: &IngestionBatchItem,
+            ) -> (
+                String,
+                Option<String>,
+                Option<String>,
+                String,
+                Option<String>,
+                Option<i32>,
+                Option<String>,
+            ) {
+                (
+                    i.id.clone(),
+                    i.outcome.as_ref().map(|o| o.as_str().to_owned()),
+                    i.resolution.as_ref().map(|r| r.as_str().to_owned()),
+                    i.status.as_str().to_owned(),
+                    i.document_id.clone(),
+                    i.version,
+                    i.failure_code.clone(),
+                )
+            }
+            let c = client(m);
+            let items = vec![
+                SyncItem::file("/new/a.pdf", pdf("a.pdf", b"alpha")),
+                SyncItem::file("/new/b.pdf", pdf("b.pdf", b"bravo")),
+            ];
+            let report: SyncReport = c.knowledge_base(KB).ingestion().sync(SyncInput::items(items)).await.map_err(s)?;
+            let batch = c.knowledge_base(KB).ingestion().batch(&report.batch.id);
+            let read = batch.get().await.map_err(s)?;
+            ensure!(
+                report.batch.id == read.id
+                    && report.batch.status.as_str() == read.status.as_str()
+                    && report.batch.item_count == read.item_count
+                    && report.batch.counts.as_ref().map(|k| (&k.by_outcome, &k.by_status))
+                        == read.counts.as_ref().map(|k| (&k.by_outcome, &k.by_status))
+                    && report.batch.counts.is_some(),
+                "report.batch {:?} but the batch reads {read:?}",
+                report.batch
+            );
+            let mut listed: Vec<_> = batch.items().list().collect().await.map_err(s)?.iter().map(item_view).collect();
+            let mut got: Vec<_> = report.items.iter().map(item_view).collect();
+            listed.sort();
+            got.sort();
+            ensure!(
+                got.len() == 2 && got == listed,
+                "report.items {got:?} but the batch lists {listed:?}"
+            );
+            ensure!(
+                report.items.iter().all(|i| i.outcome.is_some()
+                    && i.resolution.is_some()
+                    && i.status.as_str() == "indexed"
+                    && i.document_id.is_some()
+                    && i.version.is_some()
+                    && i.failure_code.is_none()),
+                "items {:?}",
+                report.items
+            );
+
+            // A declined confirm: the batch as planned, and its items.
+            let declined = c
+                .knowledge_base(KB)
+                .ingestion()
+                .sync(SyncInput::items(vec![SyncItem::file("/new/c.pdf", pdf("c.pdf", b"charlie"))]).confirm(|_: &SyncPlan| false))
+                .await
+                .err()
+                .ok_or("the declined sync went on")?;
+            let r: &SyncReport = declined.report().ok_or("no report on the declined confirm")?;
+            ensure!(
+                !r.batch.id.is_empty()
+                    && r.batch.status.as_str() == "planned"
+                    && r.batch.item_count == 1
+                    && r.items.len() == 1
+                    && r.items[0].path.as_deref() == Some("/new/c.pdf")
+                    && r.items[0].outcome.is_some(),
+                "declined report {r:?}"
+            );
+
+            // A cancellation: one upload at a time, cancelled once the second upload has reached the mock (the
+            // first is then accepted), so the report is fixed: one item ingesting, one awaiting its upload.
+            m.faults(json!({"uploadDelayMs": 2000})).await;
+            let token = CancellationToken::new();
+            let t = token.clone();
+            let c2 = c.clone();
+            let call = tokio::spawn(async move {
+                let items = vec![
+                    SyncItem::file("/new/d.pdf", pdf("d.pdf", b"delta")),
+                    SyncItem::file("/new/e.pdf", pdf("e.pdf", b"echo")),
+                ];
+                c2.knowledge_base(KB)
+                    .ingestion()
+                    .sync(SyncInput::items(items).concurrency(1))
+                    .cancel_on(t)
+                    .await
+            });
+            let t0 = Instant::now();
+            let form_uploads = |r: &Value| str_at(r, "method") == "POST" && str_at(r, "path") == "/__s3/";
+            // The first sync sent two uploads; the cancelled one's second upload is the fourth.
+            while m.matching(form_uploads).await.len() < 4 {
+                ensure!(t0.elapsed() < Duration::from_secs(10), "the second upload never started");
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            token.cancel();
+            let cancelled = call.await.map_err(s)?.err().ok_or("the sync finished")?;
+            ensure!(cancelled.is_cancelled(), "got {cancelled:?}");
+            let r: &SyncReport = cancelled.report().ok_or("no report on the cancellation")?;
+            let mut statuses: Vec<(Option<&str>, &str)> = r.items.iter().map(|i| (i.path.as_deref(), i.status.as_str())).collect();
+            statuses.sort();
+            ensure!(
+                !r.batch.id.is_empty()
+                    && r.batch.item_count == 2
+                    && statuses == [(Some("/new/d.pdf"), "ingesting"), (Some("/new/e.pdf"), "awaiting_upload")],
+                "cancelled report {r:?}"
+            );
+            Ok(())
+        }),
+        "sync.estimate-many" => Box::pin(async move {
+            // With the call limit at 2 (10,000 in use), three new files are priced in two EstimateIngestion calls, in
+            // order (two then one), and the plan's estimate is the two added together: counts and the ends of
+            // durationSeconds and cost summed, cost in its unit, details left out. confirm sees the same total.
+            let kb = client(m).knowledge_base(KB);
+            let items = || {
+                vec![
+                    SyncItem::file("/new/a.pdf", pdf("a.pdf", b"alpha")),
+                    SyncItem::file("/new/b.pdf", pdf("b.pdf", b"bravo")),
+                    SyncItem::file("/new/c.pdf", pdf("c.pdf", b"charlie")),
+                ]
+            };
+            let plan = kb
+                .ingestion()
+                .estimate_sync(SyncInput::items(items()).estimate_per_call(2))
+                .await
+                .map_err(s)?;
+            let est = plan.estimate.ok_or("no estimate")?;
+            let calls = bodies(m, "POST", &format!("/v3/knowledge-bases/{KB}/ingestions:estimate")).await;
+            let names: Vec<Vec<&str>> = calls
+                .iter()
+                .map(|b| b["documents"].as_array().into_iter().flatten().map(|d| str_at(d, "name")).collect())
+                .collect();
+            ensure!(
+                names == [vec!["a.pdf", "b.pdf"], vec!["c.pdf"]],
+                "EstimateIngestion calls {names:?}"
+            );
+            ensure!(
+                calls
+                    .iter()
+                    .flat_map(|b| b["documents"].as_array().into_iter().flatten())
+                    .all(|d| d.get("sha256").is_none()),
+                "an estimate described a file by its hash: {calls:?}"
+            );
+            // Each part as the API prices it, then added up.
+            let mut parts = Vec::new();
+            for b in &calls {
+                let documents: Vec<UploadDescription> = serde_json::from_value(b["documents"].clone()).map_err(s)?;
+                let input = EstimateIngestionInput {
+                    documents,
+                    ..Default::default()
+                };
+                parts.push(kb.documents().estimate_create(pdf("x.pdf", b"x")).input(input).await.map_err(s)?);
+            }
+            let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+            let sum = |f: &dyn Fn(&EstimateIngestionResult) -> f64| parts.iter().map(f).sum::<f64>();
+            ensure!(
+                est.documents == 3 && parts.iter().map(|p| p.documents).sum::<i64>() == 3,
+                "documents {est:?}"
+            );
+            ensure!(
+                close(est.duration_seconds.low, sum(&|p| p.duration_seconds.low))
+                    && close(est.duration_seconds.high, sum(&|p| p.duration_seconds.high)),
+                "durationSeconds {:?} from parts {parts:?}",
+                est.duration_seconds
+            );
+            let cost = est.cost.as_ref().ok_or("no cost, though every part has one")?;
+            ensure!(
+                close(cost.low, sum(&|p| p.cost.as_ref().map_or(f64::NAN, |c| c.low)))
+                    && close(cost.high, sum(&|p| p.cost.as_ref().map_or(f64::NAN, |c| c.high)))
+                    && cost.unit.as_str() == parts[0].cost.as_ref().map_or("", |c| c.unit.as_str()),
+                "cost {cost:?} from parts {parts:?}"
+            );
+            ensure!(
+                est.documents_of_unknown_length == Some(parts.iter().filter_map(|p| p.documents_of_unknown_length).sum())
+                    && est.details.is_none(),
+                "estimate {est:?}"
+            );
+            // confirm is given the same total.
+            let seen = Arc::new(Mutex::new(None));
+            let keep = seen.clone();
+            let input = SyncInput::items(items()).estimate_per_call(2).confirm(move |p: &SyncPlan| {
+                *keep.lock().unwrap() = p
+                    .estimate
+                    .as_ref()
+                    .map(|e| (e.documents, e.duration_seconds.low, e.duration_seconds.high));
+                false
+            });
+            let _ = kb.ingestion().sync(input).await;
+            let got = *seen.lock().unwrap();
+            ensure!(
+                got == Some((est.documents, est.duration_seconds.low, est.duration_seconds.high)),
+                "confirm saw {got:?}"
+            );
+            Ok(())
+        }),
+        "estimate.caller-hints" => Box::pin(async move {
+            // A file with hints and one without, through each estimate: the first's description carries its hints,
+            // the second's only its name, content type and size. Batch items carry no hints.
+            let kb = client(m).knowledge_base(KB);
+            let hints = IngestionHints {
+                pages: Some(12),
+                scanned_pages: Some(3),
+                ..Default::default()
+            };
+            let hinted = || pdf("hinted.pdf", b"twelve pages").hints(hints.clone());
+            let plain = || pdf("plain.pdf", b"no hints");
+            kb.documents().estimate_create(hinted()).await.map_err(s)?;
+            kb.documents().estimate_create(plain()).await.map_err(s)?;
+            kb.document("doc-0001").estimate_replace(hinted()).await.map_err(s)?;
+            kb.document("doc-0001").estimate_replace(plain()).await.map_err(s)?;
+            kb.ingestion()
+                .estimate_sync(SyncInput::items(vec![
+                    SyncItem::file("/new/hinted.pdf", hinted()),
+                    SyncItem::file("/new/plain.pdf", plain()),
+                ]))
+                .await
+                .map_err(s)?;
+            let want = json!({"pages": 12, "scannedPages": 3});
+            let described: Vec<Value> = m
+                .matching(|r| str_at(r, "method") == "POST" && str_at(r, "path").contains(":estimate"))
+                .await
+                .iter()
+                .flat_map(|r| {
+                    let b: Value = serde_json::from_str(str_at(r, "body")).unwrap_or_default();
+                    let mut ds = b["documents"].as_array().cloned().unwrap_or_default();
+                    if b["file"].is_object() {
+                        ds.push(b["file"].clone());
+                    }
+                    ds
+                })
+                .collect();
+            ensure!(described.len() == 6, "{} descriptions: {described:?}", described.len());
+            for d in &described {
+                let ok = match str_at(d, "name") {
+                    "hinted.pdf" => d.get("hints") == Some(&want),
+                    "plain.pdf" => d.get("hints").is_none() && d.as_object().is_some_and(|o| o.len() == 3),
+                    _ => false,
+                };
+                ensure!(ok, "description {d}");
+            }
+            let created = bodies(m, "POST", &format!("/v3/knowledge-bases/{KB}/ingestion-batches")).await;
+            ensure!(
+                created
+                    .iter()
+                    .flat_map(|b| b["items"].as_array().cloned().unwrap_or_default())
+                    .all(|i| i.get("hints").is_none()),
+                "a batch item carries hints: {created:?}"
+            );
+            Ok(())
+        }),
+        // ------------------------------------------------------------------ a hand-built batch (PROTOCOL.md 15)
+        "batch-estimate.priced-items" => Box::pin(async move {
+            // add (two new files) is priced; remove is not.
+            let c = client(m);
+            let batch = hand_batch(
+                &c,
+                vec![
+                    ingest_item("/new/a.pdf", b"alpha"),
+                    ingest_item("/new/b.pdf", b"bravo"),
+                    remove_item("/policies/policy-2.pdf"),
+                ],
+                false,
+            )
+            .await?;
+            let est: EstimateIngestionResult = batch.estimate_upload().await.map_err(s)?;
+            let calls = estimate_calls(m).await;
+            let names: Vec<Vec<&str>> = calls.iter().map(|ds| ds.iter().map(|d| str_at(d, "name")).collect()).collect();
+            ensure!(
+                names == [vec!["a.pdf", "b.pdf"]] && est.documents == 2,
+                "calls {names:?}, estimate {est:?}"
+            );
+            let items = batch.items().list().collect().await.map_err(s)?;
+            let removing = items
+                .iter()
+                .find(|i| i.path.as_deref() == Some("/policies/policy-2.pdf"))
+                .ok_or("no remove item")?;
+            ensure!(
+                removing.resolution.as_ref().map(|r| r.as_str()) == Some("remove"),
+                "the remove item resolves {:?}",
+                removing.resolution
+            );
+            Ok(())
+        }),
+        "batch-estimate.from-items" => Box::pin(async move {
+            let c = client(m);
+            let batch = hand_batch(
+                &c,
+                vec![ingest_item("/hr/leave.pdf", b"twenty days"), ingest_item("/hr/pay.pdf", b"monthly")],
+                false,
+            )
+            .await?;
+            batch.estimate_upload().await.map_err(s)?;
+            let calls = estimate_calls(m).await;
+            ensure!(
+                calls
+                    == [vec![
+                        json!({"name": "leave.pdf", "contentType": "application/pdf", "byteSize": 11}),
+                        json!({"name": "pay.pdf", "contentType": "application/pdf", "byteSize": 7}),
+                    ]],
+                "documents {calls:?}"
+            );
+            Ok(())
+        }),
+        "batch-estimate.from-files" => Box::pin(async move {
+            // Described from the files: their own names, types and sizes, the hints only where given; a file no item
+            // has is left out. The item's checksum is never recomputed: nothing but the size is read.
+            let c = client(m);
+            let batch = hand_batch(
+                &c,
+                vec![ingest_item("/hr/leave.pdf", b"twenty days"), ingest_item("/hr/pay.pdf", b"monthly")],
+                false,
+            )
+            .await?;
+            let hints = IngestionHints {
+                pages: Some(3),
+                ..Default::default()
+            };
+            let files = BatchFiles::by_path([
+                (
+                    "/hr/leave.pdf",
+                    UploadFile::from_bytes("leave-2026.pdf", b"twenty days".to_vec()).hints(hints),
+                ),
+                ("/hr/pay.pdf", UploadFile::from_bytes("pay.docx", b"monthly".to_vec())),
+                ("/hr/other.pdf", UploadFile::from_bytes("other.pdf", b"not in the batch".to_vec())),
+            ]);
+            batch.estimate_upload().files(files).await.map_err(s)?;
+            let calls = estimate_calls(m).await;
+            let docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            ensure!(
+                calls
+                    == [vec![
+                        json!({"name": "leave-2026.pdf", "contentType": "application/pdf", "byteSize": 11, "hints": {"pages": 3}}),
+                        json!({"name": "pay.docx", "contentType": docx, "byteSize": 7}),
+                    ]],
+                "documents {calls:?}"
+            );
+            Ok(())
+        }),
+        "batch-estimate.draft" => Box::pin(async move {
+            let c = client(m);
+            let batch = c
+                .knowledge_base(KB)
+                .ingestion()
+                .batches()
+                .create()
+                .start(StartMode::Manual)
+                .await_more_items(true)
+                .items(vec![ingest_item("/new/a.pdf", b"alpha")])
+                .await
+                .map_err(s)?
+                .into_scope();
+            let before = m.api().await.len();
+            let e = batch.estimate_upload().await.err().ok_or("a draft batch was priced")?;
+            ensure!(
+                e.code() == Some("INGESTION_BATCH_NOT_PLANNED") && e.status() == Some(0),
+                "got {e:?}"
+            );
+            let sent: Vec<String> = m.api().await[before..]
+                .iter()
+                .map(|r| format!("{} {}", str_at(r, "method"), str_at(r, "path")))
+                .collect();
+            ensure!(
+                sent.len() == 1 && sent[0].starts_with("GET "),
+                "sent {sent:?}: one read, nothing more"
+            );
+            Ok(())
+        }),
+        "batch-estimate.planning" => Box::pin(async move {
+            m.faults(json!({"planningReads": 3})).await;
+            let c = client(m);
+            let batch = c
+                .knowledge_base(KB)
+                .ingestion()
+                .batches()
+                .create()
+                .start(StartMode::Manual)
+                .items(vec![ingest_item("/new/a.pdf", b"alpha")])
+                .await
+                .map_err(s)?;
+            ensure!(batch.result().status.as_str() == "planning", "created {:?}", batch.result().status);
+            let est = batch.estimate_upload().await.map_err(s)?;
+            ensure!(est.documents == 1 && estimate_calls(m).await.len() == 1, "estimate {est:?}");
+            let now = batch.get().await.map_err(s)?;
+            ensure!(now.status.as_str() == "planned", "batch {:?}", now.status);
+            Ok(())
+        }),
+        "batch-estimate.nothing-to-price" => Box::pin(async move {
+            let c = client(m);
+            let batch = hand_batch(&c, vec![remove_item("/policies/policy-3.pdf")], false).await?;
+            let est = batch.estimate_upload().await.map_err(s)?;
+            ensure!(
+                est.documents == 0 && est.cost.is_none() && est.duration_seconds.high == 0.0 && estimate_calls(m).await.is_empty(),
+                "estimate {est:?}"
+            );
+            Ok(())
+        }),
+        "batch-estimate.many" => Box::pin(async move {
+            // With the limit at 2 (10,000 in use), three items are priced in two calls, in order, added together.
+            let c = client(m);
+            let batch = hand_batch(
+                &c,
+                vec![
+                    ingest_item("/new/a.pdf", b"alpha"),
+                    ingest_item("/new/b.pdf", b"bravo"),
+                    ingest_item("/new/c.pdf", b"charlie"),
+                ],
+                false,
+            )
+            .await?;
+            let est = batch.estimate_upload().estimate_per_call(2).await.map_err(s)?;
+            let calls = estimate_calls(m).await;
+            let names: Vec<Vec<&str>> = calls.iter().map(|ds| ds.iter().map(|d| str_at(d, "name")).collect()).collect();
+            ensure!(names == [vec!["a.pdf", "b.pdf"], vec!["c.pdf"]], "calls {names:?}");
+            let kb = c.knowledge_base(KB);
+            let mut parts = Vec::new();
+            for ds in &calls {
+                let documents: Vec<UploadDescription> = serde_json::from_value(json!(ds)).map_err(s)?;
+                let input = EstimateIngestionInput {
+                    documents,
+                    ..Default::default()
+                };
+                parts.push(kb.documents().estimate_create(pdf("x.pdf", b"x")).input(input).await.map_err(s)?);
+            }
+            let low: f64 = parts.iter().map(|p| p.duration_seconds.low).sum();
+            let high: f64 = parts.iter().map(|p| p.duration_seconds.high).sum();
+            ensure!(
+                est.documents == 3
+                    && (est.duration_seconds.low - low).abs() < 1e-9
+                    && (est.duration_seconds.high - high).abs() < 1e-9
+                    && est.details.is_none(),
+                "estimate {est:?} from {parts:?}"
+            );
+            Ok(())
+        }),
+        "batch-upload.not-started" => Box::pin(async move {
+            // A planned batch with a manual start, and a draft: refused with nothing sent.
+            let c = client(m);
+            let planned = hand_batch(&c, vec![ingest_item("/new/a.pdf", b"alpha")], false).await?;
+            let before = m.api().await.len();
+            let e = planned
+                .upload([("/new/a.pdf", pdf("a.pdf", b"alpha"))])
+                .await
+                .err()
+                .ok_or("uploaded a batch not started")?;
+            ensure!(
+                e.code() == Some("INGESTION_BATCH_NOT_STARTED") && e.status() == Some(0),
+                "got {e:?}"
+            );
+            let sent = m.api().await.len() - before;
+            ensure!(
+                sent == 1 && form_posts(m).await.is_empty(),
+                "{sent} requests: one read, nothing more"
+            );
+            let draft = c
+                .knowledge_base(KB)
+                .ingestion()
+                .batches()
+                .create()
+                .await_more_items(true)
+                .items(vec![ingest_item("/new/b.pdf", b"bravo")])
+                .await
+                .map_err(s)?
+                .into_scope();
+            let e = draft
+                .upload([("/new/b.pdf", pdf("b.pdf", b"bravo"))])
+                .await
+                .err()
+                .ok_or("uploaded a draft")?;
+            ensure!(e.code() == Some("INGESTION_BATCH_NOT_STARTED"), "draft: got {e:?}");
+            // A when_planned batch still planning is followed until it runs, then uploaded.
+            m.faults(json!({"planningReads": 2})).await;
+            let when_planned = |path: &'static str, data: &'static [u8]| {
+                let c = c.clone();
+                async move {
+                    c.knowledge_base(KB)
+                        .ingestion()
+                        .batches()
+                        .create()
+                        .start(StartMode::WhenPlanned)
+                        .items(vec![ingest_item(path, data)])
+                        .await
+                        .map_err(s)
+                }
+            };
+            let following = when_planned("/new/c.pdf", b"charlie").await?;
+            ensure!(
+                following.result().status.as_str() == "planning",
+                "created {:?}",
+                following.result().status
+            );
+            let done = following.upload([("/new/c.pdf", pdf("c.pdf", b"charlie"))]).await.map_err(s)?;
+            ensure!(
+                done.result().items.len() == 1 && done.result().items[0].status.as_str() == "ingesting" && form_posts(m).await.len() == 1,
+                "followed batch {:?}",
+                done.result()
+            );
+            ensure!(
+                !m.matching(|r| str_at(r, "path") == format!("/v3/knowledge-bases/{KB}/events"))
+                    .await
+                    .is_empty(),
+                "the planning batch was not followed"
+            );
+            // One that stops at planned (an item left unresolved) is not started either.
+            m.faults(json!({"planningReads": 2, "planConflicts": {"/new/d.pdf": "duplicate_path"}}))
+                .await;
+            let stuck = when_planned("/new/d.pdf", b"delta").await?;
+            let e = stuck
+                .upload([("/new/d.pdf", pdf("d.pdf", b"delta"))])
+                .await
+                .err()
+                .ok_or("uploaded a batch stopped at planned")?;
+            ensure!(
+                e.code() == Some("INGESTION_BATCH_NOT_STARTED") && e.status() == Some(0),
+                "when_planned stopped at planned: got {e:?}"
+            );
+            ensure!(form_posts(m).await.len() == 1, "something was sent for the stopped batch");
+            Ok(())
+        }),
+        "batch-upload.sends" => Box::pin(async move {
+            m.faults(json!({"uploadDelayMs": 100})).await;
+            let c = client(m);
+            let data: Vec<(String, Vec<u8>)> = (0..9)
+                .map(|i| (format!("/new/f{i}.pdf"), format!("file {i}").into_bytes()))
+                .collect();
+            let mut items: Vec<IngestionItemInput> = data.iter().map(|(p, d)| ingest_item(p, d)).collect();
+            items.push(remove_item("/policies/policy-4.pdf"));
+            let batch = hand_batch(&c, items, true).await?;
+            let files = BatchFiles::by_path(
+                data.iter()
+                    .map(|(p, d)| (p.clone(), pdf(p.rsplit('/').next().unwrap_or("f.pdf"), d))),
+            );
+            let done = batch.upload(files).await.map_err(s)?;
+            let posts = form_posts(m).await;
+            ensure!(
+                posts.len() == 9 && done.result().items.len() == 9,
+                "{} uploads, {} items",
+                posts.len(),
+                done.result().items.len()
+            );
+            let up = m.get("/__mock/uploads").await;
+            ensure!(
+                up["maxInFlight"].as_u64().is_some_and(|n| (2..=6).contains(&n)),
+                "in flight {}",
+                up["maxInFlight"]
+            );
+            let names: Vec<&str> = posts[0]["form"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|f| str_at(f, "name"))
+                .collect();
+            let n = names.len();
+            ensure!(
+                n >= 6
+                    && names[n - 5..] == ["key", "Content-Type", "x-amz-checksum-algorithm", "x-amz-checksum-sha256", "file"]
+                    && names[..n - 5].contains(&"policy"),
+                "form fields {names:?}"
+            );
+            let groups = completed_ids(m).await;
+            ensure!(
+                groups.iter().all(|g| !g.is_empty() && g.len() <= 100) && groups.iter().map(Vec::len).sum::<usize>() == 9,
+                "Complete groups {groups:?}"
+            );
+            Ok(())
+        }),
+        "batch-upload.not-given" => Box::pin(async move {
+            let c = client(m);
+            let batch = hand_batch(
+                &c,
+                vec![ingest_item("/new/a.pdf", b"alpha"), ingest_item("/new/b.pdf", b"bravo")],
+                true,
+            )
+            .await?;
+            let seen = Arc::new(AtomicUsize::new(0));
+            let f = seen.clone();
+            let done = batch
+                .upload([("/new/a.pdf", pdf("a.pdf", b"alpha"))])
+                .on_item(move |_| {
+                    f.fetch_add(1, Ordering::SeqCst);
+                })
+                .await
+                .map_err(s)?;
+            let r = done.result();
+            ensure!(
+                r.not_given == ["/new/b.pdf"] && r.items.len() == 1 && r.unmatched.is_empty(),
+                "result {r:?}"
+            );
+            let items = batch.items().list().collect().await.map_err(s)?;
+            let b = items.iter().find(|i| i.path.as_deref() == Some("/new/b.pdf")).ok_or("no b")?;
+            ensure!(b.status.as_str() == "awaiting_upload", "b is {:?}", b.status);
+            ensure!(
+                completed_ids(m).await.iter().flatten().all(|id| *id != b.id),
+                "b was reported to Complete"
+            );
+            ensure!(seen.load(Ordering::SeqCst) == 0, "on_item was called");
+            Ok(())
+        }),
+        "batch-upload.unmatched" => Box::pin(async move {
+            let c = client(m);
+            let batch = hand_batch(&c, vec![ingest_item("/new/a.pdf", b"alpha")], true).await?;
+            let done = batch
+                .upload([("new/a.pdf", pdf("a.pdf", b"alpha")), ("/new/zzz.pdf", pdf("zzz.pdf", b"nobody's"))])
+                .await
+                .map_err(s)?;
+            let r = done.result();
+            ensure!(
+                r.unmatched == ["/new/zzz.pdf"] && r.items.len() == 1 && r.not_given.is_empty(),
+                "result {r:?}"
+            );
+            ensure!(form_posts(m).await.len() == 1, "{} uploads", form_posts(m).await.len());
+            Ok(())
+        }),
+        "batch-upload.file-changed" => Box::pin(async move {
+            let c = client(m);
+            let batch = hand_batch(
+                &c,
+                vec![
+                    ingest_item("/new/short.pdf", b"twelve bytes"),
+                    ingest_item("/new/other.pdf", b"same size A"),
+                    ingest_item("/new/ok.pdf", b"fine"),
+                ],
+                true,
+            )
+            .await?;
+            let failed = Arc::new(Mutex::new(Vec::new()));
+            let log = failed.clone();
+            let done = batch
+                .upload([
+                    ("/new/short.pdf", pdf("short.pdf", b"not twelve bytes at all")),
+                    ("/new/other.pdf", pdf("other.pdf", b"same size B")),
+                    ("/new/ok.pdf", pdf("ok.pdf", b"fine")),
+                ])
+                .on_item(move |it: &IngestionBatchItem| {
+                    log.lock()
+                        .unwrap()
+                        .push((it.path.clone().unwrap_or_default(), it.failure_code.clone()))
+                })
+                .await
+                .map_err(s)?;
+            let mut got: Vec<(String, String, Option<String>)> = done
+                .result()
+                .items
+                .iter()
+                .map(|i| {
+                    (
+                        i.path.clone().unwrap_or_default(),
+                        i.status.as_str().to_owned(),
+                        i.failure_code.clone(),
+                    )
+                })
+                .collect();
+            got.sort();
+            ensure!(
+                got == [
+                    ("/new/ok.pdf".to_owned(), "ingesting".to_owned(), None),
+                    ("/new/other.pdf".to_owned(), "failed".to_owned(), Some("FILE_CHANGED".to_owned())),
+                    ("/new/short.pdf".to_owned(), "failed".to_owned(), Some("FILE_CHANGED".to_owned())),
+                ],
+                "items {got:?}"
+            );
+            // The wrong size is never sent; the wrong bytes are sent once, not retried.
+            let keys: Vec<String> = form_posts(m)
+                .await
+                .iter()
+                .filter_map(|p| {
+                    p["form"]
+                        .as_array()
+                        .and_then(|f| f.iter().find(|x| str_at(x, "name") == "file"))
+                        .map(|x| str_at(x, "fileName").to_owned())
+                })
+                .collect();
+            let mut keys = keys;
+            keys.sort();
+            ensure!(keys == ["ok.pdf", "other.pdf"], "uploads {keys:?}");
+            ensure!(failed.lock().unwrap().len() == 2, "on_item {:?}", failed.lock().unwrap());
+            Ok(())
+        }),
+        "batch-upload.upload-failed" => Box::pin(async move {
+            m.faults(json!({"failUploads": {"/new/b.pdf": true}})).await;
+            let c = client(m);
+            let batch = hand_batch(
+                &c,
+                vec![ingest_item("/new/a.pdf", b"alpha"), ingest_item("/new/b.pdf", b"bravo")],
+                true,
+            )
+            .await?;
+            let seen = Arc::new(Mutex::new(Vec::new()));
+            let log = seen.clone();
+            let done = batch
+                .upload([("/new/a.pdf", pdf("a.pdf", b"alpha")), ("/new/b.pdf", pdf("b.pdf", b"bravo"))])
+                .on_item(move |it: &IngestionBatchItem| {
+                    log.lock()
+                        .unwrap()
+                        .push((it.path.clone().unwrap_or_default(), it.failure_code.clone()))
+                })
+                .await
+                .map_err(s)?;
+            let b = done
+                .result()
+                .items
+                .iter()
+                .find(|i| i.path.as_deref() == Some("/new/b.pdf"))
+                .ok_or("no b")?;
+            ensure!(
+                b.status.as_str() == "failed" && b.failure_code.as_deref() == Some("UPLOAD_FAILED"),
+                "b {b:?}"
+            );
+            ensure!(
+                *seen.lock().unwrap() == [("/new/b.pdf".to_owned(), Some("UPLOAD_FAILED".to_owned()))],
+                "on_item {:?}",
+                seen.lock().unwrap()
+            );
+            ensure!(
+                completed_ids(m).await.iter().flatten().all(|id| *id != b.id),
+                "b was reported to Complete"
+            );
+            let a = done
+                .result()
+                .items
+                .iter()
+                .find(|i| i.path.as_deref() == Some("/new/a.pdf"))
+                .ok_or("no a")?;
+            ensure!(a.status.as_str() == "ingesting", "a {a:?}");
+            Ok(())
+        }),
+        "batch-upload.policy-renewal" => Box::pin(async move {
+            // A policy with less than five minutes left is renewed before the next upload.
+            m.faults(json!({"renewedPolicySeconds": 120})).await;
+            let c = client(m);
+            let batch = hand_batch(&c, vec![ingest_item("/new/a.pdf", b"alpha")], true).await?;
+            batch.upload([("/new/a.pdf", pdf("a.pdf", b"alpha"))]).await.map_err(s)?;
+            let policies = m.matching(|r| str_at(r, "path").ends_with("/upload-policies")).await.len();
+            ensure!(
+                policies == 2,
+                "{policies} CreateIngestionBatchUploadPolicy calls: the first, then its renewal"
+            );
+            // A 403 that says the policy expired: renewed once, and that file sent again.
+            m.reset().await;
+            m.faults(json!({"firstCreatedPolicyExpired": true})).await;
+            let c = client(m);
+            let batch = hand_batch(&c, vec![ingest_item("/new/a.pdf", b"alpha")], true).await?;
+            let done = batch.upload([("/new/a.pdf", pdf("a.pdf", b"alpha"))]).await.map_err(s)?;
+            let policies = m.matching(|r| str_at(r, "path").ends_with("/upload-policies")).await.len();
+            let posts = form_posts(m).await.len();
+            ensure!(
+                policies == 2 && posts == 2 && done.result().items.len() == 1 && done.result().items[0].status.as_str() == "ingesting",
+                "{policies} policies, {posts} uploads, result {:?}",
+                done.result()
+            );
+            Ok(())
+        }),
+        "batch-upload.checksum-mismatch" => Box::pin(async move {
+            m.faults(json!({"checksumMismatch": {"/new/a.pdf": 1, "/new/b.pdf": 2}})).await;
+            let c = client(m);
+            let batch = hand_batch(
+                &c,
+                vec![ingest_item("/new/a.pdf", b"alpha"), ingest_item("/new/b.pdf", b"bravo")],
+                true,
+            )
+            .await?;
+            let seen = Arc::new(Mutex::new(Vec::new()));
+            let log = seen.clone();
+            let done = batch
+                .upload([("/new/a.pdf", pdf("a.pdf", b"alpha")), ("/new/b.pdf", pdf("b.pdf", b"bravo"))])
+                .on_item(move |it: &IngestionBatchItem| log.lock().unwrap().push(it.failure_code.clone()))
+                .await
+                .map_err(s)?;
+            let status = |p: &str| {
+                done.result()
+                    .items
+                    .iter()
+                    .find(|i| i.path.as_deref() == Some(p))
+                    .map(|i| (i.status.as_str().to_owned(), i.failure_code.clone()))
+            };
+            ensure!(
+                status("/new/a.pdf") == Some(("ingesting".to_owned(), None)),
+                "a {:?}",
+                status("/new/a.pdf")
+            );
+            ensure!(
+                status("/new/b.pdf") == Some(("failed".to_owned(), Some("CHECKSUM_MISMATCH".to_owned()))),
+                "b {:?}",
+                status("/new/b.pdf")
+            );
+            ensure!(form_posts(m).await.len() == 4, "{} uploads: each twice", form_posts(m).await.len());
+            ensure!(
+                *seen.lock().unwrap() == [Some("CHECKSUM_MISMATCH".to_owned())],
+                "on_item {:?}",
+                seen.lock().unwrap()
+            );
+            Ok(())
+        }),
+        "batch-upload.second-call" => Box::pin(async move {
+            let c = client(m);
+            let batch = hand_batch(
+                &c,
+                vec![ingest_item("/new/a.pdf", b"alpha"), ingest_item("/new/b.pdf", b"bravo")],
+                true,
+            )
+            .await?;
+            let files = || BatchFiles::by_path([("/new/a.pdf", pdf("a.pdf", b"alpha")), ("/new/b.pdf", pdf("b.pdf", b"bravo"))]);
+            let first = batch.upload([("/new/a.pdf", pdf("a.pdf", b"alpha"))]).await.map_err(s)?;
+            ensure!(first.result().not_given == ["/new/b.pdf"], "first {:?}", first.result());
+            let second = batch.upload(files()).await.map_err(s)?;
+            let r = second.result();
+            ensure!(
+                r.items.len() == 1 && r.items[0].path.as_deref() == Some("/new/b.pdf") && r.unmatched == ["/new/a.pdf"],
+                "second {r:?}"
+            );
+            ensure!(form_posts(m).await.len() == 2, "{} uploads", form_posts(m).await.len());
+            Ok(())
+        }),
+        "batch-upload.result" => Box::pin(async move {
+            let c = client(m);
+            let batch = hand_batch(
+                &c,
+                vec![ingest_item("/new/a.pdf", b"alpha"), ingest_item("/new/b.pdf", b"bravo")],
+                true,
+            )
+            .await?;
+            let started = batch
+                .upload([("/new/a.pdf", pdf("a.pdf", b"alpha")), ("/new/x.pdf", pdf("x.pdf", b"x"))])
+                .await
+                .map_err(s)?;
+            let r: &BatchUpload = started.result();
+            let _: &IngestionBatch = &r.batch;
+            let _: &Vec<IngestionBatchItem> = &r.items;
+            ensure!(
+                r.batch.id == batch.id()
+                    && r.items.len() == 1
+                    && r.items[0].status.as_str() == "ingesting"
+                    && r.not_given == ["/new/b.pdf"]
+                    && r.unmatched == ["/new/x.pdf"],
+                "result {r:?}"
+            );
+            let rest = batch.upload([("/new/b.pdf", pdf("b.pdf", b"bravo"))]).wait().await.map_err(s)?;
+            let _: &IngestionBatch = &rest;
+            ensure!(rest.id == batch.id() && rest.status.as_str() == "succeeded", "waited {rest:?}");
+            Ok(())
+        }),
+        "batch-upload.cancel" => Box::pin(async move {
+            m.faults(json!({"uploadDelayMs": 2000})).await;
+            let c = client(m);
+            let batch = hand_batch(
+                &c,
+                vec![ingest_item("/new/a.pdf", b"alpha"), ingest_item("/new/b.pdf", b"bravo")],
+                true,
+            )
+            .await?;
+            let token = CancellationToken::new();
+            let t = token.clone();
+            let b2 = batch.clone();
+            let call = tokio::spawn(async move {
+                b2.upload([("/new/a.pdf", pdf("a.pdf", b"alpha")), ("/new/b.pdf", pdf("b.pdf", b"bravo"))])
+                    .cancel_on(t)
+                    .await
+            });
+            let t0 = Instant::now();
+            while form_posts(m).await.len() < 2 {
+                ensure!(t0.elapsed() < Duration::from_secs(5), "the uploads never started");
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            token.cancel();
+            let r = call.await.map_err(s)?;
+            ensure!(matches!(r, Err(Error::Cancelled)), "got {:?}", r.err());
+            ensure!(
+                t0.elapsed() < Duration::from_millis(1500),
+                "the uploads were waited for, not aborted"
+            );
+            let t1 = Instant::now();
+            while m.matching(|r| str_at(r, "event") == "upload-aborted").await.len() < 2 {
+                ensure!(t1.elapsed() < Duration::from_secs(4), "the mock saw no aborted upload");
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            ensure!(
+                m.matching(|r| str_at(r, "path").ends_with("/cancel")).await.is_empty(),
+                "the batch was cancelled"
+            );
+            ensure!(completed_ids(m).await.is_empty(), "an upload was reported");
+            Ok(())
+        }),
+        "sync.concurrency" => Box::pin(async move {
+            m.faults(json!({"uploadDelayMs": 150})).await;
+            let items = (0..10)
+                .map(|i| SyncItem::file(format!("/new/f{i}.pdf"), pdf(&format!("f{i}.pdf"), format!("file {i}").as_bytes())))
+                .collect();
+            client(m)
+                .knowledge_base(KB)
+                .ingestion()
+                .sync(SyncInput::items(items))
+                .await
+                .map_err(s)?;
+            let up = m.get("/__mock/uploads").await;
+            ensure!(up["maxInFlight"] == 6, "most at once {}", up["maxInFlight"]);
+            Ok(())
+        }),
+        "sync.complete-groups" => Box::pin(async move {
+            let items = (0..150)
+                .map(|i| SyncItem::file(format!("/new/g{i}.pdf"), pdf(&format!("g{i}.pdf"), format!("group {i}").as_bytes())))
+                .collect();
+            let report = client(m)
+                .knowledge_base(KB)
+                .ingestion()
+                .sync(SyncInput::items(items))
+                .await
+                .map_err(s)?;
+            let groups: Vec<usize> = bodies(m, "POST", "complete-uploads")
+                .await
+                .iter()
+                .map(|b| b["itemIds"].as_array().map(Vec::len).unwrap_or(0))
+                .collect();
+            ensure!(
+                !groups.is_empty() && groups.iter().all(|n| (1..=100).contains(n)),
+                "groups {groups:?}"
+            );
+            ensure!(
+                groups.iter().sum::<usize>() == 150 && report.items.len() == 150,
+                "groups {groups:?}"
+            );
+            Ok(())
+        }),
+        "sync.policy-renewal" => Box::pin(async move {
+            // A policy with two minutes left is renewed before the first upload.
+            m.faults(json!({"policySeconds": 120})).await;
+            let items = vec![SyncItem::file("/new/r1.pdf", pdf("r1.pdf", b"renew one"))];
+            client(m)
+                .knowledge_base(KB)
+                .ingestion()
+                .sync(SyncInput::items(items))
+                .await
+                .map_err(s)?;
+            let all = m.requests().await;
+            let renew = all.iter().position(|r| str_at(r, "path").ends_with("/upload-policies"));
+            let post = all.iter().position(|r| str_at(r, "path") == "/__s3/");
+            ensure!(renew.is_some() && renew < post, "renewal {renew:?}, first upload {post:?}");
+            // A 403 saying the policy expired renews it once, and the file is sent again.
+            m.reset().await;
+            m.faults(json!({"startPolicyExpired": true})).await;
+            let items = (0..3)
+                .map(|i| {
+                    SyncItem::file(
+                        format!("/new/e{i}.pdf"),
+                        pdf(&format!("e{i}.pdf"), format!("expired {i}").as_bytes()),
+                    )
+                })
+                .collect();
+            let report = client(m)
+                .knowledge_base(KB)
+                .ingestion()
+                .sync(SyncInput::items(items))
+                .await
+                .map_err(s)?;
+            let renewals = m.matching(|r| str_at(r, "path").ends_with("/upload-policies")).await.len();
+            let posts = m.matching(|r| str_at(r, "path") == "/__s3/").await.len();
+            ensure!(renewals == 1 && posts == 6, "{renewals} renewals, {posts} uploads");
+            ensure!(
+                report.items.iter().all(|i| i.status.as_str() == "indexed"),
+                "items {:?}",
+                report.items
+            );
+            Ok(())
+        }),
+        "sync.checksum-mismatch" => Box::pin(async move {
+            m.faults(json!({"checksumMismatch": {"/new/a.pdf": 1}})).await;
+            let items = vec![
+                SyncItem::file("/new/a.pdf", pdf("a.pdf", b"aaaa")),
+                SyncItem::file("/new/b.pdf", pdf("b.pdf", b"bbbb")),
+            ];
+            let report = client(m)
+                .knowledge_base(KB)
+                .ingestion()
+                .sync(SyncInput::items(items))
+                .await
+                .map_err(s)?;
+            let posts = m.matching(|r| str_at(r, "path") == "/__s3/").await;
+            let a_posts = posts
+                .iter()
+                .filter(|p| {
+                    p["form"]
+                        .as_array()
+                        .and_then(|f| f.last())
+                        .is_some_and(|f| f["fileName"] == "a.pdf")
+                })
+                .count();
+            let a_id = report
+                .items
+                .iter()
+                .find(|i| i.path.as_deref() == Some("/new/a.pdf"))
+                .map(|i| i.id.clone())
+                .unwrap_or_default();
+            let a_completes = bodies(m, "POST", "complete-uploads")
+                .await
+                .iter()
+                .filter(|b| b["itemIds"].as_array().is_some_and(|ids| ids.iter().any(|x| x == &json!(a_id))))
+                .count();
+            ensure!(
+                a_posts == 2 && a_completes == 2 && posts.len() == 3,
+                "a uploaded {a_posts}, completed {a_completes}; {} uploads",
+                posts.len()
+            );
+            ensure!(
+                report.items.iter().all(|i| i.status.as_str() == "indexed"),
+                "items {:?}",
+                report.items
+            );
+            Ok(())
+        }),
+        "sync.estimate-unresolved" => Box::pin(async move {
+            // a.pdf is a conflict the policy leaves unresolved, b.pdf is new, and policy-5 is removed: the estimate
+            // confirm sees (before the resolver runs) prices a and b, the most the batch could cost, not the removal.
+            m.faults(json!({"planConflicts": {"/new/a.pdf": "duplicate_path"}})).await;
+            let c = client(m);
+            let seen = Arc::new(Mutex::new(None));
+            let keep = seen.clone();
+            let resolved = Arc::new(AtomicUsize::new(0));
+            let r = resolved.clone();
+            let input = SyncInput::items(vec![
+                SyncItem::file("/new/a.pdf", pdf("a.pdf", b"conflict a")),
+                SyncItem::file("/new/b.pdf", pdf("b.pdf", b"plain b")),
+                SyncItem::remove("/policies/policy-5.pdf"),
+            ])
+            .confirm(move |p: &SyncPlan| {
+                let unresolved = p
+                    .items
+                    .iter()
+                    .filter(|i| i.resolution.as_ref().map(|r| r.as_str()) == Some("unresolved"))
+                    .count();
+                *keep.lock().unwrap() = Some((p.estimate.as_ref().map(|e| e.documents), unresolved));
+                false
+            })
+            .resolver(move |_: &IngestionBatchItem| {
+                r.fetch_add(1, Ordering::SeqCst);
+                Some(IngestionItemResolution::Overwrite)
+            });
+            let _ = c.knowledge_base(KB).ingestion().sync(input).await;
+            let got = *seen.lock().unwrap();
+            ensure!(
+                got == Some((Some(2), 1)) && resolved.load(Ordering::SeqCst) == 0,
+                "confirm saw {got:?}"
+            );
+            let names: Vec<Vec<String>> = estimate_calls(m)
+                .await
+                .iter()
+                .map(|ds| ds.iter().map(|d| str_at(d, "name").to_owned()).collect())
+                .collect();
+            ensure!(names == [vec!["a.pdf".to_owned(), "b.pdf".to_owned()]], "sync priced {names:?}");
+            // batch.estimate_upload prices the same items.
+            m.reset().await;
+            m.faults(json!({"planConflicts": {"/new/a.pdf": "duplicate_path"}})).await;
+            let c = client(m);
+            let batch = hand_batch(
+                &c,
+                vec![
+                    ingest_item("/new/a.pdf", b"conflict a"),
+                    ingest_item("/new/b.pdf", b"plain b"),
+                    remove_item("/policies/policy-5.pdf"),
+                ],
+                false,
+            )
+            .await?;
+            let est = batch.estimate_upload().await.map_err(s)?;
+            let names: Vec<Vec<String>> = estimate_calls(m)
+                .await
+                .iter()
+                .map(|ds| ds.iter().map(|d| str_at(d, "name").to_owned()).collect())
+                .collect();
+            ensure!(
+                est.documents == 2 && names == [vec!["a.pdf".to_owned(), "b.pdf".to_owned()]],
+                "estimate_upload priced {names:?}"
+            );
+            Ok(())
+        }),
+        "sync.resolve" => Box::pin(async move {
+            m.faults(json!({"planConflicts": {"/new/a.pdf": "duplicate_path", "/new/b.pdf": "path_taken"}}))
+                .await;
+            let files = || {
+                vec![
+                    SyncItem::file("/new/a.pdf", pdf("a.pdf", b"conflict a")),
+                    SyncItem::file("/new/b.pdf", pdf("b.pdf", b"conflict b")),
+                    SyncItem::file("/new/c.pdf", pdf("c.pdf", b"plain c")),
+                ]
+            };
+            let input = SyncInput::items(files()).resolver(|it: &IngestionBatchItem| match it.path.as_deref() {
+                Some("/new/a.pdf") => Some(IngestionItemResolution::Overwrite),
+                _ => Some(IngestionItemResolution::Add),
+            });
+            let report = client(m).knowledge_base(KB).ingestion().sync(input).await.map_err(s)?;
+            let sent: Vec<String> = bodies(m, "PATCH", "/items/")
+                .await
+                .iter()
+                .map(|b| str_at(b, "resolution").to_owned())
+                .collect();
+            ensure!(
+                sent.len() == 2 && sent.contains(&"overwrite".to_owned()) && sent.contains(&"add".to_owned()),
+                "resolutions {sent:?}"
+            );
+            ensure!(
+                report.items.iter().all(|i| i.status.as_str() == "indexed"),
+                "items {:?}",
+                report.items
+            );
+            m.reset().await;
+            m.faults(json!({"planConflicts": {"/new/a.pdf": "duplicate_path"}})).await;
+            let r = client(m).knowledge_base(KB).ingestion().sync(SyncInput::items(files())).await;
+            ensure!(
+                r.as_ref().err().and_then(Error::code) == Some("INGESTION_BATCH_UNRESOLVED"),
+                "got {:?}",
+                r.err()
+            );
+            let batches = client(m)
+                .knowledge_base(KB)
+                .ingestion()
+                .batches()
+                .list()
+                .collect()
+                .await
+                .map_err(s)?;
+            ensure!(batches.len() == 1 && batches[0].status.as_str() == "planned", "batches {batches:?}");
+            ensure!(
+                m.matching(|r| str_at(r, "path").ends_with("/start")).await.is_empty(),
+                "the batch was started"
+            );
+            Ok(())
+        }),
+        "sync.confirm" => Box::pin(async move {
+            let saw = Arc::new(Mutex::new(Vec::new()));
+            let seen = saw.clone();
+            let input = SyncInput::items(vec![SyncItem::file("/new/a.pdf", pdf("a.pdf", b"maybe"))]).confirm(move |plan: &SyncPlan| {
+                seen.lock()
+                    .unwrap()
+                    .push((plan.batch.status.as_str().to_owned(), plan.batch.item_count));
+                false
+            });
+            let r = client(m).knowledge_base(KB).ingestion().sync(input).await;
+            let e = r.err().ok_or("the sync went on")?;
+            // Declined: the SDK's own CANCELLED (status 0), with the report as planned.
+            ensure!(
+                e.code() == Some("CANCELLED")
+                    && e.status() == Some(0)
+                    && e.report()
+                        .is_some_and(|r| r.items.len() == 1 && r.batch.status.as_str() == "planned"),
+                "got {e:?}"
+            );
+            let cancels = m.matching(|r| str_at(r, "path").ends_with("/cancel")).await;
+            ensure!(
+                *saw.lock().unwrap() == [("planned".to_owned(), 1)],
+                "confirm saw {:?}",
+                saw.lock().unwrap()
+            );
+            ensure!(cancels.len() == 1, "{} cancels", cancels.len());
+            ensure!(
+                m.matching(|r| str_at(r, "path").ends_with("/start") || str_at(r, "path") == "/__s3/")
+                    .await
+                    .is_empty(),
+                "the batch went on"
+            );
+            Ok(())
+        }),
+        "sync.remove-missing" => Box::pin(async move {
+            let dir = folder_of(&[("policy-1.pdf", "doc1"), ("new-one.pdf", "a new one")]);
+            let input = SyncInput::dir(&dir).folder("/policies/").remove_missing(true);
+            client(m).knowledge_base(KB).ingestion().sync(input).await.map_err(s)?;
+            let create = bodies(m, "POST", &format!("/v3/knowledge-bases/{KB}/ingestion-batches"))
+                .await
+                .remove(0);
+            let items = create["items"].as_array().cloned().unwrap_or_default();
+            let mut removed: Vec<String> = items
+                .iter()
+                .filter(|i| i["action"] == "remove")
+                .map(|i| str_at(i, "path").to_owned())
+                .collect();
+            removed.sort();
+            let want: Vec<String> = (2..=7).map(|i| format!("/policies/policy-{i}.pdf")).collect();
+            ensure!(removed == want, "removed {removed:?}");
+            ensure!(items.iter().filter(|i| i["action"] == "ingest").count() == 2, "items {items:?}");
+            let listed = m
+                .matching(|r| str_at(r, "path") == format!("/v3/knowledge-bases/{KB}/documents") && str_at(r, "method") == "GET")
+                .await;
+            ensure!(
+                listed
+                    .iter()
+                    .any(|r| str_at(r, "query").contains("filter%5Bfolder%5D%5Beq%5D=%2Fpolicies%2F")),
+                "list {listed:?}"
+            );
+            Ok(())
+        }),
+        "sync.progress" => Box::pin(async move {
+            m.faults(json!({"ingestReads": 1})).await;
+            let phases = Arc::new(Mutex::new(Vec::<(String, u64, u64)>::new()));
+            let items_seen = Arc::new(AtomicUsize::new(0));
+            let (p, n) = (phases.clone(), items_seen.clone());
+            let dir = folder_of(&[("a.pdf", "alpha"), ("b.pdf", "bravo!"), ("c.pdf", "charlie")]);
+            let input = SyncInput::dir(&dir)
+                .folder("/new/")
+                .on_progress(move |e: &IngestionProgress| p.lock().unwrap().push((e.phase.as_str().to_owned(), e.done, e.total)))
+                .on_item(move |_| {
+                    n.fetch_add(1, Ordering::SeqCst);
+                });
+            client(m).knowledge_base(KB).ingestion().sync(input).await.map_err(s)?;
+            let all = phases.lock().unwrap().clone();
+            let mut order: Vec<String> = Vec::new();
+            for (ph, _, _) in &all {
+                if order.last() != Some(ph) {
+                    order.push(ph.clone());
+                }
+            }
+            // Bytes are sent once the batch is planned and started, so upload follows planned (PROTOCOL.md 15's steps).
+            ensure!(
+                order == ["checksum", "planning", "planned", "upload", "queued", "processing", "succeeded"],
+                "phases {order:?}"
+            );
+            let last_upload = all.iter().rev().find(|(ph, _, _)| ph == "upload").cloned().unwrap_or_default();
+            ensure!(last_upload.1 == 18 && last_upload.2 == 18, "upload bytes {last_upload:?}");
+            let last_checksum = all.iter().rev().find(|(ph, _, _)| ph == "checksum").cloned().unwrap_or_default();
+            ensure!(last_checksum.1 == 3 && last_checksum.2 == 3, "checksum {last_checksum:?}");
+            ensure!(
+                items_seen.load(Ordering::SeqCst) == 3,
+                "on_item {}",
+                items_seen.load(Ordering::SeqCst)
+            );
+            Ok(())
+        }),
+        "sync.plan-failed" => Box::pin(async move {
+            // A plan that ends the batch failed returns the batch's own failure (code and message); nothing starts.
+            let cases = [
+                (
+                    json!({"planConflicts": {"/new/a.pdf": "duplicate_path"}}),
+                    "conflict_policy_fail",
+                    "policy rule is `fail`",
+                ),
+                (json!({"planFails": true}), "planning_failed", "Planning could not finish"),
+            ];
+            for (faults, code, says) in cases {
+                m.reset().await;
+                m.faults(faults).await;
+                let items = vec![SyncItem::file("/new/a.pdf", pdf("a.pdf", b"alpha"))];
+                let policy = IngestionPolicy {
+                    on_conflict: Some(ConflictRules {
+                        default: Some(ConflictRule::Fail),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                };
+                let r = client(m)
+                    .knowledge_base(KB)
+                    .ingestion()
+                    .sync(SyncInput::items(items).policy(policy))
+                    .await;
+                ensure!(
+                    matches!(&r, Err(e) if e.code() == Some(code) && e.to_string().contains(says)),
+                    "got {:?}, want {code}: {says}",
+                    r.err()
+                );
+                ensure!(
+                    m.matching(|r| str_at(r, "path").ends_with("/start")).await.is_empty(),
+                    "the batch was started"
+                );
+            }
+            Ok(())
+        }),
+        "sync.cancel" => Box::pin(async move {
+            m.faults(json!({"uploadDelayMs": 300})).await;
+            let token = CancellationToken::new();
+            let finished = Arc::new(AtomicUsize::new(0));
+            let f = finished.clone();
+            let items = (0..16)
+                .map(|i| {
+                    SyncItem::file(
+                        format!("/new/x{i}.pdf"),
+                        pdf(&format!("x{i}.pdf"), format!("cancel {i}").as_bytes()),
+                    )
+                })
+                .collect();
+            // Uploads that finished, as on_progress reports them: on_item reaches an item only once it is final.
+            let uploaded = Arc::new(AtomicUsize::new(0));
+            let u = uploaded.clone();
+            let input = SyncInput::items(items)
+                .cancel_ingestion(true)
+                .on_item(move |_| {
+                    f.fetch_add(1, Ordering::SeqCst);
+                })
+                .on_progress(move |p: &IngestionProgress| {
+                    if p.phase.as_str() == "upload" && p.item.is_some() {
+                        u.fetch_add(1, Ordering::SeqCst);
+                    }
+                });
+            let c = client(m);
+            let t = token.clone();
+            let call = tokio::spawn(async move { c.knowledge_base(KB).ingestion().sync(input).cancel_on(t).await });
+            // Cancel once the first six have finished and the next uploads are held in flight by the mock.
+            let t0 = Instant::now();
+            while uploaded.load(Ordering::SeqCst) < 6 || m.matching(|r| str_at(r, "path") == "/__s3/").await.len() < 7 {
+                ensure!(t0.elapsed() < Duration::from_secs(5), "uploads never got going");
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            token.cancel();
+            let r = call.await.map_err(s)?;
+            ensure!(r.as_ref().err().is_some_and(Error::is_cancelled), "got {:?}", r.err());
+            // No item was final before the cancellation (accepted uploads are not), so none reached on_item, and none
+            // reaches it after the cancellation error.
+            ensure!(
+                finished.load(Ordering::SeqCst) == 0,
+                "{} items reached on_item",
+                finished.load(Ordering::SeqCst)
+            );
+            let posts = m.matching(|r| str_at(r, "path") == "/__s3/").await.len();
+            ensure!(posts < 16, "{posts} uploads started");
+            let cancel = bodies(m, "POST", "/cancel").await;
+            ensure!(cancel.len() == 1 && cancel[0] == json!({"stopRunning": true}), "cancel {cancel:?}");
+            // Uploads in flight were aborted: the mock logs each as it lets go of it, and stores nothing for it.
+            let t0 = Instant::now();
+            loop {
+                let aborted = m.matching(|r| r["event"] == "upload-aborted").await.len();
+                let stored = m.get("/__mock/uploads").await["objects"].as_array().map(Vec::len).unwrap_or(0);
+                if aborted + stored >= posts {
+                    ensure!(aborted >= 1, "{stored} stored of {posts} started, none aborted");
+                    break;
+                }
+                ensure!(
+                    t0.elapsed() < Duration::from_secs(5),
+                    "{aborted} aborted, {stored} stored of {posts}"
+                );
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            Ok(())
+        }),
         _ => return None,
     })
 }
 
+// ---------------------------------------------------------------------------------------------- files and ingest
+
+fn pdf(name: &str, data: &[u8]) -> UploadFile {
+    UploadFile::from_bytes(name.to_owned(), data.to_vec())
+}
+
+/// A batch item that ingests these bytes at `path`, as a caller builds it by hand: its SHA-256, size and type.
+fn ingest_item(path: &str, data: &[u8]) -> IngestionItemInput {
+    let dir = std::env::temp_dir();
+    let sha = futures_util::FutureExt::now_or_never(caitlyn_sdk_core::PreparedFile::read(&pdf("x.pdf", data), &dir))
+        .and_then(Result::ok)
+        .map(|p| p.sha256().to_owned())
+        .unwrap_or_default();
+    serde_json::from_value(json!({
+        "action": "ingest", "path": path, "sha256": sha, "byteSize": data.len(), "contentType": "application/pdf"
+    }))
+    .unwrap_or_default()
+}
+
+fn remove_item(path: &str) -> IngestionItemInput {
+    serde_json::from_value(json!({"action": "remove", "path": path})).unwrap_or_default()
+}
+
+/// A hand-built batch with a manual start, planned; started too when `start` is true.
+async fn hand_batch(c: &Client, items: Vec<IngestionItemInput>, start: bool) -> Result<scope::BatchScope, String> {
+    let batch = c
+        .knowledge_base(KB)
+        .ingestion()
+        .batches()
+        .create()
+        .start(StartMode::Manual)
+        .items(items)
+        .await
+        .map_err(s)?
+        .into_scope();
+    batch.planned().await.map_err(s)?;
+    if start {
+        batch.start().await.map_err(s)?;
+    }
+    Ok(batch)
+}
+
+/// The documents each EstimateIngestion call described, call by call.
+async fn estimate_calls(m: &Mock) -> Vec<Vec<Value>> {
+    bodies(m, "POST", &format!("/v3/knowledge-bases/{KB}/ingestions:estimate"))
+        .await
+        .iter()
+        .map(|b| b["documents"].as_array().cloned().unwrap_or_default())
+        .collect()
+}
+
+/// The form uploads the mock received.
+async fn form_posts(m: &Mock) -> Vec<Value> {
+    m.matching(|r| str_at(r, "method") == "POST" && str_at(r, "path") == "/__s3/").await
+}
+
+/// The item ids each CompleteIngestionBatchUploads call reported.
+async fn completed_ids(m: &Mock) -> Vec<Vec<String>> {
+    m.matching(|r| str_at(r, "path").ends_with("/complete-uploads"))
+        .await
+        .iter()
+        .map(|r| {
+            let b: Value = serde_json::from_str(str_at(r, "body")).unwrap_or_default();
+            b["itemIds"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .collect()
+}
+
+/// The JSON bodies of the requests with this method whose path contains `path`, in order.
+async fn bodies(m: &Mock, method: &str, path: &str) -> Vec<Value> {
+    m.matching(|r| str_at(r, "method") == method && str_at(r, "path").contains(path))
+        .await
+        .iter()
+        .map(|r| serde_json::from_str(str_at(r, "body")).unwrap_or(Value::Null))
+        .collect()
+}
+
+/// A new, empty directory under build/rust-conformance-tmp.
+fn fresh_dir(name: &str) -> PathBuf {
+    static N: AtomicUsize = AtomicUsize::new(0);
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let dir = root().join(format!(
+        "build/rust-conformance-tmp/{name}-{stamp}-{}",
+        N.fetch_add(1, Ordering::SeqCst)
+    ));
+    std::fs::create_dir_all(&dir).expect("tmp dir");
+    dir
+}
+
+/// A folder holding these files, by relative path.
+fn folder_of(files: &[(&str, &str)]) -> PathBuf {
+    let dir = fresh_dir("ingest");
+    for (rel, text) in files {
+        let p = dir.join(rel);
+        std::fs::create_dir_all(p.parent().expect("parent")).expect("tmp dir");
+        std::fs::write(p, text).expect("tmp file");
+    }
+    dir
+}
+
+/// A one-shot reader of `left` bytes. Once it has handed over more than 8 MiB and a chunk, it records how many files
+/// the spool directory holds and the first one's mode.
+struct Generated {
+    left: usize,
+    sent: usize,
+    dir: PathBuf,
+    seen: Arc<Mutex<Option<(usize, u32)>>>,
+}
+
+impl tokio::io::AsyncRead for Generated {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        if self.sent > 8 * 1024 * 1024 + 256 * 1024 && self.seen.lock().unwrap().is_none() {
+            let files: Vec<_> = std::fs::read_dir(&self.dir).map(|d| d.flatten().collect()).unwrap_or_default();
+            #[cfg(unix)]
+            let mode = {
+                use std::os::unix::fs::PermissionsExt;
+                files
+                    .first()
+                    .and_then(|f| f.metadata().ok())
+                    .map(|m| m.permissions().mode() & 0o777)
+                    .unwrap_or(0)
+            };
+            #[cfg(not(unix))]
+            let mode = 0o600;
+            *self.seen.lock().unwrap() = Some((files.len(), mode));
+        }
+        let n = buf.remaining().min(self.left).min(32 * 1024);
+        let start = self.sent;
+        let chunk: Vec<u8> = (start..start + n).map(|i| (i % 251) as u8).collect();
+        buf.put_slice(&chunk);
+        self.left -= n;
+        self.sent += n;
+        std::task::Poll::Ready(Ok(()))
+    }
+}
+
 // ---------------------------------------------------------------------------------------------- example cases
 
-fn labels(input: &Value, k: &str) -> String {
-    str_at(input, k).to_owned()
+/// An input member bound to the path, the query or a header, read from the example's input as its own type.
+fn field<T: serde::de::DeserializeOwned + Default>(input: &Value, k: &str) -> T {
+    input
+        .get(k)
+        .cloned()
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default()
 }
 
 fn opt(input: &Value, k: &str) -> Option<String> {
@@ -1855,213 +4934,1530 @@ async fn take<E, F: Clone>(s: &mut caitlyn_sdk_core::Stream<E, F, Error>, mut st
 }
 
 /// Calls the operation with an example's input. A new operation in the model fails until it has an entry here.
+/// Calls the operation with an example's input, through the scope tree (PROTOCOL.md 10): the input's identifiers make
+/// the scope, and the rest is set with `input(…)`. A new operation in the model fails until it has an entry here.
 async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Value, Error>> {
-    let body = |_: ()| input.clone();
     Some(match op {
-        "CreateConversation" => {
-            let i: CreateConversationInput = serde_json::from_value(body(())).ok()?;
-            c.conversations()
-                .create(i)
+        "BatchCreateIngestionBatchItems" => {
+            let mut i: BatchCreateIngestionBatchItemsInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.ingestion_batch_id = field(input, "ingestionBatchId");
+            c.core()
+                .ingestion()
+                .add_items(
+                    field::<String>(input, "knowledgeBaseId"),
+                    field::<String>(input, "ingestionBatchId"),
+                    Vec::<IngestionItemInput>::new(),
+                )
+                .input(i)
                 .options(options(input))
+                .send()
                 .await
-                .map(|o| with_headers(&o, &[("location", o.location.as_deref()), ("requestId", o.request_id.as_deref())]))
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                    )
+                })
+        }
+        "BatchDeleteDocuments" => {
+            let mut i: BatchDeleteDocumentsInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .documents()
+                .delete_many(Vec::<String>::new())
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                    )
+                })
+        }
+        "CancelDocumentProcessing" => {
+            let mut i: CancelDocumentProcessingInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.document_id = field(input, "documentId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .document(field::<String>(input, "documentId"))
+                .cancel_processing()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| o.into_output())
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "CancelIngestionBatch" => {
+            let mut i: CancelIngestionBatchInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.ingestion_batch_id = field(input, "ingestionBatchId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .ingestion()
+                .batch(field::<String>(input, "ingestionBatchId"))
+                .cancel()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| o.into_output())
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "CancelOperation" => {
+            let mut i: CancelOperationInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.operation_id = field(input, "operationId");
+            c.core()
+                .operation(field::<String>(input, "knowledgeBaseId"), field::<String>(input, "operationId"))
+                .cancel()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[]))
+        }
+        "CompareAgentVersions" => {
+            let mut i: CompareAgentVersionsInput = serde_json::from_value(input.clone()).ok()?;
+            i.agent_id = field(input, "agentId");
+            i.version = field(input, "version");
+            i.with_version = field(input, "withVersion");
+            c.agent(field::<String>(input, "agentId"))
+                .version(field::<String>(input, "version"))
+                .compare(field::<String>(input, "withVersion"))
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                    )
+                })
+        }
+        "CompleteIngestionBatchUploads" => {
+            let mut i: CompleteIngestionBatchUploadsInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.ingestion_batch_id = field(input, "ingestionBatchId");
+            c.core()
+                .ingestion()
+                .complete_uploads(
+                    field::<String>(input, "knowledgeBaseId"),
+                    field::<String>(input, "ingestionBatchId"),
+                    Vec::<String>::new(),
+                )
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                    )
+                })
+        }
+        "CreateAgent" => {
+            let i: CreateAgentInput = serde_json::from_value(input.clone()).ok()?;
+            c.agents()
+                .create(field::<String>(input, "name"))
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    let o = o.result();
+                    with_headers(o, &[("etag", Some(o.etag.as_str()))])
+                })
+        }
+        "CreateConversation" => {
+            let mut i: CreateConversationInput = serde_json::from_value(input.clone()).ok()?;
+            i.agent_id = field(input, "agentId");
+            i.version = field(input, "version");
+            c.agent(field::<String>(input, "agentId"))
+                .version(field::<String>(input, "version"))
+                .conversations()
+                .create()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    let o = o.result();
+                    with_headers(o, &[])
+                })
         }
         "CreateDocument" => {
-            let mut i: CreateDocumentInput = serde_json::from_value(body(())).ok()?;
-            i.knowledge_base_id = labels(input, "knowledgeBaseId");
-            c.documents()
-                .create(i)
+            let mut i: CreateDocumentInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .documents()
+                .create(UploadFile::from_bytes("example.pdf", Vec::<u8>::new()))
+                .input(i)
+                .upload_id(field::<String>(input, "uploadId"))
                 .options(options(input))
+                .send()
                 .await
-                .map(|o| with_headers(&o, &[("location", o.location.as_deref()), ("requestId", o.request_id.as_deref())]))
+                .map(|o| {
+                    let o = o.result();
+                    with_headers(
+                        o,
+                        &[
+                            ("requestId", o.request_id.as_deref()),
+                            ("apiVersion", o.api_version.as_deref()),
+                            ("location", o.location.as_deref()),
+                            ("etag", Some(o.etag.as_str())),
+                        ],
+                    )
+                })
         }
-        "CreateUpload" => {
-            let i: CreateUploadInput = serde_json::from_value(body(())).ok()?;
-            c.uploads()
-                .reserve(i)
+        "CreateDocumentVersion" => {
+            let mut i: CreateDocumentVersionInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.document_id = field(input, "documentId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .document(field::<String>(input, "documentId"))
+                .replace(UploadFile::from_bytes("example.pdf", Vec::<u8>::new()))
+                .input(i)
+                .upload_id(field::<String>(input, "uploadId"))
                 .options(options(input))
+                .send()
                 .await
-                .map(|o| with_headers(&o, &[("location", o.location.as_deref()), ("requestId", o.request_id.as_deref())]))
+                .map(|o| {
+                    let o = &o.output;
+                    with_headers(
+                        o,
+                        &[
+                            ("requestId", o.request_id.as_deref()),
+                            ("apiVersion", o.api_version.as_deref()),
+                            ("location", o.location.as_deref()),
+                        ],
+                    )
+                })
         }
-        "GetAgentVersion" => c
-            .agents()
-            .versions()
-            .get(GetAgentVersionInput {
-                agent_id: labels(input, "agentId"),
-                version: labels(input, "version"),
-            })
-            .await
-            .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str())), ("requestId", o.request_id.as_deref())])),
-        "DeleteDocument" => c
-            .documents()
-            .delete(DeleteDocumentInput {
-                knowledge_base_id: labels(input, "knowledgeBaseId"),
-                document_id: labels(input, "documentId"),
-            })
-            .await
-            .map(|o| with_headers(&o, &[("requestId", o.request_id.as_deref())])),
-        "BatchDeleteDocuments" => {
-            let mut i: BatchDeleteDocumentsInput = serde_json::from_value(body(())).ok()?;
-            i.knowledge_base_id = labels(input, "knowledgeBaseId");
-            c.documents()
-                .batch_delete(i)
-                .await
-                .map(|o| with_headers(&o, &[("requestId", o.request_id.as_deref())]))
-        }
-        "GetDocument" => c
-            .documents()
-            .get(GetDocumentInput {
-                knowledge_base_id: labels(input, "knowledgeBaseId"),
-                document_id: labels(input, "documentId"),
-            })
-            .await
-            .map(|o| with_headers(&o, &[("requestId", o.request_id.as_deref())])),
-        "GetUpload" => c
-            .uploads()
-            .get(GetUploadInput {
-                upload_id: labels(input, "uploadId"),
-            })
-            .await
-            .map(|o| with_headers(&o, &[("requestId", o.request_id.as_deref())])),
-        "ListProductionHistoryEntries" => {
-            let i = ListProductionHistoryEntriesInput {
-                agent_id: labels(input, "agentId"),
-                limit: input.get("limit").and_then(Value::as_i64).map(|n| n as i32),
-                cursor: opt(input, "cursor"),
-            };
-            match c.agents().production_history().list_pages(i).next().await? {
-                Ok(p) => Ok(with_headers(&p, &[("requestId", p.request_id.as_deref())])),
-                Err(e) => Err(e),
-            }
-        }
-        "GetProductionHistoryEntry" => c
-            .agents()
-            .production_history()
-            .get(GetProductionHistoryEntryInput {
-                agent_id: labels(input, "agentId"),
-                history_entry_id: labels(input, "historyEntryId"),
-            })
-            .await
-            .map(|o| with_headers(&o, &[("requestId", o.request_id.as_deref())])),
-        "ListAgentVersions" => {
-            let i = ListAgentVersionsInput {
-                agent_id: labels(input, "agentId"),
-                limit: input.get("limit").and_then(Value::as_i64).map(|n| n as i32),
-                cursor: opt(input, "cursor"),
-            };
-            match c.agents().versions().list_pages(i).next().await? {
-                Ok(p) => Ok(with_headers(&p, &[("requestId", p.request_id.as_deref())])),
-                Err(e) => Err(e),
-            }
-        }
-        "PinDraftVersion" => {
-            let i: PinDraftVersionInput = serde_json::from_value(body(())).ok()?;
-            c.agents()
-                .versions()
-                .pin(labels(input, "agentId"), i)
+        "CreateField" => {
+            let mut i: CreateFieldInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .fields()
+                .create(field::<String>(input, "key"), field::<String>(input, "name"), FieldType::default())
+                .input(i)
                 .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    let o = o.result();
+                    with_headers(o, &[("etag", Some(o.etag.as_str()))])
+                })
+        }
+        "CreateFolder" => {
+            let mut i: CreateFolderInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .folders()
+                .create(field::<String>(input, "path"))
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    let o = o.result();
+                    with_headers(
+                        o,
+                        &[
+                            ("requestId", o.request_id.as_deref()),
+                            ("apiVersion", o.api_version.as_deref()),
+                            ("location", o.location.as_deref()),
+                        ],
+                    )
+                })
+        }
+        "CreateIngestionBatch" => {
+            let mut i: CreateIngestionBatchInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .ingestion()
+                .batches()
+                .create()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    let o = o.result();
+                    with_headers(o, &[("etag", Some(o.etag.as_str()))])
+                })
+        }
+        "CreateIngestionBatchUploadPolicy" => {
+            let mut i: CreateIngestionBatchUploadPolicyInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.ingestion_batch_id = field(input, "ingestionBatchId");
+            c.core()
+                .ingestion()
+                .upload_policy(
+                    field::<String>(input, "knowledgeBaseId"),
+                    field::<String>(input, "ingestionBatchId"),
+                )
+                .input(i)
+                .options(options(input))
+                .send()
                 .await
                 .map(|o| {
                     with_headers(
                         &o,
                         &[
-                            ("etag", Some(o.etag.as_str())),
-                            ("location", o.location.as_deref()),
                             ("requestId", o.request_id.as_deref()),
+                            ("apiVersion", o.api_version.as_deref()),
+                            ("location", o.location.as_deref()),
                         ],
                     )
                 })
         }
-        "ResetDraftVersion" => {
-            let i: ResetDraftVersionInput = serde_json::from_value(body(())).ok()?;
-            c.agents()
-                .versions()
-                .reset_draft(labels(input, "agentId"), i)
+        "CreateKnowledgeBase" => {
+            let i: CreateKnowledgeBaseInput = serde_json::from_value(input.clone()).ok()?;
+            c.knowledge_bases()
+                .create(field::<String>(input, "name"))
+                .input(i)
                 .options(options(input))
+                .send()
                 .await
-                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str())), ("requestId", o.request_id.as_deref())]))
+                .map(|o| {
+                    let o = o.result();
+                    with_headers(o, &[("etag", Some(o.etag.as_str()))])
+                })
         }
-        "DeleteAgentVersion" => c
-            .agents()
-            .versions()
-            .delete(DeleteAgentVersionInput {
-                agent_id: labels(input, "agentId"),
-                version: labels(input, "version"),
+        "CreateUpload" => {
+            let i: CreateUploadInput = serde_json::from_value(input.clone()).ok()?;
+            c.core()
+                .uploads()
+                .reserve(
+                    field::<String>(input, "fileName"),
+                    field::<String>(input, "contentType"),
+                    Default::default(),
+                    field::<String>(input, "sha256"),
+                )
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[
+                            ("requestId", o.request_id.as_deref()),
+                            ("apiVersion", o.api_version.as_deref()),
+                            ("location", o.location.as_deref()),
+                        ],
+                    )
+                })
+        }
+        "DeleteAgent" => {
+            let mut i: DeleteAgentInput = serde_json::from_value(input.clone()).ok()?;
+            i.agent_id = field(input, "agentId");
+            c.agent(field::<String>(input, "agentId"))
+                .delete()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                    )
+                })
+        }
+        "DeleteAgentVersion" => {
+            let mut i: DeleteAgentVersionInput = serde_json::from_value(input.clone()).ok()?;
+            i.agent_id = field(input, "agentId");
+            i.version = field(input, "version");
+            c.agent(field::<String>(input, "agentId"))
+                .version(field::<String>(input, "version"))
+                .delete()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                    )
+                })
+        }
+        "DeleteDocument" => {
+            let mut i: DeleteDocumentInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.document_id = field(input, "documentId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .document(field::<String>(input, "documentId"))
+                .delete()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    let o = &o.output;
+                    with_headers(o, &[("etag", Some(o.etag.as_str()))])
+                })
+        }
+        "DeleteDocumentVersion" => {
+            let mut i: DeleteDocumentVersionInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.document_id = field(input, "documentId");
+            i.version = field(input, "version");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .document(field::<String>(input, "documentId"))
+                .version(field::<String>(input, "version"))
+                .delete()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                    )
+                })
+        }
+        "DeleteField" => {
+            let mut i: DeleteFieldInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.field_key = field(input, "fieldKey");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .field(field::<String>(input, "fieldKey"))
+                .delete()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                    )
+                })
+        }
+        "DeleteFolder" => {
+            let mut i: DeleteFolderInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.folder_path = field(input, "folderPath");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .folder(field::<String>(input, "folderPath"))
+                .delete()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    let o = &o.output;
+                    with_headers(
+                        o,
+                        &[
+                            ("requestId", o.request_id.as_deref()),
+                            ("apiVersion", o.api_version.as_deref()),
+                            ("location", o.location.as_deref()),
+                        ],
+                    )
+                })
+        }
+        "DeleteKnowledgeBase" => {
+            let mut i: DeleteKnowledgeBaseInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .delete()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    let o = &o.output;
+                    with_headers(
+                        o,
+                        &[
+                            ("requestId", o.request_id.as_deref()),
+                            ("apiVersion", o.api_version.as_deref()),
+                            ("location", o.location.as_deref()),
+                        ],
+                    )
+                })
+        }
+        "EnableLayoutAwareSearch" => {
+            let mut i: EnableLayoutAwareSearchInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .layout_aware_search()
+                .enable()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    let o = &o.output;
+                    with_headers(
+                        o,
+                        &[
+                            ("requestId", o.request_id.as_deref()),
+                            ("apiVersion", o.api_version.as_deref()),
+                            ("location", o.location.as_deref()),
+                        ],
+                    )
+                })
+        }
+        "EstimateDocumentVersion" => {
+            let mut i: EstimateDocumentVersionInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.document_id = field(input, "documentId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .document(field::<String>(input, "documentId"))
+                .estimate_replace(UploadFile::from_bytes("example.pdf", Vec::<u8>::new()))
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                    )
+                })
+        }
+        "EstimateFillInFields" => {
+            let mut i: EstimateFillInFieldsInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .fields()
+                .estimate_fill_in(Vec::<String>::new())
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                    )
+                })
+        }
+        "EstimateIngestion" => {
+            let mut i: EstimateIngestionInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .documents()
+                .estimate_create(UploadFile::from_bytes("example.pdf", Vec::<u8>::new()))
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                    )
+                })
+        }
+        "EstimateLayoutAwareSearch" => {
+            let mut i: EstimateLayoutAwareSearchInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .layout_aware_search()
+                .estimate_enable()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                    )
+                })
+        }
+        "EstimateReprocessDocuments" => {
+            let mut i: EstimateReprocessDocumentsInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .documents()
+                .estimate_reprocess()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                    )
+                })
+        }
+        "FillInFields" => {
+            let mut i: FillInFieldsInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .fields()
+                .fill_in(Vec::<String>::new())
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    let o = &o.output;
+                    with_headers(
+                        o,
+                        &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                    )
+                })
+        }
+        "GetAccess" => {
+            let mut i: GetAccessInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.folder = field(input, "folder");
+            i.document = field(input, "document");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .access()
+                .get()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "GetAgent" => {
+            let mut i: GetAgentInput = serde_json::from_value(input.clone()).ok()?;
+            i.agent_id = field(input, "agentId");
+            c.agent(field::<String>(input, "agentId"))
+                .get()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "GetAgentVersion" => {
+            let mut i: GetAgentVersionInput = serde_json::from_value(input.clone()).ok()?;
+            i.agent_id = field(input, "agentId");
+            i.version = field(input, "version");
+            c.agent(field::<String>(input, "agentId"))
+                .version(field::<String>(input, "version"))
+                .get()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "GetCaller" => {
+            let i: GetCallerInput = serde_json::from_value(input.clone()).ok()?;
+            c.me().input(i).options(options(input)).send().await.map(|o| {
+                with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )
             })
-            .await
-            .map(|o| with_headers(&o, &[("requestId", o.request_id.as_deref())])),
-        "PublishAgentVersion" => c
-            .agents()
-            .versions()
-            .publish(PublishAgentVersionInput {
-                agent_id: labels(input, "agentId"),
-                version: labels(input, "version"),
-                name: opt(input, "name"),
-                note: opt(input, "note"),
-            })
-            .options(options(input))
-            .await
-            .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str())), ("requestId", o.request_id.as_deref())])),
-        "GetCaller" => c
-            .callers()
-            .get(GetCallerInput {})
-            .await
-            .map(|o| with_headers(&o, &[("requestId", o.request_id.as_deref())])),
-        "ListDocuments" => {
-            let i = ListDocumentsInput {
-                knowledge_base_id: labels(input, "knowledgeBaseId"),
-                limit: input.get("limit").and_then(Value::as_i64).map(|n| n as i32),
-                cursor: opt(input, "cursor"),
-                sort: opt(input, "sort"),
-                folder: opt(input, "folder"),
-                status: opt(input, "status").map(DocumentStatus::from),
-                name_prefix: opt(input, "namePrefix"),
-            };
-            match c.documents().list_pages(i).next().await? {
-                Ok(p) => Ok(with_headers(&p, &[("requestId", p.request_id.as_deref())])),
+        }
+        "GetConversation" => {
+            let mut i: GetConversationInput = serde_json::from_value(input.clone()).ok()?;
+            i.conversation_id = field(input, "conversationId");
+            c.conversation(field::<String>(input, "conversationId"))
+                .get()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[]))
+        }
+        "GetDocument" => {
+            let mut i: GetDocumentInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.document_id = field(input, "documentId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .document(field::<String>(input, "documentId"))
+                .get()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "GetDocumentContent" => {
+            let mut i: GetDocumentContentInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.document_id = field(input, "documentId");
+            i.version = field(input, "version");
+            c.core()
+                .documents()
+                .content(field::<String>(input, "knowledgeBaseId"), field::<String>(input, "documentId"))
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[
+                            ("requestId", o.request_id.as_deref()),
+                            ("apiVersion", o.api_version.as_deref()),
+                            ("location", Some(o.location.as_str())),
+                        ],
+                    )
+                })
+        }
+        "GetDocumentDownload" => {
+            let mut i: GetDocumentDownloadInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.document_id = field(input, "documentId");
+            i.version = field(input, "version");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .document(field::<String>(input, "documentId"))
+                .download()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                    )
+                })
+        }
+        "GetDocumentVersion" => {
+            let mut i: GetDocumentVersionInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.document_id = field(input, "documentId");
+            i.version = field(input, "version");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .document(field::<String>(input, "documentId"))
+                .version(field::<String>(input, "version"))
+                .get()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[]))
+        }
+        "GetField" => {
+            let mut i: GetFieldInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.field_key = field(input, "fieldKey");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .field(field::<String>(input, "fieldKey"))
+                .get()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "GetHistoryEntry" => {
+            let mut i: GetHistoryEntryInput = serde_json::from_value(input.clone()).ok()?;
+            i.agent_id = field(input, "agentId");
+            i.history_entry_id = field(input, "historyEntryId");
+            c.agent(field::<String>(input, "agentId"))
+                .history_entry(field::<String>(input, "historyEntryId"))
+                .get()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[]))
+        }
+        "GetIngestionBatch" => {
+            let mut i: GetIngestionBatchInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.ingestion_batch_id = field(input, "ingestionBatchId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .ingestion()
+                .batch(field::<String>(input, "ingestionBatchId"))
+                .get()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "GetIngestionBatchItem" => {
+            let mut i: GetIngestionBatchItemInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.ingestion_batch_id = field(input, "ingestionBatchId");
+            i.item_id = field(input, "itemId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .ingestion()
+                .batch(field::<String>(input, "ingestionBatchId"))
+                .item(field::<String>(input, "itemId"))
+                .get()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "GetKnowledgeBase" => {
+            let mut i: GetKnowledgeBaseInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .get()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "GetOperation" => {
+            let mut i: GetOperationInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.operation_id = field(input, "operationId");
+            c.core()
+                .operation(field::<String>(input, "knowledgeBaseId"), field::<String>(input, "operationId"))
+                .get()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[]))
+        }
+        "GetUpload" => {
+            let mut i: GetUploadInput = serde_json::from_value(input.clone()).ok()?;
+            i.upload_id = field(input, "uploadId");
+            c.core()
+                .upload(field::<String>(input, "uploadId"))
+                .get()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[]))
+        }
+        "ListAgentVersions" => {
+            let mut i: ListAgentVersionsInput = serde_json::from_value(input.clone()).ok()?;
+            i.agent_id = field(input, "agentId");
+            i.limit = field(input, "limit");
+            i.cursor = field(input, "cursor");
+            match c
+                .agent(field::<String>(input, "agentId"))
+                .versions()
+                .list()
+                .input(i)
+                .options(options(input))
+                .pages()
+                .next()
+                .await?
+            {
+                Ok(o) => Ok(with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )),
                 Err(e) => Err(e),
             }
         }
-        "WatchConversation" => {
-            drain(
-                c.conversations()
-                    .watch(
-                        labels(input, "conversationId"),
-                        WatchConversationInput {
-                            last_event_id: opt(input, "lastEventId"),
-                        },
+        "ListAgents" => {
+            let mut i: ListAgentsInput = serde_json::from_value(input.clone()).ok()?;
+            i.limit = field(input, "limit");
+            i.cursor = field(input, "cursor");
+            match c.agents().list().input(i).options(options(input)).pages().next().await? {
+                Ok(o) => Ok(with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )),
+                Err(e) => Err(e),
+            }
+        }
+        "ListConversations" => {
+            let mut i: ListConversationsInput = serde_json::from_value(input.clone()).ok()?;
+            i.agent_id = field(input, "agentId");
+            i.limit = field(input, "limit");
+            i.cursor = field(input, "cursor");
+            match c
+                .agent(field::<String>(input, "agentId"))
+                .conversations()
+                .list()
+                .input(i)
+                .options(options(input))
+                .pages()
+                .next()
+                .await?
+            {
+                Ok(o) => Ok(with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )),
+                Err(e) => Err(e),
+            }
+        }
+        "ListDocumentVersions" => {
+            let mut i: ListDocumentVersionsInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.document_id = field(input, "documentId");
+            i.limit = field(input, "limit");
+            i.cursor = field(input, "cursor");
+            match c
+                .knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .document(field::<String>(input, "documentId"))
+                .versions()
+                .list()
+                .input(i)
+                .options(options(input))
+                .pages()
+                .next()
+                .await?
+            {
+                Ok(o) => Ok(with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )),
+                Err(e) => Err(e),
+            }
+        }
+        "ListDocuments" => {
+            let mut i: ListDocumentsInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.limit = field(input, "limit");
+            i.cursor = field(input, "cursor");
+            i.sort = field(input, "sort");
+            i.folder = field(input, "folder");
+            i.deep = field(input, "deep");
+            i.q = field(input, "q");
+            i.status = field(input, "status");
+            i.name_prefix = field(input, "namePrefix");
+            i.external_id = field(input, "externalId");
+            i.content_type_prefix = field(input, "contentTypePrefix");
+            i.sha256 = field(input, "sha256");
+            i.out_of_date = field(input, "outOfDate");
+            match c
+                .knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .documents()
+                .list()
+                .input(i)
+                .options(options(input))
+                .pages()
+                .next()
+                .await?
+            {
+                Ok(o) => Ok(with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )),
+                Err(e) => Err(e),
+            }
+        }
+        "ListFields" => {
+            let mut i: ListFieldsInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.limit = field(input, "limit");
+            i.cursor = field(input, "cursor");
+            match c
+                .knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .fields()
+                .list()
+                .input(i)
+                .options(options(input))
+                .pages()
+                .next()
+                .await?
+            {
+                Ok(o) => Ok(with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )),
+                Err(e) => Err(e),
+            }
+        }
+        "ListFolders" => {
+            let mut i: ListFoldersInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.limit = field(input, "limit");
+            i.cursor = field(input, "cursor");
+            i.parent = field(input, "parent");
+            i.deep = field(input, "deep");
+            i.q = field(input, "q");
+            match c
+                .knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .folders()
+                .list()
+                .input(i)
+                .options(options(input))
+                .pages()
+                .next()
+                .await?
+            {
+                Ok(o) => Ok(with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )),
+                Err(e) => Err(e),
+            }
+        }
+        "ListGuardrails" => {
+            let mut i: ListGuardrailsInput = serde_json::from_value(input.clone()).ok()?;
+            i.limit = field(input, "limit");
+            i.cursor = field(input, "cursor");
+            match c
+                .agents()
+                .options()
+                .guardrails()
+                .input(i)
+                .options(options(input))
+                .pages()
+                .next()
+                .await?
+            {
+                Ok(o) => Ok(with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )),
+                Err(e) => Err(e),
+            }
+        }
+        "ListHistoryEntries" => {
+            let mut i: ListHistoryEntriesInput = serde_json::from_value(input.clone()).ok()?;
+            i.agent_id = field(input, "agentId");
+            i.limit = field(input, "limit");
+            i.cursor = field(input, "cursor");
+            match c
+                .agent(field::<String>(input, "agentId"))
+                .history()
+                .list()
+                .input(i)
+                .options(options(input))
+                .pages()
+                .next()
+                .await?
+            {
+                Ok(o) => Ok(with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )),
+                Err(e) => Err(e),
+            }
+        }
+        "ListIngestionBatchItems" => {
+            let mut i: ListIngestionBatchItemsInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.ingestion_batch_id = field(input, "ingestionBatchId");
+            i.limit = field(input, "limit");
+            i.cursor = field(input, "cursor");
+            i.action = field(input, "action");
+            i.outcome = field(input, "outcome");
+            i.status = field(input, "status");
+            i.resolution = field(input, "resolution");
+            match c
+                .knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .ingestion()
+                .batch(field::<String>(input, "ingestionBatchId"))
+                .items()
+                .list()
+                .input(i)
+                .options(options(input))
+                .pages()
+                .next()
+                .await?
+            {
+                Ok(o) => Ok(with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )),
+                Err(e) => Err(e),
+            }
+        }
+        "ListIngestionBatches" => {
+            let mut i: ListIngestionBatchesInput = serde_json::from_value(input.clone()).ok()?;
+            i.limit = field(input, "limit");
+            i.cursor = field(input, "cursor");
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.status = field(input, "status");
+            match c
+                .knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .ingestion()
+                .batches()
+                .list()
+                .input(i)
+                .options(options(input))
+                .pages()
+                .next()
+                .await?
+            {
+                Ok(o) => Ok(with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )),
+                Err(e) => Err(e),
+            }
+        }
+        "ListKnowledgeBases" => {
+            let mut i: ListKnowledgeBasesInput = serde_json::from_value(input.clone()).ok()?;
+            i.limit = field(input, "limit");
+            i.cursor = field(input, "cursor");
+            i.status = field(input, "status");
+            match c.knowledge_bases().list().input(i).options(options(input)).pages().next().await? {
+                Ok(o) => Ok(with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )),
+                Err(e) => Err(e),
+            }
+        }
+        "ListMemoryStores" => {
+            let mut i: ListMemoryStoresInput = serde_json::from_value(input.clone()).ok()?;
+            i.limit = field(input, "limit");
+            i.cursor = field(input, "cursor");
+            match c
+                .agents()
+                .options()
+                .memory_stores()
+                .input(i)
+                .options(options(input))
+                .pages()
+                .next()
+                .await?
+            {
+                Ok(o) => Ok(with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )),
+                Err(e) => Err(e),
+            }
+        }
+        "ListMessages" => {
+            let mut i: ListMessagesInput = serde_json::from_value(input.clone()).ok()?;
+            i.conversation_id = field(input, "conversationId");
+            i.limit = field(input, "limit");
+            i.cursor = field(input, "cursor");
+            match c
+                .conversation(field::<String>(input, "conversationId"))
+                .messages()
+                .list()
+                .input(i)
+                .options(options(input))
+                .pages()
+                .next()
+                .await?
+            {
+                Ok(o) => Ok(with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )),
+                Err(e) => Err(e),
+            }
+        }
+        "ListModels" => {
+            let mut i: ListModelsInput = serde_json::from_value(input.clone()).ok()?;
+            i.limit = field(input, "limit");
+            i.cursor = field(input, "cursor");
+            match c
+                .agents()
+                .options()
+                .models()
+                .input(i)
+                .options(options(input))
+                .pages()
+                .next()
+                .await?
+            {
+                Ok(o) => Ok(with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )),
+                Err(e) => Err(e),
+            }
+        }
+        "ListOperations" => {
+            let mut i: ListOperationsInput = serde_json::from_value(input.clone()).ok()?;
+            i.limit = field(input, "limit");
+            i.cursor = field(input, "cursor");
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.target_type = field(input, "targetType");
+            i.target_id = field(input, "targetId");
+            i.kind = field(input, "kind");
+            i.status = field(input, "status");
+            match c
+                .core()
+                .operations()
+                .list(field::<String>(input, "knowledgeBaseId"))
+                .input(i)
+                .options(options(input))
+                .pages()
+                .next()
+                .await?
+            {
+                Ok(o) => Ok(with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )),
+                Err(e) => Err(e),
+            }
+        }
+        "ListTools" => {
+            let mut i: ListToolsInput = serde_json::from_value(input.clone()).ok()?;
+            i.limit = field(input, "limit");
+            i.cursor = field(input, "cursor");
+            match c.agents().options().tools().input(i).options(options(input)).pages().next().await? {
+                Ok(o) => Ok(with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )),
+                Err(e) => Err(e),
+            }
+        }
+        "ListVoices" => {
+            let mut i: ListVoicesInput = serde_json::from_value(input.clone()).ok()?;
+            i.limit = field(input, "limit");
+            i.cursor = field(input, "cursor");
+            match c
+                .agents()
+                .options()
+                .voices()
+                .input(i)
+                .options(options(input))
+                .pages()
+                .next()
+                .await?
+            {
+                Ok(o) => Ok(with_headers(
+                    &o,
+                    &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                )),
+                Err(e) => Err(e),
+            }
+        }
+        "PublishAgentVersion" => {
+            let mut i: PublishAgentVersionInput = serde_json::from_value(input.clone()).ok()?;
+            i.agent_id = field(input, "agentId");
+            i.version = field(input, "version");
+            c.agent(field::<String>(input, "agentId"))
+                .version(field::<String>(input, "version"))
+                .publish()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[
+                            ("requestId", o.request_id.as_deref()),
+                            ("apiVersion", o.api_version.as_deref()),
+                            ("etag", Some(o.etag.as_str())),
+                        ],
                     )
+                })
+        }
+        "PutAccess" => {
+            let mut i: PutAccessInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.folder = field(input, "folder");
+            i.document = field(input, "document");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .access()
+                .set()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "ReplaceDraftVersion" => {
+            let mut i: ReplaceDraftVersionInput = serde_json::from_value(input.clone()).ok()?;
+            i.agent_id = field(input, "agentId");
+            c.agent(field::<String>(input, "agentId"))
+                .draft()
+                .replace()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "ReprocessDocuments" => {
+            let mut i: ReprocessDocumentsInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .documents()
+                .reprocess()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    let o = &o.output;
+                    with_headers(
+                        o,
+                        &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
+                    )
+                })
+        }
+        "ResetDraftVersion" => {
+            let mut i: ResetDraftVersionInput = serde_json::from_value(input.clone()).ok()?;
+            i.agent_id = field(input, "agentId");
+            c.agent(field::<String>(input, "agentId"))
+                .draft()
+                .reset(field::<String>(input, "from"))
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "RetryDocument" => {
+            let mut i: RetryDocumentInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.document_id = field(input, "documentId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .document(field::<String>(input, "documentId"))
+                .retry()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    let o = &o.output;
+                    with_headers(
+                        o,
+                        &[
+                            ("requestId", o.request_id.as_deref()),
+                            ("apiVersion", o.api_version.as_deref()),
+                            ("etag", Some(o.etag.as_str())),
+                        ],
+                    )
+                })
+        }
+        "SaveDraftVersion" => {
+            let mut i: SaveDraftVersionInput = serde_json::from_value(input.clone()).ok()?;
+            i.agent_id = field(input, "agentId");
+            c.agent(field::<String>(input, "agentId"))
+                .draft()
+                .save(field::<String>(input, "name"))
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "SendMessage" => {
+            let mut i: SendMessageInput = serde_json::from_value(input.clone()).ok()?;
+            i.conversation_id = field(input, "conversationId");
+            drain(
+                c.conversation(field::<String>(input, "conversationId"))
+                    .send(field::<String>(input, "message"))
+                    .input(i)
+                    .options(options(input))
+                    .send()
                     .await,
             )
             .await
         }
-        "SendMessage" => {
-            let i: SendMessageInput = serde_json::from_value(body(())).ok()?;
-            drain(c.conversations().send(labels(input, "conversationId"), i).await).await
+        "StartIngestionBatch" => {
+            let mut i: StartIngestionBatchInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.ingestion_batch_id = field(input, "ingestionBatchId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .ingestion()
+                .batch(field::<String>(input, "ingestionBatchId"))
+                .start()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| o.into_output())
+                .map(|o| {
+                    with_headers(
+                        &o,
+                        &[
+                            ("requestId", o.request_id.as_deref()),
+                            ("apiVersion", o.api_version.as_deref()),
+                            ("etag", Some(o.etag.as_str())),
+                        ],
+                    )
+                })
+        }
+        "UpdateAgent" => {
+            let mut i: UpdateAgentInput = serde_json::from_value(input.clone()).ok()?;
+            i.agent_id = field(input, "agentId");
+            c.agent(field::<String>(input, "agentId"))
+                .update()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "UpdateDocument" => {
+            let mut i: UpdateDocumentInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.document_id = field(input, "documentId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .document(field::<String>(input, "documentId"))
+                .update()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    let o = &o.output;
+                    with_headers(
+                        o,
+                        &[
+                            ("requestId", o.request_id.as_deref()),
+                            ("apiVersion", o.api_version.as_deref()),
+                            ("etag", Some(o.etag.as_str())),
+                        ],
+                    )
+                })
         }
         "UpdateDraftVersion" => {
-            let i: UpdateDraftVersionInput = serde_json::from_value(body(())).ok()?;
-            c.agents()
-                .versions()
-                .update_draft(labels(input, "agentId"), i)
+            let mut i: UpdateDraftVersionInput = serde_json::from_value(input.clone()).ok()?;
+            i.agent_id = field(input, "agentId");
+            c.agent(field::<String>(input, "agentId"))
+                .draft()
+                .update()
+                .input(i)
                 .options(options(input))
+                .send()
                 .await
-                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str())), ("requestId", o.request_id.as_deref())]))
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "UpdateField" => {
+            let mut i: UpdateFieldInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.field_key = field(input, "fieldKey");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .field(field::<String>(input, "fieldKey"))
+                .update()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "UpdateFolder" => {
+            let mut i: UpdateFolderInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.folder_path = field(input, "folderPath");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .folder(field::<String>(input, "folderPath"))
+                .update()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| {
+                    let o = &o.output;
+                    with_headers(
+                        o,
+                        &[
+                            ("requestId", o.request_id.as_deref()),
+                            ("apiVersion", o.api_version.as_deref()),
+                            ("etag", Some(o.etag.as_str())),
+                            ("location", o.location.as_deref()),
+                        ],
+                    )
+                })
+        }
+        "UpdateIngestionBatch" => {
+            let mut i: UpdateIngestionBatchInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.ingestion_batch_id = field(input, "ingestionBatchId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .ingestion()
+                .batch(field::<String>(input, "ingestionBatchId"))
+                .update()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "UpdateIngestionBatchItem" => {
+            let mut i: UpdateIngestionBatchItemInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.ingestion_batch_id = field(input, "ingestionBatchId");
+            i.item_id = field(input, "itemId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .ingestion()
+                .batch(field::<String>(input, "ingestionBatchId"))
+                .item(field::<String>(input, "itemId"))
+                .resolve(IngestionItemResolution::default())
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "UpdateKnowledgeBase" => {
+            let mut i: UpdateKnowledgeBaseInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .update()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "WatchConversation" => {
+            let mut i: WatchConversationInput = serde_json::from_value(input.clone()).ok()?;
+            i.conversation_id = field(input, "conversationId");
+            i.last_event_id = field(input, "lastEventId");
+            drain(
+                c.conversation(field::<String>(input, "conversationId"))
+                    .watch()
+                    .input(i)
+                    .options(options(input))
+                    .send()
+                    .await,
+            )
+            .await
+        }
+        "WatchKnowledgeBase" => {
+            let mut i: WatchKnowledgeBaseInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.document = field(input, "document");
+            i.folder = field(input, "folder");
+            i.batch = field(input, "batch");
+            let r = c
+                .knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .watch()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|_| Value::Null);
+            r
+        }
+        "WatchOperation" => {
+            let mut i: WatchOperationInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.operation_id = field(input, "operationId");
+            i.last_event_id = field(input, "lastEventId");
+            let r = c
+                .core()
+                .operation(field::<String>(input, "knowledgeBaseId"), field::<String>(input, "operationId"))
+                .watch()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|_| Value::Null);
+            r
         }
         "WatchWorkspaceEvents" => {
-            let list = |k: &str| {
-                input
-                    .get(k)
-                    .and_then(Value::as_array)
-                    .map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect())
-            };
-            let i = WatchWorkspaceEventsInput {
-                types: list("types"),
-                conversation_ids: list("conversationIds"),
-                after: opt(input, "after"),
-                last_event_id: opt(input, "lastEventId"),
-            };
-            drain(c.events().subscribe(i).await).await
+            let mut i: WatchWorkspaceEventsInput = serde_json::from_value(input.clone()).ok()?;
+            i.types = field(input, "types");
+            i.conversation_ids = field(input, "conversationIds");
+            i.after = field(input, "after");
+            i.last_event_id = field(input, "lastEventId");
+            let r = c
+                .events()
+                .watch()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|_| Value::Null);
+            r
         }
         _ => return None,
     })
@@ -2135,6 +6531,82 @@ async fn example(m: &Mock, ex: &Value) -> R {
         Some(want) if !want.is_null() => assert_subset(want, &out, "output"),
         _ => Ok(()),
     }
+}
+
+// ---------------------------------------------------------------------------------------------- a server of a case's own
+
+const PROBLEM_404: &str = r#"{"type":"https://build.caitlyn.ai/errors/NOT_FOUND","title":"Not found","status":404,"code":"NOT_FOUND","requestId":"01FAKE00000000000000000000"}"#;
+
+/// A tiny HTTP server answering each connection with the next canned response, then closing it: for states the mock
+/// server has no fault for (a plan that expired, a thing gone between a watch's connections).
+struct Fake {
+    base: String,
+    seen: Arc<Mutex<Vec<String>>>,
+}
+
+impl Fake {
+    async fn start(responses: Vec<(u16, &'static str, String)>) -> Fake {
+        Fake::start_for(move |_| responses.into_iter().map(|(st, ct, b)| (st, ct.to_owned(), b)).collect()).await
+    }
+
+    /// As `start`, with responses made from the server's own address (for a Location that points back at it). A
+    /// content type may carry further header lines after `\r\n`.
+    async fn start_for(responses: impl FnOnce(&str) -> Vec<(u16, String, String)>) -> Fake {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let base = format!("http://{}", listener.local_addr().expect("address"));
+        let responses = responses(&base);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let log = seen.clone();
+        tokio::spawn(async move {
+            for (status, content_type, body) in responses {
+                let Ok((mut sock, _)) = listener.accept().await else { return };
+                let mut head = Vec::new();
+                let mut buf = [0u8; 4096];
+                while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match sock.read(&mut buf).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => head.extend_from_slice(&buf[..n]),
+                    }
+                }
+                let line = String::from_utf8_lossy(&head).lines().next().unwrap_or_default().to_owned();
+                log.lock().unwrap().push(line);
+                let reply = format!(
+                    "HTTP/1.1 {status} X\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nCaitlyn-Request-Id: 01FAKE\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = sock.write_all(reply.as_bytes()).await;
+                let _ = sock.shutdown().await;
+            }
+        });
+        Fake { base, seen }
+    }
+
+    fn client(&self) -> Client {
+        Client::builder(WORKSPACE, Auth::token(PAT))
+            .endpoint(&self.base)
+            .build()
+            .expect("client")
+    }
+
+    fn requests(&self) -> Vec<String> {
+        self.seen.lock().unwrap().clone()
+    }
+}
+
+fn document_json(status: &str) -> Value {
+    json!({
+        "id": "doc-1", "knowledgeBaseId": KB, "name": "leave.pdf", "folder": "/hr/", "status": status,
+        "createdAt": "2026-11-01T00:00:00.000Z", "updatedAt": "2026-11-01T00:00:00.000Z", "etag": "\"doc-1-1\""
+    })
+}
+
+fn batch_json(status: &str) -> Value {
+    json!({
+        "id": "batch-1", "knowledgeBaseId": KB, "status": status, "start": "manual", "awaitMoreItems": false,
+        "policy": {}, "itemCount": 1, "createdAt": "2026-11-01T00:00:00.000Z", "updatedAt": "2026-11-01T00:00:00.000Z",
+        "etag": "\"batch-1-1\""
+    })
 }
 
 // ---------------------------------------------------------------------------------------------- sign-in cases
@@ -2688,15 +7160,16 @@ fn auth_case<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
         "auth.session" => Box::pin(async move {
             let c = client_with(m, Auth::session("caitlyn_session=mock-session").origin("https://caitlyn.lndo.site"));
             let v = read(&c).await.map_err(s)?;
-            c.agents()
-                .versions()
-                .update_draft(
-                    AGENT,
-                    UpdateDraftVersionInput {
+            c.agent(AGENT)
+                .draft()
+                .update()
+                .input(UpdateDraftVersionInput {
+                    guidance: Some(AgentGuidance {
                         instructions: Some("Cite clause numbers.".into()),
                         ..Default::default()
-                    },
-                )
+                    }),
+                    ..Default::default()
+                })
                 .if_match(&v.etag)
                 .await
                 .map_err(s)?;
@@ -2802,29 +7275,86 @@ const AUTH_CASES: &[(&str, &str)] = &[
 
 // ---------------------------------------------------------------------------------------------- Rust only
 
-/// The Indexed waiter on one of the mock's documents, with short pauses.
-async fn wait_indexed(m: &Mock, document_id: &str) -> Result<GetDocumentResult, Error> {
-    client(m)
-        .documents()
-        .wait_until_indexed(GetDocumentInput {
-            knowledge_base_id: "KB4T7YQ2WL".into(),
-            document_id: document_id.into(),
-        })
-        .delays(Duration::from_millis(10), Duration::from_millis(10))
-        .await
-}
-
 fn rust_case<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
     Some(match id {
-        "rust.typed-error-has-problem" => Box::pin(async move {
-            let r = client(m)
-                .agents()
-                .versions()
-                .get(GetAgentVersionInput {
-                    agent_id: AGENT.into(),
-                    version: "v99".into(),
-                })
+        "rust.sync-upload-failed" => Box::pin(async move {
+            m.faults(json!({"failUploads": {"/new/b.pdf": true}})).await;
+            let seen = Arc::new(Mutex::new(Vec::<(String, String, Option<String>)>::new()));
+            let s2 = seen.clone();
+            let items = vec![
+                SyncItem::file("/new/a.pdf", pdf("a.pdf", b"alpha")),
+                SyncItem::file("/new/b.pdf", pdf("b.pdf", b"bravo")),
+                SyncItem::file("/new/c.pdf", pdf("c.pdf", b"charlie")),
+            ];
+            let input = SyncInput::items(items).on_item(move |it: &IngestionBatchItem| {
+                s2.lock().unwrap().push((
+                    it.path.clone().unwrap_or_default(),
+                    it.status.as_str().to_owned(),
+                    it.failure_code.clone(),
+                ));
+            });
+            let report = client(m).knowledge_base(KB).ingestion().sync(input).await.map_err(s)?;
+            let b = report
+                .items
+                .iter()
+                .find(|i| i.path.as_deref() == Some("/new/b.pdf"))
+                .ok_or("no b")?;
+            ensure!(
+                b.status.as_str() == "failed" && b.failure_code.as_deref() == Some("UPLOAD_FAILED"),
+                "b {:?} {:?}",
+                b.status,
+                b.failure_code
+            );
+            let others_indexed = report
+                .items
+                .iter()
+                .filter(|i| i.path.as_deref() != Some("/new/b.pdf"))
+                .all(|i| i.status.as_str() == "indexed");
+            ensure!(others_indexed && report.items.len() == 3, "items {:?}", report.items);
+            let on_b: Vec<_> = seen.lock().unwrap().iter().filter(|x| x.0 == "/new/b.pdf").cloned().collect();
+            ensure!(
+                on_b == [("/new/b.pdf".to_owned(), "failed".to_owned(), Some("UPLOAD_FAILED".to_owned()))],
+                "on_item for b {on_b:?}"
+            );
+            let completed: Vec<Value> = bodies(m, "POST", "complete-uploads")
+                .await
+                .iter()
+                .flat_map(|b| b["itemIds"].as_array().cloned().unwrap_or_default())
+                .collect();
+            ensure!(completed.len() == 2 && !completed.contains(&json!(b.id)), "completed {completed:?}");
+            Ok(())
+        }),
+        "rust.document-replace" => Box::pin(async move {
+            let doc = client(m).knowledge_base(KB).document("doc-0002");
+            let started = doc
+                .replace(pdf("policy-2.pdf", b"the 2027 version"))
+                .note("2027")
+                .if_match("\"doc-0002-1\"")
+                .send()
+                .await
+                .map_err(s)?;
+            let create = m
+                .matching(|r| str_at(r, "method") == "POST" && str_at(r, "path").ends_with("/documents/doc-0002/versions"))
                 .await;
+            ensure!(
+                create.len() == 1 && header(&create[0], "if-match") == Some("\"doc-0002-1\""),
+                "create {create:?}"
+            );
+            let body: Value = serde_json::from_str(str_at(&create[0], "body")).map_err(s)?;
+            ensure!(
+                body["note"] == "2027" && body["uploadId"].as_str().is_some_and(|u| !u.is_empty()),
+                "body {body}"
+            );
+            ensure!(started.result == VersionResult::Created, "result {:?}", started.result);
+            let indexed = started.wait().await.map_err(s)?;
+            ensure!(
+                indexed.id == "doc-0002" && indexed.status.as_str() == "indexed",
+                "indexed {indexed:?}"
+            );
+            Ok(())
+        }),
+        "rust.typed-error-has-problem" => Box::pin(async move {
+            let r = client(m).agent(AGENT).version("v99").get().await;
             let e = r.err().ok_or("no error")?;
             ensure!(
                 matches!(e, Error::NotFound(_)) && e.status() == Some(404) && e.shape() == Some("NotFoundError"),
@@ -2840,17 +7370,8 @@ fn rust_case<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             Ok(())
         }),
         "rust.if-match-required-before-sending" => Box::pin(async move {
-            let r = client(m)
-                .agents()
-                .versions()
-                .update_draft(
-                    AGENT,
-                    UpdateDraftVersionInput {
-                        instructions: Some("x".into()),
-                        ..Default::default()
-                    },
-                )
-                .await;
+            // ResetDraftVersion requires If-Match (the model does not mark it @ifMatchOptional).
+            let r = client(m).agent(AGENT).draft().reset("live").await;
             ensure!(matches!(r, Err(Error::Input(_))) && m.api().await.is_empty(), "got {:?}", r.err());
             Ok(())
         }),
@@ -2878,6 +7399,67 @@ fn rust_case<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             );
             Ok(())
         }),
+        "rust.batch-handles" => Box::pin(async move {
+            let c = client(m);
+            let kb = c.knowledge_base(KB);
+            // create: Created, whose wait() follows the batch (here until it is planned and started by hand).
+            let created = kb
+                .ingestion()
+                .batches()
+                .create()
+                .start(StartMode::Manual)
+                .items(vec![remove_item("/policies/policy-6.pdf")])
+                .await
+                .map_err(s)?;
+            created.planned().await.map_err(s)?;
+            // start: result() is StartIngestionBatchResult, wait() the ended batch.
+            let started = created.start().send().await.map_err(s)?;
+            let r: &StartIngestionBatchResult = started.result();
+            ensure!(r.batch.id == created.id(), "start result {r:?}");
+            let ended: IngestionBatch = started.wait().await.map_err(s)?;
+            ensure!(ended.status.as_str() == "succeeded", "start's wait {ended:?}");
+            let waited: IngestionBatch = created.wait().await.map_err(s)?;
+            ensure!(waited.id == ended.id, "create's wait {waited:?}");
+            // cancel: result() is the batch as cancelled, wait() follows it to cancelled.
+            let other = hand_batch(&c, vec![ingest_item("/new/x.pdf", b"x")], false).await?;
+            let cancelling = other.cancel().send().await.map_err(s)?;
+            let _: &IngestionBatch = cancelling.result();
+            // How it ends ([wait.cancel-returns]) is that case's: here, that it follows the batch to its end.
+            let r = cancelling.wait().await;
+            ensure!(
+                r.as_ref().is_ok_and(|b| b.status.as_str() == "cancelled")
+                    || r.as_ref().err().is_some_and(|e| e.code() == Some("CANCELLED")),
+                "cancel's wait {r:?}"
+            );
+            // cancel_processing (the mock has no way to stop processing yet: a fake server): result() is the
+            // document, wait() follows it until no job runs on it, then reads it.
+            let snapshot = format!(
+                "event: snapshot\ndata: {}\n\n",
+                json!({"document": document_json("indexed"), "jobs": [], "progress": []})
+            );
+            let fake = Fake::start(vec![
+                (200, "application/json", document_json("processing").to_string()),
+                (200, "text/event-stream", snapshot),
+                (200, "application/json", document_json("indexed").to_string()),
+            ])
+            .await;
+            let stopping = fake
+                .client()
+                .knowledge_base(KB)
+                .document("doc-1")
+                .cancel_processing()
+                .send()
+                .await
+                .map_err(s)?;
+            let _: &Document = stopping.result();
+            let idle: Document = stopping.wait().await.map_err(s)?;
+            let seen = fake.requests();
+            ensure!(
+                idle.id == "doc-1" && idle.status.as_str() == "indexed" && seen.len() == 3,
+                "cancel_processing: {idle:?}, {seen:?}"
+            );
+            Ok(())
+        }),
         "rust.into-stream" => Box::pin(async move {
             use futures_util::StreamExt;
             let mut stream = std::pin::pin!(send(&client(m), "c-8").await.map_err(s)?.into_stream());
@@ -2895,6 +7477,14 @@ fn rust_case<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
 
 const RUST_CASES: &[(&str, &str)] = &[
     (
+        "rust.sync-upload-failed",
+        "an upload that fails after its retries fails only its item (UPLOAD_FAILED, through on_item and the report, never completed); the rest carry on",
+    ),
+    (
+        "rust.document-replace",
+        "doc.replace(file) uploads the file and adds a version with If-Match and the note; its wait() returns the document indexed",
+    ),
+    (
         "rust.typed-error-has-problem",
         "a typed variant also reads as a problem: status, code, shape",
     ),
@@ -2904,7 +7494,7 @@ const RUST_CASES: &[(&str, &str)] = &[
     ),
     (
         "rust.if-match-required-before-sending",
-        "an update without if_match fails before anything is sent",
+        "a reset without if_match fails before anything is sent",
     ),
     (
         "rust.stream-is-incremental",
@@ -2912,6 +7502,10 @@ const RUST_CASES: &[(&str, &str)] = &[
     ),
     ("rust.drop-closes-stream", "dropping a stream closes the connection"),
     ("rust.into-stream", "a stream is also a futures Stream"),
+    (
+        "rust.batch-handles",
+        "start, cancel, a batch's create and cancel_processing give handles: result() is the response, wait() follows the thing to its end",
+    ),
 ];
 
 // ---------------------------------------------------------------------------------------------- runner

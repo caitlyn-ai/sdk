@@ -25,9 +25,10 @@ export interface GetAgentVersionCommandOutput extends GetAgentVersionOutput, __M
 /**
  * Gets one version of an agent, with its full configuration and its ETag.
  *
- * `version` is `draft`, `production` or the name of a pinned or published version. Production is
- * readable by everyone with access to the agent; the draft and pinned versions only by the people
- * and groups on the agent's version access grant, and anyone else gets 404.
+ * `version` is `draft`, `live` or the name of a saved or published version. Live is the version the
+ * agent's live pointer names, read as `live`; it is readable by everyone with access to the agent.
+ * The draft and named versions are readable only by the people and groups on the agent's version
+ * access grant, and anyone else gets 404, as for an agent with no live version yet.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript
@@ -46,38 +47,395 @@ export interface GetAgentVersionCommandOutput extends GetAgentVersionOutput, __M
  * //   requestId: "STRING_VALUE",
  * //   apiVersion: "STRING_VALUE",
  * //   etag: "STRING_VALUE", // required
- * //   agentId: "STRING_VALUE", // required
- * //   name: "STRING_VALUE", // required
- * //   source: "pin" || "publish" || "migration" || "import",
- * //   basedOn: "STRING_VALUE",
- * //   matchesProduction: true || false,
- * //   createdAt: new Date("TIMESTAMP"), // required
- * //   publishedAt: new Date("TIMESTAMP"),
- * //   publishedBy: { // Actor
- * //     userId: "STRING_VALUE",
- * //     apiClientId: "STRING_VALUE",
- * //     displayName: "STRING_VALUE", // required
- * //   },
- * //   note: "STRING_VALUE",
- * //   configuration: { // AgentConfiguration
- * //     identity: "STRING_VALUE",
- * //     instructions: "STRING_VALUE", // required
- * //     model: "STRING_VALUE",
- * //     knowledgeBases: [ // KnowledgeBaseBindingList
- * //       { // KnowledgeBaseBinding
- * //         knowledgeBaseId: "STRING_VALUE", // required
- * //         numberOfResults: Number("int"),
- * //         minimumScore: Number("float"),
- * //       },
+ * //   version: { // AgentVersion
+ * //     agentId: "STRING_VALUE", // required
+ * //     name: "STRING_VALUE", // required
+ * //     liveVersion: "STRING_VALUE",
+ * //     source: "save" || "publish" || "migration" || "import",
+ * //     basedOn: "STRING_VALUE",
+ * //     matchesLive: true || false,
+ * //     createdAt: new Date("TIMESTAMP"), // required
+ * //     createdBy: { // Actor
+ * //       userId: "STRING_VALUE",
+ * //       apiClientId: "STRING_VALUE",
+ * //       displayName: "STRING_VALUE", // required
+ * //     },
+ * //     publishedAt: new Date("TIMESTAMP"),
+ * //     publishedBy: {
+ * //       userId: "STRING_VALUE",
+ * //       apiClientId: "STRING_VALUE",
+ * //       displayName: "STRING_VALUE", // required
+ * //     },
+ * //     note: "STRING_VALUE",
+ * //     changedMembers: [ // ConfigurationPathList
+ * //       "STRING_VALUE",
  * //     ],
- * //     attachments: { // AttachmentSettings
- * //       enabled: true || false,
- * //       maxFiles: Number("int"),
+ * //     configuration: { // AgentConfiguration
+ * //       guidance: { // AgentGuidance
+ * //         identity: "STRING_VALUE",
+ * //         instructions: "STRING_VALUE",
+ * //         relevance: "STRING_VALUE",
+ * //         definitions: "STRING_VALUE",
+ * //         searchTopics: "STRING_VALUE",
+ * //         resultEvaluation: "STRING_VALUE",
+ * //         limitedEvidence: "STRING_VALUE",
+ * //       },
+ * //       models: { // AgentModels
+ * //         answer: { // AnswerModelSettings
+ * //           model: "STRING_VALUE",
+ * //           temperature: Number("float"),
+ * //           topP: Number("float"),
+ * //           topK: Number("int"),
+ * //           maxOutputTokens: Number("int"),
+ * //           maxAttempts: Number("int"),
+ * //           reasoning: { // ReasoningSettings
+ * //             enabled: true || false,
+ * //             effort: "low" || "medium" || "high" || "xhigh" || "max",
+ * //           },
+ * //           maxContinuations: Number("int"),
+ * //         },
+ * //         planning: { // ModelSettings
+ * //           model: "STRING_VALUE",
+ * //           temperature: Number("float"),
+ * //           topP: Number("float"),
+ * //           topK: Number("int"),
+ * //           maxOutputTokens: Number("int"),
+ * //           maxAttempts: Number("int"),
+ * //           reasoning: {
+ * //             enabled: true || false,
+ * //             effort: "low" || "medium" || "high" || "xhigh" || "max",
+ * //           },
+ * //         },
+ * //         summary: {
+ * //           model: "STRING_VALUE",
+ * //           temperature: Number("float"),
+ * //           topP: Number("float"),
+ * //           topK: Number("int"),
+ * //           maxOutputTokens: Number("int"),
+ * //           maxAttempts: Number("int"),
+ * //           reasoning: {
+ * //             enabled: true || false,
+ * //             effort: "low" || "medium" || "high" || "xhigh" || "max",
+ * //           },
+ * //         },
+ * //         classification: {
+ * //           model: "STRING_VALUE",
+ * //           temperature: Number("float"),
+ * //           topP: Number("float"),
+ * //           topK: Number("int"),
+ * //           maxOutputTokens: Number("int"),
+ * //           maxAttempts: Number("int"),
+ * //           reasoning: {
+ * //             enabled: true || false,
+ * //             effort: "low" || "medium" || "high" || "xhigh" || "max",
+ * //           },
+ * //         },
+ * //         searchTopics: {
+ * //           model: "STRING_VALUE",
+ * //           temperature: Number("float"),
+ * //           topP: Number("float"),
+ * //           topK: Number("int"),
+ * //           maxOutputTokens: Number("int"),
+ * //           maxAttempts: Number("int"),
+ * //           reasoning: {
+ * //             enabled: true || false,
+ * //             effort: "low" || "medium" || "high" || "xhigh" || "max",
+ * //           },
+ * //         },
+ * //         title: { // TitleModelSettings
+ * //           model: "STRING_VALUE",
+ * //           maxOutputTokens: Number("int"),
+ * //           maxAttempts: Number("int"),
+ * //         },
+ * //       },
+ * //       knowledgeBases: [ // KnowledgeBaseBindingList
+ * //         { // KnowledgeBaseBinding
+ * //           knowledgeBaseId: "STRING_VALUE", // required
+ * //           description: "STRING_VALUE",
+ * //           maxQueries: Number("int"),
+ * //           numberOfResults: Number("int"),
+ * //           minimumScore: Number("float"),
+ * //           minimumRelevance: Number("float"),
+ * //           transcriptPanel: true || false,
+ * //           evaluation: { // ResultEvaluation
+ * //             method: "reranker" || "model",
+ * //             maxSearchResults: Number("int"),
+ * //             maxResults: Number("int"),
+ * //             judge: {
+ * //               model: "STRING_VALUE",
+ * //               temperature: Number("float"),
+ * //               topP: Number("float"),
+ * //               topK: Number("int"),
+ * //               maxOutputTokens: Number("int"),
+ * //               maxAttempts: Number("int"),
+ * //               reasoning: "<ReasoningSettings>",
+ * //             },
+ * //             reranker: "STRING_VALUE",
+ * //           },
+ * //         },
+ * //       ],
+ * //       policies: [ // PolicyBindingList
+ * //         { // PolicyBinding
+ * //           policyId: "STRING_VALUE", // required
+ * //         },
+ * //       ],
+ * //       connectors: [ // ConnectorBindingList
+ * //         { // ConnectorBinding
+ * //           connectorId: "STRING_VALUE", // required
+ * //         },
+ * //       ],
+ * //       workflow: { // AgentWorkflow
+ * //         entryPhase: "STRING_VALUE",
+ * //         phases: [ // PhaseList
+ * //           { // Phase
+ * //             id: "STRING_VALUE", // required
+ * //             kind: "conversational" || "gather_info" || "take_action" || "policy_review", // required
+ * //             instructions: "STRING_VALUE",
+ * //             tools: [ // PhaseToolList
+ * //               { // PhaseTool
+ * //                 name: "STRING_VALUE",
+ * //                 mcpServerId: "STRING_VALUE",
+ * //                 tools: [ // ToolNameList
+ * //                   "STRING_VALUE",
+ * //                 ],
+ * //                 excludedTools: [
+ * //                   "STRING_VALUE",
+ * //                 ],
+ * //                 description: "STRING_VALUE",
+ * //                 enabled: true || false,
+ * //                 use: "answer" || "context" || "default",
+ * //                 citationLabel: "STRING_VALUE",
+ * //                 search: { // ToolSearchSettings
+ * //                   modes: [ // SearchModeList // required
+ * //                     "evaluated" || "unevaluated",
+ * //                   ],
+ * //                   version: "STRING_VALUE", // required
+ * //                 },
+ * //               },
+ * //             ],
+ * //             transitions: [ // PhaseTransitionList
+ * //               { // PhaseTransition
+ * //                 to: "STRING_VALUE", // required
+ * //                 condition: "STRING_VALUE", // required
+ * //                 kind: "completion" || "alternative" || "skip",
+ * //                 skipLabel: "STRING_VALUE",
+ * //                 requiresUserChoice: true || false,
+ * //                 when: { // TransitionMatch
+ * //                   source: "tool_result" || "saved_field",
+ * //                   field: "STRING_VALUE", // required
+ * //                   equals: "DOCUMENT_VALUE", // required
+ * //                 },
+ * //                 handover: "STRING_VALUE",
+ * //                 startedIn: [ // PhaseIdList
+ * //                   "STRING_VALUE",
+ * //                 ],
+ * //                 notStartedIn: [
+ * //                   "STRING_VALUE",
+ * //                 ],
+ * //               },
+ * //             ],
+ * //             maxSteps: Number("int"),
+ * //             reasoning: "<ReasoningSettings>",
+ * //             opening: { // PhaseOpening
+ * //               message: "STRING_VALUE",
+ * //               input: "DOCUMENT_VALUE",
+ * //               onEveryEntry: true || false,
+ * //             },
+ * //             step: { // JourneyStep
+ * //               id: "STRING_VALUE", // required
+ * //               label: "STRING_VALUE", // required
+ * //               doneWhen: "STRING_VALUE",
+ * //             },
+ * //             onEnd: { // PhaseEnd
+ * //               type: "restart" || "close", // required
+ * //               restartIn: "STRING_VALUE",
+ * //               closingMessage: "STRING_VALUE",
+ * //             },
+ * //             unattended: true || false,
+ * //             repliesOnEntry: true || false,
+ * //             toolCallChecks: { // ToolCallChecks
+ * //               policy: "STRING_VALUE", // required
+ * //               model: "STRING_VALUE",
+ * //               maxRetries: Number("int"),
+ * //             },
+ * //             attributionChecks: { // AttributionChecks
+ * //               model: "STRING_VALUE",
+ * //               maxRetries: Number("int"),
+ * //               mode: "record" || "enforce",
+ * //             },
+ * //             fields: [ // PhaseFieldList
+ * //               { // PhaseField
+ * //                 id: "STRING_VALUE", // required
+ * //                 kind: "field" || "prerequisite",
+ * //                 description: "STRING_VALUE",
+ * //                 request: "STRING_VALUE",
+ * //                 optional: true || false,
+ * //                 type: "text" || "document",
+ * //                 acceptedTypes: [ // DocumentExtensionList
+ * //                   "STRING_VALUE",
+ * //                 ],
+ * //                 maxByteSize: Number("long"),
+ * //                 documentField: "STRING_VALUE",
+ * //                 sources: [ // FieldSourceList
+ * //                   { // FieldSource
+ * //                     kind: "tool_result" || "allowed_values" || "earlier_phase" || "person", // required
+ * //                     toolName: "STRING_VALUE",
+ * //                     path: "STRING_VALUE",
+ * //                     values: [ // AllowedValueList
+ * //                       "STRING_VALUE",
+ * //                     ],
+ * //                     phase: "STRING_VALUE",
+ * //                     field: "STRING_VALUE",
+ * //                   },
+ * //                 ],
+ * //                 prerequisite: "STRING_VALUE",
+ * //               },
+ * //             ],
+ * //             next: "STRING_VALUE",
+ * //             handover: "STRING_VALUE",
+ * //             outcomeDescription: "STRING_VALUE",
+ * //             responses: [ // PhaseResponseList
+ * //               { // PhaseResponse
+ * //                 id: "STRING_VALUE", // required
+ * //                 description: "STRING_VALUE", // required
+ * //                 request: "STRING_VALUE", // required
+ * //               },
+ * //             ],
+ * //             action: { // PhaseAction
+ * //               description: "STRING_VALUE", // required
+ * //               requiredTools: [
+ * //                 "STRING_VALUE",
+ * //               ],
+ * //               completesOnRequiredTool: true || false,
+ * //             },
+ * //             policyRules: [ // PolicyRuleRefList
+ * //               "STRING_VALUE",
+ * //             ],
+ * //             review: { // PolicyReviewSettings
+ * //               policyId: "STRING_VALUE", // required
+ * //               ruleIds: [ // PolicyRuleIdList
+ * //                 "STRING_VALUE",
+ * //               ],
+ * //               reviewStageId: "STRING_VALUE",
+ * //             },
+ * //           },
+ * //         ],
+ * //         capabilities: [ // CapabilityList
+ * //           { // Capability
+ * //             id: "STRING_VALUE", // required
+ * //             description: "STRING_VALUE", // required
+ * //             instructions: "STRING_VALUE",
+ * //             phases: [ // required
+ * //               "STRING_VALUE",
+ * //             ],
+ * //             conversationScope: "organisation" || "workspace",
+ * //           },
+ * //         ],
+ * //       },
+ * //       answers: { // AnswerSettings
+ * //         followUpQuestions: true || false,
+ * //         citations: { // CitationSettings
+ * //           userMessages: true || false,
+ * //         },
+ * //         mediaEmbeds: { // MediaEmbedSettings
+ * //           enabled: true || false,
+ * //           reservedResults: Number("int"),
+ * //         },
+ * //       },
+ * //       conversation: { // ConversationSettings
+ * //         inputPlaceholder: "STRING_VALUE",
+ * //         timeZone: "STRING_VALUE",
+ * //       },
+ * //       attachments: { // AttachmentSettings
+ * //         enabled: true || false,
+ * //         maxFiles: Number("int"),
+ * //         maxByteSize: Number("long"),
+ * //         acceptedTypes: [
+ * //           "STRING_VALUE",
+ * //         ],
+ * //       },
+ * //       contentSafety: { // ContentSafety
+ * //         guardrail: "STRING_VALUE",
+ * //       },
+ * //       deniedDocuments: true || false,
+ * //       memory: { // MemorySettings
+ * //         enabled: true || false,
+ * //         memoryStoreId: "STRING_VALUE",
+ * //         minimumRelevance: Number("float"),
+ * //         maxResults: Number("int"),
+ * //         preferences: true || false,
+ * //         summaries: true || false,
+ * //       },
+ * //       voice: { // VoiceSettings
+ * //         provider: "browser" || "cloud",
+ * //         voiceId: "STRING_VALUE",
+ * //         quality: "natural" || "standard",
+ * //         language: "STRING_VALUE",
+ * //       },
+ * //       liveAvatar: { // LiveAvatarSettings
+ * //         provider: "heygen",
+ * //         secretId: "STRING_VALUE", // required
+ * //         answerVersion: "STRING_VALUE",
+ * //         triggerPhrases: [ // PhraseList // required
+ * //           "STRING_VALUE",
+ * //         ],
+ * //         avatarId: "STRING_VALUE", // required
+ * //         voiceId: "STRING_VALUE", // required
+ * //         contextId: "STRING_VALUE", // required
+ * //         language: "STRING_VALUE", // required
+ * //         holdingPhrases: { // HoldingPhrases
+ * //           openers: [
+ * //             "STRING_VALUE",
+ * //           ],
+ * //           groups: [ // PhraseGroupList
+ * //             "<PhraseList>",
+ * //           ],
+ * //           stillProcessing: "STRING_VALUE",
+ * //           followUp: "STRING_VALUE",
+ * //           intervalMs: Number("int"),
+ * //           skipChance: Number("float"),
+ * //         },
+ * //         muteWhileSpeaking: true || false,
+ * //         speechToText: "deepgram" || "assembly_ai" || "gladia" || "elevenlabs",
+ * //         inactivityTimeoutMs: Number("long"),
+ * //         videoAlignment: "STRING_VALUE",
+ * //         voiceTuning: { // AvatarVoiceTuning
+ * //           speed: Number("float"),
+ * //           model: "STRING_VALUE",
+ * //           stability: Number("float"),
+ * //           style: Number("float"),
+ * //         },
+ * //         pauseAndResume: { // PauseAndResume
+ * //           openingIntro: "STRING_VALUE", // required
+ * //           resumeIntro: "STRING_VALUE", // required
+ * //           pausedTimeoutMs: Number("int"),
+ * //         },
+ * //       },
+ * //       journey: { // JourneySettings
+ * //         poster: { // JourneyPoster
+ * //           label: "STRING_VALUE", // required
+ * //           footer: [ // JourneyLineList
+ * //             "STRING_VALUE",
+ * //           ],
+ * //         },
+ * //         start: { // JourneyIntroduction
+ * //           eyebrow: "STRING_VALUE",
+ * //           title: "STRING_VALUE", // required
+ * //           lead: "STRING_VALUE",
+ * //           buttonLabel: "STRING_VALUE", // required
+ * //         },
+ * //         resume: {
+ * //           eyebrow: "STRING_VALUE",
+ * //           title: "STRING_VALUE", // required
+ * //           lead: "STRING_VALUE",
+ * //           buttonLabel: "STRING_VALUE", // required
+ * //         },
+ * //       },
+ * //       runAs: { // RunAs
+ * //         roleId: "STRING_VALUE", // required
+ * //       },
  * //     },
- * //     contentSafety: { // ContentSafety
- * //       guardrailId: "STRING_VALUE",
- * //     },
- * //     deniedDocuments: true || false,
+ * //     etag: "STRING_VALUE", // required
  * //   },
  * // };
  *
@@ -113,8 +471,9 @@ export interface GetAgentVersionCommandOutput extends GetAgentVersionOutput, __M
  *
  * @throws {@link ValidationError} (client fault)
  *  The request is malformed: a member is missing, the wrong type or out of range; it has a member,
- * filter or sort field the operation does not define; its cursor is not valid for this list; or it
- * asks to delete `draft` or `production`, which every agent keeps.
+ * filter or sort field the operation does not define; its cursor is not valid for this list; it
+ * asks to delete `draft` or `live`, which every agent keeps; an agent configuration would be
+ * larger than 256 KiB; or a file is meant for a conversation whose agent takes no attachments.
  *
  * @throws {@link CaitlynServiceException}
  * <p>Base exception class for all service exceptions from Caitlyn service.</p>
@@ -131,23 +490,82 @@ export interface GetAgentVersionCommandOutput extends GetAgentVersionOutput, __M
  * const response = await client.send(command);
  * /* response is
  * {
- *   agentId: "GHT7YRWXPL",
- *   configuration: {
- *     identity: "You are the HR assistant for Harbour Freight staff.",
- *     instructions: "Answer leave and pay questions from the HR policy knowledge base.",
- *     knowledgeBases: [
- *       {
- *         knowledgeBaseId: "KB4T7YQ2WL",
- *         minimumScore: 0.3,
- *         numberOfResults: 8
- *       }
+ *   etag: `"draft-UyTfLfEiNQC6RTIF"`,
+ *   version: {
+ *     agentId: "GHT7YRWXPL",
+ *     basedOn: "november-release",
+ *     changedMembers: [
+ *       "guidance.instructions"
  *     ],
- *     model: "claude-sonnet-5-5"
- *   },
- *   createdAt: "2026-11-02T03:04:05.000Z",
- *   etag: `"draft-41"`,
- *   matchesProduction: false,
- *   name: "draft"
+ *     configuration: {
+ *       guidance: {
+ *         identity: "You are the HR assistant for Harbour Freight staff.",
+ *         instructions: "Answer leave and pay questions from the HR policy knowledge base."
+ *       },
+ *       knowledgeBases: [
+ *         {
+ *           knowledgeBaseId: "KB4T7YQ2WL",
+ *           minimumScore: 0.3,
+ *           numberOfResults: 8
+ *         }
+ *       ],
+ *       models: {
+ *         answer: {
+ *           model: "claude-sonnet-5-5"
+ *         }
+ *       }
+ *     },
+ *     createdAt: "2026-11-02T03:04:05.000Z",
+ *     etag: `"draft-UyTfLfEiNQC6RTIF"`,
+ *     matchesLive: false,
+ *     name: "draft"
+ *   }
+ * }
+ * *\/
+ * ```
+ *
+ * @example Read live, the version the agent answers with
+ * ```javascript
+ * //
+ * const input = {
+ *   agentId: "GHT7YRWXPL",
+ *   version: "live"
+ * };
+ * const command = new GetAgentVersionCommand(input);
+ * const response = await client.send(command);
+ * /* response is
+ * {
+ *   etag: `"live-t-RTXuzzmm5n-5Y7"`,
+ *   version: {
+ *     agentId: "GHT7YRWXPL",
+ *     basedOn: "draft",
+ *     configuration: {
+ *       guidance: {
+ *         instructions: "Answer leave and pay questions. Quote the policy clause you relied on."
+ *       },
+ *       models: {
+ *         answer: {
+ *           model: "claude-sonnet-5-5"
+ *         }
+ *       }
+ *     },
+ *     createdAt: "2026-11-14T02:03:04.000Z",
+ *     createdBy: {
+ *       displayName: "Aroha Ngata",
+ *       userId: "3c9e2f4a-6b1d-4e8f-a2c7-5d0b9e1f3a64"
+ *     },
+ *     etag: `"live-t-RTXuzzmm5n-5Y7"`,
+ *     liveVersion: "november-release",
+ *     matchesLive: true,
+ *     name: "live",
+ *     note: "Quotes the policy clause it relied on.",
+ *     publishedAt: "2026-11-14T02:03:04.000Z",
+ *     publishedBy: {
+ *       displayName: "Aroha Ngata",
+ *       userId: "3c9e2f4a-6b1d-4e8f-a2c7-5d0b9e1f3a64"
+ *     },
+ *     source: "publish"
+ *   }
  * }
  * *\/
  * ```

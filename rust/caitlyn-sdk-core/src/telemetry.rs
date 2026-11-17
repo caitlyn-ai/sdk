@@ -52,7 +52,7 @@ pub(crate) fn http_target(raw: &str) -> (String, String) {
 /// `NotSupportedByServer`, `InputError` or `Cancelled`.
 pub fn error_type(e: &Error, shapes: &[(u16, &'static str)]) -> &'static str {
     match e {
-        Error::Api(a) => shapes
+        Error::Api(a) | Error::ApiWith(a, _) => shapes
             .iter()
             .find(|(s, _)| *s == a.status && a.status != 0)
             .map_or("CaitlynError", |(_, n)| n),
@@ -60,7 +60,8 @@ pub fn error_type(e: &Error, shapes: &[(u16, &'static str)]) -> &'static str {
         Error::Auth(_) => "CaitlynAuthError",
         Error::NotSupportedByServer(_) => "NotSupportedByServer",
         Error::Input(_) => "InputError",
-        Error::Cancelled => "Cancelled",
+        Error::Cancelled | Error::CancelledWith(_) => "Cancelled",
+        Error::Timeout => "Timeout",
     }
 }
 
@@ -68,7 +69,7 @@ pub fn error_type(e: &Error, shapes: &[(u16, &'static str)]) -> &'static str {
 /// `exception` event (PROTOCOL.md 13).
 pub(crate) fn record_failure(span: &tracing::Span, e: &Error, shapes: &[(u16, &'static str)]) {
     let code = match e {
-        Error::Api(a) => Some(a.code.as_str()),
+        Error::Api(a) | Error::ApiWith(a, _) => Some(a.code.as_str()),
         Error::Auth(a) => Some(a.code.as_str()),
         Error::Connection(_) => Some(CONNECTION_ERROR),
         _ => None,

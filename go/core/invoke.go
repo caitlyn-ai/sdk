@@ -35,6 +35,9 @@ type Operation struct {
 	IdempotencyHeader string
 	// IfMatchRequired operations refuse to send without WithIfMatch.
 	IfMatchRequired bool
+	// Redirect is the 3xx status the operation answers with on success (GetDocumentContent's 302): that response is
+	// the result, and the SDK does not follow it.
+	Redirect int
 	// Retryable lists the statuses of modelled @retryable errors.
 	Retryable []int
 	// Errors builds typed errors by status.
@@ -101,13 +104,15 @@ type ResponseMetadata struct {
 	HTTPStatusCode int
 	// RequestID is the Caitlyn-Request-Id header; quote it to support.
 	RequestID string
-	// ETag is the ETag header, or "" when the response has none.
-	ETag string
+	// APIVersion is the Caitlyn-Api-Version header, the server's model version ("5.120.0"), or "" when absent.
+	APIVersion string
 }
 
-// Metadata returns the response's status, request id and ETag.
+// Metadata returns the response's status, request id and API version. An ETag is not metadata: it is the thing's
+// ETag field, or the result's header-bound member.
 func (r *Response) Metadata() ResponseMetadata {
-	return ResponseMetadata{HTTPStatusCode: r.StatusCode, RequestID: r.Header.Get("Caitlyn-Request-Id"), ETag: r.Header.Get("ETag")}
+	return ResponseMetadata{HTTPStatusCode: r.StatusCode, RequestID: r.Header.Get("Caitlyn-Request-Id"),
+		APIVersion: r.Header.Get("Caitlyn-Api-Version")}
 }
 
 // DecodeJSON reads the body into v and closes it. An empty body leaves v as it is. A connection that fails while
@@ -145,6 +150,23 @@ type errNoResponse struct{ err error }
 func (e *errNoResponse) Error() string { return "caitlyn: no response: " + e.err.Error() }
 func (e *errNoResponse) Unwrap() error { return e.err }
 
+func (cs *callSettings) requireIfMatch(op *Operation) error {
+	if op.IfMatchRequired && cs.ifMatch == nil {
+		return &InputError{Operation: op.Name, Member: "If-Match", Reason: "is required: pass caitlyn.WithIfMatch(etag)"}
+	}
+	return nil
+}
+
+// RequireIfMatch makes Do's If-Match check early, for a call that uploads a file before sending its request: an
+// operation that requires If-Match fails before anything is sent, upload included.
+func RequireIfMatch(op *Operation, opts []CallOption) error {
+	var cs callSettings
+	for _, o := range opts {
+		o(&cs)
+	}
+	return cs.requireIfMatch(op)
+}
+
 // Do sends a request with retries and returns the 2xx response, whose body the caller must consume or close.
 func (c *Client) Do(ctx context.Context, op *Operation, req *Request, opts []CallOption) (*Response, error) {
 	var cs callSettings
@@ -154,8 +176,8 @@ func (c *Client) Do(ctx context.Context, op *Operation, req *Request, opts []Cal
 	if err := c.checkSince(op, req); err != nil {
 		return nil, err
 	}
-	if op.IfMatchRequired && cs.ifMatch == nil {
-		return nil, &InputError{Operation: op.Name, Member: "If-Match", Reason: "is required: pass caitlyn.WithIfMatch(etag)"}
+	if err := cs.requireIfMatch(op); err != nil {
+		return nil, err
 	}
 	idemKey := ""
 	if op.IdempotencyHeader != "" {
@@ -290,7 +312,7 @@ func (c *Client) attempt(ctx context.Context, op *Operation, req *Request, cs *c
 		span.SetAttributes(attribute.String("caitlyn.server.api_version", v))
 	}
 	c.noteServerVersion(resp.Header.Get("Caitlyn-Api-Version"))
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 || op.Redirect != 0 && resp.StatusCode == op.Redirect {
 		return &Response{Response: resp, op: op.Name}, nil
 	}
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -400,6 +422,16 @@ func uuid4() string {
 
 // PathLabel escapes a label value for one path segment.
 func PathLabel(v string) string { return url.PathEscape(v) }
+
+// GreedyPathLabel escapes a greedy label's value ({folderPath+}): each "/"-separated segment on its own, so the
+// slashes stay.
+func GreedyPathLabel(v string) string {
+	parts := strings.Split(v, "/")
+	for i, p := range parts {
+		parts[i] = url.PathEscape(p)
+	}
+	return strings.Join(parts, "/")
+}
 
 // FormatTime formats a timestamp as RFC 3339 with milliseconds and Z (PROTOCOL.md 3).
 func FormatTime(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000Z") }

@@ -8,85 +8,21 @@ import (
 	"github.com/caitlyn-ai/sdk/go/core"
 )
 
-// WatchWorkspaceEventsInput is the input of Events.Subscribe.
-type WatchWorkspaceEventsInput struct {
-	// The event types to receive.
-	// Sent as the query parameter type.
-	Types []string `json:"-"`
-	// The conversations to receive events about.
-	// Sent as the query parameter conversationId.
-	ConversationIDs []string `json:"-"`
-	// Carry on after this event. Absent means from now.
-	// Sent as the query parameter after.
-	After *string `json:"-"`
-	// The `id` of the last event received, sent by a reconnecting client in place of `after`.
-	// Sent as the Last-Event-ID header.
-	LastEventID *string `json:"-"`
+// Events holds the calls on caitlyn.events.
+//
+// The workspace's product events, for an integration that waits for something to happen without
+// knowing in advance which conversation it will happen in.
+type Events struct {
+	c *Client
 }
 
-func errorsWatchWorkspaceEvents(status int, e *core.APIError) error {
-	switch status {
-	case 400:
-		return &ValidationError{e}
-	case 401:
-		return &UnauthenticatedError{e}
-	case 403:
-		return &PermissionDeniedError{e}
-	case 404:
-		return &NotFoundError{e}
-	case 409:
-		return &ConflictError{e}
-	case 412:
-		return &PreconditionFailedError{e}
-	case 413:
-		return &PayloadTooLargeError{e}
-	case 422:
-		return &UnprocessableContentError{e}
-	case 428:
-		return &PreconditionRequiredError{e}
-	case 429:
-		return &TooManyRequestsError{e}
-	case 500:
-		return &InternalError{e}
-	case 503:
-		return &ServiceUnavailableError{e}
+func newEvents(c *Client) *Events {
+	return &Events{
+		c: c,
 	}
-	return e
 }
 
-var opWatchWorkspaceEvents = &core.Operation{
-	Name:      "WatchWorkspaceEvents",
-	Method:    "GET",
-	Since:     "5.115.0",
-	RetrySafe: true,
-	SSE:       true,
-	Retryable: []int{503, 429},
-	Errors:    errorsWatchWorkspaceEvents,
-}
-
-func buildWatchWorkspaceEvents(in *WatchWorkspaceEventsInput) (*core.Request, error) {
-	req := core.NewRequest("/v3/events/stream")
-	for _, v := range in.Types {
-		req.Query.Add("type", v)
-	}
-	for _, v := range in.ConversationIDs {
-		req.Query.Add("conversationId", v)
-	}
-	if in.After != nil {
-		req.Query.Add("after", *in.After)
-	}
-	if in.LastEventID != nil {
-		req.Header.Add("Last-Event-ID", *in.LastEventID)
-	}
-	return req, nil
-}
-
-// WorkspaceEventStream is a stream of WorkspaceEvent events. Range over Events until you have what you
-// need, then Close it: the stream has no final event. A dropped connection is resumed with
-// Last-Event-ID where the model allows.
-type WorkspaceEventStream = core.Stream[WorkspaceEvent, struct{}]
-
-// Subscribe streams the workspace's events the caller asks for, from a cursor or from now.
+// Watch streams the workspace's events the caller asks for, from a cursor or from now.
 //
 // A stream listens to what it names and nothing else: give `type`, `conversationId`, or both.
 // Every event is about a subject (a conversation, for now), and the caller receives it only when
@@ -104,31 +40,93 @@ type WorkspaceEventStream = core.Stream[WorkspaceEvent, struct{}]
 // Catching up after a cursor covers activity through the v3 API. A conversation event comes
 // with its content, in the same structures as the conversation's own stream.
 //
-// The error for a failed request is returned at once; errors during the stream (an error event, a
-// connection that could not be resumed, cancellation) end Events with that error.
-//
-// Errors: *InternalError (500), *PermissionDeniedError (403), *ServiceUnavailableError (503),
-// *TooManyRequestsError (429), *UnauthenticatedError (401), *ValidationError (400); another status the
-// API models has its own type too (*NotFoundError for 404), and any other status is an *Error.
+// The request is sent before Watch returns, whether or not the stream is read. The error for a failed
+// request is returned at once; errors during the stream (an error event, a connection that could not
+// be resumed, cancellation) end Events with that error.
 //
 // Since Caitlyn 5.115.0; beta.
-func (c *EventsClient) Subscribe(ctx context.Context, in *WatchWorkspaceEventsInput, opts ...CallOption) (*WorkspaceEventStream, error) {
-	if in == nil {
-		in = &WatchWorkspaceEventsInput{}
+func (s *Events) Watch(ctx context.Context, in *WatchWorkspaceEventsInput, opts ...CallOption) (*WorkspaceEventStream, error) {
+	p := &watchWorkspaceEventsParams{}
+	if in != nil {
+		p.Types = in.Types
+		p.ConversationIDs = in.ConversationIDs
+		p.After = in.After
+		p.LastEventID = in.LastEventID
 	}
-	req, err := buildWatchWorkspaceEvents(in)
+	return s.c.streamWatchWorkspaceEvents(ctx, p, opts)
+}
+
+// WatchWorkspaceEventsInput is what the caller gives WatchWorkspaceEvents; the scope it is called on
+// fills the identifiers.
+type WatchWorkspaceEventsInput struct {
+	// The event types to receive.
+	// Sent as the query parameter type.
+	Types []string `json:"-"`
+	// The conversations to receive events about.
+	// Sent as the query parameter conversationId.
+	ConversationIDs []string `json:"-"`
+	// Carry on after this event. Absent means from now.
+	// Sent as the query parameter after.
+	After *string `json:"-"`
+	// The `id` of the last event received, sent by a reconnecting client in place of `after`.
+	// Sent as the Last-Event-ID header.
+	LastEventID *string `json:"-"`
+}
+
+// watchWorkspaceEventsParams is every member of WatchWorkspaceEvents's input: the caller's, and those the scope fills.
+type watchWorkspaceEventsParams struct {
+	Types           []string `json:"-"`
+	ConversationIDs []string `json:"-"`
+	After           *string  `json:"-"`
+	LastEventID     *string  `json:"-"`
+}
+
+var opWatchWorkspaceEvents = &core.Operation{
+	Name:      "WatchWorkspaceEvents",
+	Method:    "GET",
+	Since:     "5.115.0",
+	RetrySafe: true,
+	SSE:       true,
+	Retryable: []int{503, 429},
+	Errors:    errorForStatus,
+}
+
+func buildWatchWorkspaceEvents(in *watchWorkspaceEventsParams) (*core.Request, error) {
+	req := core.NewRequest("/v3/events/stream")
+	for _, v := range in.Types {
+		req.Query.Add("type", v)
+	}
+	for _, v := range in.ConversationIDs {
+		req.Query.Add("conversationId", v)
+	}
+	if in.After != nil {
+		req.Query.Add("after", *in.After)
+	}
+	if in.LastEventID != nil {
+		req.Header.Add("Last-Event-ID", *in.LastEventID)
+	}
+	return req, nil
+}
+
+// WorkspaceEventStream is a stream of WorkspaceEvent events. Range over Events until you have what you
+// need, then Close it: the stream has no final event. A dropped connection is resumed where the model
+// allows.
+type WorkspaceEventStream = core.Stream[WorkspaceEvent, struct{}]
+
+func (c *Client) streamWatchWorkspaceEvents(ctx context.Context, p *watchWorkspaceEventsParams, opts []CallOption) (*WorkspaceEventStream, error) {
+	req, err := buildWatchWorkspaceEvents(p)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.c.core.Do(ctx, opWatchWorkspaceEvents, req, opts)
+	resp, err := c.core.Do(ctx, opWatchWorkspaceEvents, req, opts)
 	if err != nil {
 		return nil, err
 	}
 	return core.OpenStream(ctx, resp, core.StreamSpec[WorkspaceEvent, struct{}]{
-		Decode: decodeWorkspaceEvent(errorsWatchWorkspaceEvents, false),
+		Decode: decodeWorkspaceEvent(errorForStatus, false),
 		Final:  nil,
 		Resume: func(ctx context.Context, lastEventID string) (*core.Response, error) {
-			rin := *in
+			rin := *p
 			if lastEventID != "" {
 				rin.LastEventID = &lastEventID
 				rin.After = nil
@@ -137,7 +135,7 @@ func (c *EventsClient) Subscribe(ctx context.Context, in *WatchWorkspaceEventsIn
 			if err != nil {
 				return nil, err
 			}
-			return c.c.core.Do(ctx, opWatchWorkspaceEvents, rreq, nil)
+			return c.core.Do(ctx, opWatchWorkspaceEvents, rreq, nil)
 		},
 	}), nil
 }

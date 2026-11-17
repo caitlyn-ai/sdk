@@ -11,6 +11,7 @@
 
 pub mod auth;
 pub mod aws;
+pub mod batch;
 mod budget;
 mod client;
 pub mod error;
@@ -18,25 +19,31 @@ pub mod paginate;
 pub mod raw;
 pub mod request;
 pub mod stream;
+pub mod sync;
 pub mod telemetry;
 pub mod time;
-mod upload;
-pub mod waiter;
+pub mod upload;
+pub mod watch;
 
 pub use auth::{Auth, AuthSession, AuthorizationUrl, Callback, MemoryTokenStore, OAuthTokens, TokenStore};
 pub use aws::{AwsCredentialProvider, AwsCredentials, SigningAlgorithm};
 pub use client::{compare_versions, workspace_audience, workspace_endpoint, workspace_host, Client, ClientBuilder, SdkInfo};
-pub use error::{ApiError, AuthError, ConnectionError, Error, FieldError, InputError, NotSupportedByServer, CONNECTION_ERROR};
+pub use error::{
+    ApiError, AuthError, ConnectionError, Error, FieldError, InputError, NotSupportedByServer, Partial, CONNECTION_ERROR, WAIT_TIMEOUT,
+};
 pub use paginate::{Items, Pages};
 pub use raw::Raw;
-pub use request::{path_label, BoxFuture, Call, CallOptions, Operation, Request, Response, ResponseMetadata};
+pub use request::{
+    path_greedy_label, path_label, trim_slashes, BoxFuture, Call, CallOptions, Operation, Request, Response, ResponseMetadata,
+    ThingMetadata,
+};
 /// The HTTP client the runtime uses, for `ClientBuilder::http_client`.
 pub use reqwest;
-pub use stream::{Decoded, Stream, StreamSpec};
+pub use stream::{Decoded, Stream, StreamSpec, Text, TextDeltas};
 pub use telemetry::Propagator;
 pub use tokio_util::sync::CancellationToken;
-pub use upload::UploadFile;
-pub use waiter::{Wait, WaitReason, WaitState, WaiterError, WaiterSpec};
+pub use upload::{content_type_for, Attachment, FileDescription, PreparedFile, UploadFile};
+pub use watch::{Created, Follow, Started, WaitOptions, Waiting};
 
 /// Re-exported for generated code.
 #[doc(hidden)]

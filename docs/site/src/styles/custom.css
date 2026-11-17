@@ -10,7 +10,7 @@
   content: attr(data-label);
   display: block;
   font-size: var(--sl-text-sm);
-  font-weight: 600;
+  font-weight: 500; /* Medium: Euclid has no 600 face, so 600 would be synthesised bold */
   color: var(--sl-color-gray-2);
   margin-bottom: 0.25rem;
 }
@@ -45,7 +45,7 @@
 .lang-tab[aria-selected='true'] {
   color: var(--sl-color-white);
   border-bottom-color: var(--sl-color-text-accent);
-  font-weight: 600;
+  font-weight: 500; /* Medium: Euclid has no 600 face, so 600 would be synthesised bold */
 }
 .lang-tabs-ready > .lang-panel {
   margin-top: 0;

@@ -27,28 +27,38 @@ export const beforeEach = (fn: Fn) => void hooks.beforeEach.push(fn);
 
 const describe = (err: unknown) => (err instanceof Error ? `${err.name}: ${err.message}${err.stack ? `\n${err.stack}` : ''}` : String(err));
 
-/** Runs every case, or those whose name contains `only`. */
-async function run(only?: string): Promise<Result[]> {
+/**
+ * Runs the cases whose name contains `only` (every case without it), from the `from`th of them. A case that times out
+ * may leave work running, such as a watch that reconnects, whose requests would reach the mock during later cases and
+ * be counted there. So a run stops after a timed-out case and says where to carry on: the runner loads the page again,
+ * which ends everything the case left behind, and calls run() from `next`.
+ */
+async function run(only?: string, from = 0): Promise<{ results: Result[]; next?: number }> {
   const results: Result[] = [];
+  const chosen = cases.filter((x) => !only || x.name.includes(only));
   for (const h of hooks.before) await h();
-  for (const c of cases.filter((x) => !only || x.name.includes(only))) {
+  for (let i = from; i < chosen.length; i++) {
+    const c = chosen[i]!;
     const t0 = performance.now();
     if (c.skip) {
       results.push({ name: c.name, status: 'skipped', ms: 0, message: c.skip });
       continue;
     }
+    let timedOut = false;
     try {
       for (const h of hooks.beforeEach) await h();
       let timer: ReturnType<typeof setTimeout> | undefined;
-      await Promise.race([c.fn(), new Promise((_, reject) => (timer = setTimeout(() => reject(new Error(`timed out after ${TIMEOUT_MS} ms`)), TIMEOUT_MS)))]).finally(() => clearTimeout(timer));
+      const limit = new Promise((_, reject) => (timer = setTimeout(() => ((timedOut = true), reject(new Error(`timed out after ${TIMEOUT_MS} ms`))), TIMEOUT_MS)));
+      await Promise.race([c.fn(), limit]).finally(() => clearTimeout(timer));
       results.push({ name: c.name, status: 'passed', ms: performance.now() - t0 });
     } catch (err) {
       results.push({ name: c.name, status: 'failed', ms: performance.now() - t0, message: describe(err) });
     }
     console.log(`${results.at(-1)!.status} ${c.name}`);
+    if (timedOut && i + 1 < chosen.length) return { results, next: i + 1 };
   }
   for (const h of hooks.after) await h();
-  return results;
+  return { results };
 }
 
 (globalThis as { __caitlynConformance?: unknown }).__caitlynConformance = { run, count: () => cases.length };

@@ -27,7 +27,7 @@ every SDK raises it as a typed error you can tell apart by HTTP status and by co
 <!-- example: examples/typescript/concepts.ts#errors -->
 ```ts tab="TypeScript"
 try {
-  await caitlyn.agents.versions.get({ agentId, version: 'v99' });
+  await caitlyn.agents(agentId).versions('v99').get();
 } catch (err) {
   if (err instanceof NotFoundError) {
     console.log('No such version');
@@ -47,7 +47,7 @@ try {
 <!-- example: examples/python/concepts.py#errors -->
 ```python tab="Python"
 try:
-    caitlyn.agents.versions.get(agent_id=agent_id, version="v99")
+    caitlyn.agents(agent_id).versions("v99").get()
 except NotFoundError:
     print("No such version")
 except ValidationError as err:
@@ -63,7 +63,7 @@ except CaitlynError as err:
 ```
 <!-- example: examples/go/concepts/concepts.go#errors -->
 ```go tab="Go"
-_, err := client.Agents.Versions.Get(ctx, &caitlyn.GetAgentVersionInput{AgentID: "GHT7YRWXPL", Version: "v99"})
+_, err := client.Agent("GHT7YRWXPL").Version("v99").Get(ctx)
 var notFound *caitlyn.NotFoundError
 var invalid *caitlyn.ValidationError
 var noResponse *caitlyn.ConnectionError
@@ -90,11 +90,7 @@ default:
 ```
 <!-- example: examples/rust/src/concepts.rs#errors -->
 ```rust tab="Rust"
-let input = GetAgentVersionInput {
-    agent_id: "GHT7YRWXPL".into(),
-    version: "v99".into(),
-};
-match client.agents().versions().get(input).await {
+match client.agent("GHT7YRWXPL").version("v99").get().await {
     Ok(version) => println!("{}", version.name),
     Err(Error::NotFound(_)) => println!("No such version"),
     Err(Error::Validation(err)) => {
@@ -118,6 +114,19 @@ match client.agents().versions().get(input).await {
   renamed. Several codes can share a status; each has [its own page](#error-codes).
 - **Quote `requestId`** (Python and Rust `request_id`, Go `RequestID`) to Caitlyn support. It is also in the
   `Caitlyn-Request-Id` header of every response.
+
+## Conditional writes: ETags and If-Match
+
+Every thing you read carries an `etag`. A write that changes a thing takes it back as `If-Match` (the call option
+`ifMatch`; Python `if_match=`, Go `caitlyn.WithIfMatch`, Rust `.if_match(…)`), and the rule is the same everywhere:
+
+- **On these writes `If-Match` is optional.** Leave it out and the write applies to the thing as it stands:
+<!-- if-match-optional -->
+- **Send the ETag you last read to guard the write.** If the thing changed since, the write is refused with 412
+  [`PRECONDITION_FAILED`](/errors/PRECONDITION_FAILED/): read it again and reapply your change rather than overwrite
+  someone else's.
+- **Every other write requires it.** Without `If-Match` it is refused with 428
+  [`PRECONDITION_REQUIRED`](/errors/PRECONDITION_REQUIRED/). Each operation's page says which it is.
 
 ## The fields
 

@@ -32,6 +32,19 @@
 @font-face {
   font-family: 'Euclid Circular Fallback';
   src: local('Arial'), local('ArialMT'), local('Helvetica Neue'), local('Helvetica');
+  font-weight: 300 400;
+  size-adjust: 105.08%;
+  ascent-override: 95.16%;
+  descent-override: 25.5%;
+  line-gap-override: 0%;
+}
+/* Its emphasis face, for Medium (500): headings, strong text, labels. With only the face above, a browser sets 500 in
+   it as it is (it synthesises bold from 600 up), so emphasis looked like body text until the web font arrived, and
+   everywhere it is not served. GAP: its overrides are the regular face's, not measured against Euclid Medium. */
+@font-face {
+  font-family: 'Euclid Circular Fallback';
+  src: local('Arial Bold'), local('Arial-BoldMT'), local('Helvetica Neue Bold'), local('HelveticaNeue-Bold'), local('Helvetica Bold'), local('Helvetica-Bold');
+  font-weight: 500 700;
   size-adjust: 105.08%;
   ascent-override: 95.16%;
   descent-override: 25.5%;
@@ -332,6 +345,12 @@ starlight-toc a[aria-current='true'],
   background: var(--caitlyn-panel);
   box-shadow: inset 3px 0 0 var(--caitlyn-highlight); /* the highlight rule. GAP: rule width is not a token */
   color: var(--caitlyn-ink);
+}
+/* A note stands apart from the paragraph above it and the table or block below it: space-8 above and below, where
+   Starlight's flow gives every block the same 1rem */
+.sl-markdown-content :not(blockquote) + blockquote,
+.sl-markdown-content blockquote + :not(blockquote) {
+  margin-top: 32px;
 }
 
 /* Inline code on a panel fill */

@@ -34,20 +34,20 @@ const problem = (status: number, code: string, extra: Record<string, unknown> = 
   JSON.stringify({ type: `https://build.caitlyn.ai/errors/${code}`, title: 'Problem', status, code, requestId: 'R1', ...extra });
 
 test('a typed error read through CaitlynError: status, code, requestId, title', async () => {
-  const e = await caught(answering(404, problem(404, 'NOT_FOUND'), { 'content-type': 'application/problem+json' }).agents.versions.get({ agentId: 'A', version: 'draft' }));
+  const e = await caught(answering(404, problem(404, 'NOT_FOUND'), { 'content-type': 'application/problem+json' }).agents('A').draft.get());
   assert.ok(e instanceof NotFoundError);
   assert.deepEqual(describe(e), { status: 404, code: 'NOT_FOUND', requestId: 'R1', title: 'Problem', pointer: undefined, rawBody: problem(404, 'NOT_FOUND') });
 });
 
 test('field errors on a 400 are typed through CaitlynError', async () => {
   const body = problem(400, 'VALIDATION_FAILED', { errors: [{ pointer: '/identity', code: 'VALIDATION_FAILED' }] });
-  const e = await caught(answering(400, body, { 'content-type': 'application/problem+json' }).agents.versions.get({ agentId: 'A', version: 'draft' }));
+  const e = await caught(answering(400, body, { 'content-type': 'application/problem+json' }).agents('A').draft.get());
   assert.ok(e instanceof ValidationError);
   assert.equal(describe(e)?.pointer, '/identity');
 });
 
 test('the generic error for a status the model does not name is a CaitlynError with its fields', async () => {
-  const e = await caught(answering(502, 'Bad Gateway', { 'content-type': 'text/plain' }).agents.versions.get({ agentId: 'A', version: 'draft' }));
+  const e = await caught(answering(502, 'Bad Gateway', { 'content-type': 'text/plain' }).agents('A').draft.get());
   assert.ok(e instanceof CaitlynError);
   assert.deepEqual(describe(e), { status: 502, code: 'HTTP_502', requestId: undefined, title: undefined, pointer: undefined, rawBody: 'Bad Gateway' });
 });

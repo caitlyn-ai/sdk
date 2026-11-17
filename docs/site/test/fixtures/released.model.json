@@ -1,0 +1,7 @@
+{
+  "$comment": "The @since of two operations in a snapshot built from the app's main, where every operation is in a release: GetKnowledgeBase arrived in 5.115.0 and ListKnowledgeBases earlier. docs/site/test/not-available.test.mjs applies it to the prepared model.",
+  "shapes": {
+    "ai.caitlyn.v3#GetKnowledgeBase": { "type": "operation", "traits": { "ai.caitlyn.traits#since": "5.115.0" } },
+    "ai.caitlyn.v3#ListKnowledgeBases": { "type": "operation", "traits": { "ai.caitlyn.traits#since": "5.114.2" } }
+  }
+}

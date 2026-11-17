@@ -112,6 +112,10 @@ final class CaitlynRustCodegen implements DirectedCodegen<RustContext, RustSetti
         String name = ctx.symbolProvider().toSymbol(shape).getName();
         boolean event = facts.sseMemberOf.containsKey(shape.getId());
         boolean result = facts.resultNames.containsKey(shape.getId());
+        boolean thing = facts.things.contains(shape.getId());
+        if (thing && result) {
+            throw new CodegenException(shape.getId() + ": a thing is also a named result");
+        }
         ctx.writerDelegator().useFileWriter("src/types.rs", "", w -> {
             w.l(Names.doc(doc(shape), ""));
             if (facts.resultNames.containsKey(shape.getId())) {
@@ -133,6 +137,7 @@ final class CaitlynRustCodegen implements DirectedCodegen<RustContext, RustSetti
                     w.l("    #[serde(rename = " + Names.str(ModelFacts.wireName(m)) + ctx.types().serdeExtra(m) + ")]\n");
                 }
                 w.l("    pub " + field + ": " + ctx.types().member(m) + ",\n");
+                facts.uploads.fileField(shape.getId(), m.getMemberName()).ifPresent(f -> w.l(fileField(field, f)));
             }
             if (event) {
                 w.l("    /// The event's SSE `id:`. `None` when the value is not an event itself, such as another event's data.\n    #[serde(skip)]\n    pub event_id: Option<String>,\n");
@@ -141,6 +146,10 @@ final class CaitlynRustCodegen implements DirectedCodegen<RustContext, RustSetti
                 w.l("    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).\n"
                         + "    /// The default on values you build yourself.\n    #[serde(skip)]\n    pub response_metadata: rt::ResponseMetadata,\n");
             }
+            if (thing) {
+                w.l("    /// The response this thing was read from; see [`response_metadata`](Self::response_metadata).\n"
+                        + "    #[serde(skip)]\n    pub(crate) response_metadata: rt::ThingMetadata,\n");
+            }
             w.l("    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values\n"
                     + "    /// you build yourself.\n    #[serde(skip)]\n    pub raw: rt::Raw,\n}\n\n");
             w.l("impl Serialize for " + name + " {\n    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {\n"
@@ -148,7 +157,26 @@ final class CaitlynRustCodegen implements DirectedCodegen<RustContext, RustSetti
             w.l("impl<'de> Deserialize<'de> for " + name + " {\n    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {\n"
                     + "        let v = serde_json::Value::deserialize(d)?;\n"
                     + "        rt::raw::with_raw(v, |v| " + name + "::deserialize(v), |o, r| o.raw = r)\n    }\n}\n\n");
+            if (thing) {
+                w.l("impl " + name + " {\n"
+                        + "    /// The response this " + name + " was read from (PROTOCOL.md 4.2): its HTTP status, request id and ETag. `Some` on a\n"
+                        + "    /// thing from one response (get, update, create, `wait()`); `None` on a list item, a snapshot entry or a value\n"
+                        + "    /// built in code. It is never serialised, and things compare equal whatever it holds.\n"
+                        + "    pub fn response_metadata(&self) -> Option<&rt::ResponseMetadata> {\n        self.response_metadata.0.as_ref()\n    }\n\n"
+                        + "    /// The JSON object this " + name + " was read from, unknown fields included (PROTOCOL.md 4.1).\n"
+                        + "    pub fn raw(&self) -> &rt::Raw {\n        &self.raw\n    }\n}\n\n");
+            }
         });
+    }
+
+    /**
+     * The file field beside an {@code @uploadTarget} identifier (PROTOCOL.md 10): the call uploads it and sends the
+     * upload's id in the identifier's place. It is never serialised.
+     */
+    static String fileField(String idField, String fileField) {
+        return Names.doc("A file to send in place of `" + idField + "`: the call reserves an upload for it with `core().uploads()`, "
+                + "sends the bytes, then sends the upload's id as `" + idField + "`. Set this or `" + idField + "`, not both.", "    ")
+                + "    #[serde(skip)]\n    pub " + fileField + ": Option<rt::UploadFile>,\n";
     }
 
     static String memberDoc(RustContext ctx, MemberShape m) {
@@ -268,19 +296,17 @@ final class CaitlynRustCodegen implements DirectedCodegen<RustContext, RustSetti
             w.l("#[derive(Debug, Clone, PartialEq)]\n#[non_exhaustive]\npub enum " + name + " {\n");
             for (MemberShape m : events) {
                 String t = ctx.symbolProvider().toSymbol(ctx.model().expectShape(m.getTarget())).getName();
-                w.l("    /// `" + ModelFacts.wireName(m) + "`\n    " + t + "(" + t + "),\n");
+                w.l("    /// `" + ModelFacts.wireName(m) + "`\n    " + Names.pascal(m.getMemberName()) + "(" + t + "),\n");
             }
             w.l("}\n\n");
             w.l("impl " + name + " {\n    /// The event's SSE `id:`.\n    pub fn event_id(&self) -> Option<&str> {\n        match self {\n");
             for (MemberShape m : events) {
-                String t = ctx.symbolProvider().toSymbol(ctx.model().expectShape(m.getTarget())).getName();
-                w.l("            " + name + "::" + t + "(v) => v.event_id.as_deref(),\n");
+                w.l("            " + name + "::" + Names.pascal(m.getMemberName()) + "(v) => v.event_id.as_deref(),\n");
             }
             w.l("        }\n    }\n\n");
             w.l("    /// The event's SSE `event:` name, for example `text.delta`.\n    pub fn event_type(&self) -> &'static str {\n        match self {\n");
             for (MemberShape m : events) {
-                String t = ctx.symbolProvider().toSymbol(ctx.model().expectShape(m.getTarget())).getName();
-                w.l("            " + name + "::" + t + "(_) => " + Names.str(ModelFacts.wireName(m)) + ",\n");
+                w.l("            " + name + "::" + Names.pascal(m.getMemberName()) + "(_) => " + Names.str(ModelFacts.wireName(m)) + ",\n");
             }
             w.l("        }\n    }\n}\n\n");
             // Serialised as the event's own fields plus `type`, its SSE event name: the shape TypeScript gives events.
@@ -288,13 +314,19 @@ final class CaitlynRustCodegen implements DirectedCodegen<RustContext, RustSetti
             w.l("impl Serialize for " + name + " {\n    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {\n"
                     + "        let mut v = match self {\n");
             for (MemberShape m : events) {
-                String t = ctx.symbolProvider().toSymbol(ctx.model().expectShape(m.getTarget())).getName();
-                w.l("            " + name + "::" + t + "(e) => serde_json::to_value(e),\n");
+                w.l("            " + name + "::" + Names.pascal(m.getMemberName()) + "(e) => serde_json::to_value(e),\n");
             }
             w.l("        }\n        .map_err(serde::ser::Error::custom)?;\n"
                     + "        if let serde_json::Value::Object(o) = &mut v {\n"
                     + "            o.insert(\"type\".to_owned(), serde_json::Value::from(self.event_type()));\n        }\n"
                     + "        v.serialize(s)\n    }\n}\n\n");
+            for (MemberShape m : events) {
+                StructureShape t = ctx.model().expectShape(m.getTarget(), StructureShape.class);
+                if (ModelFacts.wireName(m).equals("text.delta") && t.getMember("delta").filter(MemberShape::isRequired).isPresent()) {
+                    w.l("/// The answer's text, for `stream.text()`.\nimpl rt::TextDeltas for " + name + " {\n    fn text_delta(&self) -> Option<&str> {\n"
+                            + "        match self {\n            " + name + "::" + Names.pascal(m.getMemberName()) + "(v) => Some(&v.delta),\n            _ => None,\n        }\n    }\n}\n\n");
+                }
+            }
             w.l("/// Decodes one SSE event of the " + name + " union.\n");
             w.l("pub(crate) fn decode_" + Names.snake(shape.getId().getName()) + "(name: &str, id: Option<&str>, data: &[u8]) -> Result<rt::Decoded<"
                     + name + ">, serde_json::Error> {\n    Ok(match name {\n");
@@ -303,7 +335,7 @@ final class CaitlynRustCodegen implements DirectedCodegen<RustContext, RustSetti
                 String t = ctx.symbolProvider().toSymbol(ctx.model().expectShape(m.getTarget())).getName();
                 String kind = facts.sseErrorTargets.contains(m.getTarget()) ? "Failure" : "Event";
                 w.l("        " + wire + " => {\n            let mut v: " + t + " = serde_json::from_slice(data)?;\n"
-                        + "            v.event_id = id.map(str::to_owned);\n            rt::Decoded::" + kind + "(" + name + "::" + t + "(v))\n        }\n");
+                        + "            v.event_id = id.map(str::to_owned);\n            rt::Decoded::" + kind + "(" + name + "::" + Names.pascal(m.getMemberName()) + "(v))\n        }\n");
             }
             w.l("        _ => rt::Decoded::Skip,\n    })\n}\n\n");
         });

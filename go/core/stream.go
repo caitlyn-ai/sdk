@@ -40,6 +40,10 @@ type StreamSpec[E any, F any] struct {
 	Final func(ev E) (*F, bool)
 	// Resume re-attaches with Last-Event-ID (nil without resumeWith).
 	Resume func(ctx context.Context, lastEventID string) (*Response, error)
+	// Fresh marks a watch whose every connection starts again with a snapshot (PROTOCOL.md 16): Resume is called with
+	// no cursor, and each connection's events are all delivered, the new snapshot first. An event counts as new for
+	// the reconnect limit only when its id was never seen on any connection.
+	Fresh bool
 }
 
 // Stream is a typed server-sent event stream. Iterate it with Events; FinalMessage drains what is left and
@@ -48,13 +52,17 @@ type StreamSpec[E any, F any] struct {
 //
 // Events is a range-over-func iterator: the loop body runs on the caller's goroutine, so there is no
 // goroutine to leak, back-pressure is natural, and errors arrive in the loop. Breaking out of the loop
-// leaves the stream open, so FinalMessage can still drain it.
+// over a stream with a final event leaves it open, so FinalMessage can still drain it: call FinalMessage or
+// Close (defer stream.Close()), or cancel the context, or its connection stays open. Breaking out of a
+// watch (a stream with no final event) closes it, and its connection with it. Cancelling the context
+// closes the connection either way.
 type Stream[E any, F any] struct {
 	ctx        context.Context
 	spec       StreamSpec[E, F]
 	resp       *Response
 	r          *bufio.Reader
 	seen       map[string]struct{}
+	ever       map[string]struct{} // Fresh: every id seen on any connection
 	lastID     string
 	reconnects int
 	// attempts counts the reconnects since the last event: at most maxReconnects in a row (PROTOCOL.md 5.6).
@@ -70,7 +78,7 @@ type Stream[E any, F any] struct {
 
 // OpenStream wraps a 2xx text/event-stream response.
 func OpenStream[E any, F any](ctx context.Context, resp *Response, spec StreamSpec[E, F]) *Stream[E, F] {
-	s := &Stream[E, F]{ctx: ctx, spec: spec, seen: map[string]struct{}{}}
+	s := &Stream[E, F]{ctx: ctx, spec: spec, seen: map[string]struct{}{}, ever: map[string]struct{}{}}
 	s.attach(resp)
 	s.requestID = resp.Header.Get("Caitlyn-Request-Id")
 	s.apiVersion = resp.Header.Get("Caitlyn-Api-Version")
@@ -114,14 +122,21 @@ func (s *Stream[E, F]) Events() iter.Seq2[E, error] {
 				return
 			}
 			if !yield(ev, nil) {
+				// A watch has nothing left to drain: leaving it ends it (PROTOCOL.md 5, watch.break-closes)
+				if s.spec.Final == nil {
+					s.Close()
+				}
 				return
 			}
 		}
 	}
 }
 
-// FinalMessage drains the stream if needed and returns the final event's member.
+// FinalMessage drains the stream if needed (after a break too), returns the final event's member and closes
+// the stream.
 func (s *Stream[E, F]) FinalMessage() (*F, error) {
+	// Drained or failed, the stream is done: its connection closes either way
+	defer s.Close()
 	for _, err := range s.Events() {
 		if err != nil {
 			return nil, err
@@ -188,7 +203,10 @@ func (s *Stream[E, F]) next() (E, error) {
 			s.lastID = id
 			// Only a new event counts as progress (PROTOCOL.md 5.6). An event without an id cannot be told apart from
 			// a replay, so it does not count; every event on the conversation and workspace streams has one.
-			s.attempts = 0
+			if _, old := s.ever[id]; !old {
+				s.ever[id] = struct{}{}
+				s.attempts = 0
+			}
 		}
 		if name == "" {
 			name = "message"
@@ -239,13 +257,25 @@ func (s *Stream[E, F]) reconnect(cause error) error {
 			return s.ctx.Err()
 		case <-pause.C:
 		}
-		resp, err := s.spec.Resume(s.ctx, s.lastID)
+		last := s.lastID
+		if s.spec.Fresh {
+			last = ""
+		}
+		resp, err := s.spec.Resume(s.ctx, last)
 		if err == nil {
 			s.attach(resp)
+			if s.spec.Fresh {
+				s.seen = map[string]struct{}{}
+			}
 			return nil
 		}
 		if s.ctx.Err() != nil {
 			return s.ctx.Err()
+		}
+		// A thing that is gone stays gone: a 404 ends the stream with the 404 (PROTOCOL.md 16, wait.gone).
+		var ae *APIError
+		if errors.As(err, &ae) && ae.Status == 404 {
+			return err
 		}
 		cause = err
 	}

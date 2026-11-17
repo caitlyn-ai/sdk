@@ -7,7 +7,7 @@ package install needs the network.
 
 | Output | What it is |
 | --- | --- |
-| `build/docs/site/` | The static site. CI uploads it with `scripts/docs-upload.sh`. Each page is `<path>/index.html` with its Markdown copy at `<path>.md`, plus `llms.txt`, `llms-full.txt` and the Pagefind search index. |
+| `build/docs/site/` | The static site. CI uploads it with `scripts/docs-upload.sh`. Each page is `<path>/index.html` with its Markdown copy at `<path>.md`, plus `llms.txt`, `llms-full.txt`, `robots.txt` and the Pagefind search index, and on the live build `sitemap.xml`. |
 | `build/docs/pages.json` | One entry per page: its Markdown copy's path, public URL, title and metadata (the same values as its front matter). |
 
 To work on it locally:
@@ -25,17 +25,36 @@ make docs                                   # or, with Node 24 on your machine:
 | `docs/*.md`, `docs/guides/*.md` | The hand-written pages: the landing page (`index.md`), Getting started, Authentication, Errors, Retries, Streaming, Pagination, Telemetry, the FAQ, Guides still in the app, and the guides. The file's path is the page's address. |
 | `docs/embed/`, `docs/sign-in/`, `docs/tools/` | Pages that are not about the SDKs: embedding the chat, setting up sign-in, and MCP tools and connectors. Each folder is a group in the Guides section's sidebar, in the order `SECTIONS` in `scripts/docs-build.mjs` gives. |
 | `docs/error-codes.mjs` | What each error code means and what to do about it; the rest of each `/errors/<CODE>/` page comes from the model. |
-| `scripts/docs-reference.mjs` | The SDK reference from the model: a page per public operation, per type and per error code. An operation the snapshot still marks `@since("next")` is in no Caitlyn release yet: its page says it is not available yet, and shows it as beta. A released operation's stability label comes from its `@stability`. A sentence of the model's documentation that talks about the model itself (a trait, `PROTOCOL.md`, code owners) is left out (`publicDoc` in `scripts/docs-model.mjs`). |
+| `scripts/docs-reference.mjs` | The SDK reference from the model: a page per public operation, per type and per error code. An operation's Stability row shows its release (see "Since, and Not available yet" below). A released operation's stability label comes from its `@stability`. A sentence of the model's documentation that talks about the model itself (a trait, `PROTOCOL.md`, code owners) is left out (`publicDoc` in `scripts/docs-model.mjs`). |
 | `scripts/docs-snippets.mjs` | The reference's runnable programs, one per `@examples` entry and language. |
 | `scripts/docs-build.mjs` | Checks every page, writes the Starlight content (`docs/site/src/content/docs/`, generated) and the sidebar's sections (`docs/site/src/generated/sidebar.json`, for starlight-sidebar-topics: Get started, Guides, How the API works, SDK reference and API reference, each with its own sidebar; a new start page lands in Get started unless `TOPIC_START` places it), runs `astro build`, then writes the Markdown copies, `llms.txt` and `pages.json`. |
 | Icons | Material Symbols Rounded (outlined, weight 400; the Caitlyn app's set) for the sections and the sidebar's groups, and Simple Icons' monochrome logos for the languages on code blocks and tabs, from the installed Iconify sets (`@iconify-json/*`). `scripts/docs-build.mjs` writes them into `src/generated/icons.css` as CSS masks in the text colour; the mapping is `TOPIC_ICONS`, `GROUP_ICONS` and `LANGUAGE_ICONS` there. Page links have none. |
 | `scripts/docs-api.mjs` | The HTTP API's reference at `/api/`, built from the site's copy of `model/openapi.json`: an overview (the server, authentication, every operation by resource with its method, and a link to download the document) and a page per operation at `/api/<operation>/`. The pages use the SDK reference's layout and row builder (`paramRow` in `scripts/docs-reference.mjs`): wire names first, the SDK's name as a chip, the same limit wording; responses as a success row with its fields and a row per error status listing its codes. The code panel has curl (the reader's workspace, `$CAITLYN_TOKEN`) and the four SDKs, beside the HTTP response or, for a stream, a sample sequence of events. What the document does not carry (a `$ref` member's description, SDK names, error codes, a stream's events) comes from the model. The site's copy is published at `/api/openapi.json` (`docs/site/public/api/`, generated): grouped and titled as in the SDK reference, each operation opening with a link to it there and carrying its SDK examples as `x-codeSamples`. Scalar's old addresses (`/api/#tag/...`) go on to the operation's page. |
 | `scripts/docs-wording.mjs` | The public-wording check, over every page and the published OpenAPI document. |
+| `scripts/docs-changelog.mjs` | The Changelog (`/changelog/`, a start page) and its Atom feed (`/changelog/feed.xml`, named in every page's head), both from `CHANGELOG.md`, which semantic-release writes with each SDK release: one entry per release with its date, version and changes, breaking changes marked, each change linked to the pages it touches (its scope's page, the topic its words are about, and any operation, type or error code it names). A release heading or change it cannot read fails the build, and so does release-note text the public-wording check refuses. |
+| `scripts/docs-mr-title.mjs` | The public-wording check over a merge request's title (the `docs:mr-title` job, every merge request). A releasing title (feat, fix, perf, revert, or any type with `!`) becomes a Changelog line, so its subject and scope must pass the same rules as a page; a draft marker is ignored. GitLab starts no pipeline for a title edit, so rerun the job after one. |
+| `scripts/docs-sitemap.mjs` | What the site tells search engines. Only the live build (`DOCS_LIVE=on`, which `docs:build` sets on `main` and on a release's `v*` tag alone) writes `sitemap.xml`, every page at its `build.caitlyn.ai` address with `lastmod` its source's newest commit (the build's date where git cannot say, as in `make docs` from a worktree), and names it in `robots.txt`. Any other build, a merge request's preview above all, writes no sitemap and gives every page `noindex, nofollow`; the build checks each page's robots meta. |
 | `docs/site/src/components/ServerBlock.astro`, `docs/site/src/scripts/workspace.ts` | The Server block (`https://{workspace}/api` with a `workspace` field) on every operation page and the API reference's overview. What the reader types is one setting for the whole site, kept in the browser: every code block and copy button shows it in place of `your-company.getcaitlyn.ai`. |
 | `docs/site/` | The Astro Starlight project, with Astro and Starlight pinned to exact versions in `package-lock.json`. |
 
 The build fails on front matter ingestion would skip, a page whose code differs from its example, a
 site-relative link to a page or heading that does not exist, a raw HTML heading, and a page Starlight did not write.
+
+**Since, and Not available yet.** Normally the model is built from the Caitlyn app's `main`, so every operation's
+`@since` in the snapshot is the release it arrived in, and each operation page's table shows its stability and
+"Since Caitlyn X.Y.Z", with no callout. Only an operation whose `@since` is not a released version yet, `"next"` in the
+raw snapshot `model/model.json`, says "Not available yet": that is the pre-release case, a model built from a merge
+request branch before the release that ships it, as v3 is while it is pre-release. It is not the design, and it ends
+on its own once the snapshot comes from a release. While it lasts, the callout and the Stability row name the
+release the operation arrives in from `model/model.lock.json`'s `stampNext` ("Not available yet: arrives in Caitlyn
+5.115.0. The SDKs have this operation, but workspaces serve it only from that release."), the number
+`scripts/prepare-model.mjs` stamps on it and the SDKs' doc comments show ("Since Caitlyn 5.115.0"), so the site and
+the SDKs agree; with no `stampNext` the callout says only "Not available yet", and the operation shows as beta.
+A hand-written page gets the same callout from a `<!-- not-available -->` line (its front matter's `operations`, or
+`<!-- not-available: SendMessage, WatchConversation -->`), shown while any of them is unreleased and dropped once they
+all are (`fillNotAvailable`). `unreleasedOperations()` and `nextRelease()` in `scripts/docs-model.mjs` decide it;
+`docs/site/test/not-available.test.mjs` checks both cases, the released one with a fixture lock and model
+(`docs/site/test/fixtures/released.*.json`).
 
 **Markdown is the canonical output.** Each page is first written as Markdown with its knowledge-base front matter,
 and that is its `.md` copy; the HTML is built from the same text. The title is written `# Title {#_top}`, the id
@@ -91,10 +110,10 @@ in to AWS with GitLab `id_tokens` (OIDC, audience `https://git.customd.com`); th
 
 | Job | When | Role (CI variable) | What it does |
 | --- | --- | --- | --- |
-| `docs:build` | Merge requests and `main` | none | `make docs` |
+| `docs:build` | Merge requests, `main` and a release's `v*` tag | none | `make docs`; on `main` and the tag with `DOCS_LIVE=on` (the sitemap, indexed pages) and the whole history (the sitemap's dates) |
 | `docs:preview` | Merge requests | `DOCS_PREVIEW_ROLE_ARN` | Uploads to `mr-<iid>/` in the preview bucket: `https://mr-<iid>.preview.build.caitlyn.ai/` |
 | `docs:preview:stop` | Manual, or when the merge request closes | `DOCS_PREVIEW_ROLE_ARN` | Deletes the preview |
-| `docs:publish` | `main` | `DOCS_PUBLISH_ROLE_ARN` | Uploads the live site and invalidates `DOCS_DISTRIBUTION_ID` |
+| `docs:publish` | `main`, and a release's `v*` tag (its Changelog and install instructions name the new release) | `DOCS_PUBLISH_ROLE_ARN` | Uploads the live site and invalidates `DOCS_DISTRIBUTION_ID` |
 | `docs:knowledge-base` | `main`, after `docs:publish` | none yet | A dry run of `scripts/docs-kb-publish.mjs` (see below) |
 
 None of them runs until the CI variable `DOCS_ENABLED` is `true`. The roles' ARNs and the distribution ID are
@@ -170,7 +189,7 @@ publisher check every page against these options first, and fail rather than pub
 only partly read.
 
 The publisher is a stub: it checks the front matter and, with `--dry-run`, prints what it would send. The
-real publisher needs the v3 document operations on the server and the TypeScript SDK's `documents.upload`.
+real publisher needs the v3 document operations on the server and the TypeScript SDK's `ingestion.sync`.
 It signs in with the docs publisher's machine client; its client ID and secret are the masked, protected CI
 variables `ASK_CAITLYN_CLIENT_ID` and `ASK_CAITLYN_CLIENT_SECRET`, set from the Caitlyn vault in 1Password.
 They are to be replaced with `workloadIdentity` once the server accepts workload sign-in.

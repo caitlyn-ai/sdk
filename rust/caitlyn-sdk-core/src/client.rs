@@ -105,6 +105,7 @@ pub struct ClientBuilder {
     app_id: Option<String>,
     propagator: Option<Arc<dyn Propagator>>,
     retry_budget: u32,
+    spool_dir: Option<std::path::PathBuf>,
 }
 
 impl ClientBuilder {
@@ -120,6 +121,7 @@ impl ClientBuilder {
             app_id: None,
             propagator: None,
             retry_budget: crate::budget::DEFAULT_RETRY_BUDGET,
+            spool_dir: None,
         }
     }
 
@@ -130,7 +132,8 @@ impl ClientBuilder {
         self
     }
 
-    /// Replaces the HTTP client (for example to set timeouts or a proxy).
+    /// Replaces the HTTP client (for example to set timeouts or a proxy). Build it with
+    /// `redirect(reqwest::redirect::Policy::none())`: a document's download address is a 302 the SDK returns, not follows.
     pub fn http_client(mut self, client: reqwest::Client) -> Self {
         self.http = Some(client);
         self
@@ -168,6 +171,13 @@ impl ClientBuilder {
         self
     }
 
+    /// Where a one-shot reader past 8 MiB is spooled while it is hashed (PROTOCOL.md 14): a file only its owner can
+    /// read, deleted when the call ends. Default: the system's temporary directory.
+    pub fn spool_dir(mut self, dir: impl Into<std::path::PathBuf>) -> Self {
+        self.spool_dir = Some(dir.into());
+        self
+    }
+
     pub fn build(self) -> Result<Client, Error> {
         let workspace = parse_workspace(&self.workspace).map_err(|reason| {
             Error::Input(crate::error::InputError {
@@ -195,6 +205,7 @@ impl ClientBuilder {
                 auth,
                 budget: crate::budget::RetryBudget::new(self.retry_budget),
                 server_version: Mutex::new(None),
+                spool_dir: self.spool_dir,
             }),
         })
     }
@@ -206,7 +217,9 @@ pub(crate) fn default_http_client() -> Result<reqwest::Client, Error> {
         // reqwest's rustls needs a process-wide crypto provider; keep one the application installed.
         let _ = rustls::crypto::ring::default_provider().install_default();
     }
+    // Redirects are not followed: a 302 is an answer (GetDocumentContent's address, which `download()` returns).
     reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| Error::sdk("HTTP_CLIENT_FAILED", "The HTTP client could not be built", Some(Box::new(e))))
 }
@@ -243,6 +256,7 @@ struct Inner {
     auth: AuthSession,
     budget: crate::budget::RetryBudget,
     server_version: Mutex<Option<String>>,
+    spool_dir: Option<std::path::PathBuf>,
 }
 
 impl std::fmt::Debug for Client {
@@ -284,6 +298,23 @@ impl Client {
 
     pub(crate) fn http(&self) -> &reqwest::Client {
         &self.inner.http
+    }
+
+    pub(crate) fn max_attempts(&self) -> u32 {
+        self.inner.max_attempts
+    }
+
+    pub(crate) fn max_retry_delay(&self) -> Duration {
+        self.inner.max_retry_delay
+    }
+
+    pub(crate) fn budget(&self) -> &crate::budget::RetryBudget {
+        &self.inner.budget
+    }
+
+    /// Where one-shot readers are spooled (PROTOCOL.md 14).
+    pub fn spool_dir(&self) -> std::path::PathBuf {
+        self.inner.spool_dir.clone().unwrap_or_else(std::env::temp_dir)
     }
 
     fn note_server_version(&self, headers: &HeaderMap) {
@@ -482,7 +513,8 @@ impl Client {
             attempt_span.record("caitlyn.server.api_version", v.as_str());
         }
         self.note_server_version(resp.headers());
-        if resp.status().is_success() {
+        // A redirect is the answer itself where the operation answers one (GetDocumentContent's 302).
+        if resp.status().is_success() || resp.status().is_redirection() {
             return Ok(Response {
                 inner: resp,
                 cancel: opts.cancel.clone(),

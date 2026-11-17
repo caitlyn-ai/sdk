@@ -1,144 +1,163 @@
-//! The code the developer docs show for agent versions and production history, one region each.
+//! The code the developer docs show for agents, their draft, versions and live history, one region per job.
 //! src/bin/examples_live.rs runs them against a real Caitlyn workspace (scripts/examples-live/rust.sh), and
 //! scripts/test-rust.sh runs clippy over them.
+use std::path::Path;
+
+use caitlyn_sdk::scope::AgentScope;
 use caitlyn_sdk::{
-    AgentVersion, AgentVersionSummary, Client, DeleteAgentVersionInput, DeleteAgentVersionResult, Error, GetAgentVersionInput,
-    GetProductionHistoryEntryInput, ListAgentVersionsInput, ListProductionHistoryEntriesInput, PinDraftVersionInput, PinDraftVersionResult,
-    ProductionHistoryEntry, ProductionHistorySummary, PublishAgentVersionInput, ResetDraftVersionInput, UpdateDraftVersionInput,
+    AgentAvatarInput, AgentConfiguration, AgentGuidance, AgentMarkInput, AgentVersion,
+    AvatarColour, Client, Error, HistoryEntry, PublishAgentVersionResult, UploadFile,
 };
 
-/// Changes the draft's instructions, only if nobody changed the draft since it was read.
-pub async fn update_draft(client: &Client, agent_id: &str, instructions: &str) -> Result<AgentVersion, Error> {
-    // #region update-draft
-    let draft = client
+/// Makes an agent with its first instructions, and publishes it.
+pub async fn publish_agent(client: &Client, instructions: &str) -> Result<AgentScope, Error> {
+    // #region publish-agent
+    let agent = client
         .agents()
-        .versions()
-        .get(GetAgentVersionInput {
-            agent_id: agent_id.into(),
-            version: "draft".into(),
+        .create("HR assistant")
+        .configuration(AgentConfiguration {
+            guidance: Some(AgentGuidance {
+                instructions: Some(instructions.into()),
+                ..Default::default()
+            }),
+            ..Default::default()
         })
         .await?;
-    let input = UpdateDraftVersionInput {
-        instructions: Some(instructions.into()),
-        ..Default::default()
-    };
-    // If-Match: fails with Error::PreconditionFailed if the draft changed after it was read
-    let updated = client
-        .agents()
-        .versions()
-        .update_draft(agent_id, input)
-        .if_match(&draft.etag)
-        .await?;
-    println!("draft now {}", updated.etag);
+    // create returns the agent's scope: its draft is there at once.
+    let published = agent.draft().publish().name("v1").await?;
+    println!("{} live: {}", agent.id(), published.live.version);
     // #endregion
-    Ok(updated)
+    Ok(agent.into_scope())
 }
 
-/// Keeps the draft you tested under a name, to publish later.
-pub async fn pin_draft(client: &Client, agent_id: &str, draft_etag: &str, name: &str) -> Result<PinDraftVersionResult, Error> {
-    // #region pin-draft
-    let input = PinDraftVersionInput {
-        name: name.into(),
-        note: Some("Answers checked against the leave policy.".into()),
-    };
-    // If-Match pins only the draft you tested; without it, the draft as it is now is pinned
-    let pinned = client.agents().versions().pin(agent_id, input).if_match(draft_etag).await?;
-    println!("pinned {} at {}", pinned.name, pinned.created_at);
-    // #endregion
-    Ok(pinned)
-}
-
-/// The agent's named versions: every pinned or published version (the draft and production are not listed).
-pub async fn list_versions(client: &Client, agent_id: &str) -> Result<Vec<AgentVersionSummary>, Error> {
-    // #region list-versions
-    let input = ListAgentVersionsInput {
-        agent_id: agent_id.into(),
-        ..Default::default()
-    };
-    let versions = client.agents().versions().list(input).collect().await?; // every page
-    for v in &versions {
-        println!("{} {:?} based on {:?}", v.name, v.source, v.based_on);
-    }
-    // #endregion
-    Ok(versions)
-}
-
-/// Makes a pinned version (or the draft) the one that answers in production.
-pub async fn publish_version(client: &Client, agent_id: &str, version: &str) -> Result<AgentVersion, Error> {
-    // #region publish-version
-    let production = client
-        .agents()
-        .versions()
-        .get(GetAgentVersionInput {
-            agent_id: agent_id.into(),
-            version: "production".into(),
-        })
-        .await?;
-    let input = PublishAgentVersionInput {
-        agent_id: agent_id.into(),
-        version: version.into(),
-        name: None,
-        note: Some("Approved for the November release.".into()),
-    };
-    // If-Match is production's ETag, so two publishes cannot overwrite each other
-    let published = client.agents().versions().publish(input).if_match(&production.etag).await?;
-    println!("production is now {} ({})", published.name, published.etag);
+/// Points live at an earlier version again.
+pub async fn roll_back(
+    client: &Client,
+    agent_id: &str,
+) -> Result<PublishAgentVersionResult, Error> {
+    // #region roll-back
+    let published = client.agent(agent_id).version("v13").publish().await?;
+    // Live points at v13 again; v13 itself is unchanged, and the history records the move as a rollback.
+    println!(
+        "live is {} ({})",
+        published.live.version, published.history_entry.id
+    );
     // #endregion
     Ok(published)
 }
 
-/// What has answered in production, most recent first.
-pub async fn list_production_history(client: &Client, agent_id: &str) -> Result<Vec<ProductionHistorySummary>, Error> {
-    // #region list-production-history
-    let input = ListProductionHistoryEntriesInput {
-        agent_id: agent_id.into(),
-        limit: Some(10),
-        ..Default::default()
-    };
-    let page = client.agents().production_history().list_pages(input).next().await.transpose()?; // the latest ten
-    let entries = page.map(|p| p.items).unwrap_or_default();
-    for e in &entries {
-        println!("{:?} from {} to {}", e.version_name, e.published_at, e.unpublished_at);
+/// Changes the draft's instructions, keeps the draft as a named version, then lists the versions and live's history.
+pub async fn draft_and_versions(
+    client: &Client,
+    agent_id: &str,
+) -> Result<(AgentVersion, Vec<AgentVersion>, Vec<HistoryEntry>), Error> {
+    // #region update-draft
+    let agent = client.agent(agent_id);
+    // If-Match is optional on the draft: set it to refuse the change if someone else changed the draft first.
+    let draft = agent.draft().get().await?;
+    agent
+        .draft()
+        .update()
+        .guidance(AgentGuidance {
+            instructions: Some(
+                "Answer leave and pay questions. Quote the clause you relied on.".into(),
+            ),
+            ..Default::default()
+        })
+        .if_match(&draft.etag)
+        .await?;
+    // #endregion
+    // #region save-draft
+    let saved = agent
+        .draft()
+        .save(format!("checked-{}", draft.etag.len()))
+        .note("Checked by HR")
+        .await?;
+    let versions = agent.versions().list().collect().await?;
+    let history = agent.history().list().collect().await?;
+    // #endregion
+    Ok((saved, versions, history))
+}
+
+/// Gives an agent a picture: a PNG, JPEG or WebP image of at most 1 MB.
+pub async fn avatar_picture(client: &Client, agent_id: &str, picture: &Path) -> Result<(), Error> {
+    // #region avatar-picture
+    let agent = client.agent(agent_id);
+    let current = agent.get().await?;
+    // The picture is uploaded first, reserved as an agent's avatar picture; its id is sent as pictureUploadId.
+    let updated = agent
+        .update()
+        .avatar(AgentAvatarInput {
+            colour: Some(AvatarColour::Sage),
+            mark: Some(AgentMarkInput {
+                picture: Some(UploadFile::from(picture)),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .if_match(&current.etag)
+        .await?;
+    // pictureUrl may stop working after a time: read the agent again for a fresh one.
+    let url = updated
+        .avatar
+        .as_ref()
+        .and_then(|a| a.mark.as_ref())
+        .and_then(|m| m.picture_url.as_deref());
+    println!("{} {url:?}", updated.id);
+    // #endregion
+    Ok(())
+}
+
+/// An agent's versions and live history, one region each, as the Change an agent safely guide shows them.
+pub async fn versions_and_history(client: &Client, agent_id: &str) -> Result<(), Error> {
+    let agent = client.agent(agent_id);
+    // #region save-draft-version
+    // Keeps the draft as a version; live is unchanged.
+    let saved = agent
+        .draft()
+        .save("checked-2026-11")
+        .note("Checked by HR")
+        .await?;
+    println!("{}", saved.name);
+    // #endregion
+    // #region list-versions
+    let mut versions = agent.versions().list().items();
+    while let Some(version) = versions.next().await {
+        let version = version?;
+        println!("{} {:?}", version.name, version.created_at);
     }
     // #endregion
-    Ok(entries)
-}
-
-/// One past production configuration, in full.
-pub async fn get_production_history(client: &Client, agent_id: &str, entry_id: &str) -> Result<ProductionHistoryEntry, Error> {
-    // #region get-production-history
-    let input = GetProductionHistoryEntryInput {
-        agent_id: agent_id.into(),
-        history_entry_id: entry_id.into(),
-    };
-    let entry = client.agents().production_history().get(input).await?;
+    // #region publish-version
+    // Points live at a version: a rollback when it was live before. If-Match on live is optional.
+    let published = agent
+        .version("checked-2026-11")
+        .publish()
+        .note("Back to the checked version")
+        .await?;
     println!(
-        "{:?} answered until {}: {}",
-        entry.version_name, entry.unpublished_at, entry.configuration.instructions
+        "live is {} since {}",
+        published.live.version, published.live.published_at
     );
     // #endregion
-    Ok(entry)
-}
-
-/// Starts the draft again from another version.
-pub async fn reset_draft(client: &Client, agent_id: &str, draft_etag: &str, from: &str) -> Result<AgentVersion, Error> {
+    // #region list-history
+    let history = agent.history().list().collect().await?;
+    for entry in &history {
+        println!("{} {} {:?}", entry.id, entry.version, entry.kind);
+    }
+    // #endregion
+    if let Some(first) = history.first() {
+        // #region get-history
+        let entry = agent.history_entry(&first.id).get().await?;
+        println!("{entry:?}");
+        // #endregion
+    }
     // #region reset-draft
-    let input = ResetDraftVersionInput { from: from.into() }; // a version name, or production
-    let draft = client.agents().versions().reset_draft(agent_id, input).if_match(draft_etag).await?;
-    println!("draft reset from {from}: {}", draft.etag);
+    let draft = agent.draft().get().await?;
+    // the draft is live's configuration again
+    agent.draft().reset("live").if_match(&draft.etag).await?;
     // #endregion
-    Ok(draft)
-}
-
-/// Deletes a pinned version that is not in production.
-pub async fn delete_version(client: &Client, agent_id: &str, version: &str) -> Result<DeleteAgentVersionResult, Error> {
     // #region delete-version
-    let input = DeleteAgentVersionInput {
-        agent_id: agent_id.into(),
-        version: version.into(),
-    };
-    let deleted = client.agents().versions().delete(input).await?;
-    println!("deleted {version} ({:?})", deleted.request_id);
+    agent.version("checked-2026-11").delete().await?;
     // #endregion
-    Ok(deleted)
+    Ok(())
 }

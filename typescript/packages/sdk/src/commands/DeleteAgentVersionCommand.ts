@@ -23,12 +23,13 @@ export interface DeleteAgentVersionCommandInput extends DeleteAgentVersionInput 
 export interface DeleteAgentVersionCommandOutput extends DeleteAgentVersionOutput, __MetadataBearer {}
 
 /**
- * Deletes a named version.
+ * Deletes a named version that live does not point at and live history does not name.
  *
- * Any named version can be deleted, including the one production is running; production carries
- * on unchanged. `draft` and `production`, which every agent keeps, are refused with 400
- * `VERSION_NOT_DELETABLE`. Production history entries that name the version are never deleted or
- * changed, and still read as they did. Like every change, it is audited.
+ * Versions serve as the record of what live was, so these are refused: `draft` and `live`, which
+ * every agent keeps, with 400 `VERSION_NOT_DELETABLE`; the version live points at, with 409
+ * `VERSION_IN_USE` (point live at another version first); and any version a live history entry names,
+ * with 409 `VERSION_IN_HISTORY`. A saved version that was never live can be deleted. Like every
+ * change, it is audited.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript
@@ -56,6 +57,15 @@ export interface DeleteAgentVersionCommandOutput extends DeleteAgentVersionOutpu
  * @see {@link DeleteAgentVersionCommandOutput} for command's `response` shape.
  * @see {@link CaitlynClientResolvedConfig | config} for CaitlynClient's `config` shape.
  *
+ * @throws {@link ConflictError} (client fault)
+ *  The resource's state does not allow the request, a unique name is taken, or a request with the
+ * same idempotency key is still in progress. An agent version that live points at
+ * (`VERSION_IN_USE`) or that live history names (`VERSION_IN_HISTORY`) cannot be deleted. A
+ * document still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an
+ * ingestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document
+ * an ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry
+ * `Retry-After`.
+ *
  * @throws {@link NotFoundError} (client fault)
  *  The record does not exist, or the caller may not see it. The two are deliberately the same, so
  * identifiers cannot be probed.
@@ -80,14 +90,15 @@ export interface DeleteAgentVersionCommandOutput extends DeleteAgentVersionOutpu
  *
  * @throws {@link ValidationError} (client fault)
  *  The request is malformed: a member is missing, the wrong type or out of range; it has a member,
- * filter or sort field the operation does not define; its cursor is not valid for this list; or it
- * asks to delete `draft` or `production`, which every agent keeps.
+ * filter or sort field the operation does not define; its cursor is not valid for this list; it
+ * asks to delete `draft` or `live`, which every agent keeps; an agent configuration would be
+ * larger than 256 KiB; or a file is meant for a conversation whose agent takes no attachments.
  *
  * @throws {@link CaitlynServiceException}
  * <p>Base exception class for all service exceptions from Caitlyn service.</p>
  *
  *
- * @example Delete a version that is no longer used
+ * @example Delete a saved version that was never live
  * ```javascript
  * //
  * const input = {
@@ -107,6 +118,34 @@ export interface DeleteAgentVersionCommandOutput extends DeleteAgentVersionOutpu
  * const input = {
  *   agentId: "GHT7YRWXPL",
  *   version: "draft"
+ * };
+ * const command = new DeleteAgentVersionCommand(input);
+ * const response = await client.send(command);
+ * /* response is
+ * { /* metadata only *\/ }
+ * *\/
+ * ```
+ *
+ * @example The version live points at
+ * ```javascript
+ * //
+ * const input = {
+ *   agentId: "GHT7YRWXPL",
+ *   version: "november-release"
+ * };
+ * const command = new DeleteAgentVersionCommand(input);
+ * const response = await client.send(command);
+ * /* response is
+ * { /* metadata only *\/ }
+ * *\/
+ * ```
+ *
+ * @example A version live pointed at before
+ * ```javascript
+ * //
+ * const input = {
+ *   agentId: "GHT7YRWXPL",
+ *   version: "october-release"
  * };
  * const command = new DeleteAgentVersionCommand(input);
  * const response = await client.send(command);

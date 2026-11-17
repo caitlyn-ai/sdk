@@ -13,14 +13,8 @@ The questions integrators ask most often, and how to reach a person when these p
 
 ## Which way should I integrate?
 
-- **To put a chat in front of people**, embed it: [Embed chat in five minutes](/embed/quick-start/) for a page
-  section, or the [chat widget](/embed/embed-widget/#chat-widget) for a launcher in the corner of every page. In a
-  native mobile app, embed the same chat in a web view.
-- **To call Caitlyn from your own code**, use an SDK: [Getting started](/getting-started/). The v3 API is in
-  preview; the [guides still in the app](/guides-in-the-app/) cover the current API for what v3 doesn't serve yet.
-- **To give your agents tools of your own**, build an MCP server: [Deploy an MCP server](/tools/deploy-an-mcp-server/).
-- **To call Caitlyn from an AI assistant**, connect it to Caitlyn's MCP server:
-  [Connect an MCP client](/tools/connect-an-mcp-client/).
+[How to integrate](/how-to-integrate/) goes through each way in: embedding the chat, the SDKs, your own MCP tools,
+Caitlyn's MCP server from an AI assistant, and the CLI that is coming.
 
 ## Can people sign in with their work accounts?
 

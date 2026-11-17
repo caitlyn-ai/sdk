@@ -1,9 +1,11 @@
 package ai.caitlyn.codegen.typescript;
 
-import ai.caitlyn.codegen.model.ClientMethod;
+import ai.caitlyn.codegen.model.ResultNames;
 import ai.caitlyn.codegen.model.SseEvents;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -12,6 +14,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import software.amazon.smithy.codegen.core.CodegenException;
 import software.amazon.smithy.model.Model;
@@ -72,31 +75,40 @@ final class FacadeGenerator {
     private final ServiceShape service;
     private final TypeScriptCodegenContext context;
     private final Set<ShapeId> modelled = new TreeSet<>();
+    /** Structures an @uploadTarget method's input type names, for operations.ts to import. */
+    private final Set<String> nestedTypes = new TreeSet<>();
     private final SseEvents sseEvents;
+    private final ResultNames results;
+    /** The public name of each named result (ResultNames: EstimateIngestionResult), to the Smithy output type it names. */
+    private final Map<String, String> resultAliases = new TreeMap<>();
+    private final Map<ShapeId, String> resultNameOf = new HashMap<>();
 
     private record Method(String namespace, String name, String positional, ResourceShape resource) {}
 
-    /** smithy.waiters#waitable: an operation's waiters, by name. */
+    /** smithy.waiters#waitable: the model declares none; wait() does their job (PROTOCOL.md 10.1). */
     private static final ShapeId WAITABLE = ShapeId.from("smithy.waiters#waitable");
-
-    /** The waiter functions of an operation's waiters, in waiter-name order: Indexed gives waitUntilIndexed. */
-    private static List<String> waiterFunctions(OperationShape op) {
-        return op.findTrait(WAITABLE).map(t -> new TreeMap<>(t.toNode().expectObjectNode().getStringMap()).keySet().stream()
-            .map(name -> "waitUntil" + name).toList()).orElse(List.of());
-    }
 
     FacadeGenerator(TypeScriptCodegenContext context) {
         this.context = context;
         this.model = context.model();
         this.service = context.settings().getService(model);
         this.sseEvents = new SseEvents(model, service);
+        this.results = new ResultNames(model, service, UnaryOperator.identity());
+        // Every named result is exported under the name the other SDKs and the docs use; a list's `…Page` is not, as
+        // a list here is an async iterable of its items.
+        for (Map.Entry<ShapeId, String> e : results.names().entrySet()) {
+            String name = e.getValue();
+            if (name.endsWith("Page") || e.getKey().getName().equals(name)) continue;
+            resultAliases.putIfAbsent(name, context.symbolProvider().toSymbol(model.expectShape(e.getKey())).getName());
+            resultNameOf.put(e.getKey(), name);
+        }
         // Shapes smithy-typescript generates: everything operations reach (not trait references).
         for (OperationShape op : operations()) {
             new Walker(model).walkShapes(op).forEach(s -> modelled.add(s.getId()));
         }
     }
 
-    private List<OperationShape> operations() {
+    List<OperationShape> operations() {
         return TopDownIndex.of(model).getContainedOperations(service).stream()
             .sorted((a, b) -> a.getId().getName().compareTo(b.getId().getName()))
             .toList();
@@ -108,8 +120,10 @@ final class FacadeGenerator {
             methods.put(op, methodFor(op));
         }
         context.fileManifest().writeFile("src/sdk/events.ts", events());
+        context.fileManifest().writeFile("src/sdk/results.ts", resultsFile());
+        context.fileManifest().writeFile("src/sdk/problems.ts", problemsFile());
         context.fileManifest().writeFile("src/sdk/operations.ts", operationsFile(methods));
-        context.fileManifest().writeFile("src/sdk/client.ts", clientFile(methods));
+        context.fileManifest().writeFile("src/sdk/client.ts", new ScopeEmitter(this, model, service, context).clientFile());
         context.fileManifest().writeFile("src/sdk/connection.ts", connectionFile());
         context.fileManifest().writeFile("src/sdk/errors.ts", errorBaseFile());
         context.fileManifest().writeFile("src/sdk/index.ts", indexFile());
@@ -118,32 +132,109 @@ final class FacadeGenerator {
     // ------------------------------------------------------------------ naming
 
     private Method methodFor(OperationShape op) {
-        // Shared with the Python and Go generators (model-support's ClientMethod, PROTOCOL.md section 10).
-        ClientMethod cm = ClientMethod.of(model, op);
-        return new Method(cm.namespace(), cm.method(), cm.positionalMember().orElse(null), cm.resource().orElse(null));
+        // The standalone functions take every identifier in their input; the scopes (client.ts) fill them.
+        return new Method("", lowerCamel(op.getId().getName()), null, null);
+    }
+
+    /** An operation's standalone function name: `GetDocument` is `getDocument`. */
+    static String lowerCamelName(OperationShape op) {
+        return lowerCamel(op.getId().getName());
+    }
+
+    /** An operation's documentation as a JSDoc comment. */
+    static String docOf(Shape shape, String indent) {
+        return doc(shape, indent);
+    }
+
+    /** Whether smithy-typescript generates the shape (models_0 or enums), or events.ts does. */
+    boolean isModelled(ShapeId id) {
+        return modelled.contains(id);
+    }
+
+    /** A list member of {uploadId} structures (a message's attachments), which the SDK lets take files. */
+    Optional<MemberShape> attachmentMember(OperationShape op) {
+        return input(op).getAllMembers().values().stream().filter(m -> {
+            Shape t = model.expectShape(m.getTarget());
+            if (!(t instanceof ListShape l)) return false;
+            Shape item = model.expectShape(l.getMember().getTarget());
+            return item instanceof StructureShape st && st.getAllMembers().size() == 1 && st.getMember("uploadId").isPresent();
+        }).findFirst();
+    }
+
+    /** The UploadPurpose member an attachment's reservation sets: the one named as one of the operation's labels. */
+    private String purposeFor(OperationShape op) {
+        StructureShape purpose = model.expectShape(ShapeId.fromParts(service.getId().getNamespace(), "UploadPurpose"), StructureShape.class);
+        return input(op).getAllMembers().values().stream().filter(m -> m.hasTrait(HttpLabelTrait.class))
+            .map(MemberShape::getMemberName).filter(n -> purpose.getMember(n).isPresent()).findFirst()
+            .orElseThrow(() -> new CodegenException(op.getId() + ": attachments, but no UploadPurpose member names one of its labels"));
+    }
+
+    /** The member path of an operation's @uploadTarget, if it has one. */
+    static Optional<String> uploadTargetOf(OperationShape op) {
+        return uploadTarget(op);
     }
 
     private static String lowerCamel(String s) {
         return Character.toLowerCase(s.charAt(0)) + s.substring(1);
     }
 
-    private String typeName(ShapeId id) {
+    /** The thing an operation returns (one type per thing): its output's @httpPayload member, if it returns one. */
+    Optional<MemberShape> thingOf(OperationShape op) {
+        return results.payloadOf(op.getOutputShape());
+    }
+
+    /** What an operation's function resolves to: the thing it returns, or its output. */
+    String resultType(OperationShape op) {
+        return thingOf(op).map(m -> typeName(m.getTarget()))
+            .orElseGet(() -> resultNameOf.getOrDefault(op.getOutputShape(), typeName(op.getOutputShape())));
+    }
+
+    /** Whether a type name is a named result's (exported from results.ts, not models_0). */
+    boolean isResultName(String name) {
+        return resultAliases.containsKey(name);
+    }
+
+    /** The imports of a generated file's types: models_0's, and the named results'. */
+    String typeImports(Set<String> types) {
+        List<String> models = types.stream().filter(t -> !isResultName(t)).toList();
+        List<String> named = types.stream().filter(this::isResultName).toList();
+        return (models.isEmpty() ? "" : "import type { " + String.join(", ", models) + " } from \"../models/models_0\";\n")
+            + (named.isEmpty() ? "" : "import type { " + String.join(", ", named) + " } from \"./results\";\n");
+    }
+
+    /** results.ts: each named result under its public name, the type the call's output has. */
+    private String resultsFile() {
+        StringBuilder out = new StringBuilder(HEADER)
+            .append("// Each call whose output is not a thing returns a named result: the same name in every SDK and the docs.\n")
+            .append("import type { ").append(String.join(", ", new TreeSet<>(resultAliases.values()))).append(" } from \"../models/models_0\";\n\n");
+        for (Map.Entry<String, String> e : resultAliases.entrySet()) {
+            out.append("/** What ").append(e.getValue().replaceFirst("Output$", "")).append(" returns. */\n")
+                .append("export type ").append(e.getKey()).append(" = ").append(e.getValue()).append(";\n");
+        }
+        return out.toString();
+    }
+
+    String serviceNamespace() {
+        return service.getId().getNamespace();
+    }
+
+    String typeName(ShapeId id) {
         return context.symbolProvider().toSymbol(model.expectShape(id)).getName();
     }
 
-    private StructureShape input(OperationShape op) {
+    StructureShape input(OperationShape op) {
         return model.expectShape(op.getInputShape(), StructureShape.class);
     }
 
     /** Input members passed as call options rather than input fields: If-Match and idempotency tokens. */
-    private List<MemberShape> optionMembers(OperationShape op) {
+    List<MemberShape> optionMembers(OperationShape op) {
         return input(op).getAllMembers().values().stream()
             .filter(m -> m.hasTrait(IdempotencyTokenTrait.class)
                 || m.getTrait(HttpHeaderTrait.class).map(h -> h.getValue().equalsIgnoreCase("If-Match")).orElse(false))
             .toList();
     }
 
-    private static String doc(Shape shape, String indent) {
+    static String doc(Shape shape, String indent) {
         return shape.getTrait(DocumentationTrait.class)
             .map(d -> indent + "/** " + d.getValue().replace("*/", "*\\/").replace("\n", "\n" + indent + " * ") + " */\n")
             .orElse("");
@@ -167,11 +258,12 @@ final class FacadeGenerator {
                 }
             });
         }
-        if (!imported.isEmpty()) {
-            out.append("import type { ")
-                .append(imported.stream().map(this::typeName).collect(Collectors.joining(", ")))
-                .append(" } from \"../models/models_0\";\n\n");
-        }
+        // smithy-typescript writes structures to models_0 and enums to enums.
+        List<String> structs = imported.stream().filter(id -> !model.expectShape(id).isEnumShape()).map(this::typeName).toList();
+        List<String> enums = imported.stream().filter(id -> model.expectShape(id).isEnumShape()).map(this::typeName).toList();
+        if (!structs.isEmpty()) out.append("import type { ").append(String.join(", ", structs)).append(" } from \"../models/models_0\";\n");
+        if (!enums.isEmpty()) out.append("import type { ").append(String.join(", ", enums)).append(" } from \"../models/enums\";\n");
+        if (!imported.isEmpty()) out.append("\n");
         for (ShapeId u : unions) {
             UnionShape union = model.expectShape(u, UnionShape.class);
             String name = u.getName();
@@ -212,8 +304,61 @@ final class FacadeGenerator {
         return out.toString();
     }
 
+    /**
+     * How a watch's events are read as the model's types (watch.event-types): for each event, the members whose
+     * target the model's schemas describe (a structure, or a list of them), by their JSON name, with nested plans
+     * for the events' own structures. The stream applies them to each event's data (sdk-core readEvent).
+     */
+    private String eventReads(UnionShape union, Set<String> schemaImports) {
+        List<String> entries = new ArrayList<>();
+        for (MemberShape m : union.getAllMembers().values()) {
+            Shape target = model.expectShape(m.getTarget());
+            if (!(target instanceof StructureShape st)) continue;
+            String plan = structurePlan(st, schemaImports, new HashSet<>());
+            if (plan != null) entries.add("\"" + SseEvents.wireName(m) + "\": " + plan);
+        }
+        return "{ " + String.join(", ", entries) + " }";
+    }
+
+    private String structurePlan(StructureShape s, Set<String> schemaImports, Set<ShapeId> visiting) {
+        if (!visiting.add(s.getId())) return null;
+        List<String> fields = new ArrayList<>();
+        for (MemberShape m : s.getAllMembers().values()) {
+            String key = m.getTrait(JsonNameTrait.class).map(JsonNameTrait::getValue).orElse(m.getMemberName());
+            String read = memberRead(model.expectShape(m.getTarget()), schemaImports, visiting);
+            if (read != null) fields.add("\"" + key + "\": " + read);
+        }
+        visiting.remove(s.getId());
+        return fields.isEmpty() ? null : "{ " + String.join(", ", fields) + " }";
+    }
+
+    private String memberRead(Shape t, Set<String> schemaImports, Set<ShapeId> visiting) {
+        if (t instanceof StructureShape st) {
+            if (modelled.contains(st.getId())) {
+                String schema = typeName(st.getId()) + "$";
+                schemaImports.add(schema);
+                return schema;
+            }
+            String nested = structurePlan(st, schemaImports, visiting);
+            return nested == null ? null : "{ $fields: " + nested + " }";
+        }
+        if (t instanceof ListShape l) {
+            Shape item = model.expectShape(l.getMember().getTarget());
+            if (item instanceof StructureShape st && modelled.contains(st.getId())) {
+                String schema = typeName(st.getId()) + "$";
+                schemaImports.add(schema);
+                return "[1, \"" + l.getId().getNamespace() + "\", \"" + l.getId().getName() + "\", 0, () => " + schema + "]";
+            }
+            if (item instanceof StructureShape st) {
+                String nested = structurePlan(st, schemaImports, visiting);
+                return nested == null ? null : "{ $each: " + nested + " }";
+            }
+        }
+        return null;
+    }
+
     /** TypeScript type of a shape as it appears in parsed SSE JSON (timestamps stay RFC 3339 strings). */
-    private String tsType(ShapeId target) {
+    String tsType(ShapeId target) {
         Shape s = model.expectShape(target);
         return switch (s.getType()) {
             case STRING, BLOB, TIMESTAMP -> "string";
@@ -232,55 +377,28 @@ final class FacadeGenerator {
     private String operationsFile(Map<OperationShape, Method> methods) {
         Set<String> imports = new LinkedHashSet<>();
         StringBuilder body = new StringBuilder();
+        // Each watch's events read as the model's types (watch.event-types): one plan per events union.
+        Map<ShapeId, String> reads = new LinkedHashMap<>();
+        Set<String> schemaImports = new TreeSet<>();
         Set<String> modelTypes = new TreeSet<>();
         Set<String> eventTypes = new TreeSet<>();
         imports.add("import type { CaitlynClient } from \"../CaitlynClient\";\n");
         imports.add("import { CaitlynServiceException } from \"../models/CaitlynServiceException\";\n");
-        imports.add("import { SseStream, uploadFile, type CallOptions, type WithRaw } from \"@caitlyn-ai/sdk-core\";\n");
+        imports.add("import { SseStream, thingOf, type AsyncDisposableStream, type CallOptions, type WithRaw } from \"@caitlyn-ai/sdk-core\";\n");
         // A single call's output carries the response metadata (HTTP status, request id), as the command's does.
-        imports.add("import type { MetadataBearer as __MetadataBearer } from \"@smithy/types\";\n");
+        imports.add("import type { MetadataBearer as __MetadataBearer } from \"@caitlyn-ai/sdk-core\";\n");
 
-        // PROTOCOL.md 5.5 and 6.2: problem details that arrive outside an HTTP error response (the SSE failure
-        // event, a failed upload) raise the same class an error response with that status would.
-        Map<Integer, String> byStatus = new TreeMap<>();
-        for (ShapeId e : service.getErrorsSet()) {
-            model.expectShape(e).getTrait(software.amazon.smithy.model.traits.HttpErrorTrait.class)
-                .ifPresent(t -> byStatus.putIfAbsent(t.getCode(), e.getName()));
-        }
-        for (OperationShape op : operations()) {
-            for (ShapeId e : op.getErrorsSet()) {
-                model.expectShape(e).getTrait(software.amazon.smithy.model.traits.HttpErrorTrait.class)
-                    .ifPresent(t -> byStatus.putIfAbsent(t.getCode(), e.getName()));
-            }
-        }
-        if (!byStatus.isEmpty()) {
-            imports.add("import { " + String.join(", ", new TreeSet<>(byStatus.values())) + " } from \"../models/errors\";\n");
-        }
-        body.append("/** The error class for each HTTP status (one per status: PROTOCOL.md lint rule 1). */\n")
-            .append("const ERROR_CLASSES: Record<number, new (opts: any) => CaitlynServiceException> = {\n");
-        byStatus.forEach((code, name) -> body.append("  ").append(code).append(": ").append(name).append(",\n"));
-        body.append("};\n\n")
-            .append("/** Builds the typed error for problem details that arrive outside an HTTP error response. */\n")
-            .append("const toError = (problem: Record<string, unknown>): Error => {\n")
-            .append("  const status = Number(problem.status ?? 0);\n")
-            .append("  const fault = status >= 500 ? \"server\" : \"client\";\n")
-            .append("  const message = String(problem.detail ?? problem.title ?? problem.code);\n")
-            .append("  const Typed = ERROR_CLASSES[status];\n")
-            .append("  const error = Typed\n")
-            .append("    ? new Typed({ $fault: fault, $metadata: {}, message })\n")
-            .append("    : new CaitlynServiceException({ name: \"CaitlynError\", $fault: fault, $metadata: {}, message });\n")
-            .append("  return Object.assign(error, problem, { message });\n")
-            .append("};\n\n");
+        imports.add("import { toError, storage } from \"./problems\";\n");
 
         PaginatedIndex paginated = PaginatedIndex.of(model);
         OperationShape presigned = null;
-        Set<String> waiterImports = new TreeSet<>(); // error classes the waiters match that ERROR_CLASSES does not import
         for (OperationShape op : methods.keySet()) {
             String opName = op.getId().getName();
             String fn = lowerCamel(opName);
             Method m = methods.get(op);
             String in = typeName(op.getInputShape());
-            String out = typeName(op.getOutputShape());
+            String out = resultType(op);
+            String unwrap = thingOf(op).map(t -> ".then((out) => thingOf<WithRaw<" + out + " & __MetadataBearer>>(out, \"" + t.getMemberName() + "\"))").orElse("");
             modelTypes.add(in);
             modelTypes.add(out);
             imports.add("import { " + opName + "Command } from \"../commands/" + opName + "Command\";\n");
@@ -335,7 +453,7 @@ final class FacadeGenerator {
                         if (lastEventId) fields.add(rm.getMemberName() + ": lastEventId");
                         else if (rm.hasTrait(HttpLabelTrait.class)) {
                             fields.add(rm.getMemberName().equals(m.positional()) ? rm.getMemberName()
-                                : rm.getMemberName() + ": (input as Record<string, string>)." + rm.getMemberName());
+                                : rm.getMemberName() + ": (input as unknown as Record<string, string>)." + rm.getMemberName());
                         }
                     }
                     // A watch resumes itself: the same request again (what it listens to included), from the last event.
@@ -350,20 +468,53 @@ final class FacadeGenerator {
                             + (hasAfter ? ", ...(lastEventId === undefined ? {} : { after: undefined })" : "")
                             + ", " + lastMember + ": lastEventId }"
                         : "{ " + String.join(", ", fields) + " }";
-                    resume = "(lastEventId) =>\n      client.send(new " + r.getId().getName() + "Command(" + resumeInput
-                        + "), { abortSignal: signal })";
+                    resume = "(lastEventId, streamSignal) =>\n      client.send(new " + r.getId().getName() + "Command(" + resumeInput
+                        + "), { abortSignal: streamSignal })";
+                }
+                // A watch that resumes itself and takes no Last-Event-ID starts every connection with a snapshot
+                // (WatchKnowledgeBase, PROTOCOL.md 16): it reconnects with no cursor.
+                boolean fresh = resumeWith.isPresent() && resumeWith.get().equals(op.getId().toString())
+                    && input(op).getAllMembers().values().stream().noneMatch(rm -> rm.getTrait(HttpHeaderTrait.class)
+                        .map(h -> h.getValue().equalsIgnoreCase("Last-Event-ID")).orElse(false));
+                if (fresh) resume = "(_lastEventId, streamSignal) =>\n      client.send(new " + opName + "Command(" + commandInput + "), { abortSignal: streamSignal })";
+                // A watch that starts with a snapshot gives each event processingOf(): the watched thing's processing,
+                // read from the snapshot and the progress events alike (PROTOCOL.md 16, watch.processing).
+                boolean snapshots = union.getAllMembers().values().stream()
+                    .anyMatch(um -> um.getTrait(JsonNameTrait.class).map(JsonNameTrait::getValue).orElse(um.getMemberName()).equals("snapshot"));
+                String decorate = "";
+                if (snapshots) {
+                    imports.add("import { withProcessing, type KnowledgeBaseWatchAccessor } from \"@caitlyn-ai/sdk-core\";\n");
+                    events = "(" + events + " & KnowledgeBaseWatchAccessor)";
+                    decorate = ", decorate: withProcessing(input as Record<string, any>)";
+                }
+                String names = union.getId().getName() + "Names";
+                String readsName = union.getId().getName() + "Reads";
+                reads.computeIfAbsent(union.getId(), id -> eventReads(union, schemaImports));
+                // Attachments (PROTOCOL.md 16): a list of {uploadId} takes files too. Each is uploaded first, reserved for
+                // the thing the call is on (UploadPurpose's member of the same name as a label, conversationId), in order;
+                // the first that fails raises, and nothing is sent.
+                Optional<MemberShape> attach = attachmentMember(op);
+                // Every request the stream sends goes with its own signal (the caller's, and close()).
+                String openExpr = "client.send(new " + opName + "Command(" + commandInput + "), { abortSignal: streamSignal })";
+                String fnInputType = inputType;
+                if (attach.isPresent()) {
+                    String a = attach.get().getMemberName();
+                    String purposeMember = purposeFor(op);
+                    imports.add("import { uploadAttachments, type AttachmentInput } from \"@caitlyn-ai/sdk-core\";\n");
+                    fnInputType = "Omit<" + inputType + ", \"" + a + "\"> & { " + a + "?: AttachmentInput[] }";
+                    openExpr = "uploadAttachments(input." + a + ", (file) => sendUpload(client, file, { purpose: { " + purposeMember + ": input." + purposeMember
+                        + " } }, { signal: streamSignal })).then((" + a + ") => client.send(new " + opName + "Command({ ...input, " + a + ", ...rest } as " + inputType + "), { abortSignal: streamSignal }))";
                 }
                 body.append("export function ").append(fn).append("(client: CaitlynClient, ").append(positionalParam)
-                    .append("input: ").append(inputType).append(", ").append(optionsParam)
-                    .append("): SseStream<").append(events).append(", ").append(finalType).append("> {\n")
+                    .append("input: ").append(fnInputType).append(", ").append(optionsParam)
+                    .append("): SseStream<").append(events).append(", ").append(finalType).append("> & AsyncDisposableStream {\n")
                     .append("  const { signal, ...rest } = options;\n")
                     .append("  return new SseStream<").append(events).append(", ").append(finalType).append(">(\n")
-                    .append("    { known: ").append(events).append("Names, final: ").append(finalSpec)
-                    .append(", errorEvent: ").append(errorEvent).append(", toError },\n")
-                    .append("    () => client.send(new ").append(opName).append("Command(").append(commandInput)
-                    .append("), { abortSignal: signal }),\n")
+                    .append("    { known: ").append(names).append(", final: ").append(finalSpec)
+                    .append(", errorEvent: ").append(errorEvent).append(", toError").append(fresh ? ", fresh: true" : "").append(decorate).append(", read: ").append(readsName).append(" },\n")
+                    .append("    (streamSignal) => ").append(openExpr).append(",\n")
                     .append("    ").append(resume).append(",\n")
-                    .append("    signal,\n  );\n}\n\n");
+                    .append("    signal,\n  ) as SseStream<").append(events).append(", ").append(finalType).append("> & AsyncDisposableStream;\n}\n\n");
             } else if (page.isPresent()) {
                 PaginationInfo info = page.get();
                 MemberShape items = info.getItemsMemberPath().get(info.getItemsMemberPath().size() - 1);
@@ -382,263 +533,87 @@ final class FacadeGenerator {
                     .append(commandInput).append(", { abortSignal: signal });\n")
                     .append("      for await (const page of pages) yield* page.").append(items.getMemberName())
                     .append(" as WithRaw<").append(item).append(">[];\n    },\n  };\n}\n\n");
+            } else if (uploadTarget(op).isPresent()) {
+                // @uploadTarget (PROTOCOL.md 10): the method takes a file in place of the identifier at the member's path,
+                // uploads it (core.uploads.send, with the purpose the member's documentation names), then calls the
+                // operation with the upload's id there.
+                List<String> path = List.of(uploadTarget(op).get().split("\\."));
+                String purpose = uploadPurpose(op, path).map(p -> "{ purpose: " + p + " }").orElse("{}");
+                String fileInput = fileInputType(op, inputType, path);
+                body.append("export async function ").append(fn).append("(client: CaitlynClient, ").append(positionalParam)
+                    .append("input: ").append(fileInput).append(", ").append(optionsParam)
+                    .append("): Promise<WithRaw<").append(out).append(" & __MetadataBearer>> {\n")
+                    .append("  const { signal, ...rest } = options;\n")
+                    .append("  const resolved = await resolveUploadTarget(input, ").append(path.stream().map(x -> "\"" + x + "\"").collect(Collectors.joining(", ", "[", "]")))
+                    .append(", (file) => sendUpload(client, file, ").append(purpose).append(", { signal }));\n")
+                    .append("  return client.send(new ").append(opName).append("Command({ ...(resolved as ").append(inputType).append(")")
+                    .append(m.positional() != null ? ", " + m.positional() : "").append(", ...rest }), { abortSignal: signal })").append(unwrap).append(" as Promise<WithRaw<")
+                    .append(out).append(" & __MetadataBearer>>;\n}\n\n");
             } else {
                 body.append("export function ").append(fn).append("(client: CaitlynClient, ").append(positionalParam)
                     .append("input: ").append(inputType).append(", ").append(optionsParam)
                     .append("): Promise<WithRaw<").append(out).append(" & __MetadataBearer>> {\n")
                     .append("  const { signal, ...rest } = options;\n")
                     .append("  return client.send(new ").append(opName).append("Command(").append(commandInput)
-                    .append("), { abortSignal: signal }) as Promise<WithRaw<").append(out).append(" & __MetadataBearer>>;\n}\n\n");
-                if (op.hasTrait(WAITABLE)) {
-                    waiters(body, op, fn, positionalParam, m.positional(), inputType, out, byStatus, waiterImports);
-                }
+                    .append("), { abortSignal: signal })").append(unwrap).append(" as Promise<WithRaw<").append(out).append(" & __MetadataBearer>>;\n}\n\n");
             }
-            if (op.hasTrait(WAITABLE) && (sse.isPresent() || page.isPresent())) {
-                throw new CodegenException(op.getId() + ": waiters on list or stream operations are not supported yet");
-            }
+            if (op.hasTrait(WAITABLE)) throw new CodegenException(op.getId() + ": waiters are replaced by wait() (PROTOCOL.md 16)");
             if (op.hasTrait(PRESIGNED_UPLOAD)) presigned = op;
         }
 
-        // Upload helpers from @presignedUpload and @uploadTarget.
+        // core.uploads.send(file) from @presignedUpload (PROTOCOL.md 10 and 14).
+        boolean targets = methods.keySet().stream().anyMatch(o -> uploadTarget(o).isPresent());
+        if (presigned == null && targets) throw new CodegenException("@uploadTarget needs an operation with @presignedUpload");
         if (presigned != null) {
             String fn = lowerCamel(presigned.getId().getName());
             String in = typeName(presigned.getInputShape());
-            body.append("/** Computes the SHA-256, reserves the upload slot and sends the bytes to it. */\n")
-                .append("export function ").append(fn).append("FromFile(client: CaitlynClient, input: { file: Blob; fileName: string } & Omit<")
-                .append(in).append(", \"fileName\" | \"contentType\" | \"byteSize\" | \"sha256\" | \"idempotencyKey\">, options: CallOptions & { idempotencyKey?: string } = {}) {\n")
-                .append("  const { file, fileName, ...rest } = input;\n")
-                .append("  return uploadFile(file, fileName, (meta) => ").append(fn).append("(client, { ...rest, ...meta }, options), toError, options.signal,\n")
-                .append("    (client.config as { caitlynTracer?: Parameters<typeof uploadFile>[5] }).caitlynTracer);\n}\n\n");
-            for (OperationShape op : methods.keySet()) {
-                Optional<String> member = op.findTrait(UPLOAD_TARGET)
-                    .map(t -> t.toNode().expectObjectNode().expectStringMember("member").getValue());
-                if (member.isEmpty()) continue;
-                String target = lowerCamel(op.getId().getName());
-                String tin = typeName(op.getInputShape());
-                String helper = "upload" + methods.get(op).resource().getId().getName().replaceFirst("Resource$", "");
-                body.append("/** Uploads the file, then calls ").append(target).append(" with the upload. */\n")
-                    .append("export async function ").append(helper).append("(client: CaitlynClient, input: { file: Blob; fileName: string } & Omit<")
-                    .append(tin).append(", \"").append(member.get()).append("\" | \"idempotencyKey\">, options: CallOptions & { idempotencyKey?: string } = {}) {\n")
-                    .append("  const { file, fileName, ...rest } = input;\n")
-                    .append("  const upload = await ").append(fn).append("FromFile(client, { file, fileName }, { signal: options.signal });\n")
-                    .append("  return ").append(target).append("(client, { ...rest, ").append(member.get()).append(": upload.id }, options);\n}\n\n");
-            }
+            String out = resultType(presigned);
+            imports.add("import { sendFile, resolveUploadTarget, type FileInput } from \"@caitlyn-ai/sdk-core\";\n");
+            body.append("/**\n * Sends a file (PROTOCOL.md 14): hashes it, reserves an upload with ").append(presigned.getId().getName())
+                .append(", then PUTs the bytes to the upload's URL\n * with exactly its requiredHeaders, retried; UPLOAD_PUT_FAILED when that still fails. Returns the upload, whose `id`\n")
+                .append(" * an operation that uses it takes. `input` takes the reservation's other members (`purpose`).\n */\n")
+                .append("export function sendUpload(client: CaitlynClient, file: FileInput, input: Omit<").append(in)
+                .append(", \"fileName\" | \"contentType\" | \"byteSize\" | \"sha256\" | \"idempotencyKey\"> = {}, options: CallOptions & { idempotencyKey?: string } = {}): Promise<WithRaw<")
+                .append(out).append(" & __MetadataBearer>> {\n")
+                .append("  return sendFile(file, (meta) => ").append(fn).append("(client, { ...input, ...meta }, options), toError, storage(client, options.signal));\n}\n\n");
+            modelTypes.add(out);
         }
 
-        imports.add("import type { " + String.join(", ", modelTypes) + " } from \"../models/models_0\";\n");
-        if (methods.keySet().stream().anyMatch(o -> o.hasTrait(WAITABLE))) {
-            imports.add("import { waitUntil, type WaiterOptions, type WaiterState } from \"@caitlyn-ai/sdk-core\";\n");
-        }
-        if (!waiterImports.isEmpty()) {
-            imports.add("import { " + String.join(", ", waiterImports) + " } from \"../models/errors\";\n");
-        }
+        modelTypes.addAll(nestedTypes);
+        imports.add(typeImports(modelTypes));
         if (!eventTypes.isEmpty()) {
             List<String> values = eventTypes.stream().filter(t -> t.endsWith("Names")).toList();
             List<String> types = eventTypes.stream().filter(t -> !t.endsWith("Names")).toList();
             imports.add("import { " + String.join(", ", values)
                 + (types.isEmpty() ? "" : ", type " + String.join(", type ", types)) + " } from \"./events\";\n");
         }
-        return HEADER + String.join("", imports) + "\n" + body;
+        if (!reads.isEmpty()) {
+            imports.add("import type { EventPlan } from \"@caitlyn-ai/sdk-core\";\n");
+            if (!schemaImports.isEmpty()) imports.add("import { " + String.join(", ", schemaImports) + " } from \"../schemas/schemas_0\";\n");
+        }
+        StringBuilder plans = new StringBuilder();
+        for (Map.Entry<ShapeId, String> e : reads.entrySet()) {
+            plans.append("/** How each ").append(e.getKey().getName()).append(" is read: its members that are the model's types. */\n")
+                .append("const ").append(e.getKey().getName()).append("Reads: Record<string, EventPlan> = ").append(e.getValue()).append(";\n\n");
+        }
+        return HEADER + String.join("", imports) + "\n" + plans + body;
     }
 
     // ------------------------------------------------------------------ client.ts and index.ts
 
-    /**
-     * The waiters of an operation (smithy.waiters#waitable, PROTOCOL.md 10.1): waitUntil<Name>(), which polls the
-     * operation through sdk-core's waitUntil with the waiter's delays and its default limit (its @waitLimits entry,
-     * or five minutes). The acceptors are those the Go SDK supports: success, errorType, and an output path (field
-     * chains with at most one [] projection) compared with stringEquals or booleanEquals, or allStringEquals or
-     * anyStringEquals on a projection. Paths and error types are checked against the model, so a wrong one fails
-     * generation, not a wait.
-     */
-    private void waiters(StringBuilder body, OperationShape op, String fn, String positionalParam, String positional,
-                         String inputType, String out, Map<Integer, String> byStatus, Set<String> waiterImports) {
-        StructureShape output = model.expectShape(op.getOutputShape(), StructureShape.class);
-        Map<String, Node> waiters = new TreeMap<>(op.findTrait(WAITABLE).orElseThrow().toNode().expectObjectNode().getStringMap());
-        for (Map.Entry<String, Node> e : waiters.entrySet()) {
-            String name = e.getKey();
-            ObjectNode waiter = e.getValue().expectObjectNode();
-            int min = waiter.getNumberMemberOrDefault("minDelay", 2).intValue();
-            int max = waiter.getNumberMemberOrDefault("maxDelay", 120).intValue();
-            int limit = ai.caitlyn.codegen.model.CaitlynTraits.waitLimitSeconds(op, name);
-            String text = waiter.getStringMemberOrDefault("documentation", "Waits for " + name + ".");
-            String accept = "accept" + name;
-            String readArgs = "client, " + (positional != null ? positional + ", " : "") + "input, { signal }";
-            // A waiter that succeeds only on an error (Deleted, on NotFoundError) has no output to return; one that mixes
-            // output and error successes is refused (PROTOCOL.md 10.1).
-            boolean onError = ai.caitlyn.codegen.model.Waiters.succeedsOnError(op.getId(), name, waiter);
-            String returns = onError ? "Promise<void>" : "Promise<WithRaw<" + out + " & __MetadataBearer>>";
-            String call = "waitUntil(\"waitUntil" + name + "\", (signal) => " + fn + "(" + readArgs + "), " + accept
-                + ", { minDelayMs: " + (min * 1000) + ", maxDelayMs: " + (max * 1000) + ", ...options }, " + ((long) limit * 1000) + ")";
-            body.append("/** ").append(text.replace("*/", "*\\/").replace("\n", "\n * ")).append("\n *\n * It reads ")
-                .append(op.getId().getName()).append(" at once, then every ").append(min).append(" to ").append(max)
-                .append(onError
-                    ? " seconds, until a success state (it returns nothing: the error it waits for is the success), a failure\n * state, or an error the waiter"
-                    : " seconds, until a success state (it returns that output), a failure state, or an error the waiter")
-                .append(onError ? " " : "\n * ").append("does not expect (a WaiterError). It waits at most ").append(limit)
-                .append(" seconds unless `maxWaitMs` says otherwise; `signal` cancels it. */\n")
-                .append("export ").append(onError ? "async " : "").append("function waitUntil").append(name).append("(client: CaitlynClient, ")
-                .append(positionalParam).append("input: ").append(inputType).append(", options: WaiterOptions = {}): ").append(returns).append(" {\n")
-                .append(onError ? "  await " + call + ";\n}\n\n" : "  return " + call + ";\n}\n\n");
-
-            StringBuilder acc = new StringBuilder("const ").append(accept).append(" = ({ output, error }: { output?: ").append(out)
-                .append("; error?: unknown }): WaiterState | undefined => {\n");
-            for (Node a : waiter.expectArrayMember("acceptors").getElements()) {
-                ObjectNode acceptor = a.expectObjectNode();
-                String state = acceptor.expectStringMember("state").getValue();
-                if (!List.of("success", "failure", "retry").contains(state)) throw new CodegenException(op.getId() + ": unknown waiter state " + state);
-                ObjectNode matcher = acceptor.expectObjectMember("matcher");
-                String cond;
-                if (matcher.getBooleanMember("success").isPresent()) {
-                    cond = matcher.expectBooleanMember("success").getValue() ? "output !== undefined" : "error !== undefined";
-                } else if (matcher.getStringMember("errorType").isPresent()) {
-                    String type = matcher.expectStringMember("errorType").getValue();
-                    boolean declared = java.util.stream.Stream.concat(op.getErrorsSet().stream(), service.getErrorsSet().stream())
-                        .anyMatch(id -> id.getName().equals(type));
-                    if (!declared) throw new CodegenException(op.getId() + ": waiter errorType " + type + " is not an error of the operation");
-                    if (!byStatus.containsValue(type)) waiterImports.add(type);
-                    cond = "error instanceof " + type;
-                } else if (matcher.getObjectMember("output").isPresent()) {
-                    ObjectNode o = matcher.expectObjectMember("output");
-                    cond = "output !== undefined && " + pathCondition(op, output, o.expectStringMember("path").getValue(),
-                        o.expectStringMember("comparator").getValue(), o.expectStringMember("expected").getValue());
-                } else {
-                    throw new CodegenException(op.getId() + ": only success, errorType and output waiter matchers are supported yet");
-                }
-                acc.append("  if (").append(cond).append(") return \"").append(state).append("\";\n");
-            }
-            // PROTOCOL.md 10.1: an output no acceptor matches polls again; an error no acceptor matches ends the wait.
-            acc.append("  return error === undefined ? \"retry\" : undefined;\n};\n\n");
-            body.append(acc);
-        }
-    }
-
-    /** A waiter's output path as a TypeScript condition on `output`, checked against the model. */
-    private String pathCondition(OperationShape op, StructureShape root, String path, String comparator, String expected) {
-        if (!path.matches("[A-Za-z0-9_]+(\\[\\])?(\\.[A-Za-z0-9_]+(\\[\\])?)*") || path.chars().filter(ch -> ch == '[').count() > 1) {
-            throw new CodegenException(op.getId() + ": waiter path " + path + " uses JMESPath beyond field chains and one [] projection");
-        }
-        Shape current = root;
-        String before = "output";   // the expression up to the projection
-        String after = "";          // the expression inside the projection, from its item `item`
-        boolean projected = false;
-        for (String raw : path.split("\\.")) {
-            boolean flatten = raw.endsWith("[]");
-            String seg = flatten ? raw.substring(0, raw.length() - 2) : raw;
-            if (!(current instanceof StructureShape st)) throw new CodegenException(op.getId() + ": waiter path " + path + " walks into a non-structure");
-            MemberShape m = st.getMember(seg).orElseThrow(() -> new CodegenException(op.getId() + ": waiter path " + path + ": no member " + seg));
-            String key = m.getMemberName();
-            // `output` itself is checked first (output !== undefined), so only the members after it may be absent.
-            if (projected) after += "?." + key; else before += (before.equals("output") ? "." : "?.") + key;
-            current = model.expectShape(m.getTarget());
-            if (flatten) {
-                if (!(current instanceof ListShape list)) throw new CodegenException(op.getId() + ": waiter path " + path + ": [] on a non-list");
-                current = model.expectShape(list.getMember().getTarget());
-                projected = true;
-            }
-        }
-        if (!(current.isStringShape() || current.isEnumShape() || current.isBooleanShape())) {
-            throw new CodegenException(op.getId() + ": waiter path " + path + " ends on " + current.getType());
-        }
-        String value = current.isBooleanShape() ? expected : "\"" + expected.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
-        if (current.isBooleanShape() && !expected.equals("true") && !expected.equals("false")) {
-            throw new CodegenException(op.getId() + ": waiter path " + path + " expects " + expected + ", not a boolean");
-        }
-        if (projected) {
-            String values = "(" + before + " ?? []).map((item) => item" + after + ")";
-            return switch (comparator) {
-                case "anyStringEquals" -> values + ".some((v) => v === " + value + ")";
-                case "allStringEquals" -> "((vs) => vs.length > 0 && vs.every((v) => v === " + value + "))(" + values + ")";
-                default -> throw new CodegenException(op.getId() + ": comparator " + comparator + " on a projection");
-            };
-        }
-        return switch (comparator) {
-            case "stringEquals", "booleanEquals" -> before + " === " + value;
-            default -> throw new CodegenException(op.getId() + ": comparator " + comparator + " without a projection");
-        };
-    }
-
-    /** One client object: its methods (name to operation function) and the objects nested in it. */
-    private static final class Namespace {
-        final Map<String, String> methods = new TreeMap<>();
-        final Map<String, Namespace> children = new TreeMap<>();
-    }
-
-    private String clientFile(Map<OperationShape, Method> methods) {
-        // A namespace may be a dotted path, outermost first (PROTOCOL.md 10): agents.versions nests a versions
-        // object in agents, so caitlyn.agents.versions.get(…).
-        Namespace root = new Namespace();
-        for (Map.Entry<OperationShape, Method> e : methods.entrySet()) {
-            Namespace ns = root;
-            for (String segment : e.getValue().namespace().split("\\.")) {
-                ns = ns.children.computeIfAbsent(segment, k -> new Namespace());
-            }
-            ns.methods.put(e.getValue().name(), lowerCamel(e.getKey().getId().getName()));
-            for (String waiter : waiterFunctions(e.getKey())) ns.methods.put(waiter, waiter);
-            if (e.getKey().hasTrait(PRESIGNED_UPLOAD)) {
-                ns.methods.put("create", lowerCamel(e.getKey().getId().getName()) + "FromFile");
-            }
-            if (e.getKey().hasTrait(UPLOAD_TARGET)) {
-                ns.methods.put("upload", "upload" + e.getValue().resource().getId().getName().replaceFirst("Resource$", ""));
-            }
-        }
-        StringBuilder out = new StringBuilder(HEADER)
-            .append("import { CaitlynClient } from \"../CaitlynClient\";\n")
-            .append("import { clientConfig, createAuth, getCaitlynAuthPlugin, getCaitlynConnectionErrorPlugin, getCaitlynTelemetryPlugin, type AuthSession, type CaitlynOptions } from \"@caitlyn-ai/sdk-core\";\n")
-            .append("import { CaitlynConnectionError } from \"./connection\";\n")
-            .append("import * as ops from \"./operations\";\n\n")
-            .append("type Rest<F> = F extends (client: CaitlynClient, ...rest: infer R) => unknown ? R : never;\n\n")
-            .append("/** Creates the client the standalone operation functions take as their first argument. */\n")
-            .append("export function createCaitlynClient(options: CaitlynOptions, auth: AuthSession = createAuth(options)): CaitlynClient {\n")
-            .append("  const client = new CaitlynClient(clientConfig(options, auth));\n")
-            .append("  client.middlewareStack.use(getCaitlynAuthPlugin(auth));\n")
-            .append("  if (options.telemetry?.enabled !== false) client.middlewareStack.use(getCaitlynTelemetryPlugin(options.telemetry?.tracerProvider));\n")
-            .append("  client.middlewareStack.use(getCaitlynConnectionErrorPlugin((operation, cause) => new CaitlynConnectionError(operation, cause)));\n")
-            .append("  return client;\n}\n\n")
-            .append("/** Every operation, grouped by namespace. Import the standalone functions instead for the smallest bundle. */\n")
-            .append("export class ").append(service.getId().getName()).append(" {\n")
-            .append("  readonly client: CaitlynClient;\n")
-            .append("  /** The sign-in session: the current token, and the oauth mode's authorizationUrl(), handleCallback() and signOut(). */\n")
-            .append("  readonly auth: AuthSession;\n\n")
-            .append("  constructor(options: CaitlynOptions) {\n    this.auth = createAuth(options);\n    this.client = createCaitlynClient(options, this.auth);\n  }\n");
-        for (Map.Entry<String, Namespace> ns : root.children.entrySet()) {
-            out.append("\n  readonly ").append(ns.getKey()).append(" = ");
-            namespaceObject(out, ns.getKey(), ns.getValue(), "  ");
-            out.append(";\n");
-        }
-        return out.append("}\n").toString();
-    }
-
-    /** A namespace as an object literal: its methods, then its nested namespaces, each in name order. */
-    private static void namespaceObject(StringBuilder out, String path, Namespace ns, String indent) {
-        out.append("{\n");
-        for (Map.Entry<String, String> m : ns.methods.entrySet()) {
-            if (ns.children.containsKey(m.getKey())) {
-                throw new CodegenException(path + "." + m.getKey() + " is both a method and a namespace");
-            }
-            out.append(indent).append("  ").append(m.getKey()).append(": (...args: Rest<typeof ops.").append(m.getValue())
-                .append(">) => ops.").append(m.getValue()).append("(this.client, ...args),\n");
-        }
-        for (Map.Entry<String, Namespace> child : ns.children.entrySet()) {
-            out.append(indent).append("  ").append(child.getKey()).append(": ");
-            namespaceObject(out, path + "." + child.getKey(), child.getValue(), indent + "  ");
-            out.append(",\n");
-        }
-        out.append(indent).append("}");
-    }
-
     private String indexFile() {
         return HEADER
             + "// The public entry: model shapes, operations and the client. Command classes are not exported.\n"
-            + "export { " + service.getId().getName() + ", createCaitlynClient } from \"./client\";\n"
+            + "export * from \"./client\";\n"
             + "export * from \"./operations\";\n"
             + "export * from \"./events\";\n"
             + "export type * from \"../models/models_0\";\n"
+            + "export type * from \"./results\";\n"
             + "export * from \"../models/enums\";\n"
             + "export * from \"../models/errors\";\n"
             + "export { CaitlynError } from \"./errors\";\n"
             + "export { CaitlynConnectionError } from \"./connection\";\n"
-            + "export { NotSupportedByServer, SseStream, CaitlynAuthError, WaiterError, createAuth, workspaceAudience, type AuthOptions, type AuthSession, type AwsCredentials, type OAuthTokens, type TokenStore, type CaitlynOptions, type CallOptions, type CaitlynErrorFields, type WaiterOptions, type WithRaw } from \"@caitlyn-ai/sdk-core\";\n";
+            + "export { NotSupportedByServer, SseStream, CaitlynAuthError, UploadFile, WorkPromise, contentTypeFor, createAuth, workspaceAudience, isSyncAborted, withHints, type FileInput, type UploadFileOptions, type UploadDescription, type BatchFiles, type BatchUpload, type BatchUploadOptions, type IngestionProgress, type SyncItemInput, type SyncOptions, type SyncPhase, type SyncPlan, type SyncReport, type SyncReportBatch, type SyncReportItem, type LocalFile, type ReadersShorthand, type WaitOptions, type AuthOptions, type AuthSession, type AwsCredentials, type OAuthTokens, type TokenStore, type CaitlynOptions, type CallOptions, type CaitlynErrorFields, type WithRaw } from \"@caitlyn-ai/sdk-core\";\n";
     }
 
     /**
@@ -676,8 +651,11 @@ final class FacadeGenerator {
         }
         fields.append("  /** `Retry-After` in seconds, on 429 and 503 responses. */\n  retryAfterSeconds?: number;\n")
             .append("  /** The response body as received, as text, at most its first 8 KiB: the only view of a body that is not problem details. */\n  rawBody?: string;\n")
-            .append("  /** True when the body was longer than 8 KiB and `rawBody` holds only its first 8 KiB. */\n  rawBodyTruncated?: boolean;\n");
+            .append("  /** True when the body was longer than 8 KiB and `rawBody` holds only its first 8 KiB. */\n  rawBodyTruncated?: boolean;\n")
+            .append("  /** On the `CANCELLED` error of a sync whose plan was not confirmed (PROTOCOL.md 15): its report, the batch and\n")
+            .append("   * every item as read once it was cancelled. Undefined on every other error. */\n  report?: SyncReport;\n");
         return HEADER
+            + "import type { SyncReport } from \"@caitlyn-ai/sdk-core\";\n"
             + "import { CaitlynServiceException, type __ServiceExceptionOptions } from \"../models/CaitlynServiceException\";\n"
             + (structures.isEmpty() ? "" : "import type { " + String.join(", ", structures) + " } from \"../models/models_0\";\n")
             + "\n/**\n * Every Caitlyn error: the typed classes (NotFoundError, ValidationError…) and the generic error for a status\n"
@@ -715,5 +693,123 @@ final class FacadeGenerator {
             + "}\n";
     }
 
-    private static final String HEADER = "// Generated by ai.caitlyn:caitlyn-typescript-codegen from the Smithy model. Do not edit.\n";
+    /** The member path of an operation's @uploadTarget, if it has one. */
+    static Optional<String> uploadTarget(OperationShape op) {
+        return op.findTrait(UPLOAD_TARGET).map(t -> t.toNode().expectObjectNode().expectStringMember("member").getValue());
+    }
+
+    /** The member at an @uploadTarget path, checked against the model. */
+    MemberShape targetMember(OperationShape op, List<String> path) {
+        StructureShape s = input(op);
+        MemberShape m = null;
+        for (int i = 0; i < path.size(); i++) {
+            String seg = path.get(i);
+            m = s.getMember(seg).orElseThrow(() -> new CodegenException(op.getId() + ": @uploadTarget " + String.join(".", path) + ": no member " + seg));
+            if (i < path.size() - 1) s = model.expectShape(m.getTarget(), StructureShape.class);
+        }
+        return m;
+    }
+
+    /**
+     * The purpose an @uploadTarget member's documentation names for its upload, as a TypeScript literal: "reserved with
+     * CreateUpload and `purpose: {agentAvatar: true}`" gives `{ agentAvatar: true }` (PROTOCOL.md 10).
+     */
+    private Optional<String> uploadPurpose(OperationShape op, List<String> path) {
+        String text = targetMember(op, path).getTrait(DocumentationTrait.class).map(DocumentationTrait::getValue).orElse("");
+        java.util.regex.Matcher mt = java.util.regex.Pattern.compile("`purpose: \\{(\\w+): true\\}`").matcher(text);
+        return mt.find() ? Optional.of("{ " + mt.group(1) + ": true }") : Optional.empty();
+    }
+
+    /**
+     * The input type of an @uploadTarget operation's method: a top-level identifier is replaced by `file` (either may
+     * be given); a nested one takes a file or an identifier at its path.
+     */
+    String fileInputType(OperationShape op, String inputType, List<String> path) {
+        MemberShape leaf = targetMember(op, path);
+        if (path.size() == 1) {
+            String member = path.get(0);
+            boolean required = leaf.hasTrait(RequiredTrait.class);
+            return "Omit<" + inputType + ", \"" + member + "\"> & ("
+                + (required
+                    ? "{ file: FileInput; " + member + "?: never } | { " + member + ": string; file?: never })"
+                    : "{ file?: FileInput; " + member + "?: string })");
+        }
+        return nestedFileType(input(op), inputType, path, 0);
+    }
+
+    private String nestedFileType(StructureShape s, String typeExpr, List<String> path, int i) {
+        String seg = path.get(i);
+        MemberShape m = s.getMember(seg).orElseThrow();
+        String opt = m.hasTrait(RequiredTrait.class) ? "" : "?";
+        if (i < path.size() - 1) nestedTypes.add(typeName(m.getTarget()));
+        String inner = i == path.size() - 1 ? "string | FileInput"
+            : nestedFileType(model.expectShape(m.getTarget(), StructureShape.class), typeName(m.getTarget()), path, i + 1);
+        return "Omit<" + typeExpr + ", \"" + seg + "\"> & { " + seg + opt + ": " + inner + " }";
+    }
+
+    /** The operations kb.ingestion.sync sends (PROTOCOL.md 15). */
+    static final List<String> SYNC_OPERATIONS = List.of("CreateIngestionBatch", "BatchCreateIngestionBatchItems",
+        "GetIngestionBatch", "ListIngestionBatchItems", "UpdateIngestionBatchItem", "StartIngestionBatch",
+        "CreateIngestionBatchUploadPolicy", "CompleteIngestionBatchUploads", "CancelIngestionBatch", "ListDocuments", "EstimateIngestion");
+
+    boolean hasSyncOperations() {
+        Set<String> names = operations().stream().map(o -> o.getId().getName()).collect(Collectors.toSet());
+        return names.containsAll(SYNC_OPERATIONS);
+    }
+
+    // ------------------------------------------------------------------ problems.ts
+
+    /**
+     * The typed error for problem details that arrive outside an HTTP error response (the SSE failure event, a failed
+     * upload, a job's error): the class for its status (PROTOCOL.md 6.2), or for a job's error, which carries only a
+     * code, the class whose errorCodes list it. Also the client's limits for bytes sent to storage. Internal to the SDK.
+     */
+    private String problemsFile() {
+        Map<Integer, String> byStatus = new TreeMap<>();
+        Map<String, String> byCode = new TreeMap<>();
+        Set<ShapeId> errors = new TreeSet<>(service.getErrorsSet());
+        for (OperationShape op : operations()) errors.addAll(op.getErrorsSet());
+        for (ShapeId e : errors) {
+            Shape shape = model.expectShape(e);
+            shape.getTrait(software.amazon.smithy.model.traits.HttpErrorTrait.class).ifPresent(t -> byStatus.putIfAbsent(t.getCode(), e.getName()));
+            ai.caitlyn.codegen.model.CaitlynTraits.node(shape, ai.caitlyn.codegen.model.CaitlynTraits.ERROR_CODES).ifPresent(n ->
+                n.expectArrayNode().getElements().forEach(c -> byCode.putIfAbsent(c.expectStringNode().getValue(), e.getName())));
+        }
+        Map<String, Integer> statusOf = new TreeMap<>();
+        byStatus.forEach((code, name) -> statusOf.putIfAbsent(name, code));
+        StringBuilder out = new StringBuilder(HEADER)
+            .append("import type { CaitlynClient } from \"../CaitlynClient\";\n")
+            .append("import { CaitlynServiceException } from \"../models/CaitlynServiceException\";\n")
+            .append("import type { SendOptions } from \"@caitlyn-ai/sdk-core\";\n");
+        if (!byStatus.isEmpty()) out.append("import { ").append(String.join(", ", new TreeSet<>(byStatus.values()))).append(" } from \"../models/errors\";\n");
+        out.append("\n/** The error class for each HTTP status (one per status: PROTOCOL.md lint rule 1). */\n")
+            .append("const ERROR_CLASSES: Record<number, new (opts: any) => CaitlynServiceException> = {\n");
+        byStatus.forEach((code, name) -> out.append("  ").append(code).append(": ").append(name).append(",\n"));
+        out.append("};\n\n/** The HTTP status of each error code the model lists (errorCodes): a job's error carries only its code. */\n")
+            .append("const STATUS_OF_CODE: Record<string, number> = {\n");
+        byCode.forEach((code, name) -> out.append("  ").append(code).append(": ").append(statusOf.get(name)).append(",\n"));
+        out.append("};\n\n")
+            .append("/** Builds the typed error for problem details that arrive outside an HTTP error response. */\n")
+            .append("export const toError = (problem: Record<string, unknown>): Error => {\n")
+            .append("  const status = Number(problem.status ?? 0);\n")
+            .append("  const fault = status >= 500 ? \"server\" : \"client\";\n")
+            .append("  const message = String(problem.detail ?? problem.title ?? problem.code);\n")
+            .append("  const Typed = ERROR_CLASSES[status];\n")
+            .append("  const error = Typed\n")
+            .append("    ? new Typed({ $fault: fault, $metadata: {}, message })\n")
+            .append("    : new CaitlynServiceException({ name: \"CaitlynError\", $fault: fault, $metadata: {}, message });\n")
+            .append("  return Object.assign(error, problem, { message });\n")
+            .append("};\n\n")
+            .append("/**\n * The typed error for a failed job's error ({code, detail}, PROTOCOL.md 16): the class whose errorCodes list the code,\n")
+            .append(" * with that class's status; a code no class lists is the generic error, with status 0.\n */\n")
+            .append("export const jobError = (error: Record<string, unknown>): Error =>\n")
+            .append("  toError({ ...error, status: STATUS_OF_CODE[String(error.code)] ?? 0, title: String(error.detail ?? error.code) });\n\n")
+            .append("/** The client's limits for the bytes file helpers send to storage, and its tracer (PROTOCOL.md 13). */\n")
+            .append("export const storage = (client: CaitlynClient, signal?: AbortSignal): SendOptions => {\n")
+            .append("  const c = client.config as { caitlynTracer?: SendOptions[\"tracer\"]; caitlynStorage?: { maxAttempts?: number; maxRetryDelayMs?: number } };\n")
+            .append("  return { signal, tracer: c.caitlynTracer, ...c.caitlynStorage };\n};\n");
+        return out.toString();
+    }
+
+    static final String HEADER = "// Generated by ai.caitlyn:caitlyn-typescript-codegen from the Smithy model. Do not edit.\n";
 }

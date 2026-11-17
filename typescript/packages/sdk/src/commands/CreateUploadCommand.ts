@@ -27,8 +27,11 @@ export interface CreateUploadCommandOutput extends CreateUploadOutput, __Metadat
  * checksum.
  *
  * Send the bytes with `uploadMethod` to `uploadUrl`, with every header in `requiredHeaders`,
- * before `expiresAt`; then pass the upload's `id` to the operation that uses it. The SDKs'
- * `uploads.create(file)` does all of this.
+ * before `expiresAt`; then pass the upload's `id` to the operation that uses it. Files can be at
+ * most 2 GB. For an attachment, name the conversation in `purpose`: the conversation's attachment
+ * settings are checked here, before the bytes travel. The SDKs' `core.uploads.send(file)` does all of
+ * this, and their document and attachment helpers call it for you. Many files at once go through an
+ * ingestion batch instead, which signs one upload policy for them all.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript
@@ -43,6 +46,10 @@ export interface CreateUploadCommandOutput extends CreateUploadOutput, __Metadat
  *   contentType: "STRING_VALUE", // required
  *   byteSize: Number("long"), // required
  *   sha256: "STRING_VALUE", // required
+ *   purpose: { // UploadPurpose
+ *     agentAvatar: true || false,
+ *     conversationId: "STRING_VALUE",
+ *   },
  * };
  * const command = new CreateUploadCommand(input);
  * const response = await client.send(command);
@@ -70,13 +77,23 @@ export interface CreateUploadCommandOutput extends CreateUploadOutput, __Metadat
  *
  * @throws {@link ConflictError} (client fault)
  *  The resource's state does not allow the request, a unique name is taken, or a request with the
- * same idempotency key is still in progress.
+ * same idempotency key is still in progress. An agent version that live points at
+ * (`VERSION_IN_USE`) or that live history names (`VERSION_IN_HISTORY`) cannot be deleted. A
+ * document still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an
+ * ingestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document
+ * an ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry
+ * `Retry-After`.
  *
  * @throws {@link PayloadTooLargeError} (client fault)
  *  The body, a file or the send `context` is over its documented limit.
  *
  * @throws {@link UnprocessableContentError} (client fault)
- *  The idempotency key was already used with a different request body.
+ *  The idempotency key was already used with a different request body; supplied metadata does not
+ * fit the knowledge base's field definitions or limits (`METADATA_FIELD_UNDEFINED`,
+ * `METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one
+ * entry per field in `errors`; an ingestion batch item gives both or neither of its content's
+ * description and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused
+ * a file (`CONTENT_REJECTED`).
  *
  * @throws {@link InternalError} (server fault)
  *  An unexpected server failure. Not retried by the SDKs.
@@ -98,8 +115,9 @@ export interface CreateUploadCommandOutput extends CreateUploadOutput, __Metadat
  *
  * @throws {@link ValidationError} (client fault)
  *  The request is malformed: a member is missing, the wrong type or out of range; it has a member,
- * filter or sort field the operation does not define; its cursor is not valid for this list; or it
- * asks to delete `draft` or `production`, which every agent keeps.
+ * filter or sort field the operation does not define; its cursor is not valid for this list; it
+ * asks to delete `draft` or `live`, which every agent keeps; an agent configuration would be
+ * larger than 256 KiB; or a file is meant for a conversation whose agent takes no attachments.
  *
  * @throws {@link CaitlynServiceException}
  * <p>Base exception class for all service exceptions from Caitlyn service.</p>
@@ -139,6 +157,25 @@ export interface CreateUploadCommandOutput extends CreateUploadOutput, __Metadat
  *   byteSize: 9000000000,
  *   contentType: "application/zip",
  *   fileName: "archive.zip",
+ *   sha256: "n4bQgYhMfWWaL+qgxVrQFaO/TxsrC4Is0V1sFbDwCgg="
+ * };
+ * const command = new CreateUploadCommand(input);
+ * const response = await client.send(command);
+ * /* response is
+ * { /* metadata only *\/ }
+ * *\/
+ * ```
+ *
+ * @example An attachment for a conversation whose agent takes none
+ * ```javascript
+ * //
+ * const input = {
+ *   byteSize: 482113,
+ *   contentType: "application/pdf",
+ *   fileName: "q3.pdf",
+ *   purpose: {
+ *     conversationId: "0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47"
+ *   },
  *   sha256: "n4bQgYhMfWWaL+qgxVrQFaO/TxsrC4Is0V1sFbDwCgg="
  * };
  * const command = new CreateUploadCommand(input);

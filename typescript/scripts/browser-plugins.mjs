@@ -3,8 +3,8 @@
 //
 // - The generated SDK's @smithy/* imports go to sdk-core's runtime (packages/sdk-core/src/runtime/smithy.ts), in
 //   every build.
-// - The browser build of sdk-core leaves out the sign-in modes a browser may not use and the AWS signer
-//   (src/browser/auth-server.ts and src/browser/aws.ts in place of src/auth-server.ts and src/aws.ts).
+// - The browser build of sdk-core leaves out the sign-in modes a browser may not use, the AWS signer and the file system
+//   (src/browser/auth-server.ts, aws.ts and files-node.ts in place of src/auth-server.ts, aws.ts and files-node.ts).
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -24,11 +24,23 @@ export const fetchRuntimeConfig = {
   },
 };
 
+/**
+ * sdk-core's edge build (Cloudflare Workers, Vercel Edge, Deno, web workers): no file system, so the file helpers
+ * take Blobs, bytes and streams (src/browser/files-node.ts in place of src/files-node.ts); everything else is the
+ * Node build's.
+ */
+export const coreEdge = {
+  name: 'sdk-core-edge',
+  setup(b) {
+    b.onResolve({ filter: /^\.\/files-node\.js$/ }, (a) => (a.resolveDir === coreSrc ? { path: path.join(coreSrc, 'browser', 'files-node.ts') } : undefined));
+  },
+};
+
 /** sdk-core's browser build: no server-only sign-in modes, no AWS signer. */
 export const coreBrowser = {
   name: 'sdk-core-browser',
   setup(b) {
-    b.onResolve({ filter: /^\.\/(auth-server|aws)\.js$/ }, (a) =>
+    b.onResolve({ filter: /^\.\/(auth-server|aws|files-node)\.js$/ }, (a) =>
       a.resolveDir === coreSrc ? { path: path.join(coreSrc, 'browser', a.path.replace(/\.js$/, '.ts')) } : undefined,
     );
   },

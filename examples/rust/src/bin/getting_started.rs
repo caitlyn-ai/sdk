@@ -1,6 +1,6 @@
 //! The developer docs' Getting started page (docs/getting-started.md) shows the first-call region.
 // #region first-call
-use caitlyn_sdk::{Auth, Client, GetAgentVersionInput};
+use caitlyn_sdk::{Auth, Client};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -9,16 +9,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Auth::token(std::env::var("CAITLYN_TOKEN")?),
     )?;
 
-    // Read the draft of an agent: its configuration and its ETag
-    let draft = client
-        .agents()
-        .versions()
-        .get(GetAgentVersionInput {
-            agent_id: "GHT7YRWXPL".into(),
-            version: "draft".into(),
-        })
-        .await?;
-    println!("{}", draft.configuration.instructions);
+    // Read the draft of an agent: its configuration and its ETag (draft.etag)
+    let draft = client.agent("GHT7YRWXPL").draft().get().await?;
+    println!(
+        "{}",
+        draft
+            .configuration
+            .as_ref()
+            .and_then(|c| c.guidance.as_ref())
+            .and_then(|g| g.instructions.as_deref())
+            .unwrap_or_default()
+    );
     Ok(())
 }
 // #endregion

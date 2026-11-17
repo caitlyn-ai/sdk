@@ -4,51 +4,221 @@ package caitlyn
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"iter"
 	"strconv"
-	"time"
 
 	"github.com/caitlyn-ai/sdk/go/core"
 )
 
-// BatchDeleteDocumentsInput is the input of Documents.BatchDelete.
+// Documents holds the calls on caitlyn.knowledgeBases(knowledgeBaseId).documents as a whole (List,
+// Create, EstimateCreate, DeleteMany, Reprocess, EstimateReprocess). One of them is DocumentScope,
+// made by its parent's Document method.
+type Documents struct {
+	c               *Client
+	knowledgeBaseID string
+}
+
+func newDocuments(c *Client, knowledgeBaseID string) *Documents {
+	return &Documents{
+		c:               c,
+		knowledgeBaseID: knowledgeBaseID,
+	}
+}
+
+// List lists the documents in a knowledge base, one page at a time.
+//
+// Documents are returned in a stable order that does not change between pages. Filters combine
+// with AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. With `filter[folder][eq]`,
+// the documents directly in that folder; with `deep` as well, every document below it. `q` keeps
+// documents whose name contains the text. The list can be sorted by `name`, `updatedAt` (when the
+// document last changed) and `byteSize`.
+//
+// It yields every item, fetching pages as needed; ListPages yields whole pages.
+//
+// Since Caitlyn 5.115.0; beta.
+func (s *Documents) List(ctx context.Context, in *ListDocumentsInput, opts ...CallOption) iter.Seq2[Document, error] {
+	return core.Items(s.ListPages(ctx, in, opts...), func(p *ListDocumentsPage) []Document { return p.Items })
+}
+
+// ListPages yields the pages of List, from the input's Cursor (normally unset) to the last page.
+func (s *Documents) ListPages(ctx context.Context, in *ListDocumentsInput, opts ...CallOption) iter.Seq2[*ListDocumentsPage, error] {
+	p := &listDocumentsParams{}
+	if in != nil {
+		p.Limit = in.Limit
+		p.Cursor = in.Cursor
+		p.Sort = in.Sort
+		p.Folder = in.Folder
+		p.Deep = in.Deep
+		p.Q = in.Q
+		p.Status = in.Status
+		p.NamePrefix = in.NamePrefix
+		p.ExternalID = in.ExternalID
+		p.ContentTypePrefix = in.ContentTypePrefix
+		p.SHA256 = in.SHA256
+		p.OutOfDate = in.OutOfDate
+	}
+	p.KnowledgeBaseID = s.knowledgeBaseID
+	return s.c.pagesListDocuments(ctx, p, opts)
+}
+
+// Create creates a document from an upload; ingestion continues after the response.
+//
+// Returns 202 with the document in its initial state and the Operation that tracks ingestion, and
+// `Location` names the document: read it with GetDocument, or wait for it with the SDKs'
+// `wait()`. Metadata sent here is written with the document before ingestion starts, so
+// even the first ingestion keeps it. Needs the files permission, read access to the knowledge base
+// and access to the folder; it does not need update access to the knowledge base, which is for the
+// knowledge base's own configuration.
+//
+// It returns the new document's scope, with the response as Result. Wait follows the work the call
+// started.
+//
+// Since Caitlyn 5.115.0; beta.
+func (s *Documents) Create(ctx context.Context, file File, in *CreateDocumentInput, opts ...CallOption) (*CreatedDocument, error) {
+	p := &createDocumentParams{}
+	if in != nil {
+		p.SourceURL = in.SourceURL
+		p.ExternalID = in.ExternalID
+		p.Metadata = in.Metadata
+		p.ExtraMetadata = in.ExtraMetadata
+		p.Folder = in.Folder
+		p.Name = in.Name
+	}
+	p.KnowledgeBaseID = s.knowledgeBaseID
+	id, err := s.c.uploadID(ctx, file, nil)
+	if err != nil {
+		return nil, err
+	}
+	p.UploadID = id
+	out, err := s.c.callCreateDocument(ctx, p, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &CreatedDocument{DocumentScope: newDocumentScope(s.c, s.knowledgeBaseID, out.Document.ID), Result: out, job: out.Operation.ID}, nil
+}
+
+// EstimateCreate estimates what adding documents would take and cost, before anything is uploaded.
+//
+// Describe each file (its name, type and size, with any hints the client could read). The SDKs call
+// this for `kb.documents.create.estimate(file)` and `kb.ingestion.sync.estimate(…)`.
+//
+// It takes Create's file and its own input, and starts nothing: of the file it sends only a
+// description (name, content type, size and the hints WithHints gave), uploading nothing.
+//
+// Since Caitlyn 5.115.0; beta.
+func (s *Documents) EstimateCreate(ctx context.Context, file File, opts ...CallOption) (*EstimateIngestionResult, error) {
+	p := &estimateIngestionParams{}
+	p.KnowledgeBaseID = s.knowledgeBaseID
+	d, err := s.c.describeFile(ctx, file)
+	if err != nil {
+		return nil, err
+	}
+	p.Documents = []UploadDescription{*d}
+	return s.c.callEstimateIngestion(ctx, p, opts)
+}
+
+// DeleteMany deletes up to 100 documents in one call, with a result for each.
+//
+// Each document is deleted as DeleteDocument deletes one. The call returns 200 even when every
+// item fails: `results` has one entry per identifier, always in request order, each either
+// `accepted` (the document is now `deleting`, or already was) or `failed` with a code: `NOT_FOUND`
+// for a document that is gone or that the caller may not see, or `SERVICE_UNAVAILABLE` when it could
+// not be marked for deletion; try that one again. A document still being processed is deleted like
+// any other. One failed item never stops the others. More than 100
+// identifiers, none, or the same identifier twice is refused with 400 `VALIDATION_FAILED` for the
+// whole call. Safe to repeat: a repeat gives the same results, apart from `NOT_FOUND` for documents
+// that finished deleting in between.
+//
+// Since Caitlyn 5.115.0; beta.
+func (s *Documents) DeleteMany(ctx context.Context, in *BatchDeleteDocumentsInput, opts ...CallOption) (*BatchDeleteDocumentsResult, error) {
+	p := &batchDeleteDocumentsParams{}
+	if in != nil {
+		p.DocumentIDs = in.DocumentIDs
+	}
+	p.KnowledgeBaseID = s.knowledgeBaseID
+	return s.c.callBatchDeleteDocuments(ctx, p, opts)
+}
+
+// Reprocess processes documents again the newest way; the work continues after the response.
+//
+// Give `outOfDate: true` for every document processed in an older way than the newest, or
+// `documentIds` for particular documents. Each document's current version keeps serving until its
+// new processing is indexed. Returns 202 with the job, which the knowledge base's watch follows;
+// estimate it first with EstimateReprocessDocuments. Costs money: see the estimate's `cost`.
+//
+// It returns the response, as Result, with Wait, which follows the work the call started.
+//
+// Since Caitlyn 5.115.0; beta.
+func (s *Documents) Reprocess(ctx context.Context, in *ReprocessDocumentsInput, opts ...CallOption) (*ReprocessDocumentsStarted, error) {
+	p := &reprocessDocumentsParams{}
+	if in != nil {
+		p.OutOfDate = in.OutOfDate
+		p.DocumentIDs = in.DocumentIDs
+	}
+	p.KnowledgeBaseID = s.knowledgeBaseID
+	out, err := s.c.callReprocessDocuments(ctx, p, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &ReprocessDocumentsStarted{Result: out, scope: newKnowledgeBaseScope(s.c, s.knowledgeBaseID), job: out.Job.ID}, nil
+}
+
+// ReprocessDocumentsStarted is what ReprocessDocuments returns: the call's response as Result, and
+// Wait, which follows the work it started.
+type ReprocessDocumentsStarted struct {
+	// Result is the call's response.
+	Result *ReprocessDocumentsResult
+
+	scope *KnowledgeBaseScope
+	job   string
+}
+
+// MarshalJSON writes the response, as ReprocessDocuments answered it.
+func (r *ReprocessDocumentsStarted) MarshalJSON() ([]byte, error) { return json.Marshal(r.Result) }
+
+// Watch opens the watch that follows the work the call started, as KnowledgeBaseScope.Watch does: a snapshot first, then each change.
+func (r *ReprocessDocumentsStarted) Watch(ctx context.Context, opts ...CallOption) (*KnowledgeBaseEventStream, error) {
+	return r.scope.Watch(ctx, opts...)
+}
+
+// Wait waits until the job the call started ends, and returns it. One that ended completed_with_failures returns
+// with its partial failures; one that failed returns its error as the typed error for its code, and one that was
+// cancelled an *Error with the code CANCELLED.
+func (r *ReprocessDocumentsStarted) Wait(ctx context.Context, opts ...WaitOption) (*Job, error) {
+	return r.scope.waitJob(ctx, r.job, opts)
+}
+
+// EstimateReprocess estimates what processing documents again would take and cost, and what it would
+// improve.
+//
+// Takes the same arguments as ReprocessDocuments. `details` lists the improvements the newest
+// processing brings.
+//
+// It takes Reprocess's arguments and starts nothing.
+//
+// Since Caitlyn 5.115.0; beta.
+func (s *Documents) EstimateReprocess(ctx context.Context, in *ReprocessDocumentsInput, opts ...CallOption) (*EstimateReprocessDocumentsResult, error) {
+	p := &estimateReprocessDocumentsParams{}
+	if in != nil {
+		p.OutOfDate = in.OutOfDate
+		p.DocumentIDs = in.DocumentIDs
+	}
+	p.KnowledgeBaseID = s.knowledgeBaseID
+	return s.c.callEstimateReprocessDocuments(ctx, p, opts)
+}
+
+// BatchDeleteDocumentsInput is what the caller gives BatchDeleteDocuments; the scope it is called on
+// fills the identifiers.
 type BatchDeleteDocumentsInput struct {
-	// The knowledge base the documents are in.
-	// Sent in the path.
-	KnowledgeBaseID string `json:"-"`
 	// The documents to delete: 1 to 100 identifiers, each at most once.
 	DocumentIDs []string `json:"documentIds"`
 }
 
-func errorsBatchDeleteDocuments(status int, e *core.APIError) error {
-	switch status {
-	case 400:
-		return &ValidationError{e}
-	case 401:
-		return &UnauthenticatedError{e}
-	case 403:
-		return &PermissionDeniedError{e}
-	case 404:
-		return &NotFoundError{e}
-	case 409:
-		return &ConflictError{e}
-	case 412:
-		return &PreconditionFailedError{e}
-	case 413:
-		return &PayloadTooLargeError{e}
-	case 422:
-		return &UnprocessableContentError{e}
-	case 428:
-		return &PreconditionRequiredError{e}
-	case 429:
-		return &TooManyRequestsError{e}
-	case 500:
-		return &InternalError{e}
-	case 503:
-		return &ServiceUnavailableError{e}
-	}
-	return e
+// batchDeleteDocumentsParams is every member of BatchDeleteDocuments's input: the caller's, and those the scope fills.
+type batchDeleteDocumentsParams struct {
+	KnowledgeBaseID string   `json:"-"`
+	DocumentIDs     []string `json:"documentIds"`
 }
 
 var opBatchDeleteDocuments = &core.Operation{
@@ -57,10 +227,10 @@ var opBatchDeleteDocuments = &core.Operation{
 	Since:     "5.115.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
-	Errors:    errorsBatchDeleteDocuments,
+	Errors:    errorForStatus,
 }
 
-func buildBatchDeleteDocuments(in *BatchDeleteDocumentsInput) (*core.Request, error) {
+func buildBatchDeleteDocuments(in *batchDeleteDocumentsParams) (*core.Request, error) {
 	if in.KnowledgeBaseID == "" {
 		return nil, core.MissingInput("BatchDeleteDocuments", "knowledgeBaseId")
 	}
@@ -82,85 +252,55 @@ func readBatchDeleteDocuments(resp *core.Response) (*BatchDeleteDocumentsResult,
 	return out, nil
 }
 
-// BatchDelete deletes up to 100 documents in one call, with a result for each.
-//
-// Each document is deleted as DeleteDocument deletes one. The call returns 200 even when every
-// item fails: `results` has one entry per identifier, always in request order, each either
-// `accepted` (the document is now `deleting`, or already was) or `failed` with a code: `NOT_FOUND`
-// for a document that is gone or that the caller may not see, and `CONFLICT` for a document still
-// being processed (`pending` or `processing`), which cannot be deleted until it is `indexed`,
-// `partially_indexed` or `failed`. One failed item never stops the others. More than 100 identifiers,
-// none, or the same identifier twice is refused with 400
-// `VALIDATION_FAILED` for the whole call. Safe to repeat: a repeat gives the same results, apart
-// from `NOT_FOUND` for documents that finished deleting in between.
-//
-// Errors: *InternalError (500), *PermissionDeniedError (403), *ServiceUnavailableError (503),
-// *TooManyRequestsError (429), *UnauthenticatedError (401), *ValidationError (400), *NotFoundError
-// (404); another status the API models has its own type too (*NotFoundError for 404), and any other
-// status is an *Error.
-//
-// Since Caitlyn 5.115.0; beta.
-func (c *DocumentsClient) BatchDelete(ctx context.Context, in *BatchDeleteDocumentsInput, opts ...CallOption) (*BatchDeleteDocumentsResult, error) {
-	if in == nil {
-		in = &BatchDeleteDocumentsInput{}
-	}
-	req, err := buildBatchDeleteDocuments(in)
+func (c *Client) callBatchDeleteDocuments(ctx context.Context, p *batchDeleteDocumentsParams, opts []CallOption) (*BatchDeleteDocumentsResult, error) {
+	req, err := buildBatchDeleteDocuments(p)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.c.core.Do(ctx, opBatchDeleteDocuments, req, opts)
+	resp, err := c.core.Do(ctx, opBatchDeleteDocuments, req, opts)
 	if err != nil {
 		return nil, err
 	}
 	return readBatchDeleteDocuments(resp)
 }
 
-// CreateDocumentInput is the input of Documents.Create. The idempotency key is generated, or set with
-// WithIdempotencyKey.
+// CreateDocumentInput is what the caller gives CreateDocument; the scope it is called on fills the
+// identifiers. The idempotency key is generated, or set with WithIdempotencyKey.
 type CreateDocumentInput struct {
-	// The knowledge base to add the document to.
-	// Sent in the path.
-	KnowledgeBaseID string `json:"-"`
-	// The upload holding the document's bytes. Each upload can be used once. Refused with 400
-	// `VALIDATION_FAILED` when the bytes are not the file type the document's name says.
-	UploadID string `json:"uploadId"`
+	// The address a citation of this document links to: `https`, at most 2,048 characters. Changing
+	// it needs no processing.
+	SourceURL *string `json:"sourceUrl,omitempty"`
+	// The caller's own key for the document, unique within the knowledge base. A key another document
+	// has is refused with 409 `ALREADY_EXISTS`.
+	ExternalID *string `json:"externalId,omitempty"`
+	// Values for the metadata fields the knowledge base defines. Each value is checked against its
+	// field's definition and the whole request is refused with 422 when any is wrong:
+	// `METADATA_FIELD_UNDEFINED`, `METADATA_VALUE_INVALID` or `METADATA_FIELD_PASSAGE_SCOPED`, each
+	// with a JSON pointer. A value set here is kept as sent: processing never replaces it.
+	Metadata map[string]any `json:"metadata,omitzero"`
+	// Keys the knowledge base does not define, within the limits on ExtraMetadata; breaking one is
+	// refused with 422 `METADATA_LIMIT_EXCEEDED`.
+	ExtraMetadata map[string]any `json:"extraMetadata,omitzero"`
 	// The folder to put the document in.
 	Folder string `json:"folder"`
-	// The document's name. Absent means the uploaded file's name. A name without an extension is
-	// given the one the upload's content type maps to, because ingestion reads the file type
-	// from it. Refused with 400 `VALIDATION_FAILED` when the type maps to no extension, or when
-	// the extension is one a knowledge base cannot ingest.
+	// What the document is called in the knowledge base and in citations. Absent means the
+	// uploaded file's name. A name without an extension is given the one the upload's content
+	// type maps to, because ingestion reads the file type from it. Refused with 400
+	// `VALIDATION_FAILED` when the type maps to no extension, or when the extension is one a
+	// knowledge base cannot ingest.
 	Name *string `json:"name,omitempty"`
 }
 
-func errorsCreateDocument(status int, e *core.APIError) error {
-	switch status {
-	case 400:
-		return &ValidationError{e}
-	case 401:
-		return &UnauthenticatedError{e}
-	case 403:
-		return &PermissionDeniedError{e}
-	case 404:
-		return &NotFoundError{e}
-	case 409:
-		return &ConflictError{e}
-	case 412:
-		return &PreconditionFailedError{e}
-	case 413:
-		return &PayloadTooLargeError{e}
-	case 422:
-		return &UnprocessableContentError{e}
-	case 428:
-		return &PreconditionRequiredError{e}
-	case 429:
-		return &TooManyRequestsError{e}
-	case 500:
-		return &InternalError{e}
-	case 503:
-		return &ServiceUnavailableError{e}
-	}
-	return e
+// createDocumentParams is every member of CreateDocument's input: the caller's, and those the scope fills.
+type createDocumentParams struct {
+	SourceURL       *string        `json:"sourceUrl,omitempty"`
+	ExternalID      *string        `json:"externalId,omitempty"`
+	Metadata        map[string]any `json:"metadata,omitzero"`
+	ExtraMetadata   map[string]any `json:"extraMetadata,omitzero"`
+	KnowledgeBaseID string         `json:"-"`
+	UploadID        string         `json:"uploadId"`
+	Folder          string         `json:"folder"`
+	Name            *string        `json:"name,omitempty"`
 }
 
 var opCreateDocument = &core.Operation{
@@ -170,10 +310,10 @@ var opCreateDocument = &core.Operation{
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},
-	Errors:            errorsCreateDocument,
+	Errors:            errorForStatus,
 }
 
-func buildCreateDocument(in *CreateDocumentInput) (*core.Request, error) {
+func buildCreateDocument(in *createDocumentParams) (*core.Request, error) {
 	if in.KnowledgeBaseID == "" {
 		return nil, core.MissingInput("CreateDocument", "knowledgeBaseId")
 	}
@@ -192,101 +332,51 @@ func readCreateDocument(resp *core.Response) (*CreateDocumentResult, error) {
 	out.APIVersion = resp.HeaderPtr("Caitlyn-Api-Version")
 	out.RequestID = resp.HeaderPtr("Caitlyn-Request-Id")
 	out.Location = resp.HeaderPtr("Location")
+	out.ETag = resp.HeaderValue("ETag")
 	out.metadata = resp.Metadata()
 	return out, nil
 }
 
-// Create creates a document from an upload; ingestion continues after the response.
-//
-// Returns 202 with the document in its initial state and the Operation that tracks ingestion, and
-// `Location` names the document: read it with GetDocument, or wait for it with the SDKs'
-// `waitUntilIndexed`. Needs the files permission, read access to the knowledge base and
-// access to the folder; it does not need update access to the knowledge base, which is for the
-// knowledge base's own configuration.
-//
-// Errors: *InternalError (500), *PermissionDeniedError (403), *ServiceUnavailableError (503),
-// *TooManyRequestsError (429), *UnauthenticatedError (401), *ValidationError (400), *ConflictError
-// (409), *NotFoundError (404), *UnprocessableContentError (422); another status the API models has its
-// own type too (*NotFoundError for 404), and any other status is an *Error.
-//
-// Since Caitlyn 5.115.0; beta.
-func (c *DocumentsClient) Create(ctx context.Context, in *CreateDocumentInput, opts ...CallOption) (*CreateDocumentResult, error) {
-	if in == nil {
-		in = &CreateDocumentInput{}
-	}
-	req, err := buildCreateDocument(in)
+func (c *Client) callCreateDocument(ctx context.Context, p *createDocumentParams, opts []CallOption) (*CreateDocumentResult, error) {
+	req, err := buildCreateDocument(p)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.c.core.Do(ctx, opCreateDocument, req, opts)
+	resp, err := c.core.Do(ctx, opCreateDocument, req, opts)
 	if err != nil {
 		return nil, err
 	}
 	return readCreateDocument(resp)
 }
 
-// DeleteDocumentInput is the input of Documents.Delete.
-type DeleteDocumentInput struct {
-	// The knowledge base the document is in.
-	// Sent in the path.
-	KnowledgeBaseID string `json:"-"`
-	// The document to delete.
-	// Sent in the path.
-	DocumentID string `json:"-"`
+// estimateIngestionParams is every member of EstimateIngestion's input: the caller's, and those the scope fills.
+type estimateIngestionParams struct {
+	KnowledgeBaseID string              `json:"-"`
+	Documents       []UploadDescription `json:"documents"`
 }
 
-func errorsDeleteDocument(status int, e *core.APIError) error {
-	switch status {
-	case 400:
-		return &ValidationError{e}
-	case 401:
-		return &UnauthenticatedError{e}
-	case 403:
-		return &PermissionDeniedError{e}
-	case 404:
-		return &NotFoundError{e}
-	case 409:
-		return &ConflictError{e}
-	case 412:
-		return &PreconditionFailedError{e}
-	case 413:
-		return &PayloadTooLargeError{e}
-	case 422:
-		return &UnprocessableContentError{e}
-	case 428:
-		return &PreconditionRequiredError{e}
-	case 429:
-		return &TooManyRequestsError{e}
-	case 500:
-		return &InternalError{e}
-	case 503:
-		return &ServiceUnavailableError{e}
-	}
-	return e
-}
-
-var opDeleteDocument = &core.Operation{
-	Name:      "DeleteDocument",
-	Method:    "DELETE",
+var opEstimateIngestion = &core.Operation{
+	Name:      "EstimateIngestion",
+	Method:    "POST",
 	Since:     "5.115.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
-	Errors:    errorsDeleteDocument,
+	Errors:    errorForStatus,
 }
 
-func buildDeleteDocument(in *DeleteDocumentInput) (*core.Request, error) {
+func buildEstimateIngestion(in *estimateIngestionParams) (*core.Request, error) {
 	if in.KnowledgeBaseID == "" {
-		return nil, core.MissingInput("DeleteDocument", "knowledgeBaseId")
+		return nil, core.MissingInput("EstimateIngestion", "knowledgeBaseId")
 	}
-	if in.DocumentID == "" {
-		return nil, core.MissingInput("DeleteDocument", "documentId")
+	req := core.NewRequest("/v3/knowledge-bases/" + core.PathLabel(in.KnowledgeBaseID) + "/ingestions:estimate")
+	if err := req.JSONBody(in); err != nil {
+		return nil, err
 	}
-	req := core.NewRequest("/v3/knowledge-bases/" + core.PathLabel(in.KnowledgeBaseID) + "/documents/" + core.PathLabel(in.DocumentID))
 	return req, nil
 }
 
-func readDeleteDocument(resp *core.Response) (*DeleteDocumentResult, error) {
-	out := &DeleteDocumentResult{}
+func readEstimateIngestion(resp *core.Response) (*EstimateIngestionResult, error) {
+	out := &EstimateIngestionResult{}
 	if err := resp.DecodeJSON(out); err != nil {
 		return nil, err
 	}
@@ -296,102 +386,47 @@ func readDeleteDocument(resp *core.Response) (*DeleteDocumentResult, error) {
 	return out, nil
 }
 
-// Delete deletes a document; removing it from search continues after the response.
-//
-// Returns 202 with the document in `deleting`; wait for it to be gone with the SDKs'
-// `waitUntilDeleted`. Repeating the call while the document is still `deleting` returns 202 again;
-// once it is gone, 404, as for any record that does not exist.
-//
-// A document still being processed (`pending` or `processing`) cannot be deleted yet: the call is
-// refused with 409 `CONFLICT`. Wait until it is `indexed`, `partially_indexed` or `failed`, for
-// example with the SDKs' `waitUntilIndexed`, then delete it.
-//
-// Needs the files delete permission, read access to the knowledge base and access to the
-// document's folder.
-//
-// Errors: *InternalError (500), *PermissionDeniedError (403), *ServiceUnavailableError (503),
-// *TooManyRequestsError (429), *UnauthenticatedError (401), *ValidationError (400), *ConflictError
-// (409), *NotFoundError (404); another status the API models has its own type too (*NotFoundError for
-// 404), and any other status is an *Error.
-//
-// Since Caitlyn 5.115.0; beta.
-func (c *DocumentsClient) Delete(ctx context.Context, in *DeleteDocumentInput, opts ...CallOption) (*DeleteDocumentResult, error) {
-	if in == nil {
-		in = &DeleteDocumentInput{}
-	}
-	req, err := buildDeleteDocument(in)
+func (c *Client) callEstimateIngestion(ctx context.Context, p *estimateIngestionParams, opts []CallOption) (*EstimateIngestionResult, error) {
+	req, err := buildEstimateIngestion(p)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.c.core.Do(ctx, opDeleteDocument, req, opts)
+	resp, err := c.core.Do(ctx, opEstimateIngestion, req, opts)
 	if err != nil {
 		return nil, err
 	}
-	return readDeleteDocument(resp)
+	return readEstimateIngestion(resp)
 }
 
-// GetDocumentInput is the input of Documents.Get.
-type GetDocumentInput struct {
-	// The knowledge base the document is in.
-	// Sent in the path.
-	KnowledgeBaseID string `json:"-"`
-	// The document to get.
-	// Sent in the path.
-	DocumentID string `json:"-"`
+// estimateReprocessDocumentsParams is every member of EstimateReprocessDocuments's input: the caller's, and those the scope fills.
+type estimateReprocessDocumentsParams struct {
+	KnowledgeBaseID string   `json:"-"`
+	OutOfDate       *bool    `json:"outOfDate,omitempty"`
+	DocumentIDs     []string `json:"documentIds,omitzero"`
 }
 
-func errorsGetDocument(status int, e *core.APIError) error {
-	switch status {
-	case 400:
-		return &ValidationError{e}
-	case 401:
-		return &UnauthenticatedError{e}
-	case 403:
-		return &PermissionDeniedError{e}
-	case 404:
-		return &NotFoundError{e}
-	case 409:
-		return &ConflictError{e}
-	case 412:
-		return &PreconditionFailedError{e}
-	case 413:
-		return &PayloadTooLargeError{e}
-	case 422:
-		return &UnprocessableContentError{e}
-	case 428:
-		return &PreconditionRequiredError{e}
-	case 429:
-		return &TooManyRequestsError{e}
-	case 500:
-		return &InternalError{e}
-	case 503:
-		return &ServiceUnavailableError{e}
-	}
-	return e
-}
-
-var opGetDocument = &core.Operation{
-	Name:      "GetDocument",
-	Method:    "GET",
+var opEstimateReprocessDocuments = &core.Operation{
+	Name:      "EstimateReprocessDocuments",
+	Method:    "POST",
 	Since:     "5.115.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
-	Errors:    errorsGetDocument,
+	Errors:    errorForStatus,
 }
 
-func buildGetDocument(in *GetDocumentInput) (*core.Request, error) {
+func buildEstimateReprocessDocuments(in *estimateReprocessDocumentsParams) (*core.Request, error) {
 	if in.KnowledgeBaseID == "" {
-		return nil, core.MissingInput("GetDocument", "knowledgeBaseId")
+		return nil, core.MissingInput("EstimateReprocessDocuments", "knowledgeBaseId")
 	}
-	if in.DocumentID == "" {
-		return nil, core.MissingInput("GetDocument", "documentId")
+	req := core.NewRequest("/v3/knowledge-bases/" + core.PathLabel(in.KnowledgeBaseID) + "/documents:estimate-reprocess")
+	if err := req.JSONBody(in); err != nil {
+		return nil, err
 	}
-	req := core.NewRequest("/v3/knowledge-bases/" + core.PathLabel(in.KnowledgeBaseID) + "/documents/" + core.PathLabel(in.DocumentID))
 	return req, nil
 }
 
-func readGetDocument(resp *core.Response) (*GetDocumentResult, error) {
-	out := &GetDocumentResult{}
+func readEstimateReprocessDocuments(resp *core.Response) (*EstimateReprocessDocumentsResult, error) {
+	out := &EstimateReprocessDocumentsResult{}
 	if err := resp.DecodeJSON(out); err != nil {
 		return nil, err
 	}
@@ -401,120 +436,21 @@ func readGetDocument(resp *core.Response) (*GetDocumentResult, error) {
 	return out, nil
 }
 
-// Get gets one document in a knowledge base, with its status.
-//
-// `status` says where the document is in its lifecycle; `indexed`, `partially_indexed` and `failed`
-// are final. A document in a folder the caller may not see is 404, as one that does not exist is.
-// The SDKs' `waitUntilIndexed` waiter calls this operation until the document is searchable, and
-// `waitUntilDeleted` until it is gone.
-//
-// Errors: *InternalError (500), *PermissionDeniedError (403), *ServiceUnavailableError (503),
-// *TooManyRequestsError (429), *UnauthenticatedError (401), *ValidationError (400), *NotFoundError
-// (404); another status the API models has its own type too (*NotFoundError for 404), and any other
-// status is an *Error.
-//
-// Since Caitlyn 5.115.0; beta.
-func (c *DocumentsClient) Get(ctx context.Context, in *GetDocumentInput, opts ...CallOption) (*GetDocumentResult, error) {
-	if in == nil {
-		in = &GetDocumentInput{}
-	}
-	req, err := buildGetDocument(in)
+func (c *Client) callEstimateReprocessDocuments(ctx context.Context, p *estimateReprocessDocumentsParams, opts []CallOption) (*EstimateReprocessDocumentsResult, error) {
+	req, err := buildEstimateReprocessDocuments(p)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.c.core.Do(ctx, opGetDocument, req, opts)
+	resp, err := c.core.Do(ctx, opEstimateReprocessDocuments, req, opts)
 	if err != nil {
 		return nil, err
 	}
-	return readGetDocument(resp)
+	return readEstimateReprocessDocuments(resp)
 }
 
-// WaitUntilDeleted waits until the document is gone, after DeleteDocument or BatchDeleteDocuments
-// accepted it: the wait ends when reading it returns 404. Waits up to 15 minutes by default.
-//
-// It polls Documents.Get (first at once, then every 2 to 30 seconds) until a success state, when it
-// returns nil: the waiter succeeds on an error, so it has no output to return. A failure state or the
-// time limit, 15 minutes unless WithMaxWait sets another, ends it with a *WaiterError; a context's
-// deadline or cancellation ends it with the context's error.
-func (c *DocumentsClient) WaitUntilDeleted(ctx context.Context, in *GetDocumentInput, opts ...WaiterOption) error {
-	_, err := core.Wait(ctx, "Deleted", 2*time.Second, 30*time.Second, 900*time.Second, opts,
-		func(ctx context.Context) (*GetDocumentResult, error) { return c.Get(ctx, in) },
-		acceptDeleted)
-	return err
-}
-
-func acceptDeleted(out *GetDocumentResult, err error) core.WaitState {
-	var e0 *NotFoundError
-	if errors.As(err, &e0) {
-		return core.WaitSuccess
-	}
-	if err != nil {
-		return core.WaitFailure
-	}
-	return core.WaitRetry
-}
-
-// WaitUntilIndexed waits until the document is searchable: `indexed`, or `partially_indexed` when some
-// enrichments did not complete. Fails when it is `failed`, being deleted, or gone. Waits up to 60
-// minutes by default.
-//
-// It polls Documents.Get (first at once, then every 2 to 30 seconds) until a success state, when it
-// returns the output. A failure state or the time limit, 1 hour unless WithMaxWait sets another, ends
-// it with a *WaiterError; a context's deadline or cancellation ends it with the context's error.
-func (c *DocumentsClient) WaitUntilIndexed(ctx context.Context, in *GetDocumentInput, opts ...WaiterOption) (*GetDocumentResult, error) {
-	return core.Wait(ctx, "Indexed", 2*time.Second, 30*time.Second, 3600*time.Second, opts,
-		func(ctx context.Context) (*GetDocumentResult, error) { return c.Get(ctx, in) },
-		acceptIndexed)
-}
-
-func acceptIndexed(out *GetDocumentResult, err error) core.WaitState {
-	if err == nil && acceptIndexedPath0(out) {
-		return core.WaitSuccess
-	}
-	if err == nil && acceptIndexedPath1(out) {
-		return core.WaitSuccess
-	}
-	if err == nil && acceptIndexedPath2(out) {
-		return core.WaitFailure
-	}
-	if err == nil && acceptIndexedPath3(out) {
-		return core.WaitFailure
-	}
-	var e4 *NotFoundError
-	if errors.As(err, &e4) {
-		return core.WaitFailure
-	}
-	if err != nil {
-		return core.WaitFailure
-	}
-	return core.WaitRetry
-}
-
-func acceptIndexedPath0(out *GetDocumentResult) bool {
-	v1 := out.Status
-	return string(v1) == "indexed"
-}
-
-func acceptIndexedPath1(out *GetDocumentResult) bool {
-	v1 := out.Status
-	return string(v1) == "partially_indexed"
-}
-
-func acceptIndexedPath2(out *GetDocumentResult) bool {
-	v1 := out.Status
-	return string(v1) == "failed"
-}
-
-func acceptIndexedPath3(out *GetDocumentResult) bool {
-	v1 := out.Status
-	return string(v1) == "deleting"
-}
-
-// ListDocumentsInput is the input of Documents.List.
+// ListDocumentsInput is what the caller gives ListDocuments; the scope it is called on fills the
+// identifiers.
 type ListDocumentsInput struct {
-	// The knowledge base to list.
-	// Sent in the path.
-	KnowledgeBaseID string `json:"-"`
 	// The most documents to return, from 1 to 100. Defaults to 20.
 	// Sent as the query parameter limit.
 	Limit *int32 `json:"-"`
@@ -525,45 +461,52 @@ type ListDocumentsInput struct {
 	// descending (for example `-updatedAt`). Any other field is refused with 400 `UNKNOWN_SORT`.
 	// Sent as the query parameter sort.
 	Sort *string `json:"-"`
-	// Only documents directly in this folder.
+	// Only documents directly in this folder, or below it with `deep`.
 	// Sent as the query parameter filter[folder][eq].
 	Folder *string `json:"-"`
+	// When true, with `filter[folder][eq]`, every document below the folder, not only those
+	// directly in it. Defaults to false.
+	// Sent as the query parameter deep.
+	Deep *bool `json:"-"`
+	// Only documents whose name contains this text, ignoring case.
+	// Sent as the query parameter q.
+	Q *string `json:"-"`
 	// Only documents with this status.
 	// Sent as the query parameter filter[status][eq].
 	Status *DocumentStatus `json:"-"`
 	// Only documents whose name starts with this text.
 	// Sent as the query parameter filter[name][startsWith].
 	NamePrefix *string `json:"-"`
+	// Only the document with this `externalId`.
+	// Sent as the query parameter filter[externalId][eq].
+	ExternalID *string `json:"-"`
+	// Only documents whose media type starts with this text, for example `audio/`.
+	// Sent as the query parameter filter[contentType][startsWith].
+	ContentTypePrefix *string `json:"-"`
+	// Only documents whose current bytes have this base64-encoded SHA-256.
+	// Sent as the query parameter filter[sha256][eq].
+	SHA256 *string `json:"-"`
+	// Only documents that are (`true`) or are not (`false`) processed in an older way than the
+	// newest.
+	// Sent as the query parameter filter[outOfDate][eq].
+	OutOfDate *bool `json:"-"`
 }
 
-func errorsListDocuments(status int, e *core.APIError) error {
-	switch status {
-	case 400:
-		return &ValidationError{e}
-	case 401:
-		return &UnauthenticatedError{e}
-	case 403:
-		return &PermissionDeniedError{e}
-	case 404:
-		return &NotFoundError{e}
-	case 409:
-		return &ConflictError{e}
-	case 412:
-		return &PreconditionFailedError{e}
-	case 413:
-		return &PayloadTooLargeError{e}
-	case 422:
-		return &UnprocessableContentError{e}
-	case 428:
-		return &PreconditionRequiredError{e}
-	case 429:
-		return &TooManyRequestsError{e}
-	case 500:
-		return &InternalError{e}
-	case 503:
-		return &ServiceUnavailableError{e}
-	}
-	return e
+// listDocumentsParams is every member of ListDocuments's input: the caller's, and those the scope fills.
+type listDocumentsParams struct {
+	KnowledgeBaseID   string          `json:"-"`
+	Limit             *int32          `json:"-"`
+	Cursor            *string         `json:"-"`
+	Sort              *string         `json:"-"`
+	Folder            *string         `json:"-"`
+	Deep              *bool           `json:"-"`
+	Q                 *string         `json:"-"`
+	Status            *DocumentStatus `json:"-"`
+	NamePrefix        *string         `json:"-"`
+	ExternalID        *string         `json:"-"`
+	ContentTypePrefix *string         `json:"-"`
+	SHA256            *string         `json:"-"`
+	OutOfDate         *bool           `json:"-"`
 }
 
 var opListDocuments = &core.Operation{
@@ -572,10 +515,10 @@ var opListDocuments = &core.Operation{
 	Since:     "5.115.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
-	Errors:    errorsListDocuments,
+	Errors:    errorForStatus,
 }
 
-func buildListDocuments(in *ListDocumentsInput) (*core.Request, error) {
+func buildListDocuments(in *listDocumentsParams) (*core.Request, error) {
 	if in.KnowledgeBaseID == "" {
 		return nil, core.MissingInput("ListDocuments", "knowledgeBaseId")
 	}
@@ -592,11 +535,29 @@ func buildListDocuments(in *ListDocumentsInput) (*core.Request, error) {
 	if in.Folder != nil {
 		req.Query.Add("filter[folder][eq]", *in.Folder)
 	}
+	if in.Deep != nil {
+		req.Query.Add("deep", strconv.FormatBool(*in.Deep))
+	}
+	if in.Q != nil {
+		req.Query.Add("q", *in.Q)
+	}
 	if in.Status != nil {
 		req.Query.Add("filter[status][eq]", string(*in.Status))
 	}
 	if in.NamePrefix != nil {
 		req.Query.Add("filter[name][startsWith]", *in.NamePrefix)
+	}
+	if in.ExternalID != nil {
+		req.Query.Add("filter[externalId][eq]", *in.ExternalID)
+	}
+	if in.ContentTypePrefix != nil {
+		req.Query.Add("filter[contentType][startsWith]", *in.ContentTypePrefix)
+	}
+	if in.SHA256 != nil {
+		req.Query.Add("filter[sha256][eq]", *in.SHA256)
+	}
+	if in.OutOfDate != nil {
+		req.Query.Add("filter[outOfDate][eq]", strconv.FormatBool(*in.OutOfDate))
 	}
 	return req, nil
 }
@@ -612,37 +573,15 @@ func readListDocuments(resp *core.Response) (*ListDocumentsPage, error) {
 	return out, nil
 }
 
-// List lists the documents in a knowledge base, one page at a time.
-//
-// Documents are returned in a stable order that does not change between pages. Filters combine
-// with AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. The list can be sorted by
-// `name`, `updatedAt` (when the document last changed) and `byteSize`.
-//
-// It yields every item, fetching pages as needed; ListPages yields whole pages.
-//
-// Errors: *InternalError (500), *PermissionDeniedError (403), *ServiceUnavailableError (503),
-// *TooManyRequestsError (429), *UnauthenticatedError (401), *ValidationError (400), *NotFoundError
-// (404); another status the API models has its own type too (*NotFoundError for 404), and any other
-// status is an *Error.
-//
-// Since Caitlyn 5.115.0; beta.
-func (c *DocumentsClient) List(ctx context.Context, in *ListDocumentsInput, opts ...CallOption) iter.Seq2[Document, error] {
-	return core.Items(c.ListPages(ctx, in, opts...), func(p *ListDocumentsPage) []Document { return p.Items })
-}
-
-// ListPages yields the pages of Documents.List, from in.Cursor (normally unset) to the last page.
-func (c *DocumentsClient) ListPages(ctx context.Context, in *ListDocumentsInput, opts ...CallOption) iter.Seq2[*ListDocumentsPage, error] {
-	if in == nil {
-		in = &ListDocumentsInput{}
-	}
-	return core.Pages(ctx, in.Cursor, func(ctx context.Context, cursor *string) (*ListDocumentsPage, *string, error) {
-		page := *in
+func (c *Client) pagesListDocuments(ctx context.Context, p *listDocumentsParams, opts []CallOption) iter.Seq2[*ListDocumentsPage, error] {
+	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListDocumentsPage, *string, error) {
+		page := *p
 		page.Cursor = cursor
 		req, err := buildListDocuments(&page)
 		if err != nil {
 			return nil, nil, err
 		}
-		resp, err := c.c.core.Do(ctx, opListDocuments, req, opts)
+		resp, err := c.core.Do(ctx, opListDocuments, req, opts)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -654,17 +593,63 @@ func (c *DocumentsClient) ListPages(ctx context.Context, in *ListDocumentsInput,
 	})
 }
 
-// Upload uploads file (as Uploads.Create does) and then calls Create with UploadID set to the upload's
-// ID. Other fields come from in.
-func (c *DocumentsClient) Upload(ctx context.Context, file *UploadFile, in *CreateDocumentInput, opts ...CallOption) (*CreateDocumentResult, error) {
-	if in == nil {
-		in = &CreateDocumentInput{}
+// ReprocessDocumentsInput is what the caller gives ReprocessDocuments; the scope it is called on fills
+// the identifiers. The idempotency key is generated, or set with WithIdempotencyKey.
+type ReprocessDocumentsInput struct {
+	// True for every document processed in an older way than the newest. Exactly one of
+	// `outOfDate` and `documentIds`.
+	OutOfDate *bool `json:"outOfDate,omitempty"`
+	// Particular documents, 1 to 100.
+	DocumentIDs []string `json:"documentIds,omitzero"`
+}
+
+// reprocessDocumentsParams is every member of ReprocessDocuments's input: the caller's, and those the scope fills.
+type reprocessDocumentsParams struct {
+	KnowledgeBaseID string   `json:"-"`
+	OutOfDate       *bool    `json:"outOfDate,omitempty"`
+	DocumentIDs     []string `json:"documentIds,omitzero"`
+}
+
+var opReprocessDocuments = &core.Operation{
+	Name:              "ReprocessDocuments",
+	Method:            "POST",
+	Since:             "5.115.0",
+	RetrySafe:         true,
+	IdempotencyHeader: "Idempotency-Key",
+	Retryable:         []int{503, 429},
+	Errors:            errorForStatus,
+}
+
+func buildReprocessDocuments(in *reprocessDocumentsParams) (*core.Request, error) {
+	if in.KnowledgeBaseID == "" {
+		return nil, core.MissingInput("ReprocessDocuments", "knowledgeBaseId")
 	}
-	up, err := c.c.Uploads.Create(ctx, file, opts...)
+	req := core.NewRequest("/v3/knowledge-bases/" + core.PathLabel(in.KnowledgeBaseID) + "/documents:reprocess")
+	if err := req.JSONBody(in); err != nil {
+		return nil, err
+	}
+	return req, nil
+}
+
+func readReprocessDocuments(resp *core.Response) (*ReprocessDocumentsResult, error) {
+	out := &ReprocessDocumentsResult{}
+	if err := resp.DecodeJSON(out); err != nil {
+		return nil, err
+	}
+	out.APIVersion = resp.HeaderPtr("Caitlyn-Api-Version")
+	out.RequestID = resp.HeaderPtr("Caitlyn-Request-Id")
+	out.metadata = resp.Metadata()
+	return out, nil
+}
+
+func (c *Client) callReprocessDocuments(ctx context.Context, p *reprocessDocumentsParams, opts []CallOption) (*ReprocessDocumentsResult, error) {
+	req, err := buildReprocessDocuments(p)
 	if err != nil {
 		return nil, err
 	}
-	next := *in
-	next.UploadID = up.ID
-	return c.Create(ctx, &next, opts...)
+	resp, err := c.core.Do(ctx, opReprocessDocuments, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	return readReprocessDocuments(resp)
 }

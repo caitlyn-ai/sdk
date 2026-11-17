@@ -21,7 +21,7 @@ const conversationID = "0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47"
 // Errors shows how to tell the errors apart.
 func Errors(ctx context.Context, client *caitlyn.Client) {
 	// #region errors
-	_, err := client.Agents.Versions.Get(ctx, &caitlyn.GetAgentVersionInput{AgentID: "GHT7YRWXPL", Version: "v99"})
+	_, err := client.Agent("GHT7YRWXPL").Version("v99").Get(ctx)
 	var notFound *caitlyn.NotFoundError
 	var invalid *caitlyn.ValidationError
 	var noResponse *caitlyn.ConnectionError
@@ -72,9 +72,7 @@ func RetryBudget() (*caitlyn.Client, error) {
 // Streaming streams an answer.
 func Streaming(ctx context.Context, client *caitlyn.Client) error {
 	// #region streaming
-	stream, err := client.Conversations.Send(ctx, conversationID, &caitlyn.SendMessageInput{
-		Message: "How much annual leave do part-time staff get?",
-	})
+	stream, err := client.Conversation(conversationID).Send(ctx, "How much annual leave do part-time staff get?")
 	if err != nil {
 		return err
 	}
@@ -105,7 +103,7 @@ func Cancelling(client *caitlyn.Client) error {
 	// Give up after 30 seconds: the connection closes and the loop returns the context's error
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	stream, err := client.Conversations.Send(ctx, conversationID, &caitlyn.SendMessageInput{Message: "Summarise the leave policy."})
+	stream, err := client.Conversation(conversationID).Send(ctx, "Summarise the leave policy.")
 	if err != nil {
 		return err
 	}
@@ -126,8 +124,9 @@ func Cancelling(client *caitlyn.Client) error {
 func Pagination(ctx context.Context, client *caitlyn.Client) error {
 	// #region pagination
 	// Every document in the folder: the next page is fetched as the loop reaches it
-	input := &caitlyn.ListDocumentsInput{KnowledgeBaseID: "KB4T7YQ2WL", Folder: caitlyn.Ptr("/hr/"), Limit: caitlyn.Ptr[int32](100)}
-	for document, err := range client.Documents.List(ctx, input) {
+	documents := client.KnowledgeBase("KB4T7YQ2WL").Documents
+	input := &caitlyn.ListDocumentsInput{Folder: caitlyn.Ptr("/hr/"), Limit: caitlyn.Ptr[int32](100)}
+	for document, err := range documents.List(ctx, input) {
 		if err != nil {
 			return err
 		}
@@ -135,7 +134,7 @@ func Pagination(ctx context.Context, client *caitlyn.Client) error {
 	}
 
 	// Or page by page
-	for page, err := range client.Documents.ListPages(ctx, input) {
+	for page, err := range documents.ListPages(ctx, input) {
 		if err != nil {
 			return err
 		}

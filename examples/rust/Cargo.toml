@@ -9,5 +9,9 @@ license = "Apache-2.0"
 
 [dependencies]
 caitlyn-sdk = { path = "../../rust/caitlyn-sdk" }
+# The HTTP client the SDK uses (caitlyn_sdk_core::reqwest), for the download a document is made from.
+caitlyn-sdk-core = { path = "../../rust/caitlyn-sdk-core" }
+futures-util = { version = "0.3", default-features = false }
+tokio-util = { version = "0.7", features = ["io"] }
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "time"] }
 serde_json = "1"

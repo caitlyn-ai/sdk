@@ -12,11 +12,14 @@ import software.amazon.smithy.model.shapes.ShapeId;
  * Where an operation appears on the method-style clients (PROTOCOL.md section 10), in the model's own
  * lower-camel spelling. Each generator turns the names into its language's case.
  *
- * @param namespace          {@code documents}, {@code versions}: the bound resource's name minus a trailing
- *                           "Resource", pluralised; or {@code @clientMethod}'s namespace, which may be a dotted
- *                           path, outermost first ({@code agents.versions}: {@code client.agents.versions.get})
+ * @param namespace          the bound resource's place in the resource tree, outermost first: each resource's
+ *                           name minus a trailing "Resource", pluralised ({@code knowledgeBases.documents}); or
+ *                           {@code @clientMethod}'s namespace, which may also be a dotted path
+ *                           ({@code agents.versions}: {@code client.agents.versions.get})
  * @param method             {@code create}, {@code get}, {@code update}, {@code delete}, {@code list}, {@code put}
- *                           for lifecycle operations, else the operation's name; or {@code @clientMethod}'s name
+ *                           for lifecycle operations, else the operation's name less its resource's own name
+ *                           ({@code StartIngestionBatch} on IngestionBatch gives {@code start}); or
+ *                           {@code @clientMethod}'s name
  * @param positionalMember   the identifier a non-lifecycle instance operation of a single-identifier resource
  *                           takes positionally ({@code conversations.send(conversationId, …)})
  * @param resource           the resource the operation is bound to, if any
@@ -66,13 +69,55 @@ public record ClientMethod(String namespace, String method, Optional<String> pos
         if (bound == null) {
             throw new CodegenException(id + " is bound to no resource and has no @clientMethod");
         }
-        return new ClientMethod(namespaceOf(bound), lifecycle != null ? lifecycle : lowerOp, positional, Optional.of(bound));
+        return new ClientMethod(namespaceOf(model, bound), lifecycle != null ? lifecycle : instanceMethod(id.getName(), bound), positional,
+                Optional.of(bound));
+    }
+
+    /**
+     * A bound operation's method: the operation's name less the resource's own name, lower camel case
+     * ({@code StartIngestionBatch} gives {@code start}, {@code CompleteIngestionBatchUploads} {@code completeUploads},
+     * {@code RetryDocument} {@code retry}), or the whole name when it does not contain the resource's name
+     * ({@code EnableLayoutAwareSearch}).
+     */
+    static String instanceMethod(String operation, ResourceShape r) {
+        String own = r.getId().getName().replaceFirst("Resource$", "");
+        String rest = operation.replaceFirst(own, "");
+        String name = rest.isEmpty() || rest.equals(operation) ? operation : rest;
+        return Character.toLowerCase(name.charAt(0)) + name.substring(1);
+    }
+
+    /**
+     * A resource's namespace: its parents' namespaces, outermost first, then its own
+     * ({@code DocumentResource} under {@code KnowledgeBase} gives {@code knowledgeBases.documents}). PROTOCOL.md 10:
+     * namespaces follow the resource tree. A child whose name starts with its parent's drops that part, as the
+     * path already says it ({@code DocumentVersion} under {@code DocumentResource} gives {@code versions},
+     * {@code IngestionBatchItem} under {@code IngestionBatch} gives {@code items}).
+     */
+    public static String namespaceOf(Model model, ResourceShape r) {
+        return model.getResourceShapes().stream()
+                .filter(p -> p.getResources().contains(r.getId()))
+                .findFirst()
+                .map(p -> namespaceOf(model, p) + "." + plural(ownName(r, p)))
+                .orElse(namespaceOf(r));
     }
 
     /** {@code DocumentResource} gives {@code documents}, {@code Version} gives {@code versions}, {@code Policy} gives {@code policies}. */
     public static String namespaceOf(ResourceShape r) {
-        String n = r.getId().getName().replaceFirst("Resource$", "");
-        String plural = n.endsWith("y") ? n.substring(0, n.length() - 1) + "ies" : n.endsWith("s") ? n + "es" : n + "s";
+        return plural(r.getId().getName().replaceFirst("Resource$", ""));
+    }
+
+    private static String ownName(ResourceShape child, ResourceShape parent) {
+        String n = child.getId().getName().replaceFirst("Resource$", "");
+        String p = parent.getId().getName().replaceFirst("Resource$", "");
+        return n.startsWith(p) && n.length() > p.length() && Character.isUpperCase(n.charAt(p.length())) ? n.substring(p.length()) : n;
+    }
+
+    /** English plurals, lower camel case: Batch gives batches, Policy policies, Entry entries, Key keys. */
+    static String plural(String n) {
+        String plural;
+        if (n.matches(".*[^aeiou]y$")) plural = n.substring(0, n.length() - 1) + "ies";
+        else if (n.matches(".*(s|x|z|ch|sh)$")) plural = n + "es";
+        else plural = n + "s";
         return Character.toLowerCase(plural.charAt(0)) + plural.substring(1);
     }
 }

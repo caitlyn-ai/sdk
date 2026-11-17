@@ -13,31 +13,31 @@ operations:
 A list operation returns its results a page at a time. The SDKs hide the pages: iterate the result and each page
 is fetched when the loop reaches it, so a `break` stops fetching.
 
-> **Not available yet.** Caitlyn workspaces do not serve [ListDocuments](/reference/list-documents/) yet. This page
-> describes how the SDKs handle lists.
+<!-- not-available -->
 
 <!-- example: examples/typescript/concepts.ts#pagination -->
 ```ts tab="TypeScript"
 // Every document in the folder: the next page is fetched as the loop reaches it
-for await (const document of caitlyn.documents.list({ knowledgeBaseId: 'KB4T7YQ2WL', folder: '/policies/', limit: 100 })) {
+for await (const document of caitlyn.knowledgeBases('KB4T7YQ2WL').documents.list({ folder: '/policies/', limit: 100 })) {
   console.log(document.name, document.status);
 }
 ```
 <!-- example: examples/python/concepts.py#pagination -->
 ```python tab="Python"
 # Every document in the folder: the next page is fetched as the loop reaches it
-for document in caitlyn.documents.list(knowledge_base_id="KB4T7YQ2WL", folder="/hr/", limit=100):
+for document in caitlyn.knowledge_bases("KB4T7YQ2WL").documents.list(folder="/hr/", limit=100):
     print(document.name, document.status)
 
 # Or page by page
-for page in caitlyn.documents.list(knowledge_base_id="KB4T7YQ2WL", limit=100).pages():
+for page in caitlyn.knowledge_bases("KB4T7YQ2WL").documents.list(limit=100).pages():
     print(len(page.items), page.next_cursor)
 ```
 <!-- example: examples/go/concepts/concepts.go#pagination -->
 ```go tab="Go"
 // Every document in the folder: the next page is fetched as the loop reaches it
-input := &caitlyn.ListDocumentsInput{KnowledgeBaseID: "KB4T7YQ2WL", Folder: caitlyn.Ptr("/hr/"), Limit: caitlyn.Ptr[int32](100)}
-for document, err := range client.Documents.List(ctx, input) {
+documents := client.KnowledgeBase("KB4T7YQ2WL").Documents
+input := &caitlyn.ListDocumentsInput{Folder: caitlyn.Ptr("/hr/"), Limit: caitlyn.Ptr[int32](100)}
+for document, err := range documents.List(ctx, input) {
 	if err != nil {
 		return err
 	}
@@ -45,7 +45,7 @@ for document, err := range client.Documents.List(ctx, input) {
 }
 
 // Or page by page
-for page, err := range client.Documents.ListPages(ctx, input) {
+for page, err := range documents.ListPages(ctx, input) {
 	if err != nil {
 		return err
 	}
@@ -55,20 +55,20 @@ for page, err := range client.Documents.ListPages(ctx, input) {
 <!-- example: examples/rust/src/concepts.rs#pagination -->
 ```rust tab="Rust"
 // Every document in the folder: the next page is fetched as the loop reaches it
-let input = ListDocumentsInput {
-    knowledge_base_id: "KB4T7YQ2WL".into(),
-    folder: Some("/hr/".into()),
-    limit: Some(100),
-    ..Default::default()
-};
-let mut documents = client.documents().list(input.clone());
+let list = client
+    .knowledge_base("KB4T7YQ2WL")
+    .documents()
+    .list()
+    .folder("/hr/")
+    .limit(100);
+let mut documents = list.clone().items();
 while let Some(document) = documents.next().await {
     let document = document?;
     println!("{} {:?}", document.name, document.status);
 }
 
 // Or page by page
-let mut pages = client.documents().list_pages(input);
+let mut pages = list.pages();
 while let Some(page) = pages.next().await {
     let page = page?;
     println!("{} {:?}", page.items.len(), page.next_cursor);

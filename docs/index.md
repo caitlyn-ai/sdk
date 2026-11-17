@@ -19,6 +19,8 @@ knowledge base, and change an agent safely, through the Caitlyn v3 API and its S
 - [Getting started](/getting-started/): install an SDK, create a client for your workspace and make a first call.
 - [Authentication](/authentication/): the six ways a client signs in, and which to use.
 - [Sign in from a browser](/guides/sign-in-from-a-browser/): a web app calling Caitlyn as the person using it.
+- [How ingestion works](/guides/how-ingestion-works/): what happens as files become documents, and how to follow,
+  stop and recover it.
 - How the SDKs behave: [errors](/errors/), [retries](/retries/), [streaming](/streaming/),
   [pagination](/pagination/) and [telemetry](/telemetry/).
 
@@ -38,7 +40,7 @@ and complete, runnable examples. The examples are compiled against every SDK on 
 SDKs you install.
 
 - Operations: [the caller](/reference/get-caller/), [agents](/reference/get-agent-version/),
-  [production history](/reference/list-production-history-entries/), [conversations](/reference/send-message/),
+  [live history](/reference/list-history-entries/), [conversations](/reference/send-message/),
   [workspace events](/reference/watch-workspace-events/),
   [documents](/reference/list-documents/) and [uploads](/reference/create-upload/).
 - [Types](/reference/types/agent-configuration/): the objects the operations take and return.

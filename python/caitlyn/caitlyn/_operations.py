@@ -5,8 +5,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from caitlyn_core import EventDecoder, Member, OperationSpec
-from caitlyn_core._waiter import WaitState
+from caitlyn_core import CaitlynError, EventDecoder, Member, OperationSpec, SyncApi
 
 from caitlyn.errors import (
     ConflictError,
@@ -25,12 +24,35 @@ from caitlyn.errors import (
 from caitlyn.events import (
     CONVERSATION_EVENT_TYPES,
     ConversationEvent,
+    KNOWLEDGE_BASE_EVENT_TYPES,
+    KnowledgeBaseEvent,
     MessageCompletedEvent,
     MessageFailedEvent,
+    OPERATION_EVENT_TYPES,
+    OperationEvent,
+    OperationFinishedEvent,
     WORKSPACE_EVENT_TYPES,
     WorkspaceEvent,
 )
-from caitlyn.models import GetDocumentResult, Message
+from caitlyn.models import EstimateIngestionResult, IngestionBatch, IngestionBatchItem, Message, Operation
+
+BATCH_CREATE_INGESTION_BATCH_ITEMS: Final = OperationSpec(
+    name="BatchCreateIngestionBatchItems",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items:batch-create",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("ingestion_batch_id", "ingestionBatchId", "label"),
+        Member("items", "items", "body"),
+        Member("last", "last", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=False,
+    since="5.115.0",
+    stability="beta",
+)
 
 BATCH_DELETE_DOCUMENTS: Final = OperationSpec(
     name="BatchDeleteDocuments",
@@ -48,14 +70,120 @@ BATCH_DELETE_DOCUMENTS: Final = OperationSpec(
     stability="beta",
 )
 
+CANCEL_DOCUMENT_PROCESSING: Final = OperationSpec(
+    name="CancelDocumentProcessing",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/cancel-processing",
+    code=202,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("document_id", "documentId", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+CANCEL_INGESTION_BATCH: Final = OperationSpec(
+    name="CancelIngestionBatch",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/cancel",
+    code=202,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("ingestion_batch_id", "ingestionBatchId", "label"),
+        Member("stop_running", "stopRunning", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+CANCEL_OPERATION: Final = OperationSpec(
+    name="CancelOperation",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}/cancel",
+    code=202,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("operation_id", "operationId", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+COMPARE_AGENT_VERSIONS: Final = OperationSpec(
+    name="CompareAgentVersions",
+    method="GET",
+    uri="/v3/agents/{agentId}/versions/{version}/compare",
+    code=200,
+    members=(
+        Member("agent_id", "agentId", "label"),
+        Member("version", "version", "label"),
+        Member("with_version", "with", "query"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+COMPLETE_INGESTION_BATCH_UPLOADS: Final = OperationSpec(
+    name="CompleteIngestionBatchUploads",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/complete-uploads",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("ingestion_batch_id", "ingestionBatchId", "label"),
+        Member("item_ids", "itemIds", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+CREATE_AGENT: Final = OperationSpec(
+    name="CreateAgent",
+    method="POST",
+    uri="/v3/agents",
+    code=201,
+    members=(
+        Member("name", "name", "body"),
+        Member("idempotency_key", "Idempotency-Key", "header", idempotency_token=True),
+        Member("description", "description", "body"),
+        Member("avatar", "avatar", "body"),
+        Member("configuration", "configuration", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("location", "Location"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
 CREATE_CONVERSATION: Final = OperationSpec(
     name="CreateConversation",
     method="POST",
-    uri="/v3/conversations",
+    uri="/v3/agents/{agentId}/versions/{version}/conversations",
     code=201,
     members=(
-        Member("agent_id", "agentId", "body"),
-        Member("version", "version", "body"),
+        Member("agent_id", "agentId", "label"),
+        Member("version", "version", "label"),
         Member("idempotency_key", "Idempotency-Key", "header", idempotency_token=True),
         Member("title", "title", "body"),
     ),
@@ -64,6 +192,7 @@ CREATE_CONVERSATION: Final = OperationSpec(
     retry_safe=True,
     since="5.115.0",
     stability="beta",
+    thing=True,
 )
 
 CREATE_DOCUMENT: Final = OperationSpec(
@@ -75,14 +204,143 @@ CREATE_DOCUMENT: Final = OperationSpec(
         Member("knowledge_base_id", "knowledgeBaseId", "label"),
         Member("upload_id", "uploadId", "body"),
         Member("folder", "folder", "body"),
+        Member("source_url", "sourceUrl", "body"),
+        Member("external_id", "externalId", "body"),
+        Member("metadata", "metadata", "body"),
+        Member("extra_metadata", "extraMetadata", "body"),
         Member("idempotency_key", "Idempotency-Key", "header", idempotency_token=True),
         Member("name", "name", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("location", "Location"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+CREATE_DOCUMENT_VERSION: Final = OperationSpec(
+    name="CreateDocumentVersion",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions",
+    code=202,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("document_id", "documentId", "label"),
+        Member("upload_id", "uploadId", "body"),
+        Member("idempotency_key", "Idempotency-Key", "header", idempotency_token=True),
+        Member("if_match", "If-Match", "header"),
+        Member("note", "note", "body"),
     ),
     response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("location", "Location"),),
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
     stability="beta",
+)
+
+CREATE_FIELD: Final = OperationSpec(
+    name="CreateField",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/fields",
+    code=201,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("name", "name", "body"),
+        Member("type", "type", "body"),
+        Member("key", "key", "body"),
+        Member("description", "description", "body"),
+        Member("scope", "scope", "body"),
+        Member("choices", "choices", "body"),
+        Member("partial_dates", "partialDates", "body"),
+        Member("instructions", "instructions", "body"),
+        Member("filterable", "filterable", "body"),
+        Member("given_to_agent", "givenToAgent", "body"),
+        Member("visible_on_documents", "visibleOnDocuments", "body"),
+        Member("idempotency_key", "Idempotency-Key", "header", idempotency_token=True),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("location", "Location"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+CREATE_FOLDER: Final = OperationSpec(
+    name="CreateFolder",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/folders",
+    code=202,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("path", "path", "body"),
+        Member("idempotency_key", "Idempotency-Key", "header", idempotency_token=True),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("location", "Location"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+CREATE_INGESTION_BATCH: Final = OperationSpec(
+    name="CreateIngestionBatch",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches",
+    code=202,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("idempotency_key", "Idempotency-Key", "header", idempotency_token=True),
+        Member("start", "start", "body"),
+        Member("await_more_items", "awaitMoreItems", "body"),
+        Member("policy", "policy", "body"),
+        Member("scope", "scope", "body"),
+        Member("items", "items", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("location", "Location"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+CREATE_INGESTION_BATCH_UPLOAD_POLICY: Final = OperationSpec(
+    name="CreateIngestionBatchUploadPolicy",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/upload-policies",
+    code=201,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("ingestion_batch_id", "ingestionBatchId", "label"),
+        Member("idempotency_key", "Idempotency-Key", "header", idempotency_token=True),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("location", "Location"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+CREATE_KNOWLEDGE_BASE: Final = OperationSpec(
+    name="CreateKnowledgeBase",
+    method="POST",
+    uri="/v3/knowledge-bases",
+    code=202,
+    members=(
+        Member("name", "name", "body"),
+        Member("description", "description", "body"),
+        Member("agent_description", "agentDescription", "body"),
+        Member("retrieval", "retrieval", "body"),
+        Member("features", "features", "body"),
+        Member("idempotency_key", "Idempotency-Key", "header", idempotency_token=True),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("location", "Location"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
 )
 
 CREATE_UPLOAD: Final = OperationSpec(
@@ -96,8 +354,24 @@ CREATE_UPLOAD: Final = OperationSpec(
         Member("byte_size", "byteSize", "body"),
         Member("sha256", "sha256", "body"),
         Member("idempotency_key", "Idempotency-Key", "header", idempotency_token=True),
+        Member("purpose", "purpose", "body", since="5.115.0"),
     ),
     response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("location", "Location"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+DELETE_AGENT: Final = OperationSpec(
+    name="DeleteAgent",
+    method="DELETE",
+    uri="/v3/agents/{agentId}",
+    code=204,
+    members=(
+        Member("agent_id", "agentId", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
@@ -129,11 +403,224 @@ DELETE_DOCUMENT: Final = OperationSpec(
         Member("knowledge_base_id", "knowledgeBaseId", "label"),
         Member("document_id", "documentId", "label"),
     ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+DELETE_DOCUMENT_VERSION: Final = OperationSpec(
+    name="DeleteDocumentVersion",
+    method="DELETE",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{version}",
+    code=204,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("document_id", "documentId", "label"),
+        Member("version", "version", "label"),
+    ),
     response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
     stability="beta",
+)
+
+DELETE_FIELD: Final = OperationSpec(
+    name="DeleteField",
+    method="DELETE",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/fields/{fieldKey}",
+    code=204,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("field_key", "fieldKey", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+DELETE_FOLDER: Final = OperationSpec(
+    name="DeleteFolder",
+    method="DELETE",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/folders/{folderPath+}",
+    code=202,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("folder_path", "folderPath", "greedy_label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("location", "Location"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+DELETE_KNOWLEDGE_BASE: Final = OperationSpec(
+    name="DeleteKnowledgeBase",
+    method="DELETE",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}",
+    code=202,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("location", "Location"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+ENABLE_LAYOUT_AWARE_SEARCH: Final = OperationSpec(
+    name="EnableLayoutAwareSearch",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/enable-layout-aware-search",
+    code=202,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("location", "Location"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=False,
+    since="5.115.0",
+    stability="beta",
+)
+
+ESTIMATE_DOCUMENT_VERSION: Final = OperationSpec(
+    name="EstimateDocumentVersion",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions:estimate",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("document_id", "documentId", "label"),
+        Member("file", "file", "body"),
+        Member("note", "note", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+ESTIMATE_FILL_IN_FIELDS: Final = OperationSpec(
+    name="EstimateFillInFields",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/fields:estimate-fill-in",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("keys", "keys", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+ESTIMATE_INGESTION: Final = OperationSpec(
+    name="EstimateIngestion",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/ingestions:estimate",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("documents", "documents", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+ESTIMATE_LAYOUT_AWARE_SEARCH: Final = OperationSpec(
+    name="EstimateLayoutAwareSearch",
+    method="GET",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/layout-aware-search-estimate",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+ESTIMATE_REPROCESS_DOCUMENTS: Final = OperationSpec(
+    name="EstimateReprocessDocuments",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/documents:estimate-reprocess",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("out_of_date", "outOfDate", "body"),
+        Member("document_ids", "documentIds", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+FILL_IN_FIELDS: Final = OperationSpec(
+    name="FillInFields",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/fields:fill-in",
+    code=202,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("keys", "keys", "body"),
+        Member("idempotency_key", "Idempotency-Key", "header", idempotency_token=True),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+GET_ACCESS: Final = OperationSpec(
+    name="GetAccess",
+    method="GET",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/access",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("folder", "folder", "query"),
+        Member("document", "document", "query"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+GET_AGENT: Final = OperationSpec(
+    name="GetAgent",
+    method="GET",
+    uri="/v3/agents/{agentId}",
+    code=200,
+    members=(
+        Member("agent_id", "agentId", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
 )
 
 GET_AGENT_VERSION: Final = OperationSpec(
@@ -150,6 +637,7 @@ GET_AGENT_VERSION: Final = OperationSpec(
     retry_safe=True,
     since="5.115.0",
     stability="beta",
+    thing=True,
 )
 
 GET_CALLER: Final = OperationSpec(
@@ -166,6 +654,22 @@ GET_CALLER: Final = OperationSpec(
     stability="beta",
 )
 
+GET_CONVERSATION: Final = OperationSpec(
+    name="GetConversation",
+    method="GET",
+    uri="/v3/conversations/{conversationId}",
+    code=200,
+    members=(
+        Member("conversation_id", "conversationId", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
 GET_DOCUMENT: Final = OperationSpec(
     name="GetDocument",
     method="GET",
@@ -175,6 +679,41 @@ GET_DOCUMENT: Final = OperationSpec(
         Member("knowledge_base_id", "knowledgeBaseId", "label"),
         Member("document_id", "documentId", "label"),
     ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+GET_DOCUMENT_CONTENT: Final = OperationSpec(
+    name="GetDocumentContent",
+    method="GET",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/content",
+    code=302,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("document_id", "documentId", "label"),
+        Member("version", "version", "query"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("location", "Location"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+GET_DOCUMENT_DOWNLOAD: Final = OperationSpec(
+    name="GetDocumentDownload",
+    method="GET",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/download",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("document_id", "documentId", "label"),
+        Member("version", "version", "query"),
+    ),
     response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
@@ -182,10 +721,45 @@ GET_DOCUMENT: Final = OperationSpec(
     stability="beta",
 )
 
-GET_PRODUCTION_HISTORY_ENTRY: Final = OperationSpec(
-    name="GetProductionHistoryEntry",
+GET_DOCUMENT_VERSION: Final = OperationSpec(
+    name="GetDocumentVersion",
     method="GET",
-    uri="/v3/agents/{agentId}/production-history-entries/{historyEntryId}",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{version}",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("document_id", "documentId", "label"),
+        Member("version", "version", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+GET_FIELD: Final = OperationSpec(
+    name="GetField",
+    method="GET",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/fields/{fieldKey}",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("field_key", "fieldKey", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+GET_HISTORY_ENTRY: Final = OperationSpec(
+    name="GetHistoryEntry",
+    method="GET",
+    uri="/v3/agents/{agentId}/history/{historyEntryId}",
     code=200,
     members=(
         Member("agent_id", "agentId", "label"),
@@ -196,6 +770,75 @@ GET_PRODUCTION_HISTORY_ENTRY: Final = OperationSpec(
     retry_safe=True,
     since="5.115.0",
     stability="beta",
+    thing=True,
+)
+
+GET_INGESTION_BATCH: Final = OperationSpec(
+    name="GetIngestionBatch",
+    method="GET",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("ingestion_batch_id", "ingestionBatchId", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+GET_INGESTION_BATCH_ITEM: Final = OperationSpec(
+    name="GetIngestionBatchItem",
+    method="GET",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("ingestion_batch_id", "ingestionBatchId", "label"),
+        Member("item_id", "itemId", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+GET_KNOWLEDGE_BASE: Final = OperationSpec(
+    name="GetKnowledgeBase",
+    method="GET",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+GET_OPERATION: Final = OperationSpec(
+    name="GetOperation",
+    method="GET",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("operation_id", "operationId", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
 )
 
 GET_UPLOAD: Final = OperationSpec(
@@ -205,6 +848,23 @@ GET_UPLOAD: Final = OperationSpec(
     code=200,
     members=(
         Member("upload_id", "uploadId", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+LIST_AGENTS: Final = OperationSpec(
+    name="ListAgents",
+    method="GET",
+    uri="/v3/agents",
+    code=200,
+    members=(
+        Member("limit", "limit", "query"),
+        Member("cursor", "cursor", "query"),
     ),
     response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
@@ -230,6 +890,23 @@ LIST_AGENT_VERSIONS: Final = OperationSpec(
     stability="beta",
 )
 
+LIST_CONVERSATIONS: Final = OperationSpec(
+    name="ListConversations",
+    method="GET",
+    uri="/v3/agents/{agentId}/conversations",
+    code=200,
+    members=(
+        Member("agent_id", "agentId", "label"),
+        Member("limit", "limit", "query"),
+        Member("cursor", "cursor", "query"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
 LIST_DOCUMENTS: Final = OperationSpec(
     name="ListDocuments",
     method="GET",
@@ -241,8 +918,14 @@ LIST_DOCUMENTS: Final = OperationSpec(
         Member("cursor", "cursor", "query"),
         Member("sort", "sort", "query"),
         Member("folder", "filter[folder][eq]", "query"),
+        Member("deep", "deep", "query"),
+        Member("q", "q", "query"),
         Member("status", "filter[status][eq]", "query"),
         Member("name_prefix", "filter[name][startsWith]", "query"),
+        Member("external_id", "filter[externalId][eq]", "query"),
+        Member("content_type_prefix", "filter[contentType][startsWith]", "query"),
+        Member("sha256", "filter[sha256][eq]", "query"),
+        Member("out_of_date", "filter[outOfDate][eq]", "query"),
     ),
     response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
@@ -251,10 +934,81 @@ LIST_DOCUMENTS: Final = OperationSpec(
     stability="beta",
 )
 
-LIST_PRODUCTION_HISTORY_ENTRIES: Final = OperationSpec(
-    name="ListProductionHistoryEntries",
+LIST_DOCUMENT_VERSIONS: Final = OperationSpec(
+    name="ListDocumentVersions",
     method="GET",
-    uri="/v3/agents/{agentId}/production-history-entries",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("document_id", "documentId", "label"),
+        Member("limit", "limit", "query"),
+        Member("cursor", "cursor", "query"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+LIST_FIELDS: Final = OperationSpec(
+    name="ListFields",
+    method="GET",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/fields",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("limit", "limit", "query"),
+        Member("cursor", "cursor", "query"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+LIST_FOLDERS: Final = OperationSpec(
+    name="ListFolders",
+    method="GET",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/folders",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("limit", "limit", "query"),
+        Member("cursor", "cursor", "query"),
+        Member("parent", "filter[parent][eq]", "query"),
+        Member("deep", "deep", "query"),
+        Member("q", "q", "query"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+LIST_GUARDRAILS: Final = OperationSpec(
+    name="ListGuardrails",
+    method="GET",
+    uri="/v3/guardrails",
+    code=200,
+    members=(
+        Member("limit", "limit", "query"),
+        Member("cursor", "cursor", "query"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+LIST_HISTORY_ENTRIES: Final = OperationSpec(
+    name="ListHistoryEntries",
+    method="GET",
+    uri="/v3/agents/{agentId}/history",
     code=200,
     members=(
         Member("agent_id", "agentId", "label"),
@@ -268,19 +1022,159 @@ LIST_PRODUCTION_HISTORY_ENTRIES: Final = OperationSpec(
     stability="beta",
 )
 
-PIN_DRAFT_VERSION: Final = OperationSpec(
-    name="PinDraftVersion",
-    method="POST",
-    uri="/v3/agents/{agentId}/versions/draft/pin",
-    code=201,
+LIST_INGESTION_BATCHES: Final = OperationSpec(
+    name="ListIngestionBatches",
+    method="GET",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches",
+    code=200,
     members=(
-        Member("agent_id", "agentId", "label"),
-        Member("name", "name", "body"),
-        Member("idempotency_key", "Idempotency-Key", "header", idempotency_token=True),
-        Member("if_match", "If-Match", "header"),
-        Member("note", "note", "body"),
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("limit", "limit", "query"),
+        Member("cursor", "cursor", "query"),
+        Member("status", "filter[status][eq]", "query"),
     ),
-    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"), ("location", "Location"),),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+LIST_INGESTION_BATCH_ITEMS: Final = OperationSpec(
+    name="ListIngestionBatchItems",
+    method="GET",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("ingestion_batch_id", "ingestionBatchId", "label"),
+        Member("limit", "limit", "query"),
+        Member("cursor", "cursor", "query"),
+        Member("action", "filter[action][eq]", "query"),
+        Member("outcome", "filter[outcome][eq]", "query"),
+        Member("status", "filter[status][eq]", "query"),
+        Member("resolution", "filter[resolution][eq]", "query"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+LIST_KNOWLEDGE_BASES: Final = OperationSpec(
+    name="ListKnowledgeBases",
+    method="GET",
+    uri="/v3/knowledge-bases",
+    code=200,
+    members=(
+        Member("limit", "limit", "query"),
+        Member("cursor", "cursor", "query"),
+        Member("status", "filter[status][eq]", "query"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+LIST_MEMORY_STORES: Final = OperationSpec(
+    name="ListMemoryStores",
+    method="GET",
+    uri="/v3/memory-stores",
+    code=200,
+    members=(
+        Member("limit", "limit", "query"),
+        Member("cursor", "cursor", "query"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+LIST_MESSAGES: Final = OperationSpec(
+    name="ListMessages",
+    method="GET",
+    uri="/v3/conversations/{conversationId}/messages",
+    code=200,
+    members=(
+        Member("conversation_id", "conversationId", "label"),
+        Member("limit", "limit", "query"),
+        Member("cursor", "cursor", "query"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+LIST_MODELS: Final = OperationSpec(
+    name="ListModels",
+    method="GET",
+    uri="/v3/models",
+    code=200,
+    members=(
+        Member("limit", "limit", "query"),
+        Member("cursor", "cursor", "query"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+LIST_OPERATIONS: Final = OperationSpec(
+    name="ListOperations",
+    method="GET",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/operations",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("limit", "limit", "query"),
+        Member("cursor", "cursor", "query"),
+        Member("target_type", "filter[target.type][eq]", "query"),
+        Member("target_id", "filter[target.id][eq]", "query"),
+        Member("kind", "filter[kind][eq]", "query"),
+        Member("status", "filter[status][eq]", "query"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+LIST_TOOLS: Final = OperationSpec(
+    name="ListTools",
+    method="GET",
+    uri="/v3/tools",
+    code=200,
+    members=(
+        Member("limit", "limit", "query"),
+        Member("cursor", "cursor", "query"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+LIST_VOICES: Final = OperationSpec(
+    name="ListVoices",
+    method="GET",
+    uri="/v3/voices",
+    code=200,
+    members=(
+        Member("limit", "limit", "query"),
+        Member("cursor", "cursor", "query"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
@@ -296,12 +1190,85 @@ PUBLISH_AGENT_VERSION: Final = OperationSpec(
         Member("agent_id", "agentId", "label"),
         Member("version", "version", "label"),
         Member("if_match", "If-Match", "header"),
+        Member("expected_live", "expectedLive", "body"),
         Member("name", "name", "body"),
         Member("note", "note", "body"),
     ),
     response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=False,
+    since="5.115.0",
+    stability="beta",
+)
+
+PUT_ACCESS: Final = OperationSpec(
+    name="PutAccess",
+    method="PUT",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/access",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("roles", "roles", "body"),
+        Member("readers", "readers", "body"),
+        Member("folder", "folder", "query"),
+        Member("document", "document", "query"),
+        Member("if_match", "If-Match", "header"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+REPLACE_DRAFT_VERSION: Final = OperationSpec(
+    name="ReplaceDraftVersion",
+    method="PUT",
+    uri="/v3/agents/{agentId}/versions/draft",
+    code=200,
+    members=(
+        Member("agent_id", "agentId", "label"),
+        Member("guidance", "guidance", "body"),
+        Member("models", "models", "body"),
+        Member("knowledge_bases", "knowledgeBases", "body"),
+        Member("policies", "policies", "body"),
+        Member("connectors", "connectors", "body"),
+        Member("workflow", "workflow", "body"),
+        Member("answers", "answers", "body"),
+        Member("conversation", "conversation", "body"),
+        Member("attachments", "attachments", "body"),
+        Member("content_safety", "contentSafety", "body"),
+        Member("denied_documents", "deniedDocuments", "body"),
+        Member("memory", "memory", "body"),
+        Member("voice", "voice", "body"),
+        Member("live_avatar", "liveAvatar", "body"),
+        Member("journey", "journey", "body"),
+        Member("run_as", "runAs", "body"),
+        Member("if_match", "If-Match", "header"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+REPROCESS_DOCUMENTS: Final = OperationSpec(
+    name="ReprocessDocuments",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/documents:reprocess",
+    code=202,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("idempotency_key", "Idempotency-Key", "header", idempotency_token=True),
+        Member("out_of_date", "outOfDate", "body"),
+        Member("document_ids", "documentIds", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
     since="5.115.0",
     stability="beta",
 )
@@ -321,17 +1288,55 @@ RESET_DRAFT_VERSION: Final = OperationSpec(
     retry_safe=False,
     since="5.115.0",
     stability="beta",
+    thing=True,
+)
+
+RETRY_DOCUMENT: Final = OperationSpec(
+    name="RetryDocument",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/retry",
+    code=202,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("document_id", "documentId", "label"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=False,
+    since="5.115.0",
+    stability="beta",
+)
+
+SAVE_DRAFT_VERSION: Final = OperationSpec(
+    name="SaveDraftVersion",
+    method="POST",
+    uri="/v3/agents/{agentId}/versions/draft/save",
+    code=201,
+    members=(
+        Member("agent_id", "agentId", "label"),
+        Member("name", "name", "body"),
+        Member("idempotency_key", "Idempotency-Key", "header", idempotency_token=True),
+        Member("if_match", "If-Match", "header"),
+        Member("note", "note", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"), ("location", "Location"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
 )
 
 SEND_MESSAGE: Final = OperationSpec(
     name="SendMessage",
     method="POST",
-    uri="/v3/conversations/{conversationId}/send",
+    uri="/v3/conversations/{conversationId}/messages",
     code=200,
     members=(
         Member("conversation_id", "conversationId", "label"),
         Member("message", "message", "body"),
         Member("context", "context", "body"),
+        Member("attachments", "attachments", "body"),
     ),
     response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
@@ -341,21 +1346,59 @@ SEND_MESSAGE: Final = OperationSpec(
     streaming=True,
 )
 
-UPDATE_DRAFT_VERSION: Final = OperationSpec(
-    name="UpdateDraftVersion",
+START_INGESTION_BATCH: Final = OperationSpec(
+    name="StartIngestionBatch",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/start",
+    code=202,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("ingestion_batch_id", "ingestionBatchId", "label"),
+        Member("if_match", "If-Match", "header"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=False,
+    since="5.115.0",
+    stability="beta",
+)
+
+UPDATE_AGENT: Final = OperationSpec(
+    name="UpdateAgent",
     method="PATCH",
-    uri="/v3/agents/{agentId}/versions/draft",
+    uri="/v3/agents/{agentId}",
     code=200,
     members=(
         Member("agent_id", "agentId", "label"),
         Member("if_match", "If-Match", "header"),
-        Member("identity", "identity", "body"),
-        Member("instructions", "instructions", "body"),
-        Member("model", "model", "body"),
-        Member("knowledge_bases", "knowledgeBases", "body"),
-        Member("attachments", "attachments", "body"),
-        Member("content_safety", "contentSafety", "body"),
-        Member("denied_documents", "deniedDocuments", "body"),
+        Member("name", "name", "body"),
+        Member("description", "description", "body"),
+        Member("avatar", "avatar", "body"),
+        Member("clear", "clear", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+UPDATE_DOCUMENT: Final = OperationSpec(
+    name="UpdateDocument",
+    method="PATCH",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("document_id", "documentId", "label"),
+        Member("if_match", "If-Match", "header"),
+        Member("source_url", "sourceUrl", "body"),
+        Member("external_id", "externalId", "body"),
+        Member("metadata", "metadata", "body"),
+        Member("extra_metadata", "extraMetadata", "body"),
+        Member("name", "name", "body"),
+        Member("folder", "folder", "body"),
         Member("clear", "clear", "body"),
     ),
     response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
@@ -365,6 +1408,149 @@ UPDATE_DRAFT_VERSION: Final = OperationSpec(
     stability="beta",
 )
 
+UPDATE_DRAFT_VERSION: Final = OperationSpec(
+    name="UpdateDraftVersion",
+    method="PATCH",
+    uri="/v3/agents/{agentId}/versions/draft",
+    code=200,
+    members=(
+        Member("agent_id", "agentId", "label"),
+        Member("guidance", "guidance", "body"),
+        Member("models", "models", "body"),
+        Member("knowledge_bases", "knowledgeBases", "body"),
+        Member("policies", "policies", "body"),
+        Member("connectors", "connectors", "body"),
+        Member("workflow", "workflow", "body"),
+        Member("answers", "answers", "body"),
+        Member("conversation", "conversation", "body"),
+        Member("attachments", "attachments", "body"),
+        Member("content_safety", "contentSafety", "body"),
+        Member("denied_documents", "deniedDocuments", "body"),
+        Member("memory", "memory", "body"),
+        Member("voice", "voice", "body"),
+        Member("live_avatar", "liveAvatar", "body"),
+        Member("journey", "journey", "body"),
+        Member("run_as", "runAs", "body"),
+        Member("if_match", "If-Match", "header"),
+        Member("clear", "clear", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+UPDATE_FIELD: Final = OperationSpec(
+    name="UpdateField",
+    method="PATCH",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/fields/{fieldKey}",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("field_key", "fieldKey", "label"),
+        Member("name", "name", "body"),
+        Member("description", "description", "body"),
+        Member("type", "type", "body"),
+        Member("scope", "scope", "body"),
+        Member("choices", "choices", "body"),
+        Member("partial_dates", "partialDates", "body"),
+        Member("instructions", "instructions", "body"),
+        Member("filterable", "filterable", "body"),
+        Member("given_to_agent", "givenToAgent", "body"),
+        Member("visible_on_documents", "visibleOnDocuments", "body"),
+        Member("if_match", "If-Match", "header"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+UPDATE_FOLDER: Final = OperationSpec(
+    name="UpdateFolder",
+    method="PATCH",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/folders/{folderPath+}",
+    code=202,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("folder_path", "folderPath", "greedy_label"),
+        Member("if_match", "If-Match", "header"),
+        Member("name", "name", "body"),
+        Member("parent", "parent", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"), ("location", "Location"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+)
+
+UPDATE_INGESTION_BATCH: Final = OperationSpec(
+    name="UpdateIngestionBatch",
+    method="PATCH",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("ingestion_batch_id", "ingestionBatchId", "label"),
+        Member("if_match", "If-Match", "header"),
+        Member("policy", "policy", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+UPDATE_INGESTION_BATCH_ITEM: Final = OperationSpec(
+    name="UpdateIngestionBatchItem",
+    method="PATCH",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("ingestion_batch_id", "ingestionBatchId", "label"),
+        Member("item_id", "itemId", "label"),
+        Member("resolution", "resolution", "body"),
+        Member("if_match", "If-Match", "header"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
+UPDATE_KNOWLEDGE_BASE: Final = OperationSpec(
+    name="UpdateKnowledgeBase",
+    method="PATCH",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("if_match", "If-Match", "header"),
+        Member("name", "name", "body"),
+        Member("description", "description", "body"),
+        Member("agent_description", "agentDescription", "body"),
+        Member("retrieval", "retrieval", "body"),
+        Member("features", "features", "body"),
+        Member("clear", "clear", "body"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
 WATCH_CONVERSATION: Final = OperationSpec(
     name="WatchConversation",
     method="GET",
@@ -372,6 +1558,43 @@ WATCH_CONVERSATION: Final = OperationSpec(
     code=200,
     members=(
         Member("conversation_id", "conversationId", "label"),
+        Member("last_event_id", "Last-Event-ID", "header"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    streaming=True,
+)
+
+WATCH_KNOWLEDGE_BASE: Final = OperationSpec(
+    name="WatchKnowledgeBase",
+    method="GET",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/events",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("document", "document", "query"),
+        Member("folder", "folder", "query"),
+        Member("batch", "batch", "query"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    streaming=True,
+)
+
+WATCH_OPERATION: Final = OperationSpec(
+    name="WatchOperation",
+    method="GET",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}/stream",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("operation_id", "operationId", "label"),
         Member("last_event_id", "Last-Event-ID", "header"),
     ),
     response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"),),
@@ -416,6 +1639,20 @@ def _watch_conversation_final(event: ConversationEvent) -> None:
 WATCH_CONVERSATION_EVENTS: Final = EventDecoder[ConversationEvent, None](CONVERSATION_EVENT_TYPES, _watch_conversation_final, MessageFailedEvent, has_final=False)
 
 
+def _watch_knowledge_base_final(event: KnowledgeBaseEvent) -> None:
+    return None
+
+
+WATCH_KNOWLEDGE_BASE_EVENTS: Final = EventDecoder[KnowledgeBaseEvent, None](KNOWLEDGE_BASE_EVENT_TYPES, _watch_knowledge_base_final, None, has_final=False)
+
+
+def _watch_operation_final(event: OperationEvent) -> Operation | None:
+    return event.operation if isinstance(event, OperationFinishedEvent) else None
+
+
+WATCH_OPERATION_EVENTS: Final = EventDecoder[OperationEvent, Operation](OPERATION_EVENT_TYPES, _watch_operation_final, None, has_final=True)
+
+
 def _watch_workspace_events_final(event: WorkspaceEvent) -> None:
     return None
 
@@ -423,60 +1660,62 @@ def _watch_workspace_events_final(event: WorkspaceEvent) -> None:
 WATCH_WORKSPACE_EVENTS_EVENTS: Final = EventDecoder[WorkspaceEvent, None](WORKSPACE_EVENT_TYPES, _watch_workspace_events_final, None, has_final=False)
 
 
-def accept_get_document_deleted(output: GetDocumentResult | None, error: Exception | None) -> WaitState | None:
-    """The `Deleted` waiter's acceptors on GetDocument, in order."""
-    if isinstance(error, NotFoundError):
-        return "success"
-    return None
-
-
-def accept_get_document_indexed(output: GetDocumentResult | None, error: Exception | None) -> WaitState | None:
-    """The `Indexed` waiter's acceptors on GetDocument, in order."""
-    def _p0(out: GetDocumentResult) -> bool:
-        v1 = out.status
-        return str(v1) == "indexed"
-    if output is not None and _p0(output):
-        return "success"
-    def _p1(out: GetDocumentResult) -> bool:
-        v1 = out.status
-        return str(v1) == "partially_indexed"
-    if output is not None and _p1(output):
-        return "success"
-    def _p2(out: GetDocumentResult) -> bool:
-        v1 = out.status
-        return str(v1) == "failed"
-    if output is not None and _p2(output):
-        return "failure"
-    def _p3(out: GetDocumentResult) -> bool:
-        v1 = out.status
-        return str(v1) == "deleting"
-    if output is not None and _p3(output):
-        return "failure"
-    if isinstance(error, NotFoundError):
-        return "failure"
-    return None
-
-METHODS: Final[dict[str, tuple[str, str]]] = {
-    "BatchDeleteDocuments": ("documents", "batch_delete"),
-    "CreateConversation": ("conversations", "create"),
-    "CreateDocument": ("documents", "create"),
-    "CreateUpload": ("uploads", "reserve"),
-    "DeleteAgentVersion": ("agents.versions", "delete"),
-    "DeleteDocument": ("documents", "delete"),
-    "GetAgentVersion": ("agents.versions", "get"),
-    "GetCaller": ("callers", "get"),
-    "GetDocument": ("documents", "get"),
-    "GetProductionHistoryEntry": ("agents.production_history", "get"),
-    "GetUpload": ("uploads", "get"),
-    "ListAgentVersions": ("agents.versions", "list"),
-    "ListDocuments": ("documents", "list"),
-    "ListProductionHistoryEntries": ("agents.production_history", "list"),
-    "PinDraftVersion": ("agents.versions", "pin"),
-    "PublishAgentVersion": ("agents.versions", "publish"),
-    "ResetDraftVersion": ("agents.versions", "reset_draft"),
-    "SendMessage": ("conversations", "send"),
-    "UpdateDraftVersion": ("agents.versions", "update_draft"),
-    "WatchConversation": ("conversations", "watch"),
-    "WatchWorkspaceEvents": ("events", "subscribe"),
+CODE_ERRORS: Final[dict[str, type[CaitlynError]]] = {
+    "ALREADY_EXISTS": ConflictError,
+    "ATTACHMENTS_NOT_ACCEPTED": ValidationError,
+    "BATCH_ITEM_CONTENT_AMBIGUOUS": UnprocessableContentError,
+    "CONFIGURATION_TOO_LARGE": ValidationError,
+    "CONFLICT": ConflictError,
+    "CONTENT_REJECTED": UnprocessableContentError,
+    "DOCUMENT_INGESTION_IN_PROGRESS": ConflictError,
+    "IDEMPOTENCY_KEY_IN_USE": ConflictError,
+    "IDEMPOTENCY_KEY_REUSED": UnprocessableContentError,
+    "INGESTION_BATCH_UNRESOLVED": ConflictError,
+    "INTERNAL": InternalError,
+    "INVALID_CURSOR": ValidationError,
+    "METADATA_FIELD_PASSAGE_SCOPED": UnprocessableContentError,
+    "METADATA_FIELD_UNDEFINED": UnprocessableContentError,
+    "METADATA_LIMIT_EXCEEDED": UnprocessableContentError,
+    "METADATA_VALUE_INVALID": UnprocessableContentError,
+    "NOT_AVAILABLE_TO_CREDENTIALS": PermissionDeniedError,
+    "NOT_FOUND": NotFoundError,
+    "OPERATION_NOT_CANCELLABLE": ConflictError,
+    "PAYLOAD_TOO_LARGE": PayloadTooLargeError,
+    "PERMISSION_DENIED": PermissionDeniedError,
+    "PRECONDITION_FAILED": PreconditionFailedError,
+    "PRECONDITION_REQUIRED": PreconditionRequiredError,
+    "PRIMARY_WORKSPACE_REQUIRED": PermissionDeniedError,
+    "RATE_LIMITED": TooManyRequestsError,
+    "SERVICE_UNAVAILABLE": ServiceUnavailableError,
+    "TARGET_IN_USE": ConflictError,
+    "UNAUTHENTICATED": UnauthenticatedError,
+    "UNKNOWN_FIELD": ValidationError,
+    "UNKNOWN_FILTER": ValidationError,
+    "UNKNOWN_SORT": ValidationError,
+    "VALIDATION_FAILED": ValidationError,
+    "VERSION_IN_HISTORY": ConflictError,
+    "VERSION_IN_USE": ConflictError,
+    "VERSION_NOT_DELETABLE": ValidationError,
 }
-"""Operation name to (client attribute, method name)."""
+"""Each stable code to the error class that carries it: a failed job raises its code as this class."""
+
+SYNC_API: Final = SyncApi(
+    create=CREATE_INGESTION_BATCH,
+    add_items=BATCH_CREATE_INGESTION_BATCH_ITEMS,
+    get=GET_INGESTION_BATCH,
+    resolve_item=UPDATE_INGESTION_BATCH_ITEM,
+    start=START_INGESTION_BATCH,
+    list_items=LIST_INGESTION_BATCH_ITEMS,
+    renew_policy=CREATE_INGESTION_BATCH_UPLOAD_POLICY,
+    complete=COMPLETE_INGESTION_BATCH_UPLOADS,
+    cancel=CANCEL_INGESTION_BATCH,
+    list_documents=LIST_DOCUMENTS,
+    estimate=ESTIMATE_INGESTION,
+    watch=WATCH_KNOWLEDGE_BASE,
+    watch_events=WATCH_KNOWLEDGE_BASE_EVENTS,
+    batch=IngestionBatch,
+    item=IngestionBatchItem,
+    estimate_result=EstimateIngestionResult,
+    codes=CODE_ERRORS,
+)
+"""The operations the `ingestion.sync` helper is made from."""

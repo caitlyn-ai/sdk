@@ -44,7 +44,7 @@ version and what changed.
 ## Make a first call
 
 Create a client for your workspace, then call an operation. This reads the draft version of an agent: its
-configuration, and the ETag you would send to change it. Put your own agent's ID in place of `GHT7YRWXPL`.
+configuration, and its ETag, for a change that must not overwrite someone else's. Put your own agent's ID in place of `GHT7YRWXPL`.
 
 <!-- example: examples/typescript/getting-started.ts#first-call -->
 ```ts tab="TypeScript"
@@ -56,8 +56,8 @@ const caitlyn = new Caitlyn({
 });
 
 // Read the draft of an agent: its configuration and its ETag
-const draft = await caitlyn.agents.versions.get({ agentId: 'GHT7YRWXPL', version: 'draft' });
-console.log(draft.configuration.instructions);
+const draft = await caitlyn.agents('GHT7YRWXPL').draft.get();
+console.log(draft.configuration?.guidance?.instructions);
 ```
 <!-- example: examples/python/getting_started.py#first-call -->
 ```python tab="Python"
@@ -69,8 +69,8 @@ from caitlyn.auth import Token
 caitlyn = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token(os.environ["CAITLYN_TOKEN"]))
 
 # Read the draft of an agent: its configuration and its ETag
-draft = caitlyn.agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
-print(draft.configuration.instructions)
+draft = caitlyn.agents("GHT7YRWXPL").draft.get()
+print(draft.configuration.guidance.instructions if draft.configuration and draft.configuration.guidance else "")
 ```
 <!-- example: examples/go/gettingstarted/main.go#first-call -->
 ```go tab="Go"
@@ -91,17 +91,19 @@ func main() {
 	}
 
 	// Read the draft of an agent: its configuration and its ETag
-	draft, err := client.Agents.Versions.Get(ctx, &caitlyn.GetAgentVersionInput{AgentID: "GHT7YRWXPL", Version: "draft"})
+	draft, err := client.Agent("GHT7YRWXPL").Draft().Get(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(draft.Configuration.Instructions)
+	if g := draft.Configuration.Guidance; g != nil && g.Instructions != nil {
+		fmt.Println(*g.Instructions)
+	}
 }
 
 ```
 <!-- example: examples/rust/src/bin/getting_started.rs#first-call -->
 ```rust tab="Rust"
-use caitlyn_sdk::{Auth, Client, GetAgentVersionInput};
+use caitlyn_sdk::{Auth, Client};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -110,16 +112,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Auth::token(std::env::var("CAITLYN_TOKEN")?),
     )?;
 
-    // Read the draft of an agent: its configuration and its ETag
-    let draft = client
-        .agents()
-        .versions()
-        .get(GetAgentVersionInput {
-            agent_id: "GHT7YRWXPL".into(),
-            version: "draft".into(),
-        })
-        .await?;
-    println!("{}", draft.configuration.instructions);
+    // Read the draft of an agent: its configuration and its ETag (draft.etag)
+    let draft = client.agent("GHT7YRWXPL").draft().get().await?;
+    println!(
+        "{}",
+        draft
+            .configuration
+            .as_ref()
+            .and_then(|c| c.guidance.as_ref())
+            .and_then(|g| g.instructions.as_deref())
+            .unwrap_or_default()
+    );
     Ok(())
 }
 ```
@@ -135,17 +138,17 @@ a token works.
 <!-- example: examples/typescript/conversations.ts#get-caller -->
 ```ts tab="TypeScript"
 // Check the credential before doing anything else: any valid credential may call this
-const me = await caitlyn.callers.get({});
+const me = await caitlyn.me();
 console.log(`${me.displayName} (${me.credential}) in ${me.organisation.name}; scopes: ${me.scopes.join(' ')}`);
 ```
 <!-- example: examples/python/conversations.py#get-caller -->
 ```python tab="Python"
-me = caitlyn.callers.get()
+me = caitlyn.me()
 print(me.display_name, me.credential, me.scopes)  # who this credential belongs to, and what it may do
 ```
 <!-- example: examples/go/conversations/conversations.go#get-caller -->
 ```go tab="Go"
-caller, err := client.Callers.Get(ctx, &caitlyn.GetCallerInput{})
+caller, err := client.Me(ctx)
 if err != nil {
 	return nil, err
 }
@@ -153,8 +156,11 @@ fmt.Println(caller.DisplayName, caller.Credential, caller.Organisation.Name, cal
 ```
 <!-- example: examples/rust/src/conversations.rs#get-caller -->
 ```rust tab="Rust"
-let caller = client.callers().get(GetCallerInput {}).await?;
-println!("{} ({:?}) in {}", caller.display_name, caller.credential, caller.organisation.name);
+let caller = client.me().await?;
+println!(
+    "{} ({:?}) in {}",
+    caller.display_name, caller.credential, caller.organisation.name
+);
 println!("scopes: {}", caller.scopes.join(" "));
 ```
 
@@ -183,5 +189,6 @@ server.
 ## Next
 
 - [Authentication](/authentication/): sign in as a service, as a person, or as a workload on AWS or in CI.
+- [How to integrate](/how-to-integrate/): the other ways in, from embedding the chat to MCP.
 - [Errors](/errors/): what each failure looks like, and which ones to handle.
 - [Streaming](/streaming/): ask an agent a question and stream the answer.

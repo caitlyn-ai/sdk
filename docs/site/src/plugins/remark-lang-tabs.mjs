@@ -1,5 +1,6 @@
 // Language tabs. A run of consecutive code blocks whose info strings carry `tab="<label>"` becomes one tab
-// group, so the Markdown stays plain (the `.md` copies show the blocks one after another, each labelled):
+// group (a label that comes again starts the next group), so the Markdown stays plain (the `.md` copies show the
+// blocks one after another, each labelled):
 //
 //   ```ts tab="TypeScript"
 //   ```python tab="Python"
@@ -30,8 +31,16 @@ export default function remarkLangTabs() {
   return (tree) => {
     visit(tree, (node, index, parent) => {
       if (!parent || index === undefined || node.type !== 'code' || !TAB.test(node.meta ?? '')) return;
+      // A run ends at a block that is not a tab, or at a label the run already has: two groups side by side (two
+      // examples one after the other) stay two groups, each with its own tabs, never one strip with every label twice
       let end = index;
-      while (parent.children[end]?.type === 'code' && TAB.test(parent.children[end].meta ?? '')) end++;
+      const seen = new Set();
+      while (parent.children[end]?.type === 'code' && TAB.test(parent.children[end].meta ?? '')) {
+        const label = TAB.exec(parent.children[end].meta)[1];
+        if (seen.has(label)) break;
+        seen.add(label);
+        end++;
+      }
       const blocks = parent.children.slice(index, end);
       const tabs = blocks.map((b) => {
         const label = TAB.exec(b.meta)[1];

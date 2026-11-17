@@ -3,8 +3,9 @@
 // `fail <check>: <why>`. It reads CAITLYN_WORKSPACE, CAITLYN_TOKEN and CAITLYN_AGENT_ID, and CAITLYN_ENDPOINT when
 // set. What the examples print goes to stderr, so stdout carries only those lines.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { Caitlyn, ConflictError, NotFoundError } from '@caitlyn-ai/sdk';
+import { Caitlyn, NotFoundError, UploadFile } from '@caitlyn-ai/sdk';
 import * as examples from '../../examples/typescript/conversations';
 import * as agents from '../../examples/typescript/agents';
 import * as documents from '../../examples/typescript/documents';
@@ -123,7 +124,7 @@ await check('WatchConversation', 180, async (signal) => {
   // completion for any other answer (the server has been seen delivering one that finished just before the watch
   // opened) is reported on stderr. The check itself passes or fails on whether the watch delivered the answer
   // the example sent: the example waits for its own answer, as an integrator's code should.
-  const observer = caitlyn.conversations.watch(conversationId!, {}, { signal });
+  const observer = caitlyn.conversations(conversationId!).watch({}, { signal });
   await observer.opened();
   const openedAt = Date.now();
   const completions: { id: string; role: string; eventId?: string; at: number }[] = [];
@@ -188,13 +189,15 @@ const created = new Set<string>();
 // A one-page leave policy as a PDF: a knowledge base ingests PDFs (and Word, Markdown, images, audio and video),
 // not plain text. The repository root is fixed when typescript.sh bundles this file.
 const ROOT = process.env.CAITLYN_REPO_ROOT ?? path.resolve(import.meta.dirname, '../..');
-const leavePolicy = () => new Blob([fs.readFileSync(path.join(ROOT, 'examples/fixtures/leave-policy.pdf'))], { type: 'application/pdf' });
+const leavePolicyBytes = () => fs.readFileSync(path.join(ROOT, 'examples/fixtures/leave-policy.pdf'));
+/** The fixture under a name of this run's own. */
+const leavePolicy = (suffix = '') => UploadFile.fromBytes(leavePolicyBytes(), { name: `leave-policy-${runId}${suffix}.pdf` });
 // The examples put documents in '/policies/', as the docs show, so each run's documents have names of their own: a
 // name already used in a folder is refused.
 const runId = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 
 await check('CreateUpload', 60, async () => {
-  const upload = await documents.createUpload(caitlyn, leavePolicy(), `leave-policy-${runId}.pdf`);
+  const upload = await documents.sendUpload(caitlyn, leavePolicy('-upload'));
   expect(upload.id, `no upload id: ${JSON.stringify(upload)}`);
   uploadId = upload.id;
 });
@@ -205,28 +208,27 @@ await check('GetUpload', 30, async () => {
 });
 await check('CreateDocument', 60, async () => {
   noKnowledgeBase();
-  expect(uploadId, 'no upload (CreateUpload failed)');
-  const document = await documents.createDocument(caitlyn, knowledgeBaseId!, uploadId!);
+  const document = await documents.createDocument(caitlyn, knowledgeBaseId!, leavePolicy());
   expect(document.id && document.knowledgeBaseId === knowledgeBaseId, `document ${JSON.stringify(document)}`);
   documentId = document.id;
   created.add(document.id);
 });
-// A document still being processed cannot be deleted yet: 409 CONFLICT. A third document is deleted the moment it is
-// created, while it is pending. A one-page PDF can index quickly, so if it has already finished processing, the delete
-// is accepted instead; that passes too, and says so on stderr. The clean-up at the end deletes it once it is indexed.
-await check('DeleteDocument.processing', 60, async () => {
+// A document still being processed can be deleted: a third document is deleted the moment it is created, while it is
+// pending. The delete is accepted, its processing stops, and once the wait ends it is gone and stays gone.
+await check('DeleteDocument.processing', 300, async (signal) => {
   noKnowledgeBase();
-  const upload = await caitlyn.uploads.create({ file: leavePolicy(), fileName: `leave-policy-${runId}-3.pdf` });
-  const { document: third } = await caitlyn.documents.create({ knowledgeBaseId: knowledgeBaseId!, uploadId: upload.id, folder: '/policies/' });
+  const kb = caitlyn.knowledgeBases(knowledgeBaseId!);
+  const third = await kb.documents.create(leavePolicy('-3'), { folder: '/policies/' });
   created.add(third.id);
-  try {
-    const deleted = await caitlyn.documents.delete({ knowledgeBaseId: knowledgeBaseId!, documentId: third.id });
-    expect(deleted.status === 'deleting', `the delete was neither refused nor accepted: ${deleted.status}`);
-    console.error(`DeleteDocument.processing: ${third.id} had already finished processing (${third.status} when created); the delete was accepted`);
-  } catch (err) {
-    if (!(err instanceof ConflictError)) throw err;
-    expect(err.code === 'CONFLICT', `409 with code ${err.code}`);
-  }
+  const deleting = third.delete();
+  const deleted = await deleting;
+  expect(!!deleted.etag, 'the delete was not accepted');
+  await deleting.wait({ signal });
+  const gone = await third.get().then(() => undefined, (e) => e);
+  expect(gone instanceof NotFoundError, `GetDocument after the delete: ${gone ? (gone as Error).name : 'found'}`);
+  const listed = await documents.listDocuments(caitlyn, knowledgeBaseId!);
+  expect(!listed.includes(third.id), `${third.id} came back in ListDocuments`);
+  created.delete(third.id);
 });
 await check('GetDocument', 30, async () => {
   noKnowledgeBase();
@@ -234,7 +236,7 @@ await check('GetDocument', 30, async () => {
   const document = await documents.getDocument(caitlyn, knowledgeBaseId!, documentId!);
   expect(document.id === documentId, `document ${document.id}`);
 });
-await check('WaitUntilIndexed', 900, async () => {
+await check('Document.wait', 900, async () => {
   noKnowledgeBase();
   expect(documentId, 'no document (CreateDocument failed)');
   const document = await documents.waitUntilIndexed(caitlyn, knowledgeBaseId!, documentId!);
@@ -247,11 +249,28 @@ await check('ListDocuments', 60, async () => {
   const ids = await documents.listDocuments(caitlyn, knowledgeBaseId!);
   expect(ids.includes(documentId!), `the list does not include ${documentId}`);
 });
+await check('CreateDocumentVersion', 900, async () => {
+  noKnowledgeBase();
+  expect(documentId, 'no document (CreateDocument failed)');
+  // New bytes of the same type: the fixture with a line appended after its end, which a PDF reader ignores
+  const edition = UploadFile.fromBytes(Buffer.concat([leavePolicyBytes(), Buffer.from(`\n% edition ${runId}\n`)]), { name: `leave-policy-${runId}.pdf` });
+  const version = await documents.replaceDocument(caitlyn, knowledgeBaseId!, documentId!, edition);
+  expect(version.number >= 2, `version ${version.number}`);
+});
+await check('ingestion.sync', 900, async () => {
+  noKnowledgeBase();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'caitlyn-live-ingest-'));
+  fs.writeFileSync(path.join(dir, `leave-policy-${runId}-ingest.pdf`), leavePolicyBytes());
+  // removeMissing would remove the folder's other documents, so this run ingests into a folder of its own
+  const report = await caitlyn.knowledgeBases(knowledgeBaseId!).ingestion.sync(dir, { folder: `/sdk-live-checks/${runId}/` });
+  expect(report.batch.status === 'succeeded', `the batch ended ${report.batch.status}: ${JSON.stringify(report.items)}`);
+  for (const item of report.items) if (item.documentId) created.add(item.documentId);
+});
 await check('DeleteDocument', 30, async () => {
   noKnowledgeBase();
   expect(documentId, 'no document (CreateDocument failed)');
-  const document = await documents.deleteDocument(caitlyn, knowledgeBaseId!, documentId!);
-  expect(document.status === 'deleting', `the deleted document is ${document.status}`);
+  const deleted = await documents.deleteDocument(caitlyn, knowledgeBaseId!, documentId!);
+  expect(!!deleted.etag, 'the delete was not accepted');
 });
 /**
  * Diagnostics, not a check: prints each change in a document's status to stderr, read every 15 s until stopped or
@@ -264,7 +283,7 @@ function logStatusChanges(knowledgeBaseId: string, documentId: string, signal: A
   const read = async () => {
     let now: string;
     try {
-      const d = await caitlyn.documents.get({ knowledgeBaseId, documentId });
+      const d = await caitlyn.knowledgeBases(knowledgeBaseId).documents(documentId).get();
       now = [d.status, d.stage, d.failure?.code].filter(Boolean).join(' ');
     } catch (err) {
       now = err instanceof NotFoundError ? '404' : `error ${(err as Error).name}`;
@@ -284,11 +303,8 @@ function logStatusChanges(knowledgeBaseId: string, documentId: string, signal: A
 await check('BatchDeleteDocuments', 900, async (signal) => {
   noKnowledgeBase();
   // A second document, from a new upload, deleted together with an identifier that does not exist
-  const upload = await caitlyn.uploads.create({ file: leavePolicy(), fileName: `leave-policy-${runId}-2.pdf` });
-  const { document: second } = await caitlyn.documents.create({ knowledgeBaseId: knowledgeBaseId!, uploadId: upload.id, folder: '/policies/' });
+  const second = await caitlyn.knowledgeBases(knowledgeBaseId!).documents.create(leavePolicy('-2'), { folder: '/policies/' });
   created.add(second.id);
-  // Only a document that has finished processing can be deleted
-  await caitlyn.documents.waitUntilIndexed({ knowledgeBaseId: knowledgeBaseId!, documentId: second.id }, { signal });
   const missing = `doc-missing-${Date.now()}`;
   const stopLogging = logStatusChanges(knowledgeBaseId!, second.id, signal);
   const results = await documents.batchDeleteDocuments(caitlyn, knowledgeBaseId!, [second.id, missing]);
@@ -296,70 +312,64 @@ await check('BatchDeleteDocuments', 900, async (signal) => {
   expect(results[0]!.status === 'accepted', `${second.id}: ${results[0]!.status} ${results[0]!.code ?? ''}`);
   expect(results[1]!.status === 'failed' && results[1]!.code === 'NOT_FOUND', `${missing}: ${results[1]!.status} ${results[1]!.code ?? ''}`);
   try {
-    await caitlyn.documents.waitUntilDeleted({ knowledgeBaseId: knowledgeBaseId!, documentId: second.id });
+    await caitlyn.knowledgeBases(knowledgeBaseId!).documents(second.id).delete().wait({ signal });
   } finally {
     stopLogging();
   }
   created.delete(second.id);
 });
-await check('WaitUntilDeleted', 900, async () => {
+await check('DeleteDocument.wait', 900, async () => {
   noKnowledgeBase();
   expect(documentId, 'no document (CreateDocument failed)');
   await documents.waitUntilDeleted(caitlyn, knowledgeBaseId!, documentId!);
   created.delete(documentId!);
 });
-// Whatever is left (DeleteDocument.processing's document, and anything a failed check left): wait until each has
-// finished processing, since only then can it be deleted, then batch-delete them and wait until each is gone. Not a
-// check: it prints to stderr.
+// Whatever a failed check left: batch-delete it and wait until each is gone. Not a check: it prints to stderr.
 if (knowledgeBaseId && created.size) {
   const left = [...created];
   console.error(`clean-up: deleting ${left.join(', ')}`);
   try {
-    for (const id of left) {
-      // A failed document can be deleted too, and one already deleting is accepted again: only the wait is wanted
-      await caitlyn.documents.waitUntilIndexed({ knowledgeBaseId, documentId: id }, { maxWaitMs: 900_000 }).catch(() => undefined);
-    }
-    await caitlyn.documents.batchDelete({ knowledgeBaseId, documentIds: left });
-    for (const id of left) await caitlyn.documents.waitUntilDeleted({ knowledgeBaseId, documentId: id }, { maxWaitMs: 900_000 });
+    await caitlyn.knowledgeBases(knowledgeBaseId).documents.deleteMany(left);
+    for (const id of left) await caitlyn.knowledgeBases(knowledgeBaseId).documents(id).delete().wait({ timeoutMs: 900_000 });
   } catch (err) {
     console.error(`clean-up: could not delete ${left.join(', ')}: ${(err as Error).message}`);
   }
 }
 
-// ---------------------------------------------------------------- agent versions and production history
+// ---------------------------------------------------------------- agent versions and live history
 // Every change is put back: the draft is restored, the pin made here is the version the draft is reset from,
 // and it is then deleted.
 
-let pinned: string | undefined;
+let saved: string | undefined;
 let historyEntryId: string | undefined;
 
 await check('UpdateDraftVersion', 30, async () => {
-  const before = await caitlyn.agents.versions.get({ agentId, version: 'draft' });
-  const original = before.configuration.instructions ?? '';
+  const before = await caitlyn.agents(agentId).draft.get();
+  const original = before.configuration?.guidance?.instructions ?? '';
   const changed = `${original}\n(Checked by the SDK examples; this line is removed straight away.)`;
   let restoreFrom: string | undefined;
   try {
     const updated = await agents.updateDraft(caitlyn, agentId, changed);
     restoreFrom = updated.etag;
-    expect(updated.configuration.instructions === changed, 'the draft does not have the new instructions');
+    expect(updated.configuration?.guidance?.instructions === changed, 'the draft does not have the new instructions');
   } finally {
-    if (restoreFrom) await caitlyn.agents.versions.updateDraft(agentId, { instructions: original }, { ifMatch: restoreFrom });
+    if (restoreFrom) await caitlyn.agents(agentId).draft.update({ guidance: { instructions: original } }, { ifMatch: restoreFrom });
   }
 });
-await check('PinDraftVersion', 30, async () => {
+await check('SaveDraftVersion', 30, async () => {
   const name = `live-check-${Date.now()}`;
   const version = await agents.pinDraft(caitlyn, agentId, name);
-  expect(version.name === name, `pinned ${version.name}, asked for ${name}`);
-  pinned = name;
+  expect(version.name === name, `saved ${version.name}, asked for ${name}`);
+  saved = name;
 });
 await check('ListAgentVersions', 30, async () => {
-  // The list holds the named versions only: the draft and production are not entries.
-  expect(pinned, 'no pinned version to list (PinDraftVersion failed)');
+  // The list holds the named versions only: the draft and live are not entries.
+  expect(saved, 'no saved version to list (SaveDraftVersion failed)');
   const names = await agents.listVersions(caitlyn, agentId);
-  expect(names.includes(pinned!), `the list does not include ${pinned}: ${names.join(', ')}`);
+  expect(names.includes(saved!), `the list does not include ${saved}: ${names.join(', ')}`);
 });
 // Publishing changes what an agent answers with, so it happens only on CAITLYN_PUBLISH_AGENT_ID, an agent kept for
-// it, never on CAITLYN_AGENT_ID. Its production history is where GetProductionHistory reads an entry from.
+// it, never on CAITLYN_AGENT_ID. Its history is where GetHistoryEntry reads an entry from.
 const publishAgentId = process.env.CAITLYN_PUBLISH_AGENT_ID || undefined;
 const publishingOff = () => {
   if (!publishAgentId) throw new Skip('publishing turned off (CAITLYN_PUBLISH_AGENT_ID is not set)');
@@ -368,47 +378,57 @@ const publishingOff = () => {
 await check('PublishAgentVersion', 60, async () => {
   publishingOff();
   const name = `live-publish-${Date.now()}`;
-  await caitlyn.agents.versions.pin(publishAgentId!, { name, note: 'Published by the SDK examples' });
+  const agent = caitlyn.agents(publishAgentId!);
+  await agent.draft.save(name, { note: 'Published by the SDK examples' });
   try {
-    // An agent's first publish sends '*': with no production yet there is nothing for the example to read.
-    const hasProduction = await caitlyn.agents.versions
-      .get({ agentId: publishAgentId!, version: 'production' })
-      .then(() => true, (e) => (e instanceof NotFoundError ? false : Promise.reject(e)));
-    if (!hasProduction) await caitlyn.agents.versions.publish({ agentId: publishAgentId!, version: name }, { ifMatch: '*' });
-    const production = await agents.publishVersion(caitlyn, publishAgentId!, name);
-    expect(production.publishedAt, `publish returned ${production.name} with no publishedAt`);
+    // An agent's first publish has nothing live to compare with: publish it once without the check.
+    const hasLive = await agent.live.get().then(() => true, (e) => (e instanceof NotFoundError ? false : Promise.reject(e)));
+    if (!hasLive) await agent.versions(name).publish();
+    const published = await agents.publishVersion(caitlyn, publishAgentId!, name);
+    expect(published.live.publishedAt, `publish returned ${published.live.version} with no publishedAt`);
   } finally {
-    await caitlyn.agents.versions.delete({ agentId: publishAgentId!, version: name }); // production is its own copy
+    // A version live points at cannot be deleted; the publish agent keeps the versions it published
+    await agent.versions(name).delete().catch(() => undefined);
   }
 });
-await check('ListProductionHistory', 30, async () => {
+await check('ListHistoryEntries', 30, async () => {
   // An agent that has never been republished has an empty history: that is a pass, as long as the list runs.
-  const ids = await agents.listProductionHistory(caitlyn, agentId);
+  const ids = await agents.listHistory(caitlyn, agentId);
   expect(Array.isArray(ids), 'the list did not run');
 });
-await check('GetProductionHistory', 30, async () => {
+await check('GetHistoryEntry', 30, async () => {
   publishingOff();
-  const ids = await agents.listProductionHistory(caitlyn, publishAgentId!);
+  const ids = await agents.listHistory(caitlyn, publishAgentId!);
   historyEntryId = ids[0];
-  expect(historyEntryId, `the publish agent ${publishAgentId} has no production history entries`);
-  const entry = await agents.getProductionHistory(caitlyn, publishAgentId!, historyEntryId!);
-  expect(entry.id === historyEntryId && entry.configuration, `entry ${entry.id}`);
+  expect(historyEntryId, `the publish agent ${publishAgentId} has no live history entries`);
+  const entry = await agents.getHistory(caitlyn, publishAgentId!, historyEntryId!);
+  expect(entry.id === historyEntryId, `entry ${entry.id}`);
 });
 await check('ResetDraftVersion', 30, async () => {
-  expect(pinned, 'no pinned version (PinDraftVersion failed)');
+  expect(saved, 'no saved version (SaveDraftVersion failed)');
   // The pin is a copy of the draft as it is, so resetting from it leaves the draft's configuration as it was.
-  const pin = await caitlyn.agents.versions.get({ agentId, version: pinned! });
-  const draft = await agents.resetDraft(caitlyn, agentId, pinned!);
+  const pin = await caitlyn.agents(agentId).versions(saved!).get();
+  const draft = await agents.resetDraft(caitlyn, agentId, saved!);
   expect(draft.name === 'draft', `reset returned ${draft.name}`);
-  expect(JSON.stringify(draft.configuration) === JSON.stringify(pin.configuration), 'the draft is not a copy of the pinned version');
+  expect(JSON.stringify(draft.configuration) === JSON.stringify(pin.configuration), 'the draft is not a copy of the saved version');
 });
 await check('DeleteAgentVersion', 30, async () => {
-  expect(pinned, 'no pinned version (PinDraftVersion failed)');
-  await agents.deleteVersion(caitlyn, agentId, pinned!);
+  expect(saved, 'no saved version (SaveDraftVersion failed)');
+  await agents.deleteVersion(caitlyn, agentId, saved!);
   const names = await agents.listVersions(caitlyn, agentId);
-  expect(!names.includes(pinned!), `${pinned} is still listed`);
-  pinned = undefined;
+  expect(!names.includes(saved!), `${saved} is still listed`);
+  saved = undefined;
 });
-if (pinned) await caitlyn.agents.versions.delete({ agentId, version: pinned }).catch(() => undefined); // a pin a failed check left
+await check('avatar.picture', 60, async () => {
+  // A new agent each run, with a picture for its avatar: a 1×1 PNG
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  const agent = await agents.createAgentWithPicture(caitlyn, UploadFile.fromBytes(png, { name: 'avatar.png' }));
+  try {
+    expect(agent.avatar?.mark?.pictureUrl, `the agent's avatar has no picture: ${JSON.stringify(agent.avatar)}`);
+  } finally {
+    await caitlyn.agents(agent.id).delete().catch(() => undefined);
+  }
+});
+if (saved) await caitlyn.agents(agentId).versions(saved).delete().catch(() => undefined); // a pin a failed check left
 
 process.exit(failures ? 1 : 0);

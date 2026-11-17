@@ -1,7 +1,6 @@
 package ai.caitlyn.codegen.python;
 
 import ai.caitlyn.codegen.model.CaitlynTraits;
-import ai.caitlyn.codegen.model.ClientMethod;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -18,7 +17,6 @@ import software.amazon.smithy.model.knowledge.PaginationInfo;
 import software.amazon.smithy.model.node.ObjectNode;
 import software.amazon.smithy.model.shapes.MemberShape;
 import software.amazon.smithy.model.shapes.OperationShape;
-import software.amazon.smithy.model.shapes.ResourceShape;
 import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.model.shapes.ServiceShape;
 import software.amazon.smithy.model.shapes.StructureShape;
@@ -28,7 +26,7 @@ import software.amazon.smithy.model.traits.IdempotentTrait;
 import software.amazon.smithy.model.traits.JsonNameTrait;
 import software.amazon.smithy.model.traits.ReadonlyTrait;
 
-/** One operation as the Python client sees it: where its method lives and how it is called. */
+/** One operation as the Python client sees it: its HTTP bindings and how it is called. Where its method lives is the scope tree's. */
 final class OperationInfo {
     enum Kind { UNARY, PAGINATED, STREAM }
 
@@ -56,8 +54,6 @@ final class OperationInfo {
     final OperationShape op;
     final String name;
     final String constant;
-    final String namespace;
-    final String method;
     final Kind kind;
     final HttpTrait http;
     final StructureShape input;
@@ -66,8 +62,6 @@ final class OperationInfo {
     final Optional<PaginationInfo> pagination;
     final Optional<ObjectNode> sse;
     final boolean retrySafe;
-    final Optional<ResourceShape> resource;
-    private final String positionalMember;
     final String stability;
     final Optional<String> since;
 
@@ -85,14 +79,6 @@ final class OperationInfo {
         this.stability = CaitlynTraits.stability(op);
         this.since = CaitlynTraits.since(op);
 
-        // Naming, shared with the TypeScript and Go generators (model-support's ClientMethod).
-        ClientMethod cm = ClientMethod.of(model, op);
-        this.positionalMember = cm.positionalMember().orElse(null);
-        // A dotted path, outermost first (PROTOCOL.md 10): each segment in snake_case, the dots kept.
-        this.namespace = cm.path().stream().map(Names::snake).collect(java.util.stream.Collectors.joining("."));
-        this.method = Names.snake(cm.method());
-        this.resource = cm.resource();
-
         Map<String, HttpBinding> bindings = HttpBindingIndex.of(model).getRequestBindings(op);
         List<String> labelOrder = http.getUri().getLabels().stream().map(l -> l.getContent()).toList();
         for (MemberShape m : input.getAllMembers().values()) {
@@ -101,9 +87,6 @@ final class OperationInfo {
             params.add(new Param(m, b, Names.member(m.getMemberName()), greedy));
         }
         params.sort(Comparator.comparingInt((Param p) -> {
-            if (p.member.getMemberName().equals(positionalMember)) {
-                return -1;
-            }
             if (p.binding.getLocation() == HttpBinding.Location.LABEL) {
                 return labelOrder.indexOf(p.member.getMemberName());
             }
@@ -115,11 +98,6 @@ final class OperationInfo {
 
     List<Param> labels() {
         return params.stream().filter(p -> p.binding.getLocation() == HttpBinding.Location.LABEL).toList();
-    }
-
-    /** The resource identifier passed positionally (``conversations.send("c-1", message=…)``), if any. */
-    Optional<String> positional() {
-        return Optional.ofNullable(positionalMember);
     }
 
     Optional<Param> param(String memberName) {

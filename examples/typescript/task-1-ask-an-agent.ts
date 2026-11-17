@@ -1,5 +1,5 @@
 // Task 1: ask an agent a question and stream a cited, multi-turn answer.
-// conversations.create is not in the model yet; until it is, this starts from an existing conversation.
+// It carries on an existing conversation; agent.live.conversations.create() starts a new one.
 import { Caitlyn } from '@caitlyn-ai/sdk';
 
 const service = new Caitlyn({
@@ -10,9 +10,10 @@ declare function showChip(event: { label: string; status?: string }): void;
 
 export async function ask(conversationId: string): Promise<void> {
   const controller = new AbortController();
-  const stream = service.conversations.send(
-    conversationId,
-    { message: 'How many days of annual leave do staff get?', context: [{ type: 'page', label: 'Leave request form', data: { formId: 'LR-2231' } }] },
+  const conversation = service.conversations(conversationId);
+  const stream = conversation.send(
+    'How many days of annual leave do staff get?',
+    { context: [{ type: 'page', label: 'Leave request form', data: { formId: 'LR-2231' } }] },
     { signal: controller.signal },
   );
 
@@ -26,6 +27,6 @@ export async function ask(conversationId: string): Promise<void> {
   console.log(answer.agentVersion, answer.citations?.length);
 
   // Follow-up in the same conversation; history is held server-side
-  const followUp = await service.conversations.send(conversationId, { message: 'Does that include public holidays?' }).finalMessage();
+  const followUp = await conversation.send('Does that include public holidays?').finalMessage();
   console.log(followUp.text);
 }

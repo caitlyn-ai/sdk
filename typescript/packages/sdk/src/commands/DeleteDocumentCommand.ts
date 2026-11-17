@@ -25,13 +25,12 @@ export interface DeleteDocumentCommandOutput extends DeleteDocumentOutput, __Met
 /**
  * Deletes a document; removing it from search continues after the response.
  *
- * Returns 202 with the document in `deleting`; wait for it to be gone with the SDKs'
- * `waitUntilDeleted`. Repeating the call while the document is still `deleting` returns 202 again;
+ * Returns 202 with the document in `deleting`; in the SDKs, `.wait()` on the result waits until it is
+ * gone. Repeating the call while the document is still `deleting` returns 202 again;
  * once it is gone, 404, as for any record that does not exist.
  *
- * A document still being processed (`pending` or `processing`) cannot be deleted yet: the call is
- * refused with 409 `CONFLICT`. Wait until it is `indexed`, `partially_indexed` or `failed`, for
- * example with the SDKs' `waitUntilIndexed`, then delete it.
+ * A document still being processed (`pending` or `processing`) is deleted too: its processing stops,
+ * and it does not come back.
  *
  * Needs the files delete permission, read access to the knowledge base and access to the
  * document's folder.
@@ -52,27 +51,90 @@ export interface DeleteDocumentCommandOutput extends DeleteDocumentOutput, __Met
  * // { // DeleteDocumentOutput
  * //   requestId: "STRING_VALUE",
  * //   apiVersion: "STRING_VALUE",
- * //   id: "STRING_VALUE", // required
- * //   knowledgeBaseId: "STRING_VALUE", // required
- * //   name: "STRING_VALUE", // required
- * //   folder: "STRING_VALUE", // required
- * //   status: "pending" || "processing" || "indexed" || "partially_indexed" || "failed" || "deleting", // required
- * //   stage: "STRING_VALUE",
- * //   contentType: "STRING_VALUE",
- * //   byteSize: Number("long"),
- * //   sha256: "STRING_VALUE",
- * //   createdAt: new Date("TIMESTAMP"), // required
- * //   updatedAt: new Date("TIMESTAMP"), // required
- * //   partialFailures: [ // PartialFailureList
- * //     { // PartialFailure
- * //       targetId: "STRING_VALUE",
- * //       code: "STRING_VALUE", // required
- * //       detail: "STRING_VALUE",
+ * //   etag: "STRING_VALUE", // required
+ * //   document: { // Document
+ * //     id: "STRING_VALUE", // required
+ * //     knowledgeBaseId: "STRING_VALUE", // required
+ * //     name: "STRING_VALUE", // required
+ * //     folder: "STRING_VALUE", // required
+ * //     status: "pending" || "processing" || "indexed" || "partially_indexed" || "failed" || "deleting", // required
+ * //     stage: "STRING_VALUE",
+ * //     contentType: "STRING_VALUE",
+ * //     byteSize: Number("long"),
+ * //     sha256: "STRING_VALUE",
+ * //     version: Number("int"),
+ * //     versionCount: Number("int"),
+ * //     latestVersion: { // LatestVersion
+ * //       number: Number("int"), // required
+ * //       status: "pending" || "processing" || "indexed" || "partially_indexed" || "failed" || "deleting", // required
+ * //       stage: "STRING_VALUE",
+ * //       failure: { // DocumentFailure
+ * //         code: "file_unreadable" || "processing_interrupted" || "processing_failed" || "cancelled", // required
+ * //         message: "STRING_VALUE", // required
+ * //       },
+ * //       createdAt: new Date("TIMESTAMP"), // required
  * //     },
- * //   ],
- * //   failure: { // DocumentFailure
- * //     code: "file_unreadable" || "processing_interrupted" || "processing_failed", // required
- * //     message: "STRING_VALUE", // required
+ * //     superseded: true || false,
+ * //     sourceUrl: "STRING_VALUE",
+ * //     externalId: "STRING_VALUE",
+ * //     metadata: { // DocumentMetadata
+ * //       "<keys>": "DOCUMENT_VALUE",
+ * //     },
+ * //     extraMetadata: { // ExtraMetadata
+ * //       "<keys>": "DOCUMENT_VALUE",
+ * //     },
+ * //     readers: { // Readers
+ * //       kind: "inherit" || "everyone" || "specific", // required
+ * //       roles: [ // RoleIdList
+ * //         "STRING_VALUE",
+ * //       ],
+ * //       people: [ // UserIdList
+ * //         "STRING_VALUE",
+ * //       ],
+ * //     },
+ * //     inheritedFrom: "STRING_VALUE",
+ * //     outOfDate: true || false,
+ * //     pageCount: Number("int"),
+ * //     durationSeconds: Number("double"),
+ * //     processing: { // DocumentProcessing
+ * //       kind: "ingest" || "fill_in" || "reprocess" || "reembed", // required
+ * //       stage: "pages" || "content" || "pictures" || "transcript" || "frames" || "metadata" || "seams" || "segments" || "passages" || "chunks" || "index" || "document" || "reembed",
+ * //       percent: Number("int"), // required
+ * //       eta: { // Eta
+ * //         seconds: { // NumberRange
+ * //           low: Number("double"), // required
+ * //           high: Number("double"), // required
+ * //         },
+ * //       },
+ * //       estimate: { // ProcessingEstimate
+ * //         durationSeconds: {
+ * //           low: Number("double"), // required
+ * //           high: Number("double"), // required
+ * //         },
+ * //         cost: { // Cost
+ * //           low: Number("double"), // required
+ * //           high: Number("double"), // required
+ * //           unit: "usd" || "percent_of_plan", // required
+ * //         },
+ * //         refined: true || false, // required
+ * //       },
+ * //       startedAt: new Date("TIMESTAMP"), // required
+ * //       updatedAt: new Date("TIMESTAMP"), // required
+ * //     },
+ * //     createdAt: new Date("TIMESTAMP"), // required
+ * //     updatedAt: new Date("TIMESTAMP"), // required
+ * //     partialFailures: [ // PartialFailureList
+ * //       { // PartialFailure
+ * //         targetId: "STRING_VALUE",
+ * //         code: "STRING_VALUE", // required
+ * //         detail: "STRING_VALUE",
+ * //       },
+ * //     ],
+ * //     failure: {
+ * //       code: "file_unreadable" || "processing_interrupted" || "processing_failed" || "cancelled", // required
+ * //       message: "STRING_VALUE", // required
+ * //     },
+ * //     etag: "STRING_VALUE", // required
  * //   },
  * // };
  *
@@ -83,10 +145,6 @@ export interface DeleteDocumentCommandOutput extends DeleteDocumentOutput, __Met
  * @see {@link DeleteDocumentCommandInput} for command's `input` shape.
  * @see {@link DeleteDocumentCommandOutput} for command's `response` shape.
  * @see {@link CaitlynClientResolvedConfig | config} for CaitlynClient's `config` shape.
- *
- * @throws {@link ConflictError} (client fault)
- *  The resource's state does not allow the request, a unique name is taken, or a request with the
- * same idempotency key is still in progress.
  *
  * @throws {@link NotFoundError} (client fault)
  *  The record does not exist, or the caller may not see it. The two are deliberately the same, so
@@ -112,8 +170,9 @@ export interface DeleteDocumentCommandOutput extends DeleteDocumentOutput, __Met
  *
  * @throws {@link ValidationError} (client fault)
  *  The request is malformed: a member is missing, the wrong type or out of range; it has a member,
- * filter or sort field the operation does not define; its cursor is not valid for this list; or it
- * asks to delete `draft` or `production`, which every agent keeps.
+ * filter or sort field the operation does not define; its cursor is not valid for this list; it
+ * asks to delete `draft` or `live`, which every agent keeps; an agent configuration would be
+ * larger than 256 KiB; or a file is meant for a conversation whose agent takes no attachments.
  *
  * @throws {@link CaitlynServiceException}
  * <p>Base exception class for all service exceptions from Caitlyn service.</p>
@@ -130,15 +189,19 @@ export interface DeleteDocumentCommandOutput extends DeleteDocumentOutput, __Met
  * const response = await client.send(command);
  * /* response is
  * {
- *   byteSize: 482113,
- *   contentType: "application/pdf",
- *   createdAt: "2026-11-10T01:02:03.000Z",
- *   folder: "/hr/",
- *   id: "doc-3b7f9e21",
- *   knowledgeBaseId: "KB4T7YQ2WL",
- *   name: "Leave policy.pdf",
- *   status: "deleting",
- *   updatedAt: "2026-11-15T03:04:05.000Z"
+ *   document: {
+ *     byteSize: 482113,
+ *     contentType: "application/pdf",
+ *     createdAt: "2026-11-10T01:02:03.000Z",
+ *     etag: `"4"`,
+ *     folder: "/hr/",
+ *     id: "doc-3b7f9e21",
+ *     knowledgeBaseId: "KB4T7YQ2WL",
+ *     name: "Leave policy.pdf",
+ *     status: "deleting",
+ *     updatedAt: "2026-11-15T03:04:05.000Z"
+ *   },
+ *   etag: `"4"`
  * }
  * *\/
  * ```
@@ -148,20 +211,6 @@ export interface DeleteDocumentCommandOutput extends DeleteDocumentOutput, __Met
  * //
  * const input = {
  *   documentId: "doc-00000000",
- *   knowledgeBaseId: "KB4T7YQ2WL"
- * };
- * const command = new DeleteDocumentCommand(input);
- * const response = await client.send(command);
- * /* response is
- * { /* metadata only *\/ }
- * *\/
- * ```
- *
- * @example A document that is still being processed
- * ```javascript
- * //
- * const input = {
- *   documentId: "doc-7c2d4e18",
  *   knowledgeBaseId: "KB4T7YQ2WL"
  * };
  * const command = new DeleteDocumentCommand(input);

@@ -1,5 +1,7 @@
 // A reference link in the sidebar that is cut with an ellipsis (src/styles/components.css) shows its full name in a
-// one-line popover with an arrow pointing at the link, on hover and keyboard focus.
+// one-line popover with an arrow pointing at the link, on hover and keyboard focus. An operation's or SDK helper's
+// entry (data-tip) always shows it: its title and the operation's name, or the helper's call in the site's code
+// language (data-full-<language>, set by src/scripts/lang-tabs.ts on <html data-lang>; TypeScript's otherwise).
 //
 // The popover is one element in the top layer (the Popover API), so the sidebar's own scrolling and clipping never
 // cut it, positioned from the link's box: to the link's right with the arrow pointing left, or below it with the
@@ -40,10 +42,16 @@ function place(a: HTMLElement): void {
   tip.style.setProperty('--arrow-x', `${Math.round(Math.min(Math.max(12, r.left + 24 - left), t.width - 12))}px`);
 }
 
+/** The tooltip's text: the site's code language's own, when the entry has one */
+function full(a: HTMLElement): string {
+  const lang = document.documentElement.dataset.lang;
+  return (lang && a.getAttribute(`data-full-${lang}`)) || a.dataset.full || '';
+}
+
 function show(a: HTMLElement): void {
-  if (!a.hasAttribute('data-cut')) return;
+  if (!a.hasAttribute('data-cut') && !a.hasAttribute('data-tip')) return;
   current = a;
-  label.textContent = a.dataset.full ?? '';
+  label.textContent = full(a);
   if (popover) {
     if (!tip.matches(':popover-open')) tip.showPopover();
   } else tip.classList.add('caitlyn-tip-open');

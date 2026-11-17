@@ -2,7 +2,7 @@
 agents.py (the docs' code) against the server, with the client pointed at CAITLYN_ENDPOINT. Prints exactly one line
 per check on stdout, `ok <check>`, `fail <check>: <why>` or `skip <check>: <why>`; what the examples themselves print
 goes to stderr. A check skips only without CAITLYN_KNOWLEDGE_BASE_ID or CAITLYN_PUBLISH_AGENT_ID; a 403 is a failure (the
-shared runner decides about the "public" role). The agent checks put the draft back and delete the version they pin."""
+shared runner decides about the "public" role). The agent checks put the draft back and delete the version they save."""
 
 from __future__ import annotations
 
@@ -22,11 +22,12 @@ from typing import Any
 import agents
 import conversations as ex
 import documents
-from caitlyn import Caitlyn, ConflictError, MessageStartedEvent, NotFoundError, PermissionDeniedError, WorkspaceConversationCreatedEvent, WorkspaceEvent
+import jobs
+from caitlyn import AgentGuidance, AgentVersion, Caitlyn, KnowledgeBaseScope, MessageStartedEvent, NotFoundError, PermissionDeniedError, WorkspaceConversationCreatedEvent, WorkspaceEvent
 from caitlyn.auth import Token
 
 TIMEOUT_SECONDS = 120
-WAIT_SECONDS = 900  # WaitUntilIndexed: a short text file indexes in minutes; the waiter's own limit is an hour
+WAIT_SECONDS = 900  # a short text file indexes in minutes
 caitlyn = Caitlyn(workspace=os.environ["CAITLYN_WORKSPACE"], endpoint=os.environ["CAITLYN_ENDPOINT"], auth=Token(os.environ["CAITLYN_TOKEN"]))
 agent_id = os.environ["CAITLYN_AGENT_ID"]
 knowledge_base_id = os.environ.get("CAITLYN_KNOWLEDGE_BASE_ID") or None  # an empty value counts as unset
@@ -99,26 +100,26 @@ def get_agent_version() -> str | None:
 
 def create_conversation() -> str | None:
     c = ex.create_conversation(caitlyn, agent_id)
-    if c.agent_id != agent_id or c.version != "draft":
-        return f"conversation for {c.agent_id} {c.version}"
-    return None if c.response_metadata and c.response_metadata.http_status_code == 201 else f"status {c.response_metadata}"
+    if c.result.agent_id != agent_id or c.result.version != "draft":
+        return f"conversation for {c.result.agent_id} {c.result.version}"
+    return None if c.result.response_metadata and c.result.response_metadata.http_status_code == 201 else f"status {c.result.response_metadata}"
 
 
 def send_message() -> str | None:
-    c = caitlyn.conversations.create(agent_id=agent_id, version="draft")
+    c = caitlyn.agents(agent_id).draft.conversations.create()
     text = ex.send_message(caitlyn, c.id)
     return None if text.strip() else "the answer was empty"
 
 
 def watch_conversation() -> str | None:
     """Watches a conversation while SendMessage, in another thread, has an answer in progress."""
-    c = caitlyn.conversations.create(agent_id=agent_id, version="draft")
+    c = caitlyn.agents(agent_id).draft.conversations.create()
     started = threading.Event()
     sent: dict[str, Any] = {}
 
     def send() -> None:
         try:
-            with caitlyn.conversations.send(c.id, message="In one sentence, what can you help me with?") as stream:
+            with c.send("In one sentence, what can you help me with?") as stream:
                 for event in stream:
                     if isinstance(event, MessageStartedEvent):
                         started.set()
@@ -133,7 +134,7 @@ def watch_conversation() -> str | None:
     started.wait(TIMEOUT_SECONDS)
     if "error" in sent:
         return f"SendMessage failed: {sent['error']}"
-    watched = ex.watch_conversation(caitlyn, c.id)
+    watched = ex.watch_conversation_events(caitlyn, c.id)
     sender.join(TIMEOUT_SECONDS)
     if "text" not in sent:
         return f"SendMessage did not finish: {sent.get('error')}"
@@ -162,7 +163,7 @@ def stream_reset() -> str | None:
     def refresh() -> None:
         log.append("refresh")
         # Something to carry on to: a conversation created after the reset.
-        created["id"] = caitlyn.conversations.create(agent_id=agent_id, version="draft").id
+        created["id"] = caitlyn.agents(agent_id).draft.conversations.create().id
 
     def handle(event: WorkspaceEvent) -> None:
         log.append(f"handle {event.type}")
@@ -204,7 +205,7 @@ state: dict[str, Any] = {}
 
 
 def create_upload() -> str | None:
-    upload = documents.create_upload(caitlyn, run_copy(FIRST_NAME))
+    upload = jobs.send_upload(caitlyn, run_copy(FIRST_NAME))
     state["upload"] = upload.id
     return None if upload.id else "no upload id"
 
@@ -216,53 +217,52 @@ def get_upload() -> str | None:
     return None if upload.id == state["upload"] else f"got upload {upload.id}"
 
 
-def need_knowledge_base() -> str:
+def need_knowledge_base() -> KnowledgeBaseScope:
     if knowledge_base_id is None:
         raise Skip(NO_KNOWLEDGE_BASE)
-    return knowledge_base_id
+    return caitlyn.knowledge_bases(knowledge_base_id)
 
 
 def create_document() -> str | None:
     kb = need_knowledge_base()
     if "upload" not in state:
         return "CreateUpload did not give an upload to add"
-    created = documents.create_document(caitlyn, kb, state["upload"])
-    state["document"] = created.document.id
-    remember(created.document.id)
-    return None if created.document.knowledge_base_id == kb else f"document in {created.document.knowledge_base_id}"
+    created = documents.create_document(kb, state["upload"])
+    state["document"] = created.id
+    remember(created.id)
+    return None if created.document.knowledge_base_id == kb.id else f"document in {created.document.knowledge_base_id}"
 
 
 def delete_processing_document() -> str | None:
-    """A document still being processed cannot be deleted yet: 409 CONFLICT. A third document is deleted the moment it
-    is created, while it is pending. A one-page PDF can index quickly, so if it has already finished processing, the
-    delete is accepted instead; that passes too, and says so on stderr. The clean-up deletes it once it is indexed."""
+    """A document still being processed can be deleted: a third document is deleted the moment it is created, the delete
+    is accepted, its wait ends once the document is gone, and the document does not come back."""
     kb = need_knowledge_base()
-    upload = caitlyn.uploads.create(file=run_copy(THIRD_NAME))
-    third = caitlyn.documents.create(knowledge_base_id=kb, upload_id=upload.id, folder=FOLDER).document
+    third = kb.documents.create(run_copy(THIRD_NAME), folder=FOLDER)
     remember(third.id)
+    third.delete().wait(timeout=WAIT_SECONDS)
     try:
-        deleted = caitlyn.documents.delete(knowledge_base_id=kb, document_id=third.id)
-    except ConflictError as e:
-        return None if e.code == "CONFLICT" else f"409 with code {e.code}"
-    if deleted.status != "deleting":
-        return f"the delete was neither refused nor accepted: {deleted.status}"
-    print(f"DeleteDocument.processing: {third.id} had already finished processing; the delete was accepted", file=sys.stderr)
-    return None
+        third.get()
+        return "the document can still be read after its delete"
+    except NotFoundError:
+        pass
+    forget(third.id)
+    names = [doc.id for doc in kb.documents.list(folder=FOLDER)]
+    return None if third.id not in names else "the deleted document is listed again"
 
 
 def get_document() -> str | None:
     kb = need_knowledge_base()
     if "document" not in state:
         return "CreateDocument did not give a document to read"
-    doc = documents.get_document(caitlyn, kb, state["document"])
+    doc = documents.get_document(kb, state["document"])
     return None if doc.id == state["document"] else f"got document {doc.id}"
 
 
-def wait_until_indexed() -> str | None:
+def wait_for_document() -> str | None:
     kb = need_knowledge_base()
     if "document" not in state:
         return "CreateDocument did not give a document to read"
-    doc = documents.wait_until_indexed(caitlyn, kb, state["document"])
+    doc = documents.wait_until_indexed(kb, state["document"])
     return None if doc.status in ("indexed", "partially_indexed") else f"ended at {doc.status}"
 
 
@@ -272,7 +272,7 @@ def list_documents() -> str | None:
     kb = need_knowledge_base()
     if "document" not in state:
         return "CreateDocument did not give a document to list"
-    names = [doc.name for doc in caitlyn.documents.list(knowledge_base_id=kb, folder=FOLDER)]
+    names = [doc.name for doc in kb.documents.list(folder=FOLDER)]
     return None if FIRST_NAME in names else f"{FIRST_NAME} is not among the {len(names)} documents in {FOLDER}"
 
 
@@ -293,12 +293,12 @@ def delete_document() -> str | None:
     kb = need_knowledge_base()
     if "document" not in state:
         return "CreateDocument did not give a document to delete"
-    doc = documents.delete_document(caitlyn, kb, state["document"])
-    return None if doc.status == "deleting" else f"the document is {doc.status}, not deleting"
+    kb.documents(state["document"]).delete()
+    return None
 
 
 @contextlib.contextmanager
-def log_status_changes(kb: str, document_id: str) -> Iterator[None]:
+def log_status_changes(kb: KnowledgeBaseScope, document_id: str) -> Iterator[None]:
     """Diagnostics, not a check: prints each change in a document's status to stderr, read every 15 s while the
     block runs, so a delete that does not finish shows what the document did instead."""
     stop = threading.Event()
@@ -307,8 +307,8 @@ def log_status_changes(kb: str, document_id: str) -> Iterator[None]:
         started, last = time.monotonic(), ""
         while not stop.is_set():
             try:
-                d = caitlyn.documents.get(knowledge_base_id=kb, document_id=document_id)
-                now = " ".join(str(v) for v in (d.status, d.stage, d.failure.code if d.failure else None) if v)
+                d = kb.documents(document_id).get()
+                now = " ".join(str(v) for v in (d.status, d.processing.stage if d.processing else None, d.failure.code if d.failure else None) if v)
             except NotFoundError:
                 now = "404"
             except Exception as err:  # diagnostics only: any other error is shown by its type
@@ -329,28 +329,29 @@ def log_status_changes(kb: str, document_id: str) -> Iterator[None]:
 def batch_delete_documents() -> str | None:
     """A second document, from a new upload, deleted in a batch with an identifier that does not exist."""
     kb = need_knowledge_base()
-    upload = caitlyn.uploads.create(file=run_copy(SECOND_NAME))
-    second = caitlyn.documents.create(knowledge_base_id=kb, upload_id=upload.id, folder=FOLDER).document.id
+    second = kb.documents.create(run_copy(SECOND_NAME), folder=FOLDER).id
     remember(second)
-    # Only a document that has finished processing can be deleted
-    caitlyn.documents.wait_until_indexed(knowledge_base_id=kb, document_id=second)
     missing = second[:-1] + ("0" if second[-1] != "0" else "1")  # same shape, no such document
     with log_status_changes(kb, second):
-        batch = documents.batch_delete_documents(caitlyn, kb, [second, missing])
+        batch = documents.delete_many(kb, [second, missing])
         got = [(r.document_id, str(r.status), r.code) for r in batch.results]
         want = [(second, "accepted", None), (missing, "failed", "NOT_FOUND")]
         if got != want:
             return f"results {got}, expected {want}"
-        caitlyn.documents.wait_until_deleted(knowledge_base_id=kb, document_id=second)
+        with contextlib.suppress(NotFoundError):  # it is gone once its wait ends in a 404
+            kb.documents(second).wait(timeout=WAIT_SECONDS)
     forget(second)
     return None
 
 
-def wait_until_deleted() -> str | None:
+def delete_document_wait() -> str | None:
     kb = need_knowledge_base()
     if "document" not in state:
         return "CreateDocument did not give a document to wait for"
-    documents.wait_until_deleted(caitlyn, kb, state["document"])
+    try:
+        kb.documents(state["document"]).wait(timeout=WAIT_SECONDS)
+    except NotFoundError:
+        pass  # gone already
     forget(state["document"])
     return None
 
@@ -362,13 +363,9 @@ def delete_leftover_documents() -> None:
     if knowledge_base_id is None or not created_documents:
         return
     leftover = list(created_documents)
-    # Only a document that has finished processing can be deleted: wait for each first. A failed document can be
-    # deleted too, and one already deleting is accepted again, so the wait's own outcome does not matter.
-    for document_id in leftover:
-        with contextlib.suppress(Exception):
-            caitlyn.documents.wait_until_indexed(knowledge_base_id=knowledge_base_id, document_id=document_id, max_wait=900)
+    kb = caitlyn.knowledge_bases(knowledge_base_id)
     try:
-        batch = caitlyn.documents.batch_delete(knowledge_base_id=knowledge_base_id, document_ids=leftover)
+        batch = kb.documents.delete_many(leftover)
         for result in batch.results:
             if result.status != "accepted":
                 print(f"clean-up: {result.document_id} was not deleted: {result.code} {result.detail or ''}".rstrip(), file=sys.stderr)
@@ -376,103 +373,111 @@ def delete_leftover_documents() -> None:
         print(f"clean-up: the batch delete of {leftover} failed: {type(e).__name__}: {e}", file=sys.stderr)
     for document_id in leftover:
         try:
-            caitlyn.documents.wait_until_deleted(knowledge_base_id=knowledge_base_id, document_id=document_id, max_wait=300)
+            kb.documents(document_id).wait(timeout=300)
+        except NotFoundError:
+            pass  # gone
         except Exception as e:  # noqa: BLE001
             print(f"clean-up: {document_id} may be left in the knowledge base: {type(e).__name__}: {e}", file=sys.stderr)
 
 
 # ------------------------------------------------------------------ agent versions (put back as they were)
 
-pin_name = f"sdk-python-check-{secrets.token_hex(3)}"
+def instructions_of(version: AgentVersion) -> str | None:
+    guidance = version.configuration.guidance if version.configuration else None
+    return guidance.instructions if guidance else None
+
+
+saved_name = f"sdk-python-check-{secrets.token_hex(3)}"
 original: str | None = None
-"""The draft's instructions before the agent checks, read by PinDraftVersion."""
+"""The draft's instructions before the agent checks, read by SaveDraftVersion."""
 restored = False
-pinned = False
+saved = False
 
 
-def pin_draft() -> str | None:
-    global pinned, original
-    original = caitlyn.agents.versions.get(agent_id=agent_id, version="draft").configuration.instructions
-    result = agents.pin_draft(caitlyn, agent_id, pin_name)
-    pinned = True
-    return None if result.name == pin_name and result.configuration.instructions == original else f"pinned {result.name}"
+def save_draft() -> str | None:
+    global saved, original
+    original = instructions_of(caitlyn.agents(agent_id).draft.get())
+    result = agents.save_draft(caitlyn.agents(agent_id), saved_name)
+    saved = True
+    return None if result.name == saved_name and instructions_of(result) == original else f"saved {result.name}"
 
 
 def update_draft() -> str | None:
-    if not pinned or original is None:
-        return "PinDraftVersion did not pin the draft, so it could not be put back; not changed"
+    if not saved or original is None:
+        return "SaveDraftVersion did not save the draft, so it could not be put back; not changed"
     changed = original + "\n\n(Checked by the Python SDK's examples.)"
-    draft = agents.update_draft(caitlyn, agent_id, changed)
-    return None if draft.configuration.instructions == changed else "the draft did not change"
+    draft = agents.update_draft(caitlyn.agents(agent_id), changed)
+    return None if instructions_of(draft) == changed else "the draft did not change"
 
 
 def list_versions() -> str | None:
-    # The list holds named versions only: the draft and production are not entries.
-    if not pinned:
-        return "PinDraftVersion did not pin a version to look for"
-    names = agents.list_versions(caitlyn, agent_id)
-    return None if pin_name in names else f"the pinned version {pin_name} is not listed"
+    # The list holds named versions only: the draft and live are not entries.
+    if not saved:
+        return "SaveDraftVersion did not save a version to look for"
+    names = agents.list_versions(caitlyn.agents(agent_id))
+    return None if saved_name in names else f"the saved version {saved_name} is not listed"
 
 
 def publish_version() -> str | None:
-    """On the publish agent only: pin its draft under a unique name, publish that with production's ETag, check
-    published_at, then delete the pinned version (production keeps what was published)."""
+    """On the publish agent only: save its draft under a unique name, publish that (a rollback's shape), check the
+    history entry, then delete the saved version (live keeps what was published)."""
     if publish_agent_id is None:
         raise Skip(NO_PUBLISHING)
+    agent = caitlyn.agents(publish_agent_id)
     name = f"sdk-python-publish-{secrets.token_hex(3)}"
-    caitlyn.agents.versions.pin(publish_agent_id, name=name)
+    agent.draft.save(name)
     try:
-        published = agents.publish_version(caitlyn, publish_agent_id, name)
+        published = agent.versions(name).publish()
     finally:
-        caitlyn.agents.versions.delete(agent_id=publish_agent_id, version=name)
-    return None if published.published_at is not None else "production has no published_at"
+        agent.versions(name).delete()
+    return None if published.history_entry.version == name else f"live history names {published.history_entry.version}"
 
 
-def list_production_history() -> str | None:
-    agents.list_production_history(caitlyn, agent_id)  # an empty history is a pass: the call returned a page
+def list_history() -> str | None:
+    agents.list_history(caitlyn.agents(agent_id))  # an empty history is a pass: the call returned a page
     return None
 
 
-def get_production_history() -> str | None:
+def get_history() -> str | None:
     """Entries come from publishing, so this reads the publish agent's history."""
     if publish_agent_id is None:
         raise Skip(NO_PUBLISHING)
-    ids = agents.list_production_history(caitlyn, publish_agent_id)
+    ids = agents.list_history(caitlyn.agents(publish_agent_id))
     if not ids:
-        return "the publish agent has no production history, even after PublishAgentVersion"
-    entry = agents.get_production_history(caitlyn, publish_agent_id, ids[0])
+        return "the publish agent has no live history, even after PublishAgentVersion"
+    entry = agents.get_history(caitlyn.agents(publish_agent_id), ids[0])
     return None if entry.id == ids[0] else f"got entry {entry.id}"
 
 
 def reset_draft() -> str | None:
     global restored
-    if not pinned:
-        return "PinDraftVersion did not pin a version to reset from"
-    draft = agents.reset_draft(caitlyn, agent_id, pin_name)
-    restored = draft.configuration.instructions == original
-    return None if restored else "the draft does not match the pinned version"
+    if not saved:
+        return "SaveDraftVersion did not save a version to reset from"
+    draft = agents.reset_draft(caitlyn.agents(agent_id), saved_name)
+    restored = instructions_of(draft) == original
+    return None if restored else "the draft does not match the saved version"
 
 
 def delete_version() -> str | None:
-    global pinned
-    if not pinned:
-        return "PinDraftVersion did not pin a version to delete"
-    agents.delete_version(caitlyn, agent_id, pin_name)
-    pinned = False
-    names = agents.list_versions(caitlyn, agent_id)
-    return None if pin_name not in names else "the version is still listed"
+    global saved
+    if not saved:
+        return "SaveDraftVersion did not save a version to delete"
+    agents.delete_version(caitlyn.agents(agent_id), saved_name)
+    saved = False
+    names = agents.list_versions(caitlyn.agents(agent_id))
+    return None if saved_name not in names else "the version is still listed"
 
 
 def put_back() -> None:
-    """If a check failed part way, the draft and the pinned version are put back regardless."""
+    """If a check failed part way, the draft and the saved version are put back regardless."""
     with contextlib.suppress(Exception):
         if not restored and original is not None:
-            draft = caitlyn.agents.versions.get(agent_id=agent_id, version="draft")
-            if draft.configuration.instructions != original:
-                caitlyn.agents.versions.update_draft(agent_id, if_match=draft.etag, instructions=original)
+            draft = caitlyn.agents(agent_id).draft.get()
+            if instructions_of(draft) != original:
+                caitlyn.agents(agent_id).draft.update(if_match=draft.etag, guidance=AgentGuidance(instructions=original))
     with contextlib.suppress(Exception):
-        if pinned:
-            caitlyn.agents.versions.delete(agent_id=agent_id, version=pin_name)
+        if saved:
+            caitlyn.agents(agent_id).versions(saved_name).delete()
 
 
 CHECKS: list[tuple[str, Callable[[], str | None], int]] = [
@@ -488,17 +493,17 @@ CHECKS: list[tuple[str, Callable[[], str | None], int]] = [
     ("CreateDocument", create_document, TIMEOUT_SECONDS),
     ("DeleteDocument.processing", delete_processing_document, TIMEOUT_SECONDS),
     ("GetDocument", get_document, TIMEOUT_SECONDS),
-    ("WaitUntilIndexed", wait_until_indexed, WAIT_SECONDS),
+    ("Document.wait", wait_for_document, WAIT_SECONDS),
     ("ListDocuments", list_documents, TIMEOUT_SECONDS),
     ("DeleteDocument", delete_document, TIMEOUT_SECONDS),
     ("BatchDeleteDocuments", batch_delete_documents, WAIT_SECONDS),
-    ("WaitUntilDeleted", wait_until_deleted, WAIT_SECONDS),
-    ("PinDraftVersion", pin_draft, TIMEOUT_SECONDS),
+    ("DeleteDocument.wait", delete_document_wait, WAIT_SECONDS),
+    ("SaveDraftVersion", save_draft, TIMEOUT_SECONDS),
     ("UpdateDraftVersion", update_draft, TIMEOUT_SECONDS),
     ("ListAgentVersions", list_versions, TIMEOUT_SECONDS),
     ("PublishAgentVersion", publish_version, TIMEOUT_SECONDS),
-    ("ListProductionHistory", list_production_history, TIMEOUT_SECONDS),
-    ("GetProductionHistory", get_production_history, TIMEOUT_SECONDS),
+    ("ListHistoryEntries", list_history, TIMEOUT_SECONDS),
+    ("GetHistoryEntry", get_history, TIMEOUT_SECONDS),
     ("ResetDraftVersion", reset_draft, TIMEOUT_SECONDS),
     ("DeleteAgentVersion", delete_version, TIMEOUT_SECONDS),
 ]

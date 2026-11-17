@@ -15,14 +15,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { frontMatter, metadataProblems, sinceVersion } from './docs-metadata.mjs';
 import { MARKER, readPages } from './docs-guides.mjs';
-import { kebab, loadModel, root } from './docs-model.mjs';
-import { referencePages, sdkOverview } from './docs-reference.mjs';
-import { apiOverview, apiPages, namespaceLabel, namespaceTree, publishedOpenapi } from './docs-api.mjs';
+import { fillIfMatchOptional, fillNotAvailable, ifMatchOptional, kebab, loadModel, root } from './docs-model.mjs';
+import { RENAMED_TYPES, referencePages, sdkOverview } from './docs-reference.mjs';
+import { SDK_TYPES, addIngestionIntro, apiOverview, apiPages, entryTips, publishedOpenapi, sdkReturns, sdkTypePages, sidebarGroups, sidebarLabel } from './docs-api.mjs';
 import { documentProblems, lineProblems } from './docs-wording.mjs';
+import { LIVE_URL, isLive, lastModified, robotsTxt, sitemapXml } from './docs-sitemap.mjs';
+import { atomFeed, changelogPage, parseChangelog } from './docs-changelog.mjs';
 
 // Where the site is served: https://build.caitlyn.ai, at the root; a merge request's preview is the same build at the
-// root of its own host (docs:preview). pages.json, llms.txt and the moved pages name these addresses.
-const PROD_URL = 'https://build.caitlyn.ai';
+// root of its own host (docs:preview). pages.json, llms.txt, the sitemap and the moved pages name these addresses.
+const PROD_URL = LIVE_URL;
 const out = path.join(root, 'build/docs');
 const site = path.join(out, 'site');
 const project = path.join(root, 'docs/site');
@@ -50,7 +52,7 @@ function latestRelease() {
 const release = latestRelease();
 if (release === 'vX.Y.Z') console.warn('docs-build: no v* release tag in this checkout, so the install instructions say vX.Y.Z');
 
-/** A hand-written page's body: without front matter, its `# title`, or the example markers (build plumbing). */
+/** A hand-written page's body (its "Not available yet" marker already filled, scripts/docs-model.mjs): without front matter, its `# title`, or the example markers (build plumbing). */
 function handWrittenBody(markdown) {
   const lines = markdown.replace(/^---\n[\s\S]*?\n---\n/, '').split('\n');
   const title = lines.findIndex((l) => /^# /.test(l));
@@ -78,15 +80,15 @@ const pages = [];
 for (const p of readPages()) {
   for (const problem of p.problems) fail(p.file, problem);
   const section = SECTIONS.find((s) => p.slug.startsWith(`${s.dir}/`));
-  pages.push({ slug: p.slug, title: p.title, metadata: p.metadata, body: handWrittenBody(p.markdown), source: p.file, kind: p.slug.startsWith('guides/') ? 'guides' : section ? section.dir : 'pages' });
+  pages.push({ slug: p.slug, title: p.title, metadata: p.metadata, body: handWrittenBody(fillIfMatchOptional(fillNotAvailable(p.markdown, { operations: p.metadata?.operations ?? [] }), ifMatchOptional(ast))), source: p.file, kind: p.slug.startsWith('guides/') ? 'guides' : section ? section.dir : 'pages' });
 }
 const reference = referencePages(ast);
 for (const p of reference.pages) {
   for (const problem of metadataProblems(p.metadata)) fail(`${p.slug} (generated)`, problem);
   pages.push({ ...p, source: 'the model', kind: p.group === 'errors' ? 'errors' : p.group === 'types' ? 'types' : 'reference' });
 }
-const namespaces = [...new Set(reference.ops.map((o) => o.namespace))];
-const tree = namespaceTree(reference.ops);
+// The groups the sidebars, the overviews and the OpenAPI document's tags share: the client tree (scripts/docs-api.mjs)
+const tree = reference.tree;
 
 // The SDK reference's overview (/sdk/): Getting started's install and first call, and Authentication's modes table
 // (its links made to point at that page), as their readers know them
@@ -113,7 +115,7 @@ pages.push({
 // check as the pages.
 const { doc: openapi, problems: openapiProblems } = publishedOpenapi(JSON.parse(fs.readFileSync(path.join(root, 'model/openapi.json'), 'utf8')), {
   ops: reference.ops,
-  namespaceLabel,
+  tree,
   sdkSlug: (op) => `sdk/${kebab(op.name)}`,
   examples: reference.examples,
 });
@@ -122,14 +124,16 @@ for (const problem of documentProblems(openapi)) fail('the published OpenAPI doc
 const api = apiPages(openapi, {
   ast,
   ops: reference.ops,
-  sdkPages: new Map(reference.pages.filter((p) => p.operation).map((p) => [p.title, p])),
+  sdkPages: new Map(reference.pages.filter((p) => p.operation).map((p) => [p.operation.name, p])),
   typePages: reference.typePages,
-  namespaceLabel,
+  tree,
+  unreleased: reference.unreleased,
+  next: reference.next,
 });
 pages.push({
   slug: 'api',
   title: 'Caitlyn v3 HTTP API',
-  metadata: { pageType: 'reference', sinceVersion: Math.min(...api.pages.map((p) => p.metadata.sinceVersion)), resources: [...new Set(api.pages.flatMap((p) => p.metadata.resources))], integrations: [], operations: api.pages.map((p) => p.title) },
+  metadata: { pageType: 'reference', sinceVersion: Math.min(...api.pages.map((p) => p.metadata.sinceVersion)), resources: [...new Set(api.pages.flatMap((p) => p.metadata.resources))], integrations: [], operations: api.pages.map((p) => p.operation.name) },
   ...apiOverview(api.pages, { tree }),
   source: 'the OpenAPI document',
   kind: 'api',
@@ -138,6 +142,23 @@ pages.push({
   apiAnchors: api.anchors,
 });
 for (const p of api.pages) pages.push({ ...p, source: 'the OpenAPI document', kind: 'api' });
+// What each SDK call returns and raises, in each language, for the response panes of both references' operation pages
+// (src/components/OperationPanel.astro); the HTTP view keeps the HTTP response alone
+const returned = sdkReturns({ ast, ops: reference.ops, tree, typePages: reference.typePages, sdkSlug: (op) => `sdk/${kebab(op.name)}` });
+for (const p of pages) {
+  if (!p.operation) continue;
+  const r = returned[p.operation.name];
+  for (const lang of ['typescript', 'python', 'go', 'rust']) if (!r?.returns[lang]) fail(`${p.slug} (generated)`, `no ${lang} return type for ${p.operation.name}: scripts/docs-api.mjs sdkReturns could not read it from the SDK`);
+  p.operation = { ...p.operation, returns: r?.returns ?? {}, errorClasses: r?.errorClasses ?? {} };
+}
+// Every type a response pane names has a page: a model type's, an operation's Response section, or its entry in the
+// SDK types area (scripts/docs-api.mjs sdkTypePages), whose pages are the SDK reference's
+for (const [name, r] of Object.entries(returned)) {
+  for (const [lang, names] of Object.entries(r.unlinked)) for (const n of names) fail(`sdk/${kebab(name)} (generated)`, `the ${lang} return type ${n} has no page: give its family in scripts/docs-api.mjs sdkTypeFamily`);
+}
+for (const p of sdkTypePages(returned[SDK_TYPES])) pages.push({ ...p, source: 'the SDKs', kind: 'reference' });
+// "New to ingestion?" under the summary of every ingestion page, once the guide it points at is a page (scripts/docs-api.mjs)
+if (!addIngestionIntro(pages)) console.warn('docs-build: no guides/how-ingestion-works page yet, so the ingestion pages leave out "New to ingestion?"');
 // The SDK reference lives under /sdk/ (the HTTP API's reference is /api/). Its pages were /reference/, which the pages
 // and the generator still write: each slug and link moves here, and every old address redirects to its new one.
 const SDK_REFERENCE = 'sdk';
@@ -150,6 +171,37 @@ for (const p of pages) {
   }
   p.body = p.body.replace(/\]\(\/reference\//g, `](/${SDK_REFERENCE}/`);
   if (p.siteBody) p.siteBody = p.siteBody.replace(/\]\(\/reference\//g, `](/${SDK_REFERENCE}/`);
+}
+// The type pages one type per thing replaced (scripts/docs-reference.mjs RENAMED_TYPES) redirect to the thing's page,
+// at the SDK reference's address and its old /reference/ one
+for (const [from, to] of Object.entries(RENAMED_TYPES)) {
+  const target = `/${SDK_REFERENCE}/types/${kebab(to)}/`;
+  if (!pages.some((p) => `/${p.slug}/` === target)) fail('scripts/docs-reference.mjs', `RENAMED_TYPES sends ${from} to ${to}, which has no type page`);
+  if (pages.some((p) => p.slug === `${SDK_REFERENCE}/types/${kebab(from)}`)) fail('scripts/docs-reference.mjs', `RENAMED_TYPES redirects ${from}, which still has a type page`);
+  moved.set(`/${SDK_REFERENCE}/types/${kebab(from)}/`, target);
+  moved.set(`/reference/types/${kebab(from)}/`, target);
+}
+// Every redirect (src/generated/redirects.json) sends its reader to a page the site builds, and none comes from one
+for (const [from, to] of moved) {
+  if (!pages.some((p) => `/${p.slug ? `${p.slug}/` : ''}` === to)) fail('the redirects', `${from} redirects to ${to}, which is no page`);
+  if (pages.some((p) => `/${p.slug}/` === from)) fail('the redirects', `${from} redirects, but is a page`);
+}
+// The Changelog (/changelog/, scripts/docs-changelog.mjs): every SDK release in CHANGELOG.md, which semantic-release
+// writes, with links to the pages each change touches; its Atom feed is written beside it after the build
+const CHANGELOG_FEED = '/changelog/feed.xml';
+const releases = parseChangelog(fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8'));
+if (!releases.length) fail('CHANGELOG.md', 'no release headings the Changelog can read');
+for (const r of releases) if (!r.changes.length) fail('CHANGELOG.md', `the ${r.version} release lists no change the Changelog can read`);
+{
+  const { body, operations } = changelogPage(releases, pages, { feed: CHANGELOG_FEED });
+  pages.push({
+    slug: 'changelog',
+    title: 'Changelog',
+    metadata: { pageType: 'changelog', sinceVersion: 0, resources: [], integrations: [], operations },
+    body,
+    source: 'CHANGELOG.md',
+    kind: 'pages',
+  });
 }
 /** The heading ids a page will have: github-slugger over each heading's text, or its {#id} (as on the site). */
 function anchors(page) {
@@ -196,7 +248,7 @@ for (const p of pages) {
 for (const p of pages) {
   for (const m of p.body.matchAll(/\]\((\/[^)\s]*)\)/g)) {
     const [target, anchor] = m[1].split('#');
-    if (target === '/llms.txt' || target === '/llms-full.txt' || target === '/api/openapi.json') continue;
+    if (target === '/llms.txt' || target === '/llms-full.txt' || target === '/api/openapi.json' || target === CHANGELOG_FEED) continue;
     // A file the site publishes as it is, such as a screenshot in docs/site/public/images/
     if (!target.endsWith('/') && fs.existsSync(path.join(project, 'public', target))) continue;
     const slug = target.replace(/^\/|\/$/g, '');
@@ -217,7 +269,8 @@ function description(body) {
 }
 
 /** The canonical Markdown: knowledge-base front matter, the title (with the id Starlight gives it), the body. */
-const canonical = (p) => `${frontMatter(p.metadata)}\n# ${p.title} {#_top}\n\n${p.body.trimEnd()}\n`;
+/** An operation's or helper's page has its name under its title (`CreateDocument`). */
+const canonical = (p) => `${frontMatter(p.metadata)}\n# ${p.title} {#_top}\n\n${p.subtitle ? `\`${p.subtitle}\`\n\n` : ''}${p.body.trimEnd()}\n`;
 
 // --------------------------------------------------------------------------------- the Starlight project
 
@@ -228,7 +281,7 @@ fs.mkdirSync(generated, { recursive: true });
 const yaml = (v) => JSON.stringify(v); // JSON strings are valid YAML scalars
 
 // The start pages, in the sidebar's order
-const START = ['getting-started', 'authentication', 'errors', 'retries', 'streaming', 'pagination', 'telemetry', 'guides-in-the-app', 'faq'];
+const START = ['getting-started', 'how-to-integrate', 'authentication', 'errors', 'retries', 'streaming', 'pagination', 'telemetry', 'guides-in-the-app', 'faq', 'changelog'];
 // The start pages' labels: what each is about, so a card's label tells the reader something
 const START_LABELS = {
   '': 'Overview',
@@ -239,6 +292,7 @@ const START_LABELS = {
   pagination: 'SDK behaviour',
   telemetry: 'SDK behaviour',
   faq: 'Questions',
+  changelog: 'Releases',
   'guides-in-the-app': 'Guides',
 };
 // Where a page sits, for the kicker above its title (docs/site/src/components/PageTitle.astro) and its card label
@@ -264,6 +318,8 @@ const ICONS = {
   pagination: 'list-format',
   telemetry: 'analytics',
   faq: 'question-circle',
+  changelog: 'rss',
+  'how-to-integrate': 'puzzle',
   'guides-in-the-app': 'open-book',
   embed: 'window',
   'sign-in': 'padlock',
@@ -379,6 +435,8 @@ for (const p of pages) {
   const fm = [
     '---',
     `title: ${yaml(p.title)}`,
+    // An operation's or helper's name, under its title (src/components/PageTitle.astro)
+    ...(p.subtitle ? [`subtitle: ${yaml(p.subtitle)}`] : []),
     `description: ${yaml(description(p.body))}`,
     // An explicit slug keeps the address exactly as written (Starlight would lower-case /errors/NOT_FOUND/)
     ...(p.slug ? [`slug: ${yaml(p.slug)}`] : ['tableOfContents: false', ...landing]),
@@ -393,7 +451,7 @@ for (const p of pages) {
     // An operation page's header strip (src/components/OperationHeader.astro): each SDK's call, the HTTP call and the
     // same operation in the HTTP API's reference
     // the same operation in the other reference: the API reference's page from the SDK reference, and back
-    ...(p.operation ? [`operation: ${yaml({ ...p.operation, other: p.kind === 'api' ? { label: 'In the SDK reference', link: `/sdk/${kebab(p.title)}/` } : { label: 'In the API reference', link: `/api/${kebab(p.title)}/` } })}`] : []),
+    ...(p.operation ? [`operation: ${yaml({ ...p.operation, other: p.kind === 'api' ? { label: 'In the SDK reference', link: `/sdk/${kebab(p.operation.name)}/` } : { label: 'In the API reference', link: `/api/${kebab(p.operation.name)}/` } })}`] : []),
     // The API reference's overview: its Server block (src/components/PageTitle.astro), and Scalar's old anchors
     // (#tag/documents/GET/v3/...), each sent on to its operation's page
     ...(p.server ? ['server: true'] : []),
@@ -415,20 +473,30 @@ const link = (p, label = p.title) => ({ label, link: `/${p.slug ? `${p.slug}/` :
 // (src/styles/components.css), and carries its full name for the tooltip shown when it is cut (src/scripts/sidebar-cut.ts).
 // The full name is the link's own text either way, so a screen reader reads all of it.
 const refLink = (p, label = p.label ?? p.title) => ({ ...link(p, label), attrs: { 'data-ref': '', 'data-full': label } });
+/** A sidebar entry whose label is code itself */
+const codeLink = (item) => ({ ...item, attrs: { ...item.attrs, 'data-code-label': '' } });
+/** An operation's or helper's sidebar entry: its label, and the tooltip scripts/docs-api.mjs entryTips gives it */
+const opLink = (p, label) => {
+  const base = refLink(p, label);
+  return { ...base, attrs: { ...base.attrs, ...entryTips(p) } };
+};
 const TOPIC_START = {
-  'how-the-api-works': ['streaming', 'pagination', 'retries', 'errors', 'telemetry'],
+  'how-the-api-works': ['authentication', 'streaming', 'pagination', 'retries', 'errors', 'telemetry'],
   guides: ['guides-in-the-app'],
 };
 const placed = new Set(Object.values(TOPIC_START).flat());
 const startPagesOf = (slugs) => slugs.filter((s) => bySlug.has(s)).map((s) => bySlug.get(s));
 const getStarted = [bySlug.get(''), ...startPagesOf(START.filter((s) => !placed.has(s))), ...pages.filter((p) => p.kind === 'pages' && p.slug !== '' && !START.includes(p.slug))];
+// The operations and helpers by the client's groups, nested to any depth, with the building blocks last and collapsed
+const sdkPageOf = (e) => pages.find((p) => p.kind === 'reference' && (e.op ? p.operation?.name === e.op.name : p.helper === e.helper.id));
 const referenceGroups = [
-  ...tree.map(function group(node) {
-    if (node.children) return { label: node.label, items: node.children.map(group) };
-    return { label: node.label, items: pages.filter((p) => p.kind === 'reference' && p.group === node.ns).map((p) => refLink(p)) };
-  }),
-  { label: 'Types', collapsed: true, items: pages.filter((p) => p.kind === 'types').map((p) => refLink(p)) },
-  { label: 'Error codes', collapsed: true, items: pages.filter((p) => p.kind === 'errors').map((p) => refLink(p)) },
+  ...sidebarGroups(tree, (e) => { const p = sdkPageOf(e); return opLink(p, sidebarLabel(e.op?.name ?? e.helper.id, p.label ?? p.title)); }),
+  // What the SDKs return around the API's results (handles, scopes, streams, lists, requests, error classes)
+  { label: 'SDK types', collapsed: true, items: pages.filter((p) => p.group === 'sdk-types').map((p) => refLink(p)) },
+  // A type's or an error code's name is code, so its entry is in the code face (data-code-label); every other entry is
+  // in the reading face
+  { label: 'Types', collapsed: true, items: pages.filter((p) => p.kind === 'types').map((p) => codeLink(refLink(p))) },
+  { label: 'Error codes', collapsed: true, items: pages.filter((p) => p.kind === 'errors').map((p) => codeLink(refLink(p))) },
 ];
 const guidePages = pages.filter((p) => p.kind === 'guides');
 const howItWorks = startPagesOf(TOPIC_START['how-the-api-works']);
@@ -458,15 +526,20 @@ const apiTopic = {
   icon: 'seti:json',
   items: [
     link(bySlug.get('api'), 'Overview'),
-    ...tree.map(function group(node) {
-      if (node.children) return { label: node.label, items: node.children.map(group) };
-      return { label: node.label, items: pages.filter((p) => p.kind === 'api' && p.group === node.ns).map((p) => refLink(p)) };
-    }),
+    // The same groups; the SDK helpers have no HTTP operation, so they are left out
+    ...sidebarGroups(tree, (e) => { const p = e.op && pages.find((q) => q.kind === 'api' && q.operation?.name === e.op.name); return p ? opLink(p, sidebarLabel(e.op.name, p.label ?? p.title)) : null; }),
     // The types and error codes are the SDK reference's pages: shortcuts to them
     ...referenceGroups.filter((g) => g.label === 'Types' || g.label === 'Error codes'),
   ],
 };
 sidebar.push(apiTopic);
+// No two entries side by side share a label, in any topic's sidebar (docs/site/test/sidebar.test.mjs checks the
+// reference sidebars before the build)
+(function distinct(items, where) {
+  const labels = items.map((i) => i.label);
+  for (const l of new Set(labels.filter((x, i) => labels.indexOf(x) !== i))) fail('the sidebar', `${where} lists "${l}" more than once`);
+  for (const i of items) if (i.items) distinct(i.items, `${where} > ${i.label}`);
+})(sidebar, 'the topics');
 // The site's icons (src/generated/icons.css): Material Symbols Rounded (outlined, weight 400), the Caitlyn app's own set, for the sections
 // and the sidebar's groups, and Simple Icons' monochrome logos for the languages on code blocks and the language tabs.
 // Each is drawn in CSS as a mask filled with the text colour, 16px, so it is decorative (no text for a screen reader)
@@ -486,8 +559,11 @@ const iconUrl = (id) => {
 const TOPIC_ICONS = { 'Get started': 'rocket-launch-outline-rounded', Guides: 'menu-book-outline-rounded', 'How the API works': 'extension-outline-rounded', 'SDK reference': 'code-outline-rounded', 'API reference': 'api-outline-rounded' };
 const GROUP_ICONS = {
   Conversations: 'chat-bubble-outline-rounded', Documents: 'description-outline-rounded', Uploads: 'upload-outline-rounded',
-  Agents: 'smart-toy-outline-rounded', Versions: 'stacks-outline-rounded', 'Production history': 'history-rounded', Callers: 'badge-outline-rounded',
-  Events: 'notifications-outline-rounded',
+  Agents: 'smart-toy-outline-rounded', Versions: 'stacks-outline-rounded', 'Live history': 'history-rounded', Callers: 'badge-outline-rounded',
+  Events: 'notifications-outline-rounded', 'Knowledge bases': 'library-books-outline-rounded', History: 'history-rounded', Me: 'badge-outline-rounded',
+  Draft: 'edit-note-outline-rounded', Access: 'lock-outline-rounded', Fields: 'label-outline-rounded', Folders: 'folder-outline-rounded',
+  Ingestion: 'upload-file-outline-rounded', 'Configuration options': 'tune-rounded', 'Layout-aware search': 'dashboard-outline-rounded',
+  'Building blocks': 'construction-rounded',
   Types: 'data-object-outline-rounded', 'Error codes': 'warning-outline-rounded', 'Sign-in and identity': 'key-outline-rounded', Embed: 'web-outline-rounded',
   'Tools and connectors': 'power-outline-rounded',
 };
@@ -594,6 +670,35 @@ for (const p of pages) {
       if (id !== href) fail(`${p.slug} (generated)`, `the example link #${href} is not its heading's id, #${id}`);
     }
   }
+  // Every header chip is a copy button (docs/site/src/scripts/chip-fit.ts fits it; none scrolls)
+  if (p.operation && fs.existsSync(html)) {
+    const built = fs.readFileSync(html, 'utf8');
+    const codes = (built.match(/class="caitlyn-strip-code/g) ?? []).length;
+    const chips = (built.match(/class="caitlyn-chip[" ][^>]*data-chip=|data-chip="[^"]*"[^>]*class="caitlyn-chip/g) ?? []).length;
+    if (codes !== chips) fail(`${p.slug} (generated)`, `${codes - chips} of its header chips are not copy buttons`);
+  }
+  // Every tab strip has each language once, and a panel per tab (docs/site/src/plugins/remark-lang-tabs.mjs)
+  if (fs.existsSync(html)) {
+    for (const [group] of fs.readFileSync(html, 'utf8').matchAll(/<div class="lang-tabs"[\s\S]*?(?=<div class="lang-tabs"|$)/g)) {
+      const tabs = [...group.matchAll(/<button[^>]*class="lang-tab"[^>]*>|<button[^>]*data-lang="[^"]+"[^>]*class="lang-tab"[^>]*>/g)].map((m) => /data-lang="([^"]+)"/.exec(m[0])[1]);
+      const panels = (group.match(/class="lang-panel"/g) ?? []).length;
+      if (new Set(tabs).size !== tabs.length) fail(p.slug || 'index', `a tab strip has a language twice: ${tabs.join(', ')}`);
+      if (panels !== tabs.length) fail(p.slug || 'index', `a tab group has ${panels} panels for ${tabs.length} tabs`);
+    }
+  }
+  // Every link in a response pane's return and raise lines names a built page
+  if (p.operation && fs.existsSync(html)) {
+    const built = fs.readFileSync(html, 'utf8');
+    const lines = [...built.matchAll(/<span class="caitlyn-op-returns[^"]*"[\s\S]*?<\/p>/g)].map((m) => m[0]);
+    if (!lines.length) fail(`${p.slug} (generated)`, 'its response pane says what no call returns');
+    for (const line of lines) {
+      for (const [, href, anchor] of line.matchAll(/href="([^"#]*)(?:#([^"]*))?"/g)) {
+        const target = path.join(site, href, 'index.html');
+        if (!fs.existsSync(target)) fail(`${p.slug} (generated)`, `the response pane links to ${href}, which is no built page`);
+        else if (anchor && !fs.readFileSync(target, 'utf8').includes(`id="${anchor}"`)) fail(`${p.slug} (generated)`, `the response pane links to ${href}#${anchor}, which is no heading there`);
+      }
+    }
+  }
   const mdPath = p.slug ? `${p.slug}.md` : 'index.md';
   const md = canonical(p);
   fs.mkdirSync(path.dirname(path.join(site, mdPath)), { recursive: true });
@@ -639,6 +744,8 @@ const llms = [
   '',
 ];
 fs.writeFileSync(path.join(site, 'llms.txt'), llms.join('\n'));
+// The Changelog's Atom feed, at the address the page and every page's head name (docs/site/astro.config.mjs)
+fs.writeFileSync(path.join(site, CHANGELOG_FEED), atomFeed(releases, pages, { base: PROD_URL, feed: CHANGELOG_FEED }));
 const ordered = [...startPages, ...kind('guides'), ...SECTIONS.flatMap((s) => kind(s.dir)), ...kind('reference'), ...kind('api'), ...kind('types'), ...kind('errors')];
 fs.writeFileSync(
   path.join(site, 'llms-full.txt'),
@@ -648,5 +755,42 @@ fs.writeFileSync(
   path.join(out, 'pages.json'),
   JSON.stringify({ pages: entries.map(({ path: p, url, title, metadata }) => ({ path: p, url, title, metadata })) }, null, 2) + '\n',
 );
+
+// ----------------------------------------------------------------------------------- sitemap.xml, robots.txt
+
+// The live build lists every page at its canonical address in sitemap.xml, dated by its source's newest commit, and
+// robots.txt names it; any other build (a preview) publishes neither, and its pages carry noindex
+// (scripts/docs-sitemap.mjs, docs/site/astro.config.mjs).
+const live = isLive();
+// What a generated page is made from: its data and the scripts that write it
+const GENERATED_SOURCES = {
+  'the model': ['model', 'docs/helpers.json', 'scripts/docs-model.mjs', 'scripts/docs-reference.mjs', 'scripts/docs-api.mjs'],
+  'the OpenAPI document': ['model/openapi.json', 'scripts/docs-model.mjs', 'scripts/docs-api.mjs'],
+  'the SDKs': ['typescript', 'python', 'go', 'rust', 'scripts/docs-api.mjs'],
+};
+const sourcePaths = (p) => GENERATED_SOURCES[p.source] ?? [p.source];
+for (const e of entries) if (!sourcePaths(e.page).every((f) => fs.existsSync(path.join(root, f)))) fail(e.page.slug || 'index', `no source file for its sitemap date: ${sourcePaths(e.page).join(', ')}`);
+const buildDate = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+const { dates, dated } = lastModified(new Map(entries.map((e) => [e.page.source, sourcePaths(e.page)])), { cwd: root, fallback: buildDate });
+const sitemapFile = path.join(site, 'sitemap.xml');
+fs.rmSync(sitemapFile, { force: true });
+if (live) {
+  fs.writeFileSync(sitemapFile, sitemapXml(entries.map((e) => ({ loc: e.url, lastmod: dates.get(e.page.source) }))));
+  if (dated.size < dates.size) console.warn(`docs-build: git could not date ${dates.size - dated.size} of ${dates.size} page sources, so their sitemap lastmod is the build's date`);
+}
+fs.writeFileSync(path.join(site, 'robots.txt'), robotsTxt({ live, base: PROD_URL }));
+// Every built page says what the build is: indexed when live, noindex otherwise
+const robotsWant = live ? 'index, follow' : 'noindex';
+const htmlFiles = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? htmlFiles(path.join(dir, d.name)) : d.name.endsWith('.html') ? [path.join(dir, d.name)] : []));
+for (const file of htmlFiles(site)) {
+  const robots = /<meta name="robots" content="([^"]*)"/.exec(fs.readFileSync(file, 'utf8'))?.[1] ?? '';
+  const redirect = /^<!doctype html><title>Redirecting to:/.test(fs.readFileSync(file, 'utf8'));
+  if (!robots.startsWith(robotsWant) && !(redirect && robots === 'noindex')) fail(path.relative(site, file), `its robots meta is "${robots}", not "${robotsWant}" (DOCS_LIVE ${live ? 'is' : 'is not'} on)`);
+}
+if (invalid) {
+  console.error(`docs-build: ${invalid} problems.`);
+  process.exit(1);
+}
+
 const counts = ['pages', 'guides', ...SECTIONS.map((s) => s.dir), 'reference', 'api', 'types', 'errors'].map((k) => `${entries.filter((e) => e.page.kind === k).length} ${k === 'pages' ? 'start pages' : k}`);
-console.log(`docs-build: ${entries.length} pages (${counts.join(', ')}) in build/docs/site, each with its Markdown copy; llms.txt; release ${release}`);
+console.log(`docs-build: ${entries.length} pages (${counts.join(', ')}) in build/docs/site, each with its Markdown copy; llms.txt; ${live ? `the live build: sitemap.xml (${dated.size === dates.size ? 'every source dated by git' : `${dated.size} of ${dates.size} sources dated by git, the rest by the build`})` : 'a preview build: no sitemap, every page noindex'}; release ${release}`);

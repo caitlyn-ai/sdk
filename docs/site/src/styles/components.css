@@ -398,13 +398,42 @@
   text-transform: uppercase;
   color: #a8b0ad; /* cover-muted */
 }
+/* The copy button: one shape at rest and on hover, a square with rounded corners, fully visible. Its outline
+   (::before) and fill (the div) take the button's radius; the icon (::after, a mask) takes none, so no corner of the
+   icon is cut. It sits inside the block's padding, its centre on the first line's, in both themes (code is on
+   cover-ground in both). docs/site/test/copy-button.test.mjs keeps the icon unclipped and the button inside the
+   block. */
+.expressive-code .copy {
+  inset-block-start: 8px; /* space-2: the 32px button centred on the first line, whose box starts at space-4 */
+  inset-inline-end: 8px; /* space-2 */
+}
 .expressive-code .copy button {
+  width: 32px;
+  height: 32px;
   opacity: 1 !important;
   border-radius: var(--caitlyn-radius-button);
+  background: var(--caitlyn-primary-dark-100); /* cover-ground */
+}
+.expressive-code .copy button::before {
+  border: 1px solid #2e3331; /* rule (dark) */
+  border-radius: var(--caitlyn-radius-button);
+  opacity: 1;
+}
+.expressive-code .copy button div {
+  border-radius: var(--caitlyn-radius-button);
+  background: #ffffff; /* cover-ink, at a low opacity: Expressive Code's idle and hover fills */
+}
+.expressive-code .copy button:hover::before,
+.expressive-code .copy button:focus-visible::before {
+  border-color: #a8b0ad; /* cover-muted */
 }
 .expressive-code .copy button::after {
-  border-color: #a8b0ad; /* cover-muted */
-  border-radius: var(--caitlyn-radius-button);
+  margin: 7px; /* the 18px icon centred in the 32px square */
+  background-color: #a8b0ad; /* cover-muted */
+}
+.expressive-code .copy button:hover::after,
+.expressive-code .copy button:focus-visible::after {
+  background-color: #ffffff; /* cover-ink */
 }
 /* The language tabs become the code block's rounded header bar, and the frame under it continues the rounding */
 .lang-tabs-ready {
@@ -484,7 +513,10 @@
   font-size: var(--caitlyn-text-body); /* body */
   font-weight: 400;
 }
-.sidebar-content ul.top-level details details a {
+/* Every entry is in the reading face, nested or not. Only an entry whose label is code itself (a model type's name, an
+   error code: data-code-label, scripts/docs-build.mjs) is in the code face. docs/site/test/sidebar-fonts.test.mjs keeps
+   it so. */
+.sidebar-content a[data-code-label] {
   font-family: var(--__sl-font-mono, ui-monospace, monospace);
   font-size: var(--caitlyn-text-code-face); /* GAP: the code face runs larger than Euclid at one size */
 }
@@ -890,6 +922,44 @@ main:not(:has(p.caitlyn-lead)) .caitlyn-page-header {
   font-weight: 500;
   letter-spacing: -0.03em;
   max-width: none;
+}
+/* An operation's stability as a badge, beside its name under the title and in its Stability row: the REQUIRED pill's
+   shape, a tint per level (GA field green, Beta amber, Internal clay), in the status labels' fixed dark ink, which is
+   above 9:1 on each tint in both themes */
+.caitlyn-stability {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: var(--caitlyn-radius-inline);
+  color: var(--caitlyn-primary-dark-100);
+  font-family: var(--caitlyn-sans);
+  font-size: var(--caitlyn-text-kicker);
+  font-weight: 500;
+  line-height: 1.6;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.caitlyn-stability[data-stability='ga'] {
+  background: var(--caitlyn-field-accent-01);
+}
+.caitlyn-stability[data-stability='beta'] {
+  background: var(--caitlyn-amber-accent-01);
+}
+.caitlyn-stability[data-stability='internal'] {
+  background: var(--caitlyn-clay-accent-01);
+}
+.caitlyn-page-subtitle .caitlyn-stability {
+  margin: 0 0 0 10px;
+}
+/* An operation's or helper's name under its title (CreateDocument): the job is the title */
+.caitlyn-page-subtitle {
+  margin: 8px 0 0; /* space-2 */
+  color: var(--caitlyn-muted);
+}
+.caitlyn-page-subtitle code {
+  font-size: 0.9em;
 }
 .caitlyn-page-header[data-reference] .caitlyn-operation-strip {
   margin-top: 12px; /* space-3 */
@@ -2026,28 +2096,27 @@ main:has(.caitlyn-page-header[data-reference]) .sl-markdown-content > p.caitlyn-
 .caitlyn-server > * {
   margin: 0;
 }
-.caitlyn-server .caitlyn-server-url code {
+/* The field's label sits with the field, left-aligned above the address line, the block's gap closing to space-1 */
+.caitlyn-server .caitlyn-server-label {
+  margin-bottom: -4px;
+}
+/* The address on one line: https://, the field, /api; on a phone the field takes the line's room and the line
+   wraps rather than scroll */
+.caitlyn-server-var {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px; /* space-1 */
+}
+.caitlyn-server .caitlyn-server-fixed {
   padding: 0;
   border: 0;
   background: none;
   color: var(--caitlyn-muted);
   font-size: var(--caitlyn-text-code-face);
-  white-space: pre;
-  overflow-wrap: normal;
+  white-space: nowrap;
 }
-.caitlyn-server-url {
-  overflow-x: auto;
-}
-.caitlyn-server-url [data-workspace-host] {
-  color: var(--caitlyn-ink);
-  font-weight: 500;
-}
-.caitlyn-server-var {
-  display: flex;
-  align-items: center;
-  gap: 8px; /* space-2 */
-}
-.caitlyn-server .caitlyn-server-var label code {
+.caitlyn-server .caitlyn-server-label code {
   padding: 0;
   border: 0;
   background: none;
@@ -2055,7 +2124,7 @@ main:has(.caitlyn-page-header[data-reference]) .sl-markdown-content > p.caitlyn-
   font-size: var(--caitlyn-text-code-face);
 }
 .caitlyn-server-var input {
-  flex: 1;
+  flex: 1 1 14ch;
   min-width: 0;
   padding: 5px 10px;
   border: 1px solid var(--caitlyn-rule);
@@ -2150,20 +2219,59 @@ main:has(.caitlyn-page-header[data-reference]) .sl-markdown-content > p.caitlyn-
   min-width: 0;
   max-width: 100%;
 }
-.caitlyn-operation-strip .caitlyn-strip-code {
+/* A header chip never scrolls: it is cut in the middle to fit (src/scripts/chip-fit.ts), and is a button that copies
+   its whole value, showing "Copied" for a moment */
+.caitlyn-chip {
+  display: inline-flex;
+  position: relative;
   max-width: 100%;
-  overflow-x: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--caitlyn-radius-button);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: copy;
+  vertical-align: middle;
+}
+.caitlyn-chip:focus-visible {
+  outline: 2px solid var(--caitlyn-ink);
+  outline-offset: 2px;
+}
+.caitlyn-operation-strip .caitlyn-strip-code {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
   white-space: pre;
   overflow-wrap: normal;
-  vertical-align: middle;
+}
+/* A cut chip's popover shows its whole value in the code face, as the chip */
+.caitlyn-chip-tip {
+  font-family: var(--__sl-font-mono, ui-monospace, monospace);
+  font-size: var(--caitlyn-text-code-face);
+}
+.caitlyn-chip[data-copied]::after {
+  content: 'Copied';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--caitlyn-radius-button);
+  background: var(--caitlyn-primary-dark-100);
+  color: var(--caitlyn-pure-white);
+  font-size: var(--caitlyn-text-kicker);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 /* The sidebar popover never runs off the window: its text (not the box, which would clip the arrow) is cut. In the
-   code face, as the name in the sidebar. */
+   reading face, as the sidebar's entries. */
 .caitlyn-tip {
   max-width: calc(100vw - 16px);
-  font-family: var(--__sl-font-mono, ui-monospace, monospace);
-  font-size: var(--caitlyn-text-code-face);
 }
 .caitlyn-tip > span {
   display: block;
@@ -2274,6 +2382,14 @@ main:has(.caitlyn-page-header[data-reference]) .sl-markdown-content > p.caitlyn-
 .caitlyn-op-response-status .caitlyn-op-panel-note {
   font-weight: 400;
 }
+/* What the call returns or raises, beside the status, in the reader's SDK language: quieter than the status */
+.caitlyn-op-response-status .caitlyn-op-returns {
+  font-weight: 400;
+  color: var(--caitlyn-muted);
+}
+.caitlyn-op-response-status .caitlyn-op-returns code {
+  font-size: 0.9em;
+}
 
 /* A response's sub-headings (Headers, Response fields, Events), on the SDK and API pages alike: the same space above and
    below whatever comes before, a status line or the last row of a list. The status row is a member row, whose own
@@ -2286,6 +2402,17 @@ main:has(.caitlyn-page-header[data-reference]) .sl-markdown-content > p.caitlyn-
 }
 .sl-markdown-content details.caitlyn-status-row > p.caitlyn-param-group + .caitlyn-params {
   margin-top: 0;
+}
+/* A paragraph after a status's rows (the SDK reference's note that every result keeps its raw JSON): the space a
+   paragraph after a block has, and in the rows' content column (their 6px indent, hairline and 16px padding), not
+   out at the status's edge */
+.sl-markdown-content details.caitlyn-status-row > .caitlyn-params + p {
+  margin: 16px 0 0;
+  padding-left: 23px; /* 6px + the 1px hairline + space-4 */
+}
+/* The last status closes the list with the heading's space, not a rule of its own: a rule is between statuses */
+.sl-markdown-content .caitlyn-statuses > details.caitlyn-status-row:last-child {
+  border-bottom: 0;
 }
 
 /* The code panel's example buttons carry the Examples list's code icon: the same 16px icon, 8px gap and centre line,

@@ -8,12 +8,15 @@ import dataclasses
 import json
 import platform
 import random
+import threading
 import time
+from collections import deque
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Self
+from typing import Any, Self, cast
 
 import httpx
+from httpx import _multipart as httpx_multipart  # pyright: ignore[reportPrivateUsage]  # httpx's own form encoder
 from opentelemetry.trace import Span, TracerProvider
 
 from ._errors import CaitlynConnectionError, CaitlynError, StreamLostError
@@ -30,7 +33,17 @@ from ._protocol import (
     read_result,
     with_idempotency_token,
 )
-from ._retry import NO_RESPONSE_RETRY_COST, RETRY_COST, RetryBudget, RetryPolicy, error_retry_delay, transport_retry_delay
+from ._files import FileInput, PreparedFile, UploadFile
+from ._retry import (
+    NO_RESPONSE_RETRY_COST,
+    RETRY_COST,
+    RetryBudget,
+    RetryPolicy,
+    backoff,
+    error_retry_delay,
+    parse_retry_after,
+    transport_retry_delay,
+)
 from ._spec import OperationSpec
 from ._sse import SseDecoder, SseMessage
 from .auth import AsyncAuthSession, Auth, SyncAuthSession, workspace_host
@@ -194,11 +207,20 @@ class _CoreBase:
         return CaitlynConnectionError(f"{spec.name}: {type(error).__name__}: {error}", status=0, code="CONNECTION_ERROR", title=str(error))
 
 
+def _succeeded(spec: OperationSpec, response: httpx.Response) -> bool:
+    """A 2xx, or the status the operation is modelled to answer (GetDocumentContent's 302, which the SDK never follows)."""
+    return response.is_success or response.status_code == spec.code
+
+
 def _accept(spec: OperationSpec) -> str | None:
     return "text/event-stream" if spec.streaming else None
 
 
 # --------------------------------------------------------------------------- sync
+
+
+class UploadCancelled(Exception):
+    """A form upload stopped part-way because its call was cancelled (Ctrl-C on the synchronous client)."""
 
 
 class SyncClientCore(_CoreBase):
@@ -225,7 +247,7 @@ class SyncClientCore(_CoreBase):
             while True:
                 request, span = self._request_for(self._http, call, _accept(spec))
                 try:
-                    response = self._http.send(request, auth=self._send_auth or httpx.USE_CLIENT_DEFAULT, stream=True)
+                    response = self._http.send(request, auth=self._send_auth or httpx.USE_CLIENT_DEFAULT, stream=True, follow_redirects=False)
                 except httpx.TransportError as e:
                     connection = self._connection_error(spec, e)
                     self._after_attempt(call, span, request, None, e, connection)
@@ -239,7 +261,7 @@ class SyncClientCore(_CoreBase):
                 except BaseException as e:  # signing in failed, or interrupted while waiting
                     self._after_attempt(call, span, request, None, e)
                     raise
-                if not response.is_success or not spec.streaming:
+                if not _succeeded(spec, response) or not spec.streaming:
                     try:
                         response.read()
                     except httpx.TransportError as e:  # after response bytes arrived: never retried
@@ -247,7 +269,7 @@ class SyncClientCore(_CoreBase):
                         connection = self._connection_error(spec, e)
                         self._after_attempt(call, span, request, response, None, connection)
                         raise connection from e
-                error = None if response.is_success else read_error(spec, response)
+                error = None if _succeeded(spec, response) else read_error(spec, response)
                 self._after_attempt(call, span, request, response, None, error)
                 if error is None:
                     self.retry_budget.release(retry_cost)
@@ -278,18 +300,91 @@ class SyncClientCore(_CoreBase):
     ) -> EventStream[E, F]:
         return EventStream(self, spec, dict(params), decoder, resume)
 
-    def put_presigned(self, method: str, url: str, headers: Mapping[str, str], content: bytes) -> None:
-        """Send bytes to a presigned URL: no Caitlyn auth or headers (the URL carries its own grant)."""
-        span = self.telemetry.start_upload(method, url)
+    def prepare_file(self, file: FileInput) -> PreparedFile:
+        """Hash a file (PROTOCOL.md 14) for an upload; close the result when the call ends."""
+        return UploadFile.of(file).prepare()
+
+    def describe_file(self, file: FileInput) -> dict[str, object]:
+        """A file described for an estimate (its name, type and size), with nothing uploaded and nothing hashed."""
+        return UploadFile.of(file).description()
+
+    @property
+    def owns_http(self) -> bool:
+        """The client made its own HTTP client (none was given to it)."""
+        return self._owns_http
+
+    def post_form(self, url: str, fields: Sequence[tuple[str, str]], file: PreparedFile, cancelled: threading.Event | None = None) -> httpx.Response:
+        """One HTML form upload under a batch's upload policy (PROTOCOL.md 15): ``fields`` in order, then the file. No
+        Caitlyn credentials. The caller reads the status; ``ingest`` retries.
+
+        The form goes as httpx encodes ``data`` and ``files``, byte for byte, with its Content-Length (storage refuses
+        a chunked POST), read 64 KiB at a time; once ``cancelled`` is set, the next chunk raises ``UploadCancelled``
+        and the connection is closed, half-written, rather than kept."""
+        span = self.telemetry.start_upload("POST", url)
         try:
-            response = self._http.request(method, url, headers=dict(headers), content=content, auth=None)
+            with file.open() as f:
+                form = httpx_multipart.MultipartStream(data=dict(fields), files={"file": (file.name, f, file.content_type)})
+
+                def body() -> Iterator[bytes]:
+                    for chunk in form:
+                        if cancelled is not None and cancelled.is_set():
+                            raise UploadCancelled(f"the upload of {file.name} was cancelled")
+                        yield chunk
+
+                response = self._http.request("POST", url, headers=form.get_headers(), content=body(), auth=None)
             span.set_attribute("http.response.status_code", response.status_code)
-            _check_put(response)
+            return response
         except BaseException as e:
             record_failure(span, e)
             raise
         finally:
             span.end()
+
+    async def post_form_async(self, http: httpx.AsyncClient, url: str, fields: Sequence[tuple[str, str]], file: PreparedFile) -> httpx.Response:
+        """As ``post_form``, through an async HTTP client of the client's own: so cancelling the upload's task closes
+        its connection at once, whether the form is being sent or storage's answer awaited."""
+        span = self.telemetry.start_upload("POST", url)
+        try:
+            with file.open() as f:
+                response = await http.request("POST", url, data=dict(fields), files={"file": (file.name, f, file.content_type)}, auth=None)
+            span.set_attribute("http.response.status_code", response.status_code)
+            return response
+        except BaseException as e:
+            record_failure(span, e)
+            raise
+        finally:
+            span.end()
+
+    def put_file(self, method: str, url: str, headers: Mapping[str, str], file: PreparedFile) -> None:
+        """Send a file's bytes to a presigned URL with exactly ``headers`` (and its length): no Caitlyn credentials or
+        headers, since the URL carries its own grant. Retried as a call that is safe to repeat (PROTOCOL.md 14);
+        ``UPLOAD_PUT_FAILED`` when it still fails."""
+        policy = self.config.retry
+        attempt = 0
+        while True:
+            file.check_unchanged()
+            span = self.telemetry.start_upload(method, url)
+            try:
+                response = self._http.request(method, url, headers=_put_headers(headers, file), content=file.chunks(), auth=None)
+                span.set_attribute("http.response.status_code", response.status_code)
+                failure: BaseException | None = _put_failure(response)
+                delay = None if failure is None else _put_retry_delay(policy, attempt, response)
+            except httpx.TransportError as e:
+                failure = e
+                delay = transport_retry_delay(policy, True, attempt, e)
+            except BaseException as e:
+                record_failure(span, e)
+                span.end()
+                raise
+            if failure is not None:
+                record_failure(span, failure)
+            span.end()
+            if failure is None:
+                return
+            if delay is None or not self.retry_budget.acquire(RETRY_COST):
+                raise _put_error(failure)
+            time.sleep(delay)
+            attempt += 1
 
 
 # --------------------------------------------------------------------------- async
@@ -318,7 +413,7 @@ class AsyncClientCore(_CoreBase):
             while True:
                 request, span = self._request_for(self._http, call, _accept(spec))
                 try:
-                    response = await self._http.send(request, auth=self._send_auth or httpx.USE_CLIENT_DEFAULT, stream=True)
+                    response = await self._http.send(request, auth=self._send_auth or httpx.USE_CLIENT_DEFAULT, stream=True, follow_redirects=False)
                 except httpx.TransportError as e:
                     connection = self._connection_error(spec, e)
                     self._after_attempt(call, span, request, None, e, connection)
@@ -332,7 +427,7 @@ class AsyncClientCore(_CoreBase):
                 except BaseException as e:  # cancelled while waiting for the response
                     self._after_attempt(call, span, request, None, e)
                     raise
-                if not response.is_success or not spec.streaming:
+                if not _succeeded(spec, response) or not spec.streaming:
                     try:
                         await response.aread()
                     except httpx.TransportError as e:  # after response bytes arrived: never retried
@@ -341,7 +436,7 @@ class AsyncClientCore(_CoreBase):
                         raise connection from e
                     finally:
                         await response.aclose()
-                error = None if response.is_success else read_error(spec, response)
+                error = None if _succeeded(spec, response) else read_error(spec, response)
                 self._after_attempt(call, span, request, response, None, error)
                 if error is None:
                     self.retry_budget.release(retry_cost)
@@ -371,28 +466,96 @@ class AsyncClientCore(_CoreBase):
     ) -> AsyncEventStream[E, F]:
         return AsyncEventStream(self, spec, dict(params), decoder, resume)
 
-    async def put_presigned(self, method: str, url: str, headers: Mapping[str, str], content: bytes) -> None:
-        span = self.telemetry.start_upload(method, url)
+    async def prepare_file(self, file: FileInput) -> PreparedFile:
+        """Hash a file (PROTOCOL.md 14) for an upload; close the result when the call ends."""
+        return await UploadFile.of(file).prepare_async()
+
+    async def describe_file(self, file: FileInput) -> dict[str, object]:
+        """A file described for an estimate (its name, type and size), with nothing uploaded and nothing hashed."""
+        return await UploadFile.of(file).description_async()
+
+    async def post_form(self, url: str, fields: Sequence[tuple[str, str]], file: PreparedFile) -> httpx.Response:
+        """As the synchronous client's ``post_form``."""
+        span = self.telemetry.start_upload("POST", url)
         try:
-            response = await self._http.request(method, url, headers=dict(headers), content=content, auth=None)
+            with file.open() as f:
+                response = await self._http.request("POST", url, data=dict(fields), files={"file": (file.name, f, file.content_type)}, auth=None)
             span.set_attribute("http.response.status_code", response.status_code)
-            _check_put(response)
+            return response
         except BaseException as e:
             record_failure(span, e)
             raise
         finally:
             span.end()
 
+    async def put_file(self, method: str, url: str, headers: Mapping[str, str], file: PreparedFile) -> None:
+        """As the synchronous client's ``put_file``."""
+        policy = self.config.retry
+        attempt = 0
+        while True:
+            file.check_unchanged()
+            span = self.telemetry.start_upload(method, url)
+            try:
+                response = await self._http.request(method, url, headers=_put_headers(headers, file), content=file.achunks(), auth=None)
+                span.set_attribute("http.response.status_code", response.status_code)
+                failure: BaseException | None = _put_failure(response)
+                delay = None if failure is None else _put_retry_delay(policy, attempt, response)
+            except httpx.TransportError as e:
+                failure = e
+                delay = transport_retry_delay(policy, True, attempt, e)
+            except BaseException as e:
+                record_failure(span, e)
+                span.end()
+                raise
+            if failure is not None:
+                record_failure(span, failure)
+            span.end()
+            if failure is None:
+                return
+            if delay is None or not self.retry_budget.acquire(RETRY_COST):
+                raise _put_error(failure)
+            await asyncio.sleep(delay)
+            attempt += 1
 
-def _check_put(response: httpx.Response) -> None:
-    if response.status_code >= 300:
-        raise CaitlynError(
-            f"{response.status_code} UPLOAD_PUT_FAILED",
-            status=response.status_code,
-            code="UPLOAD_PUT_FAILED",
-            title="Upload of bytes failed",
-            detail=response.text[:500] or None,
-        )
+
+PUT_RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+"""Statuses a presigned PUT or form POST is retried on: object stores' throttling and unavailability."""
+
+
+def _put_headers(required: Mapping[str, str], file: PreparedFile) -> dict[str, str]:
+    headers = dict(required)
+    if not any(k.lower() == "content-length" for k in headers):
+        headers["Content-Length"] = str(file.byte_size)  # never chunked: object stores need the length
+    return headers
+
+
+def _put_failure(response: httpx.Response) -> CaitlynError | None:
+    if response.status_code < 300:
+        return None
+    return CaitlynError(
+        f"{response.status_code} UPLOAD_PUT_FAILED",
+        status=response.status_code,
+        code="UPLOAD_PUT_FAILED",
+        title="Sending the file's bytes failed",
+        detail=response.text[:500] or None,
+    )
+
+
+def _put_retry_delay(policy: RetryPolicy, attempt: int, response: httpx.Response) -> float | None:
+    if response.status_code not in PUT_RETRY_STATUSES or attempt + 1 >= policy.max_attempts:
+        return None
+    after = parse_retry_after(response.headers.get("Retry-After"))
+    if after is not None:
+        return after if after <= policy.max_retry_delay else None
+    return backoff(policy, attempt)
+
+
+def _put_error(failure: BaseException) -> CaitlynError:
+    if isinstance(failure, CaitlynError):
+        return failure
+    err = CaitlynError(f"UPLOAD_PUT_FAILED: {type(failure).__name__}: {failure}", status=0, code="UPLOAD_PUT_FAILED", title=str(failure))
+    err.__cause__ = failure
+    return err
 
 
 # --------------------------------------------------------------------------- server-sent events
@@ -415,11 +578,17 @@ class EventDecoder[E: CaitlynEvent, F]:
 @dataclass(frozen=True, slots=True)
 class Resume:
     """The operation that re-attaches to the stream, its parameters, and the parameter that takes
-    the last event ID (bound to the Last-Event-ID header)."""
+    the last event ID (bound to the Last-Event-ID header).
+
+    Without a last-event-ID parameter the stream reconnects with no cursor (PROTOCOL.md 16): a scope's watch, whose
+    every connection starts with a snapshot of the thing as it stands. Nothing is replayed, so each connection's
+    events are new, and a snapshot alone does not count as progress towards ``STREAM_LOST``."""
 
     operation: OperationSpec
     params: Mapping[str, object]
-    last_event_id_param: str
+    last_event_id_param: str | None = None
+    watched: tuple[str | None, str] | None = None
+    """A scope's watch: its filter member and the scope's identifier, given to each event (``event.processing``)."""
 
 
 LONG_CONNECTION_SECONDS = 60.0
@@ -449,6 +618,7 @@ class _StreamState[E: CaitlynEvent, F]:
         self.request_id: str | None = None
         self.opened_at: float | None = None
         """When the current connection's response arrived, on stream_clock; None between connections."""
+        self.cursorless = resume is not None and resume.last_event_id_param is None
 
     def connected(self) -> None:
         self.opened_at = stream_clock()
@@ -472,6 +642,10 @@ class _StreamState[E: CaitlynEvent, F]:
             return self.spec, self.params
         self.sse = SseDecoder()
         params = dict(self.resume.params)
+        if self.resume.last_event_id_param is None:
+            # A cursorless watch: the new connection starts again with a snapshot (PROTOCOL.md 16).
+            self.seen.clear()
+            return self.resume.operation, params
         if self.last_event_id is not None:
             # Last-Event-ID carries the position: a watch's own `after` cursor is left out (PROTOCOL.md 5.6). Before
             # any event, the header is left out and the request is sent as it was.
@@ -485,7 +659,10 @@ class _StreamState[E: CaitlynEvent, F]:
                 return None
             self.seen.add(message.id)
             self.last_event_id = message.id
-            self.attempts = 0  # only a new event counts as progress (PROTOCOL.md 5.6)
+            if not (self.cursorless and message.event == "snapshot"):
+                self.attempts = 0  # only a new event counts as progress (PROTOCOL.md 5.6)
+        elif self.cursorless and message.event != "snapshot" and message.event in self.decoder.events:
+            self.attempts = 0  # a cursorless watch's events carry no id of their own, and each one is new
         cls = self.decoder.events.get(message.event)
         if cls is None:
             return None  # an event type this SDK does not know: skipped
@@ -495,6 +672,8 @@ class _StreamState[E: CaitlynEvent, F]:
             data = {}
         event = cls.from_wire(data)
         event.event_id = message.id if message.own_id else None
+        if self.resume is not None and self.resume.watched is not None:
+            event._bind_watch(self.resume.watched)  # pyright: ignore[reportPrivateUsage]
         if message.event == "stream.reset" and self.decoder.has_final and self.reconnects > 0:
             # PROTOCOL.md 5.9: the answer finished while the stream was disconnected, so its final event went to
             # the earlier connection. The stream ends at the reset, with no error and no further reconnect.
@@ -536,13 +715,17 @@ class _StreamState[E: CaitlynEvent, F]:
 class EventStream[E: CaitlynEvent, F]:
     """A server-sent events stream: ``with … as stream: for event in stream``. Unknown event types
     are skipped; a dropped connection is resumed with Last-Event-ID and duplicates are discarded.
-    Events arrive as the server sends them."""
+    Events arrive as the server sends them. Breaking out of the events or ``text()`` leaves the connection open:
+    ``final_message()`` then reads the rest and closes it, and ``close()`` or leaving the ``with`` closes it at once."""
 
     def __init__(self, core: SyncClientCore, spec: OperationSpec, params: dict[str, object], decoder: EventDecoder[E, F], resume: Resume | None) -> None:
         self._core = core
         self._state = _StreamState(spec, params, decoder, resume, core.config.max_reconnects)
         self._response: httpx.Response | None = None
         self._call: _Call | None = None
+        self._pending: deque[SseMessage] = deque()
+        """Messages read from the connection and not yet given out: what a break left for the next read."""
+        self._chunks: Iterator[bytes] | None = None
 
     @property
     def last_event_id(self) -> str | None:
@@ -565,6 +748,8 @@ class EventStream[E: CaitlynEvent, F]:
         return self._response
 
     def _release(self, error: BaseException | None) -> None:
+        self._chunks = None
+        self._pending.clear()
         if self._response is not None:
             self._response.close()
             self._response = None
@@ -577,11 +762,26 @@ class EventStream[E: CaitlynEvent, F]:
         self._open()
         return self
 
+    def open(self) -> Self:
+        """Send the request now, rather than when the stream is first read. A call that sends something (a message)
+        opens its stream at once, so the message is sent whether or not the stream is read (PROTOCOL.md 16)."""
+        self._open()
+        return self
+
+    def text(self) -> Iterator[str]:
+        """Only the text of the answer, as it arrives: each ``text.delta`` event's ``delta``."""
+        for event in self:
+            if event.type == "text.delta":
+                delta = cast(object, getattr(event, "delta", None))
+                if isinstance(delta, str):
+                    yield delta
+
     def __exit__(self, *exc: object) -> None:
         self.close()
 
     def close(self) -> None:
-        """Close the connection now. Safe to call more than once."""
+        """Close the connection now, and end the iteration (from another thread too). Safe to call more than once."""
+        self._state.done = True
         self._release(None)
 
     def __iter__(self) -> Iterator[E]:
@@ -589,25 +789,37 @@ class EventStream[E: CaitlynEvent, F]:
         while not state.done:
             response = self._open()
             try:
-                for chunk in response.iter_bytes():
-                    for message in state.sse.feed(chunk):
-                        event = state.accept(message)
-                        if event is not None:
-                            yield event
-                        if state.finished():
+                if self._chunks is None:
+                    self._chunks = response.iter_bytes()
+                # PROTOCOL.md 5.4: the stream ends at its final event, whether or not the response does. A resumed
+                # answer arrives on WatchConversation, which carries on after it until it is closed.
+                while not state.finished():
+                    if not self._pending:
+                        chunk = next(self._chunks, None)
+                        if chunk is None:
                             break
-                    if state.finished():
-                        # PROTOCOL.md 5.4: the stream ends at its final event, whether or not the response does. A
-                        # resumed answer arrives on WatchConversation, which carries on after it until it is closed.
-                        break
+                        self._pending.extend(state.sse.feed(chunk))
+                        continue
+                    event = state.accept(self._pending.popleft())
+                    if event is not None:
+                        yield event
+            except GeneratorExit:
+                # The caller broke out (of the events or of text()): the connection stays open, and what was read
+                # stays for the next read, so final_message() carries on from here. close() or leaving the
+                # context closes it.
+                raise
             except httpx.TransportError as e:
                 self._release(e)
+                if state.done:
+                    return  # closed by the caller
                 if not state.can_resume():
                     raise state.lost(e) from e
                 time.sleep(state.reconnecting())
                 continue
             except BaseException as e:
                 self._release(e)
+                if state.done and isinstance(e, (httpx.HTTPError, httpx.StreamError)):
+                    return  # closed by the caller, from another thread, while a read was waiting
                 raise
             self._release(None)
             if state.ended_cleanly():
@@ -635,6 +847,9 @@ class AsyncEventStream[E: CaitlynEvent, F]:
         self._state = _StreamState(spec, params, decoder, resume, core.config.max_reconnects)
         self._response: httpx.Response | None = None
         self._call: _Call | None = None
+        self._pending: deque[SseMessage] = deque()
+        """Messages read from the connection and not yet given out: what a break left for the next read."""
+        self._chunks: AsyncIterator[bytes] | None = None
 
     @property
     def last_event_id(self) -> str | None:
@@ -657,6 +872,8 @@ class AsyncEventStream[E: CaitlynEvent, F]:
         return self._response
 
     async def _release(self, error: BaseException | None) -> None:
+        self._chunks = None
+        self._pending.clear()
         response, self._response = self._response, None
         call, self._call = self._call, None
         if response is not None:
@@ -672,11 +889,25 @@ class AsyncEventStream[E: CaitlynEvent, F]:
         await self._open()
         return self
 
+    async def open(self) -> Self:
+        """Send the request now, rather than when the stream is first read (as ``EventStream.open``)."""
+        await self._open()
+        return self
+
+    async def text(self) -> AsyncIterator[str]:
+        """Only the text of the answer, as it arrives: each ``text.delta`` event's ``delta``."""
+        async for event in self:
+            if event.type == "text.delta":
+                delta = cast(object, getattr(event, "delta", None))
+                if isinstance(delta, str):
+                    yield delta
+
     async def __aexit__(self, *exc: object) -> None:
         await self.aclose()
 
     async def aclose(self) -> None:
-        """Close the connection now. Safe to call more than once."""
+        """Close the connection now, and end the iteration. Safe to call more than once."""
+        self._state.done = True
         await self._release(None)
 
     async def __aiter__(self) -> AsyncIterator[E]:
@@ -684,17 +915,24 @@ class AsyncEventStream[E: CaitlynEvent, F]:
         while not state.done:
             response = await self._open()
             try:
-                async for chunk in response.aiter_bytes():
-                    for message in state.sse.feed(chunk):
-                        event = state.accept(message)
-                        if event is not None:
-                            yield event
-                        if state.finished():
+                if self._chunks is None:
+                    self._chunks = response.aiter_bytes()
+                # PROTOCOL.md 5.4: the stream ends at its final event, whether or not the response does. A resumed
+                # answer arrives on WatchConversation, which carries on after it until it is closed.
+                while not state.finished():
+                    if not self._pending:
+                        chunk = await anext(self._chunks, None)
+                        if chunk is None:
                             break
-                    if state.finished():
-                        # PROTOCOL.md 5.4: the stream ends at its final event, whether or not the response does. A
-                        # resumed answer arrives on WatchConversation, which carries on after it until it is closed.
-                        break
+                        self._pending.extend(state.sse.feed(chunk))
+                        continue
+                    event = state.accept(self._pending.popleft())
+                    if event is not None:
+                        yield event
+            except GeneratorExit:
+                # As EventStream: a break leaves the connection open for final_message(); aclose() or leaving the
+                # context closes it.
+                raise
             except httpx.TransportError as e:
                 await self._release(e)
                 if not state.can_resume():

@@ -12,12 +12,16 @@ const api = operation.kind === 'api';
 ---
 
 <dl class="caitlyn-operation-strip">
+  <!-- Each call is a chip: cut in the middle when it does not fit (its start and end kept), its whole value on hover
+       and focus when cut, and copied on click (src/scripts/chip-fit.ts) -->
   {
     api && (
       <div class="caitlyn-operation-strip-row">
         <dt class="caitlyn-kicker">HTTP</dt>
         <dd>
-          <code class="caitlyn-strip-code"><span class="caitlyn-http-method" data-method={operation.http.method}>{operation.http.method}</span> {operation.http.path}</code>
+          <button type="button" class="caitlyn-chip" data-chip={`${operation.http.method} ${operation.http.path}`} aria-label={`Copy ${operation.http.method} ${operation.http.path}`}>
+            <code class="caitlyn-strip-code"><span class="caitlyn-http-method" data-method={operation.http.method}>{operation.http.method}</span> <span class="caitlyn-chip-text">{operation.http.path}</span></code>
+          </button>
         </dd>
       </div>
     )
@@ -29,7 +33,9 @@ const api = operation.kind === 'api';
         Object.entries(operation.calls).map(([lang, call]) => (
           <span data-lang-only={lang}>
             <span class="sr-only">{LABELS[lang]}: </span>
-            <code class="caitlyn-strip-code">{call}</code>
+            <button type="button" class="caitlyn-chip" data-chip={call} aria-label={`Copy the ${LABELS[lang]} call: ${call}`}>
+              <code class="caitlyn-strip-code"><span class="caitlyn-chip-text">{call}</span></code>
+            </button>
           </span>
         ))
       }
@@ -40,7 +46,9 @@ const api = operation.kind === 'api';
       <div class="caitlyn-operation-strip-row">
         <dt class="caitlyn-kicker">HTTP</dt>
         <dd>
-          <code class="caitlyn-strip-code"><span class="caitlyn-http-method" data-method={operation.http.method}>{operation.http.method}</span> {operation.http.path}</code>
+          <button type="button" class="caitlyn-chip" data-chip={`${operation.http.method} ${operation.http.path}`} aria-label={`Copy ${operation.http.method} ${operation.http.path}`}>
+            <code class="caitlyn-strip-code"><span class="caitlyn-http-method" data-method={operation.http.method}>{operation.http.method}</span> <span class="caitlyn-chip-text">{operation.http.path}</span></code>
+          </button>
         </dd>
       </div>
     )
@@ -49,3 +57,7 @@ const api = operation.kind === 'api';
     <dd><a href={operation.other.link}>{operation.other.label}</a></dd>
   </div>
 </dl>
+
+<script>
+  import '../scripts/chip-fit.ts';
+</script>

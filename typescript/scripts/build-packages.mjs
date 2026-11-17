@@ -2,7 +2,8 @@
 //   dist-es       ESM for Node (.mjs)
 //   dist-cjs      CommonJS for Node (.cjs)
 //   dist-edge     ESM for Deno, Cloudflare Workers, Vercel Edge and web workers bundled with the `worker` condition
-//                 (.mjs): the Node build's code with the fetch handler (runtimeConfig.browser); the SDK only
+//                 (.mjs): the Node build's code with the fetch handler (runtimeConfig.browser), and for sdk-core
+//                 the Node build's code with no file system (src/browser/files-node.ts: no paths or spool files)
 //   dist-browser  ESM for browser pages (.mjs), both packages: the edge build without the sign-in modes a browser
 //                 may not use (clientCredentials, awsIam, workloadIdentity) and the AWS signer (sdk-core's
 //                 src/browser). The SDK's browser build imports sdk-core as '@caitlyn-ai/sdk-core/browser' and
@@ -23,7 +24,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { checkRuntimeSchemas } from './check-runtime-schemas.mjs';
-import { coreBrowser, fetchRuntimeConfig, sdkRuntime } from './browser-plugins.mjs';
+import { coreBrowser, coreEdge, fetchRuntimeConfig, sdkRuntime } from './browser-plugins.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const coreSrc = path.join(root, 'packages/sdk-core/src');
@@ -108,7 +109,7 @@ async function bundleDeclarations(pkgDir, entry) {
 // The runtime implements the model features Caitlyn uses; a model that needs more fails here.
 await checkRuntimeSchemas(path.join(root, 'packages/sdk/src/schemas/schemas_0.ts'));
 const coreEntries = { index: path.join(coreSrc, 'index.ts'), smithy: path.join(coreSrc, 'runtime/smithy.ts') };
-await buildPackage('sdk-core', coreEntries, { browser: [coreBrowser] });
+await buildPackage('sdk-core', coreEntries, { edge: [coreEdge], browser: [coreBrowser] });
 const sdkEntries = { 'sdk/index': path.join(root, 'packages/sdk/src/sdk/index.ts') };
 await buildPackage('sdk', sdkEntries, { plugins: [sdkRuntime()], edge: [fetchRuntimeConfig, sdkRuntime()], browser: [fetchRuntimeConfig, sdkRuntime(true)] });
 // After both tsc runs: the SDK's declarations were compiled against sdk-core's, and its bundle reads them.

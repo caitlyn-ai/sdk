@@ -55,7 +55,11 @@ func WithEndpoint(endpoint string) Option {
 	return func(s *settings) { s.endpoint = strings.TrimRight(endpoint, "/") }
 }
 
-// WithHTTPClient replaces the default *http.Client.
+// noRedirects stops an *http.Client at a redirect, returning the 3xx response itself.
+func noRedirects(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
+// WithHTTPClient replaces the default *http.Client. An *http.Client is used as a copy that does not follow redirects;
+// any other HTTPDoer must not follow them itself.
 func WithHTTPClient(c HTTPDoer) Option { return func(s *settings) { s.httpClient = c } }
 
 // WithMaxAttempts sets the number of attempts for a retry-safe operation, the first included (default 3).
@@ -133,8 +137,16 @@ func NewClient(sdk SDKInfo, workspace string, auth Auth, opts ...Option) (*Clien
 	if auth == nil {
 		return nil, errors.New("caitlyn: auth is required (for example caitlyn.Token(\"cait-pat-…\"))")
 	}
-	if s.httpClient == nil {
-		s.httpClient = &http.Client{}
+	// Redirects are results, not hops: an operation that answers 302 returns the address unfollowed, and nothing the
+	// SDK calls is reached through one. An *http.Client given with WithHTTPClient is copied with redirects stopped (the
+	// caller's own is not changed); any other HTTPDoer must not follow redirects itself.
+	switch c := s.httpClient.(type) {
+	case nil:
+		s.httpClient = &http.Client{CheckRedirect: noRedirects}
+	case *http.Client:
+		own := *c
+		own.CheckRedirect = noRedirects
+		s.httpClient = &own
 	}
 	if s.maxAttempts < 1 {
 		s.maxAttempts = 1

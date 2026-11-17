@@ -39,6 +39,9 @@ class OperationSpec:
     stability: str = "ga"
     streaming: bool = False
     payload_media_type: str | None = None
+    thing: bool = False
+    """The output is a thing (its body is the payload): the call returns it, with the ETag header as its ``etag``
+    when the body has none, and the response's metadata on it."""
 
     def member(self, name: str) -> Member | None:
         for m in self.members:

@@ -70,6 +70,9 @@ pub struct StreamSpec<E, F, Er> {
     /// Maps runtime errors to the generated crate's typed errors.
     pub map_err: fn(Error) -> Er,
     pub resume: Option<Resume>,
+    /// The stream reconnects with no cursor and starts again from a snapshot (a knowledge base's watch, PROTOCOL.md
+    /// 16): each reconnect forgets the ids seen, and only an event after a connection's first counts as progress.
+    pub fresh: bool,
 }
 
 type Body = Pin<Box<dyn FutStream<Item = Result<Bytes, reqwest::Error>> + Send>>;
@@ -88,6 +91,8 @@ pub struct Stream<E, F, Er> {
     attempts: u32,
     /// When the current connection's response arrived, on the stream clock; `None` between connections.
     opened_at: Option<std::time::Duration>,
+    /// Events read on the current connection.
+    on_connection: u32,
     final_: Option<F>,
     done: bool,
     request_id: Option<String>,
@@ -119,6 +124,7 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
             reconnects: 0,
             attempts: 0,
             opened_at: None,
+            on_connection: 0,
             final_: None,
             done: false,
             request_id,
@@ -130,6 +136,7 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
 
     fn attach(&mut self, resp: Response) {
         self.opened_at = Some(stream_clock());
+        self.on_connection = 0;
         self.body = Some(Box::pin(resp.inner.bytes_stream()));
         self.buf.clear();
     }
@@ -205,8 +212,15 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
                     continue;
                 }
                 self.last_id = Some(id.clone());
-                self.attempts = 0; // only a new event counts as progress (PROTOCOL.md 5.6)
+                if !self.spec.fresh {
+                    self.attempts = 0; // only a new event counts as progress (PROTOCOL.md 5.6)
+                }
             }
+            if self.spec.fresh && self.on_connection > 0 {
+                // A connection's first event is its snapshot; what follows it is progress (PROTOCOL.md 16).
+                self.attempts = 0;
+            }
+            self.on_connection += 1;
             let name = if name.is_empty() { "message".to_owned() } else { name };
             match (self.spec.decode)(&name, id.as_deref(), &data) {
                 Err(e) => return self.fail(Error::sdk("DECODE_FAILED", "An event could not be decoded", Some(Box::new(e)))),
@@ -276,12 +290,19 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
                 None => pause.await,
             }
             let resume = self.spec.resume.as_ref().expect("resume checked by the caller");
+            if self.spec.fresh {
+                // No cursor: the new connection starts again from a snapshot, whose ids may repeat the last one's.
+                self.seen.clear();
+                self.last_id = None;
+            }
             match resume(self.last_id.clone().unwrap_or_default()).await {
                 Ok(resp) => {
                     self.attach(resp);
                     return Ok(());
                 }
                 Err(Error::Cancelled) => return Err(Error::Cancelled),
+                // The thing is gone (PROTOCOL.md 16): the watch ends at once, with no further reconnect.
+                Err(e) if e.status() == Some(404) => return Err(e),
                 Err(e) => cause = Some(Box::new(e)),
             }
         }
@@ -339,5 +360,54 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
                 None => return Ok(None),
             }
         }
+    }
+}
+
+/// An event union whose answer arrives as text deltas (the conversation's `text.delta`): the generated crate
+/// implements it, and [`Stream::text`] reads only those.
+pub trait TextDeltas {
+    /// The event's text, when it is a text delta.
+    fn text_delta(&self) -> Option<&str>;
+}
+
+/// Only the text of an answer, in order: what [`Stream::text`] returns.
+pub struct Text<E, F, Er> {
+    stream: Stream<E, F, Er>,
+}
+
+impl<E: TextDeltas, F: Clone, Er> Text<E, F, Er> {
+    /// The next piece of the answer's text, `None` at the answer's end, or the error that ended the stream.
+    pub async fn next(&mut self) -> Option<Result<String, Er>> {
+        loop {
+            match self.stream.next().await? {
+                Ok(ev) => {
+                    if let Some(t) = ev.text_delta() {
+                        return Some(Ok(t.to_owned()));
+                    }
+                }
+                Err(e) => return Some(Err(e)),
+            }
+        }
+    }
+
+    /// The rest of the answer's text, joined.
+    pub async fn collect(mut self) -> Result<String, Er> {
+        let mut out = String::new();
+        while let Some(t) = self.next().await {
+            out.push_str(&t?);
+        }
+        Ok(out)
+    }
+
+    /// The final event's member (the complete message), draining the rest of the stream.
+    pub async fn final_message(&mut self) -> Result<F, Er> {
+        self.stream.final_message().await
+    }
+}
+
+impl<E: TextDeltas, F: Clone, Er> Stream<E, F, Er> {
+    /// Only the answer's text deltas, in order; the stream ends at the answer's end.
+    pub fn text(self) -> Text<E, F, Er> {
+        Text { stream: self }
     }
 }

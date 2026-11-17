@@ -13,15 +13,21 @@ import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.knowledge.OperationIndex;
 import software.amazon.smithy.model.knowledge.PaginatedIndex;
 import software.amazon.smithy.model.knowledge.TopDownIndex;
+import software.amazon.smithy.model.shapes.MemberShape;
 import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.shapes.ServiceShape;
 import software.amazon.smithy.model.shapes.Shape;
 import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.model.shapes.StructureShape;
 import software.amazon.smithy.model.traits.HttpHeaderTrait;
+import software.amazon.smithy.model.traits.HttpPayloadTrait;
+import software.amazon.smithy.model.traits.HttpResponseCodeTrait;
 
 /**
- * Names for operation outputs, the same in every generator: a list's output is {@code <Operation>Page}; an
+ * Names for operation outputs, the same in every generator. An output that returns a thing (its only body member
+ * an {@code @httpPayload} structure, the rest headers) gets no name: the call returns the thing's own type
+ * ({@link #payloadOf}), with the header ETag and the response metadata on it. Otherwise a list's output is
+ * {@code <Operation>Page}; an
  * output made only of mixins, one of them not header-only, is named after that mixin minus "Body"
  * ({@code AgentVersion}); otherwise the operation's name minus its verb ({@code Upload}) when free, else
  * {@code <Operation>Result}. Outputs that are server-sent event streams get no name. Two operations may share
@@ -34,6 +40,7 @@ public final class ResultNames {
     private final Map<ShapeId, String> names = new HashMap<>();
     private final Set<ShapeId> duplicates = new HashSet<>();
     private final Map<ShapeId, OperationShape> operations = new HashMap<>();
+    private final Map<ShapeId, MemberShape> payloads = new HashMap<>();
 
     /**
      * @param exported how the language spells a model shape name as a type, used to see which names are taken
@@ -59,6 +66,12 @@ public final class ResultNames {
                 continue;
             }
             StructureShape output = out.get();
+            Optional<MemberShape> payload = thingPayload(model, output);
+            if (payload.isPresent()) {
+                payloads.put(output.getId(), payload.get());
+                operations.putIfAbsent(output.getId(), op);
+                continue;
+            }
             String name;
             if (pages.getPaginationInfo(service, op).isPresent()) {
                 name = op.getId().getName() + "Page";
@@ -91,6 +104,30 @@ public final class ResultNames {
 
     public Set<ShapeId> duplicates() {
         return duplicates;
+    }
+
+    /**
+     * The thing an output returns: its {@code @httpPayload} member, when that is its only body member and targets a
+     * structure, every other member bound to a header. Such an output has no name of its own: the call returns the
+     * payload's type.
+     */
+    public Optional<MemberShape> payloadOf(ShapeId output) {
+        return Optional.ofNullable(payloads.get(output));
+    }
+
+    /** Whether an output returns a thing ({@link #payloadOf}). */
+    public boolean returnsThing(ShapeId output) {
+        return payloads.containsKey(output);
+    }
+
+    private static Optional<MemberShape> thingPayload(Model model, StructureShape output) {
+        List<MemberShape> body = output.getAllMembers().values().stream()
+                .filter(m -> !m.hasTrait(HttpHeaderTrait.class) && !m.hasTrait(HttpResponseCodeTrait.class))
+                .toList();
+        if (body.size() != 1 || !body.get(0).hasTrait(HttpPayloadTrait.class)) {
+            return Optional.empty();
+        }
+        return model.expectShape(body.get(0).getTarget()).isStructureShape() ? Optional.of(body.get(0)) : Optional.empty();
     }
 
     /** The first operation whose output the shape is. */

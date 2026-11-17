@@ -42,6 +42,7 @@ final class CaitlynGoCodegen implements DirectedCodegen<GoContext, GoSettings, G
 
     private final ModelFacts facts;
     private final Set<ShapeId> done = new HashSet<>();
+    private final Set<String> processingDone = new HashSet<>();
     private GoTypes types;
 
     CaitlynGoCodegen(ModelFacts facts) {
@@ -107,13 +108,18 @@ final class CaitlynGoCodegen implements DirectedCodegen<GoContext, GoSettings, G
             return;
         }
         String name = ctx.symbolProvider().toSymbol(shape).getName();
-        List<ShapeId> unions = facts.sseMemberOf.getOrDefault(shape.getId(), List.of());
-        boolean result = facts.resultNames.containsKey(shape.getId());
+        List<ShapeId> unions = facts.sseMemberOf.getOrDefault(shape.getId(), List.of()).stream().distinct().toList();
+        boolean thing = facts.things.contains(shape.getId());
+        boolean result = facts.resultNames.containsKey(shape.getId()) || thing;
         ctx.writerDelegator().useFileWriter("types.go", "", w -> {
             w.imp("encoding/json").imp(ctx.settings().coreModule());
             w.l(Names.doc(name, doc(shape), false, ""));
             if (facts.resultNames.containsKey(shape.getId())) {
                 w.l("//\n// Header-bound members are filled from the response headers; Raw holds the body as received.\n");
+            } else if (thing) {
+                w.l("//\n// Every call that gives a " + name + " returns this type, as do lists and watch snapshots. One read from a\n"
+                        + "// single response (a get, an update, a create, a Wait) carries that response's ResponseMetadata, and its ETag\n"
+                        + "// filled from the ETag header when the body has none; a list item or a snapshot entry carries no metadata.\n");
             }
             w.l("type " + name + " struct {\n");
             for (MemberShape m : shape.getAllMembers().values()) {
@@ -135,12 +141,22 @@ final class CaitlynGoCodegen implements DirectedCodegen<GoContext, GoSettings, G
                     tag = "-";
                     w.l("\t// From the " + m.expectTrait(HttpHeaderTrait.class).getValue() + " response header.\n");
                 } else {
-                    tag = ModelFacts.wireName(m) + (m.isRequired() ? "" : ",omitempty");
+                    tag = ModelFacts.wireName(m) + (m.isRequired() ? "" : ServiceGenerator.omit(ctx.model().expectShape(m.getTarget())));
                 }
                 w.l("\t" + field + " " + type + " `json:\"" + tag + "\"`\n");
+                String file = facts.fileFields.getOrDefault(shape.getId(), java.util.Map.of()).get(m.getMemberName());
+                if (file != null) {
+                    w.l(Names.comment("A file to upload in place of " + field + " (a Path, an *UploadFile or an UploadID): the operation "
+                            + "that takes this structure uploads it and sends the upload's id as " + field + ". Set one of the two.", "\t"));
+                    w.l("\t" + file + " File `json:\"-\"`\n");
+                }
             }
+            java.util.Set<String> eventNames = eventNames(ctx, shape, unions);
             if (!unions.isEmpty()) {
                 w.l("\n\teventID string\n");
+                if (eventNames.size() > 1) {
+                    w.l("\teventType string\n");
+                }
             }
             if (result) {
                 w.l("\n\tmetadata core.ResponseMetadata\n");
@@ -155,28 +171,41 @@ final class CaitlynGoCodegen implements DirectedCodegen<GoContext, GoSettings, G
             w.l("// RawJSON returns that object's bytes as received.\n");
             w.l("func (v *" + name + ") RawJSON() json.RawMessage { return v.raw.JSON() }\n\n");
             if (result) {
-                w.l("// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from\n"
-                        + "// (the zero value for a result built in code).\n");
+                w.l(thing
+                        ? "// ResponseMetadata returns the HTTP status, request id and API version of the response this " + name + " was read from:\n"
+                                + "// the zero value for a list item, a snapshot entry or one built in code. It is never marshalled.\n"
+                        : "// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from\n"
+                                + "// (the zero value for a result built in code).\n");
                 w.l("func (v *" + name + ") ResponseMetadata() core.ResponseMetadata { return v.metadata }\n\n");
             }
             if (!unions.isEmpty()) {
                 w.l("// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.\n");
                 w.l("func (v *" + name + ") EventID() string { return v.eventID }\n\n");
-                java.util.Set<String> names = new java.util.TreeSet<>();
-                for (ShapeId u : unions) {
-                    ctx.model().expectShape(u, UnionShape.class).getAllMembers().values().stream()
-                            .filter(m -> m.getTarget().equals(shape.getId())).forEach(m -> names.add(ModelFacts.wireName(m)));
+                if (eventNames.size() == 1) {
+                    w.l("// EventType returns the event's SSE event name, " + Names.str(eventNames.iterator().next()) + ".\n");
+                    w.l("func (*" + name + ") EventType() string { return " + Names.str(eventNames.iterator().next()) + " }\n\n");
+                } else {
+                    // One structure carries several events (document.created and document.updated are both a
+                    // DocumentChanged): the event name it arrived as tells them apart.
+                    w.l("// EventType returns the SSE event name the event arrived as: one of " + String.join(", ", eventNames)
+                            + " (empty when the value is not an event itself).\n");
+                    w.l("func (v *" + name + ") EventType() string { return v.eventType }\n\n");
                 }
-                if (names.size() != 1) {
-                    throw new CodegenException(shape.getId() + ": an event structure needs one SSE event name, not " + names);
-                }
-                w.l("// EventType returns the event's SSE event name, " + Names.str(names.iterator().next()) + ".\n");
-                w.l("func (*" + name + ") EventType() string { return " + Names.str(names.iterator().next()) + " }\n\n");
                 for (ShapeId u : unions) {
                     w.l("func (*" + name + ") is" + Names.exported(u.getName()) + "() {}\n\n");
                 }
             }
         });
+    }
+
+    /** The SSE event names a structure arrives as, across the unions it is a member of. */
+    static java.util.Set<String> eventNames(GoContext ctx, StructureShape shape, List<ShapeId> unions) {
+        java.util.Set<String> names = new java.util.TreeSet<>();
+        for (ShapeId u : unions) {
+            ctx.model().expectShape(u, UnionShape.class).getAllMembers().values().stream()
+                    .filter(m -> m.getTarget().equals(shape.getId())).forEach(m -> names.add(ModelFacts.wireName(m)));
+        }
+        return names;
     }
 
     /** Go's zero value is the only default the generated structs can express. */
@@ -280,6 +309,7 @@ final class CaitlynGoCodegen implements DirectedCodegen<GoContext, GoSettings, G
         }
         String name = Names.exported(shape.getId().getName());
         List<MemberShape> events = List.copyOf(shape.getAllMembers().values());
+        boolean watch = facts.watchUnions.contains(shape.getId());
         ctx.writerDelegator().useFileWriter("types.go", "", w -> {
             w.imp("encoding/json").imp(ctx.settings().coreModule());
             List<String> types = events.stream().map(m -> "*" + ctx.symbolProvider().toSymbol(ctx.model().expectShape(m.getTarget())).getName()).toList();
@@ -290,7 +320,25 @@ final class CaitlynGoCodegen implements DirectedCodegen<GoContext, GoSettings, G
                     + "typed error instead; on a watch it is delivered like any other.", ""));
             w.l("//\n//\tswitch e := ev.(type) {\n//\tcase " + types.get(0) + ":\n//\t\t…\n//\t}\n");
             w.l("type " + name + " interface {\n\t// EventID returns the event's SSE id.\n\tEventID() string\n"
-                    + "\t// EventType returns the event's SSE event name, for example \"text.delta\".\n\tEventType() string\n\tis" + name + "()\n}\n\n");
+                    + "\t// EventType returns the event's SSE event name, for example \"text.delta\".\n\tEventType() string\n"
+                    + (watch ? "\t// GetProcessing returns the watched thing's processing on a scope's watch (doc.Watch, folder.Watch,\n"
+                            + "\t// batch.Watch); nil when the event carries none. Get-prefixed, as an event may have a Processing field.\n"
+                            + "\tGetProcessing() *Processing\n"
+                            + "\t// ProcessingOf returns, on the knowledge base's own watch, the processing of the document or job whose\n"
+                            + "\t// identifier is given; nil when the event carries none.\n\tProcessingOf(id string) *Processing\n" : "")
+                    + "\tis" + name + "()\n}\n\n");
+            if (watch) {
+                // The accessor is the hand-written processingOf (go/processing.go), for every event alike.
+                for (MemberShape m : events) {
+                    String t = ctx.symbolProvider().toSymbol(ctx.model().expectShape(m.getTarget())).getName();
+                    if (processingDone.add(t)) {
+                        w.l("// GetProcessing returns the watched thing's processing, or nil (" + name + ".GetProcessing).\n");
+                        w.l("func (v *" + t + ") GetProcessing() *Processing { return processingOf(v, \"\") }\n\n");
+                        w.l("// ProcessingOf returns the processing of the document or job named by id, or nil (" + name + ".ProcessingOf).\n");
+                        w.l("func (v *" + t + ") ProcessingOf(id string) *Processing { return processingOf(v, id) }\n\n");
+                    }
+                }
+            }
             w.l("// decode" + name + " decodes one SSE event; ok is false for an event name this SDK does not know. With raise,\n"
                     + "// an error event is returned as its typed error (a stream with a final event, PROTOCOL.md 5.5).\n");
             w.l("func decode" + name + "(errorFor core.ErrorFor, raise bool) func(name, id string, data []byte) (" + name + ", bool, error) {\n");
@@ -301,7 +349,9 @@ final class CaitlynGoCodegen implements DirectedCodegen<GoContext, GoSettings, G
                     w.l("\t\t\tif raise {\n\t\t\t\treturn nil, false, core.ProblemFromEvent(data, errorFor)\n\t\t\t}\n");
                 }
                 String t = ctx.symbolProvider().toSymbol(ctx.model().expectShape(m.getTarget())).getName();
-                w.l("\t\t\tv := &" + t + "{eventID: id}\n\t\t\tif err := json.Unmarshal(data, v); err != nil {\n"
+                boolean shared = eventNames(ctx, ctx.model().expectShape(m.getTarget(), StructureShape.class),
+                        facts.sseMemberOf.getOrDefault(m.getTarget(), List.of())).size() > 1;
+                w.l("\t\t\tv := &" + t + "{eventID: id" + (shared ? ", eventType: name" : "") + "}\n\t\t\tif err := json.Unmarshal(data, v); err != nil {\n"
                         + "\t\t\t\treturn nil, false, err\n\t\t\t}\n\t\t\treturn v, true, nil\n");
             }
             w.l("\t\t}\n\t\treturn nil, false, nil\n\t}\n}\n\n");

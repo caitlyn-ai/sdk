@@ -13,6 +13,7 @@ import rehypeTables from './src/plugins/rehype-tables.mjs';
 import rehypeLead from './src/plugins/rehype-lead.mjs';
 import rehypeLanding from './src/plugins/rehype-landing.mjs';
 import { caitlynCodeTheme } from './src/code-theme.mjs';
+import { isLive, robotsMeta } from '../../scripts/docs-sitemap.mjs';
 
 // The site's sections, each with its own sidebar (starlight-sidebar-topics), as scripts/docs-build.mjs writes them
 const topics = JSON.parse(fs.readFileSync(new URL('./src/generated/sidebar.json', import.meta.url), 'utf8'));
@@ -114,7 +115,11 @@ export default defineConfig({
           content:
             "(()=>{const L=['typescript','python','go','rust','curl'];let k=new URLSearchParams(location.search).get('lang');if(!L.includes(k)){try{k=localStorage.getItem('caitlyn-docs-lang')}catch{}}document.documentElement.dataset.lang=L.includes(k)?k:L[0]})()",
         },
-        { tag: 'meta', attrs: { name: 'robots', content: 'index, follow' } },
+        // Only the live build is indexed; a merge request's preview, or any build not marked live, carries noindex on
+        // every page (scripts/docs-sitemap.mjs)
+        { tag: 'meta', attrs: { name: 'robots', content: robotsMeta(isLive()) } },
+        // The Changelog's Atom feed (scripts/docs-changelog.mjs), for a feed reader on any page
+        { tag: 'link', attrs: { rel: 'alternate', type: 'application/atom+xml', title: 'Caitlyn SDK releases', href: '/changelog/feed.xml' } },
         // The two Euclid web fonts start downloading with the HTML rather than after the CSS is parsed. crossorigin
         // (anonymous) matches how @font-face fetches fonts, so the browser uses this one download.
         ...['EuclidCircularA-Regular-WebM.woff2', 'EuclidCircularB-Medium-WebS.woff2'].map((file) => ({

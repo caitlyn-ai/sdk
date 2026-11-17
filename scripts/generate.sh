@@ -19,6 +19,8 @@ node scripts/gen-example-cases.mjs
 
 echo "Compiling the generators"
 (cd codegen && gradle --no-daemon --quiet test publish)
+# The client as scopes (PROTOCOL.md 10), as every generator places the operations: for the docs and the harnesses
+(cd codegen && gradle --no-daemon --quiet :model-support:scopeTree --args="${root}/build/model/model.json ${root}/conformance/cases/scope-tree.json")
 # The Smithy CLI copies resolved jars into the local Maven repository and caches the classpath. The
 # generators keep one version number while they change, so drop both copies before each build.
 rm -rf "${HOME}/.m2/repository/ai/caitlyn" codegen/build/smithy

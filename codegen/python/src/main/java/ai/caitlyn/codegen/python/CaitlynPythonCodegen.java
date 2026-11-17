@@ -157,6 +157,11 @@ final class CaitlynPythonCodegen implements DirectedCodegen<GenerationContext, P
             boolean header = m.hasTrait(HttpHeaderTrait.class);
             String wire = !header && m.hasTrait(JsonNameTrait.class) ? m.expectTrait(JsonNameTrait.class).getValue() : m.getMemberName();
             String type = hints.of(m, TypeHints.Mode.MODEL, w);
+            if (ctx.facts().uploadFileMembers.contains(m.getId())) {
+                // A nested upload target: an upload's id, or a file the operation's method uploads first.
+                w.importFrom("caitlyn_core", "UploadFile");
+                type = type + " | UploadFile";
+            }
             Optional<String> dflt = defaultValue(model, m, w);
             boolean required = m.isRequired() || dflt.isPresent();
             List<String> fieldArgs = new ArrayList<>();
@@ -356,6 +361,9 @@ final class CaitlynPythonCodegen implements DirectedCodegen<GenerationContext, P
             w.importFrom("typing", "Literal");
             List<String> classes = new ArrayList<>();
             List<String> table = new ArrayList<>();
+            // A watch whose first event is a snapshot (the knowledge base's): every event gets `processing`, one accessor
+            // for the watched thing's processing, snapshot or progress event alike (PROTOCOL.md 16).
+            Optional<String> processing = processingType(ctx, w, union);
             for (MemberShape m : union.getAllMembers().values()) {
                 String cls = facts.eventClassNames.get(m.getId());
                 String wire = sseName(m);
@@ -370,11 +378,32 @@ final class CaitlynPythonCodegen implements DirectedCodegen<GenerationContext, P
                 StringBuilder doc = new StringBuilder("The `" + wire + "` event.");
                 docs(m).or(() -> docs(target)).ifPresent(d -> doc.append(" ").append(d));
                 w.write("$D\n", doc.toString());
+                // The accessor is `processing`. An event whose own `processing` is the thing's processing (document.progress)
+                // keeps it: the model's member and the accessor are one.
+                boolean accessor = processing.isPresent() && target.getMember("processing").isEmpty();
                 writeFields(ctx, w, target.getAllMembers().values(), true);
                 w.write("");
                 w.write("@property");
                 w.write("def type(self) -> Literal[$L]:", Names.pyString(wire));
                 w.indent().write("$D", "The SSE event name.").write("return $L", Names.pyString(wire)).dedent();
+                if (processing.isPresent()) {
+                    w.importFrom("caitlyn_core", "event_processing");
+                }
+                if (accessor) {
+                    w.write("");
+                    w.write("@property");
+                    w.write("def processing(self) -> $L:", processing.get());
+                    w.indent().write("$D", "The processing of the thing this event's scope watches (`doc.watch()`, `folder.watch()`, `batch.watch()`),\n"
+                            + "the same from a snapshot or a progress event: a document's processing, or the job running on a folder or\n"
+                            + "batch. None when the event carries none, and on the knowledge base's own watch (use `processing_of`).")
+                            .write("return event_processing(self)").dedent();
+                }
+                if (processing.isPresent()) {
+                    w.write("");
+                    w.write("def processing_of(self, id: str) -> $L:", processing.get());
+                    w.indent().write("$D", "The processing this event gives the document or job `id` names, on any watch; None when it carries none.")
+                            .write("return event_processing(self, id)").dedent();
+                }
                 w.dedent();
                 w.write("\n");
             }
@@ -389,6 +418,28 @@ final class CaitlynPythonCodegen implements DirectedCodegen<GenerationContext, P
             w.dedent();
             w.write("}\n");
         });
+    }
+
+    /** {@code DocumentProcessing | Job | None}: what a snapshot union's events give as a thing's processing. */
+    static Optional<String> processingType(GenerationContext ctx, PythonWriter w, UnionShape union) {
+        Model model = ctx.model();
+        Optional<MemberShape> snapshot = union.getAllMembers().values().stream().filter(m -> sseName(m).equals("snapshot")).findFirst();
+        if (snapshot.isEmpty()) {
+            return Optional.empty();
+        }
+        StructureShape snap = model.expectShape(snapshot.get().getTarget(), StructureShape.class);
+        List<String> types = new ArrayList<>();
+        TypeHints hints = new TypeHints(model, ctx.symbolProvider(), ctx.facts());
+        snap.getMember("progress").map(m -> model.expectShape(m.getTarget())).filter(Shape::isListShape)
+                .map(l -> model.expectShape(((software.amazon.smithy.model.shapes.ListShape) l).getMember().getTarget(), StructureShape.class))
+                .flatMap(entry -> entry.getMember("processing")).ifPresent(m -> types.add(hints.of(m, TypeHints.Mode.MODEL, w)));
+        snap.getMember("jobs").map(m -> model.expectShape(m.getTarget())).filter(Shape::isListShape)
+                .ifPresent(l -> types.add(hints.of(((software.amazon.smithy.model.shapes.ListShape) l).getMember(), TypeHints.Mode.MODEL, w)));
+        if (types.isEmpty()) {
+            return Optional.empty();
+        }
+        types.add("None");
+        return Optional.of(String.join(" | ", types));
     }
 
     /** The SSE `event:` name: the member's jsonName, else its member name. */

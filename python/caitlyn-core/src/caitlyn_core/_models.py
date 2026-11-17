@@ -46,6 +46,7 @@ class CaitlynModel(BaseModel):
     )
 
     _raw: dict[str, Any] | None = PrivateAttr(default=None)
+    _response_metadata: ResponseMetadata | None = PrivateAttr(default=None)
 
     @model_validator(mode="wrap")
     @classmethod
@@ -76,6 +77,16 @@ class CaitlynModel(BaseModel):
 
     def _set_raw(self, raw: dict[str, Any]) -> None:
         self._raw = raw
+
+    @property
+    def response_metadata(self) -> ResponseMetadata | None:
+        """The HTTP status, request id and ETag of the response this was read from, for a thing or result one call
+        returned (get, update, create, wait); None for a list item, a watch snapshot's entry, or one built in code.
+        Never serialised with the model."""
+        return self._response_metadata
+
+    def _set_response_metadata(self, metadata: ResponseMetadata) -> None:
+        self._response_metadata = metadata
 
     if not TYPE_CHECKING:
         # Only at runtime, so that type checkers still flag misspelt attributes.
@@ -116,31 +127,34 @@ class ResponseMetadata:
     """The ``Caitlyn-Request-Id`` header; quote it to support."""
     etag: str | None = None
     """The ``ETag`` header, when the response has one."""
+    api_version: str | None = None
+    """The ``Caitlyn-Api-Version`` header: the server's model version."""
 
 
 class CaitlynResult(CaitlynModel):
-    """Base for the result of a call: a model that also carries the response it was read from."""
-
-    _response_metadata: ResponseMetadata | None = PrivateAttr(default=None)
-
-    @property
-    def response_metadata(self) -> ResponseMetadata | None:
-        """The HTTP status, request id and ETag of the response this result was read from; ``None`` for a
-        result built in code. Not part of the model's fields, so never serialised."""
-        return self._response_metadata
-
-    def _set_response_metadata(self, metadata: ResponseMetadata) -> None:
-        self._response_metadata = metadata
+    """Base for the result of a call that is not a thing (an estimate, a comparison, a page): a model that carries the
+    response it was read from, as every model a single call returns does (``response_metadata``)."""
 
 
 class CaitlynEvent(CaitlynModel):
     """Base for server-sent events. ``type`` is the SSE ``event:`` name; ``event_id`` the SSE ``id:``."""
 
     event_id: str | None = Field(default=None, exclude=True)
+    _watched: tuple[str | None, str] | None = PrivateAttr(default=None)
+    """For an event from a scope's watch: the watch's filter member (``document``, ``folder``, ``batch``) and the
+    scope's identifier, so ``processing`` knows whose processing to give."""
 
     @property
     def type(self) -> str:
         raise NotImplementedError
+
+    def _bind_watch(self, watched: tuple[str | None, str]) -> None:
+        self._watched = watched
+
+    @property
+    def watched(self) -> tuple[str | None, str] | None:
+        """The scope's watch this event came from: its filter member and the scope's identifier; None otherwise."""
+        return self._watched
 
 
 class OpenEnum(StrEnum):

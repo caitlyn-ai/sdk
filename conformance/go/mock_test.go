@@ -75,6 +75,45 @@ type logged struct {
 	Body        string            `json:"body"`
 	RequestID   string            `json:"requestId"`
 	At          int64             `json:"at"`
+	// BodySHA256 (standard base64) and BodyLength describe the body as received; Form is a form POST's parts in order.
+	BodySHA256 string     `json:"bodySha256"`
+	BodyLength int64      `json:"bodyLength"`
+	Form       []formPart `json:"form"`
+}
+
+// formPart is one part of a logged form POST: a field (Value) or the file (FileName, ContentType, ByteSize, SHA256).
+type formPart struct {
+	Name        string `json:"name"`
+	Value       string `json:"value"`
+	FileName    string `json:"fileName"`
+	ContentType string `json:"contentType"`
+	ByteSize    int64  `json:"byteSize"`
+	SHA256      string `json:"sha256"`
+}
+
+// uploads is the S3 stand-in's state (GET /__mock/uploads).
+type uploadsState struct {
+	MaxInFlight int `json:"maxInFlight"`
+	Objects     []struct {
+		Key         string `json:"key"`
+		SHA256      string `json:"sha256"`
+		ByteSize    int64  `json:"byteSize"`
+		ContentType string `json:"contentType"`
+	} `json:"objects"`
+}
+
+func (m mock) uploads(t *testing.T) uploadsState {
+	t.Helper()
+	resp, err := http.Get(m.base + "/__mock/uploads")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out uploadsState
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 func (m mock) requests(t *testing.T) []logged {

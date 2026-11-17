@@ -51,7 +51,7 @@ export async function finishSignIn(): Promise<void> {
 /** Asks a question in a conversation and streams the answer into the page. */
 export async function ask(conversationId: string, message: string, output: HTMLElement): Promise<void> {
   try {
-    for await (const event of caitlyn.conversations.send(conversationId, { message })) {
+    for await (const event of caitlyn.conversations(conversationId).send(message)) {
       if (event.type === 'text.delta') output.append(event.delta);
     }
   } catch (err) {

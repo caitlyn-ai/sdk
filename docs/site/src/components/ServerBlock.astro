@@ -1,6 +1,6 @@
 ---
-// The API's server, as the OpenAPI document gives it (https://{workspace}/api), with its one variable, the reader's
-// workspace hostname, as a field. What the reader types is kept in one setting the whole site shares, and every
+// The API's server, as the OpenAPI document gives it (https://{workspace}/api), on one line: its fixed parts either
+// side of its one variable, the reader's workspace hostname, as a field, so the hostname shows once. What the reader types is kept in one setting the whole site shares, and every
 // example on the site (the SDK reference, the guides and the API reference) shows it in place of
 // your-company.getcaitlyn.ai (src/scripts/workspace.ts).
 import { WORKSPACE_PLACEHOLDER } from '../scripts/workspace-placeholder';
@@ -14,9 +14,11 @@ const { id = 'caitlyn-server' } = Astro.props;
 
 <div class="caitlyn-server not-content" data-server>
   <p class="caitlyn-kicker caitlyn-server-head">Server</p>
-  <p class="caitlyn-server-url"><code>https://<span data-workspace-host>{WORKSPACE_PLACEHOLDER}</span>/api</code></p>
-  <div class="caitlyn-server-var">
-    <label for={`${id}-workspace`}><code>workspace</code></label>
+  <!-- The field's label, with it, above the address -->
+  <label class="caitlyn-server-label" for={`${id}-workspace`}><code>workspace</code></label>
+  <!-- The server's address once: its fixed parts as text either side of the workspace field -->
+  <p class="caitlyn-server-var">
+    <code class="caitlyn-server-fixed">https://</code>
     <input
       id={`${id}-workspace`}
       type="text"
@@ -28,7 +30,8 @@ const { id = 'caitlyn-server' } = Astro.props;
       aria-describedby={`${id}-workspace-help`}
       data-workspace-input
     />
-  </div>
+    <code class="caitlyn-server-fixed">/api</code>
+  </p>
   <p class="caitlyn-server-help" id={`${id}-workspace-help`}>
     Your workspace's hostname. The examples on this site use it; it stays in this browser.
   </p>

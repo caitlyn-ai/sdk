@@ -14,6 +14,21 @@ export function loadModel() {
   const file = path.join(root, 'build/model/model.json');
   if (!fs.existsSync(file)) throw new Error('build/model/model.json is missing: run node scripts/prepare-model.mjs first');
   const ast = JSON.parse(fs.readFileSync(file, 'utf8'));
+  // Mixins' members are the structure's own, as the generators see them (mixin members first, then its own).
+  const flat = (shape) => {
+    if (!shape.mixins?.length) return shape.members ?? {};
+    const members = {};
+    for (const { target } of shape.mixins) Object.assign(members, flat(ast.shapes[target]));
+    return Object.assign(members, shape.members ?? {});
+  };
+  const flattened = Object.entries(ast.shapes).filter(([, s]) => s.type === 'structure' && s.mixins?.length).map(([id, s]) => [id, flat(s)]);
+  for (const [id, members] of flattened) {
+    // A mixin's member is the structure's own copy: traits applied to it (apply Shape$member @required) are its alone.
+    ast.shapes[id].members = Object.fromEntries(Object.entries(members).map(([name, m]) => {
+      const applied = ast.shapes[`${id}$${name}`];
+      return [name, applied?.type === 'apply' ? { ...m, traits: { ...m.traits, ...applied.traits } } : m];
+    }));
+  }
   for (const shape of Object.values(ast.shapes)) {
     for (const traits of [shape.traits, ...Object.values(shape.members ?? {}).map((m) => m.traits)]) {
       if (traits?.[T('documentation')]) traits[T('documentation')] = publicDoc(traits[T('documentation')]);
@@ -39,13 +54,66 @@ export function publicDoc(text) {
 
 /**
  * The operations no Caitlyn release serves yet: those the snapshot (model/model.json, before prepare-model stamps
- * it) still marks @since("next"). The app's release replaces "next" with its number when it publishes the
- * model, so once an operation ships, its pages stop saying it is unavailable.
+ * it) still marks @since("next"). This is the pre-release case: a model built from a branch of the app, before the
+ * release that ships it, as v3 is now. A model built from the app's main has every operation's @since as a released
+ * version, so this set is empty and every page shows "Since Caitlyn X.Y.Z" instead. `raw` is the snapshot's shapes
+ * (a test passes its own).
  */
-export function unreleasedOperations() {
-  const raw = JSON.parse(fs.readFileSync(path.join(root, 'model/model.json'), 'utf8')).shapes;
+export function unreleasedOperations(raw = JSON.parse(fs.readFileSync(path.join(root, 'model/model.json'), 'utf8')).shapes) {
   return new Set(Object.entries(raw).filter(([, s]) => s.type === 'operation' && s.traits?.[C('since')] === 'next').map(([id]) => local(id)));
 }
+
+/**
+ * The release the operations still marked @since("next") arrive in: model/model.lock.json's `stampNext`, the number
+ * prepare-model stamps on them and the SDKs' doc comments show ("Since Caitlyn 5.115.0"). Null when the lock names
+ * none. `lock` is the lock file's contents (a test passes its own).
+ */
+export function nextRelease(lock = JSON.parse(fs.readFileSync(path.join(root, 'model/model.lock.json'), 'utf8'))) {
+  return /^\d+\.\d+\.\d+$/.test(lock.stampNext ?? '') ? lock.stampNext : null;
+}
+
+/**
+ * "Not available yet" for an operation no release serves (the pre-release case above), naming the release it arrives
+ * in when the lock knows it. It says "arrives in Caitlyn 5.115.0", not "the next release": the public-wording check
+ * (scripts/docs-wording.mjs) refuses talk of release plans.
+ */
+export function notYetNote(next = nextRelease()) {
+  return next
+    ? `> **Not available yet: arrives in Caitlyn ${next}.** The SDKs have this operation, but workspaces serve it only from that\n> release.`
+    : '> **Not available yet.** The SDKs have this operation, but workspaces do not serve it yet.';
+}
+/**
+ * A hand-written page's "Not available yet" callout: the line `<!-- not-available -->` (the page's front matter
+ * `operations`) or `<!-- not-available: SendMessage, WatchConversation -->` (those operations) becomes the callout while
+ * any of them is unreleased, naming the release from the lock as the reference's callout does, and nothing once they
+ * all are released. `unreleased`, `next` and `operations` (the front matter's) are given; a test passes its own.
+ */
+export const NOT_AVAILABLE_MARKER = /^<!-- not-available(?::\s*([\w,\s]+?))?\s*-->$/;
+export function fillNotAvailable(markdown, { operations = [], unreleased = unreleasedOperations(), next = nextRelease() } = {}) {
+  return markdown.replace(/^<!-- not-available(?::\s*([\w,\s]+?))?\s*-->\n(\n?)/gm, (_, listed, gap) => {
+    const ops = listed ? listed.split(/[,\s]+/).filter(Boolean) : operations;
+    if (!ops.some((op) => unreleased.has(op))) return '';
+    const callout = next
+      ? `> **Not available yet: arrives in Caitlyn ${next}.** The SDKs have the operations this page describes, but workspaces serve\n> them only from that release.`
+      : '> **Not available yet.** The SDKs have the operations this page describes, but workspaces do not serve them yet.';
+    return `${callout}\n${gap}`;
+  });
+}
+/** The operations on which `If-Match` is optional: the model's @ifMatchOptional set (prepared model's operations) */
+export function ifMatchOptional(ast) {
+  return Object.entries(ast.shapes).filter(([, s]) => s.type === 'operation' && s.traits?.[C('ifMatchOptional')] !== undefined).map(([id]) => local(id)).sort();
+}
+/**
+ * A hand-written page's `<!-- if-match-optional -->` line: the operations on which `If-Match` is optional, read from
+ * the model, as an indented list of links to their reference pages, so the conditional-writes rule (docs/errors.md)
+ * names the set once and never by hand.
+ */
+export function fillIfMatchOptional(markdown, names) {
+  return markdown.replace(/^<!-- if-match-optional -->$/m, () => names.map((n) => `  - [${n}](/reference/${kebab(n)}/)`).join('\n'));
+}
+
+/** The same, as the Stability row's words */
+export const notYetWords = (next = nextRelease()) => (next ? `Not available yet: arrives in Caitlyn ${next}.` : 'Not available yet.');
 
 /**
  * How each language reaches a namespace's client object: a dotted @clientMethod namespace (`agents.versions`) nests
@@ -53,18 +121,20 @@ export function unreleasedOperations() {
  * fields, Rust methods.
  */
 export function namespacePath(lang, namespace) {
-  const parts = namespace.split('.');
+  // An operation bound to no resource with only a @clientMethod name has no namespace: it is on the client itself.
+  const parts = (namespace ?? '').split('.').filter(Boolean);
   if (lang === 'typescript') return parts.join('.');
   if (lang === 'python') return parts.map((p) => names.python(p)).join('.');
   if (lang === 'go') return parts.map((p) => names.go(p)).join('.');
-  if (lang === 'rust') return parts.map((p) => `${names.rust(p)}()`).join('.');
+  // A Rust accessor escapes only keywords (codegen Names.segment): `client.core().uploads()`, not `core_()`.
+  if (lang === 'rust') return parts.map((p) => `${words(p).join('_')}()`).join('.');
   throw new Error(`namespacePath: no language ${lang}`);
 }
 
 export const local = (id) => id.split('#')[1];
 const lowerFirst = (s) => s[0].toLowerCase() + s.slice(1);
 export const kebab = (n) => n.replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/([A-Z])([A-Z][a-z])/g, '$1-$2').toLowerCase();
-const plural = (n) => (n.endsWith('y') ? `${n.slice(0, -1)}ies` : n.endsWith('s') ? `${n}es` : `${n}s`);
+const plural = (n) => (/[^aeiou]y$/.test(n) ? `${n.slice(0, -1)}ies` : /(s|x|z|ch|sh)$/.test(n) ? `${n}es` : `${n}s`);
 
 /** codegen Names.words: camelCase, PascalCase, UPPER_SNAKE and dotted names as lower-case words. */
 export function words(name) {
@@ -156,14 +226,22 @@ export const names = {
 export function operations(ast) {
   const S = ast.shapes;
   const out = [];
-  const visit = (id, resource) => {
+  // PROTOCOL.md 10 (model-support's ClientMethod): namespaces follow the resource tree, a child named after its parent
+  // drops the parent's part (IngestionBatchItem under IngestionBatch: ingestionBatches.items), and a bound operation's
+  // method drops its resource's own name (StartIngestionBatch: ingestionBatches.start).
+  const visit = (id, resource, parent) => {
     const s = S[id];
+    const own = local(id).replace(/Resource$/, '');
+    const up = parent ? parent.own : null;
+    const name = up && own.startsWith(up) && own.length > up.length && /[A-Z]/.test(own[up.length]) ? own.slice(up.length) : own;
+    const namespace = (parent ? `${parent.namespace}.` : '') + lowerFirst(plural(name));
     const identifiers = Object.keys(s.identifiers ?? {});
-    const bind = (target, lifecycle) => out.push({ id: target, resource, lifecycle, instance: !lifecycle && identifiers.length === 1 ? identifiers[0] : null });
+    const bind = (target, lifecycle) =>
+      out.push({ id: target, resource, own, namespace, lifecycle, instance: !lifecycle && identifiers.length === 1 ? identifiers[0] : null });
     for (const k of ['create', 'put', 'read', 'update', 'delete', 'list']) if (s[k]) bind(s[k].target, k === 'read' ? 'get' : k);
     for (const { target } of s.operations ?? []) bind(target, null);
-    for (const { target } of s.collectionOperations ?? []) out.push({ id: target, resource, lifecycle: null, instance: null });
-    for (const { target } of s.resources ?? []) visit(target, target);
+    for (const { target } of s.collectionOperations ?? []) out.push({ id: target, resource, own, namespace, lifecycle: null, instance: null });
+    for (const { target } of s.resources ?? []) visit(target, target, { own, namespace });
   };
   const service = Object.keys(S).find((k) => S[k].type === 'service');
   for (const { target } of S[service].operations ?? []) out.push({ id: target, resource: null, lifecycle: null, instance: null });
@@ -174,10 +252,10 @@ export function operations(ast) {
       const shape = S[o.id];
       const t = shape.traits ?? {};
       const name = local(o.id);
-      const resourceName = o.resource ? local(o.resource).replace(/Resource$/, '') : null;
       const override = t[C('clientMethod')];
-      const namespace = override?.namespace ?? lowerFirst(plural(resourceName));
-      const method = override?.name ?? o.lifecycle ?? lowerFirst(name);
+      const namespace = override?.namespace ?? o.namespace;
+      const rest = o.own ? name.replace(o.own, '') : name;
+      const method = override?.name ?? o.lifecycle ?? lowerFirst(rest && rest !== name ? rest : name);
       // PROTOCOL.md 10: a non-lifecycle instance operation of a resource with exactly one identifier takes it
       // positionally. A @clientMethod override keeps that rule (conversations.send, versions.updateDraft).
       const input = S[shape.input.target];

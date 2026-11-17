@@ -5,4 +5,5 @@ pub mod agents;
 pub mod concepts;
 pub mod conversations;
 pub mod documents;
+pub mod ingestion;
 pub mod sign_in_modes;

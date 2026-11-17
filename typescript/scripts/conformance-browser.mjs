@@ -48,7 +48,7 @@ const refusedPort = await freePort();
 // 2. The harness, for a page
 const mockAuth = await import(path.join(repo, 'conformance/mock-server/auth.mjs'));
 const constants = Object.fromEntries(Object.entries(mockAuth).filter(([, v]) => typeof v !== 'function'));
-const files = Object.fromEntries(['conformance/cases/examples.json', 'VERSION', 'model/model.lock.json'].map((f) => [f, fs.readFileSync(path.join(repo, f), 'utf8')]));
+const files = Object.fromEntries(['conformance/cases/examples.json', 'conformance/cases/content-types.json', 'conformance/cases/scope-tree.json', 'VERSION', 'model/model.lock.json', 'model/model.json'].map((f) => [f, fs.readFileSync(path.join(repo, f), 'utf8')]));
 const env = {
   CAITLYN_REPO_ROOT: '/repo',
   CAITLYN_SDK_BUILD: 'browser',
@@ -134,11 +134,21 @@ try {
         const errors = [];
         tab.on('pageerror', (e) => errors.push(e));
         if (process.env.VERBOSE) tab.on('console', (m) => console.log(`${name}: ${m.text()}`));
-        await tab.goto(`http://127.0.0.1:${pagePort}/`);
-        await tab.waitForFunction(() => globalThis.__caitlynConformance, null, { timeout: 30_000 }).catch(() => {
-          throw new Error(`${name}: the harness did not load: ${errors.map(String).join('; ')}`);
-        });
-        return await tab.evaluate((only) => globalThis.__caitlynConformance.run(only), process.env.ONLY);
+        // A run stops after a case that timed out; loading the page again ends whatever that case left running
+        // (node-test.ts), and the run carries on from the next case.
+        const all = [];
+        let from = 0;
+        for (;;) {
+          await tab.goto(`http://127.0.0.1:${pagePort}/`);
+          await tab.waitForFunction(() => globalThis.__caitlynConformance, null, { timeout: 30_000 }).catch(() => {
+            throw new Error(`${name}: the harness did not load: ${errors.map(String).join('; ')}`);
+          });
+          const { results, next } = await tab.evaluate(([only, at]) => globalThis.__caitlynConformance.run(only, at), [process.env.ONLY, from]);
+          all.push(...results);
+          if (next === undefined) return all;
+          console.error(`${name}: a case timed out; loading the page again to carry on from case ${next + 1}`);
+          from = next;
+        }
       } finally {
         await browser.close();
       }

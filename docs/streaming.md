@@ -16,12 +16,11 @@ operations:
 An agent's answer arrives as it is written, as a stream of typed events. [SendMessage](/reference/send-message/)
 returns one; each SDK gives you something to iterate, and the finished message at the end.
 
-> **Not available yet.** Caitlyn workspaces do not serve the conversation operations yet. This page describes how
-> the SDKs handle them.
+<!-- not-available -->
 
 <!-- example: examples/typescript/concepts.ts#streaming -->
 ```ts tab="TypeScript"
-const stream = caitlyn.conversations.send(conversationId, { message: 'How much annual leave do part-time staff get?' });
+const stream = caitlyn.conversations(conversationId).send('How much annual leave do part-time staff get?');
 for await (const event of stream) {
   switch (event.type) {
     case 'text.delta':
@@ -37,7 +36,7 @@ console.log(answer.id, stream.requestId);
 ```
 <!-- example: examples/python/concepts.py#streaming -->
 ```python tab="Python"
-with caitlyn.conversations.send(conversation_id, message="How much annual leave do part-time staff get?") as stream:
+with caitlyn.conversations(conversation_id).send("How much annual leave do part-time staff get?") as stream:
     for event in stream:
         if isinstance(event, TextDeltaEvent):
             print(event.delta, end="", flush=True)
@@ -48,9 +47,7 @@ with caitlyn.conversations.send(conversation_id, message="How much annual leave 
 ```
 <!-- example: examples/go/concepts/concepts.go#streaming -->
 ```go tab="Go"
-stream, err := client.Conversations.Send(ctx, conversationID, &caitlyn.SendMessageInput{
-	Message: "How much annual leave do part-time staff get?",
-})
+stream, err := client.Conversation(conversationID).Send(ctx, "How much annual leave do part-time staff get?")
 if err != nil {
 	return err
 }
@@ -74,11 +71,10 @@ fmt.Println(answer.ID, stream.RequestID())
 ```
 <!-- example: examples/rust/src/concepts.rs#streaming -->
 ```rust tab="Rust"
-let input = SendMessageInput {
-    message: "How much annual leave do part-time staff get?".into(),
-    ..Default::default()
-};
-let mut stream = client.conversations().send(CONVERSATION_ID, input).await?;
+let conversation = client.conversation(CONVERSATION_ID);
+let mut stream = conversation
+    .send("How much annual leave do part-time staff get?")
+    .await?;
 while let Some(event) = stream.next().await {
     match event? {
         ConversationEvent::TextDelta(delta) => print!("{}", delta.delta),
@@ -138,9 +134,10 @@ itself and carries on from the last event it saw.
 <!-- example: examples/typescript/conversations.ts#watch-conversation -->
 ```ts tab="TypeScript"
 // Open the watch first; the answer could come from anywhere (another tab, another service): here it is sent below
-const watch = caitlyn.conversations.watch(conversationId, {});
+const conversation = caitlyn.conversations(conversationId);
+const watch = conversation.watch();
 await watch.opened();
-const answer = caitlyn.conversations.send(conversationId, { message: 'Does that include public holidays?' }).finalMessage();
+const answer = conversation.send('Does that include public holidays?').finalMessage();
 let watched;
 for await (const event of watch) {
   // A watch can begin with an answer already in the conversation: wait for the one you are interested in
@@ -154,7 +151,7 @@ for await (const event of watch) {
 ```python tab="Python"
 # The answer being written now, from its start, then every answer after it, until you close the stream.
 text = ""
-with caitlyn.conversations.watch(conversation_id) as stream:
+with caitlyn.conversations(conversation_id).watch() as stream:
     for event in stream:
         if isinstance(event, TextDeltaEvent):
             text += event.delta
@@ -163,9 +160,9 @@ with caitlyn.conversations.watch(conversation_id) as stream:
 ```
 <!-- example: examples/go/conversations/conversations.go#watch-conversation -->
 ```go tab="Go"
-// The answer being written, if any, then every answer after it, until you close the stream. Each answer
-// ends with message.completed or message.failed; the stream carries on after either.
-stream, err := client.Conversations.Watch(ctx, conversationID, &caitlyn.WatchConversationInput{})
+// The answer being written, if any, from its start, then every answer after it, until you close the stream. Each
+// answer ends with message.completed or message.failed; the stream carries on after either.
+stream, err := client.Conversation(conversationID).Watch(ctx, nil)
 if err != nil {
 	return nil, err
 }
@@ -188,11 +185,8 @@ for event, err := range stream.Events() {
 <!-- example: examples/rust/src/conversations.rs#watch-conversation -->
 ```rust tab="Rust"
 // The answer being written, if there is one, then every answer after it, until you close the stream. The SDK
-// reconnects by itself; set last_event_id to carry on after an event you already have.
-let mut stream = client
-    .conversations()
-    .watch(conversation_id, WatchConversationInput::default())
-    .await?;
+// reconnects by itself.
+let mut stream = client.conversation(conversation_id).watch().await?;
 let mut last = None;
 while let Some(event) = stream.next().await {
     match event? {
@@ -230,10 +224,10 @@ event it saw.
 ```ts tab="TypeScript"
 // Open the stream first, then make the call, so the event cannot arrive before you listen
 const listening = new AbortController();
-const events = caitlyn.events.subscribe({ types: ['conversation.created'] }, { signal: listening.signal });
+const events = caitlyn.events.watch({ types: ['conversation.created'] }, { signal: listening.signal });
 try {
   await events.opened(); // the response headers have arrived: the stream is listening
-  const conversation = await caitlyn.conversations.create({ agentId, version: 'draft' });
+  const conversation = await caitlyn.agents(agentId).draft.conversations.create();
   for await (const event of events) {
     if (event.type === 'conversation.created' && event.data.id === conversation.id) {
       console.log(`created ${event.data.id} at ${event.occurredAt}; carry on from ${event.eventId}`);
@@ -248,8 +242,8 @@ try {
 <!-- example: examples/python/conversations.py#watch-workspace-events -->
 ```python tab="Python"
 # Open the stream first, then make the call whose events you want: the stream starts from now.
-with caitlyn.events.subscribe(types=["conversation.created"]) as stream:
-    conversation_id = caitlyn.conversations.create(agent_id=agent_id, version="draft").id
+with caitlyn.events.watch(types=["conversation.created"]) as stream:
+    conversation_id = caitlyn.agents(agent_id).draft.conversations.create().id
     for event in stream:
         if isinstance(event, WorkspaceConversationCreatedEvent) and event.subject.id == conversation_id:
             print("created", event.subject.id, "by", event.actor.type)
@@ -258,7 +252,7 @@ with caitlyn.events.subscribe(types=["conversation.created"]) as stream:
 <!-- example: examples/go/conversations/conversations.go#watch-workspace-events -->
 ```go tab="Go"
 // Open the stream first, then make the call whose event you are waiting for
-events, err := client.Events.Subscribe(ctx, &caitlyn.WatchWorkspaceEventsInput{
+events, err := client.Events.Watch(ctx, &caitlyn.WatchWorkspaceEventsInput{
 	Types: []string{"conversation.created"},
 })
 if err != nil {
@@ -266,7 +260,7 @@ if err != nil {
 }
 defer events.Close()
 
-conversation, err := client.Conversations.Create(ctx, &caitlyn.CreateConversationInput{AgentID: agentID, Version: "draft"})
+conversation, err := client.Agent(agentID).Draft().Conversations.Create(ctx, nil)
 if err != nil {
 	return nil, err
 }
@@ -274,7 +268,7 @@ for event, err := range events.Events() {
 	if err != nil {
 		return nil, err
 	}
-	if created, ok := event.(*caitlyn.ConversationCreatedEvent); ok && created.Data.ID == conversation.ID {
+	if created, ok := event.(*caitlyn.ConversationCreatedEvent); ok && created.Data.ID == conversation.ID() {
 		fmt.Println(created.Data.ID, created.OccurredAt, created.EventID()) // the event ID is a cursor
 		return created, nil
 	}
@@ -283,29 +277,34 @@ for event, err := range events.Events() {
 <!-- example: examples/rust/src/conversations.rs#watch-workspace-events -->
 ```rust tab="Rust"
 // Open the stream first, so it sees what the next call causes; without `after` it starts now.
-let input = WatchWorkspaceEventsInput {
-    types: Some(vec!["conversation.created".into()]),
-    ..Default::default()
-};
-let mut events = client.events().subscribe(input).await?;
-
-let input = CreateConversationInput {
-    agent_id: agent_id.into(),
-    version: "draft".into(),
-    title: None,
-};
-let conversation = client.conversations().create(input).await?;
-
+let mut events = client
+    .events()
+    .watch()
+    .types(["conversation.created"])
+    .await?;
+let conversation = client
+    .agent(agent_id)
+    .draft()
+    .conversations()
+    .create()
+    .await?;
 let mut seen = None;
 while let Some(event) = events.next().await {
     match event? {
-        WorkspaceEvent::ConversationCreatedEvent(created) if created.data.id == conversation.id => {
+        WorkspaceEvent::ConversationCreated(created)
+            if created.data.id == conversation.id() =>
+        {
             // Its event_id is a cursor: send it back as `after` to carry on from here.
-            println!("{} created by a {:?} caller", created.data.id, created.actor.r#type);
+            println!(
+                "{} created by a {:?} caller",
+                created.data.id, created.actor.r#type
+            );
             seen = Some(created);
             break; // dropping the stream closes it
         }
-        WorkspaceEvent::StreamReset(reset) => println!("events were missed; carry on from {}", reset.cursor),
+        WorkspaceEvent::StreamReset(reset) => {
+            println!("events were missed; carry on from {}", reset.cursor)
+        }
         _ => {}
     }
 }
@@ -322,7 +321,7 @@ event; it never raises it or retries.
 <!-- example: examples/typescript/conversations.ts#stream-reset -->
 ```ts tab="TypeScript"
 let cursor = savedCursor; // the last event's eventId, saved between runs
-for await (const event of caitlyn.events.subscribe({ types: ['conversation.created'], after: cursor })) {
+for await (const event of caitlyn.events.watch({ types: ['conversation.created'], after: cursor })) {
   if (event.type === 'stream.reset') {
     // Events since the saved cursor are not replayed: re-read what you depend on, then carry on
     await resync();
@@ -335,7 +334,7 @@ for await (const event of caitlyn.events.subscribe({ types: ['conversation.creat
 ```python tab="Python"
 # A cursor more than a day old (or too far behind) is answered with stream.reset, not an error, and the
 # stream carries on from there. The events in between are never sent.
-with caitlyn.events.subscribe(types=["conversation.created"], after=cursor) as stream:
+with caitlyn.events.watch(types=["conversation.created"], after=cursor) as stream:
     for event in stream:
         if isinstance(event, StreamResetEvent):
             refresh()  # read again, with the List and Get operations, what you depend on
@@ -348,7 +347,7 @@ with caitlyn.events.subscribe(types=["conversation.created"], after=cursor) as s
 ```go tab="Go"
 // Carry on after the last event you handled. A cursor the stream cannot carry on from (too old, say) is
 // answered with a StreamReset event and a new cursor, not an error.
-events, err := client.Events.Subscribe(ctx, &caitlyn.WatchWorkspaceEventsInput{
+events, err := client.Events.Watch(ctx, &caitlyn.WatchWorkspaceEventsInput{
 	Types: []string{"conversation.created"},
 	After: caitlyn.Ptr(savedCursor),
 })
@@ -372,12 +371,12 @@ for event, err := range events.Events() {
 ```
 <!-- example: examples/rust/src/conversations.rs#stream-reset -->
 ```rust tab="Rust"
-let input = WatchWorkspaceEventsInput {
-    types: Some(vec!["conversation.created".into()]),
-    after: Some(saved_cursor.into()),
-    ..Default::default()
-};
-let mut events = client.events().subscribe(input).await?;
+let mut events = client
+    .events()
+    .watch()
+    .types(["conversation.created"])
+    .after(saved_cursor)
+    .await?;
 let first = events.next().await.transpose()?;
 if let Some(WorkspaceEvent::StreamReset(reset)) = &first {
     // The cursor is too old or unknown: events since then are not replayed. Refresh what you hold from
@@ -391,7 +390,7 @@ if let Some(WorkspaceEvent::StreamReset(reset)) = &first {
 <!-- example: examples/typescript/concepts.ts#cancelling -->
 ```ts tab="TypeScript"
 // Give up after 30 seconds: the connection closes and the loop throws the signal's reason
-const stream = caitlyn.conversations.send(conversationId, { message: 'Summarise the leave policy.' }, { signal: AbortSignal.timeout(30_000) });
+const stream = caitlyn.conversations(conversationId).send('Summarise the leave policy.', {}, { signal: AbortSignal.timeout(30_000) });
 for await (const event of stream) if (event.type === 'text.delta') process.stdout.write(event.delta);
 ```
 <!-- example: examples/go/concepts/concepts.go#cancelling -->
@@ -399,7 +398,7 @@ for await (const event of stream) if (event.type === 'text.delta') process.stdou
 // Give up after 30 seconds: the connection closes and the loop returns the context's error
 ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 defer cancel()
-stream, err := client.Conversations.Send(ctx, conversationID, &caitlyn.SendMessageInput{Message: "Summarise the leave policy."})
+stream, err := client.Conversation(conversationID).Send(ctx, "Summarise the leave policy.")
 if err != nil {
 	return err
 }

@@ -84,11 +84,18 @@ func main() {
 		if err != nil {
 			return err
 		}
-		if conversation.ID == "" || conversation.AgentID != agentID {
-			return fmt.Errorf("conversation %q with agent %q", conversation.ID, conversation.AgentID)
+		if conversation.ID() == "" || conversation.Result.AgentID != agentID {
+			return fmt.Errorf("conversation %q with agent %q", conversation.ID(), conversation.Result.AgentID)
 		}
-		conversationID = conversation.ID
+		conversationID = conversation.ID()
 		return nil
+	})
+	check("conversation.chat", 3*time.Minute, func(ctx context.Context) error {
+		conversation, err := conversations.Chat(ctx, client, agentID)
+		if err == nil && conversation.Result.Version != "live" {
+			err = fmt.Errorf("a conversation with %q, want live", conversation.Result.Version)
+		}
+		return err
 	})
 	check("SendMessage", 3*time.Minute, func(ctx context.Context) error {
 		if conversationID == "" {
@@ -114,7 +121,7 @@ func main() {
 				sent <- ctx.Err()
 				return
 			}
-			stream, err := client.Conversations.Send(ctx, conversationID, &caitlyn.SendMessageInput{Message: "And full-time staff?"})
+			stream, err := client.Conversation(conversationID).Send(ctx, "And full-time staff?")
 			if err != nil {
 				sent <- err
 				return

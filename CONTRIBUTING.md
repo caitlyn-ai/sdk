@@ -30,7 +30,10 @@ make generate
    the generator settings (see "Versions" below).
 1. `scripts/prepare-model.mjs`: checks `model/model.json` against the lock file and writes
    `build/model/model.json`, without the app's lint-rule metadata (those rules run in the app's model build)
-   and with any `@since("next")` stamped as the lock's `stampNext`.
+   and with any `@since("next")` stamped as the lock's `stampNext`. Only a model built from a branch of the app
+   (pre-release, as v3 is now) has `"next"`; one built from the app's `main` has every `@since` as a released
+   version. While it has `"next"`, the docs say "Not available yet: arrives in Caitlyn <stampNext>" on those
+   operations (docs/README.md, "Since, and Not available yet").
 2. `scripts/gen-example-cases.mjs`: writes `conformance/cases/examples.json` from the model's `@examples`.
 3. `gradle test publish` in `codegen/`: compiles and tests the generators and writes them to
    `codegen/build/repo`, a file repository. Nothing is published anywhere else.
@@ -111,7 +114,7 @@ CAITLYN_WORKSPACE=your-workspace.example.com CAITLYN_AGENT_ID=… CAITLYN_TOKEN_
 - `CAITLYN_KNOWLEDGE_BASE_ID` is a knowledge base the checks may add documents to, and `CAITLYN_PUBLISH_AGENT_ID`
   an agent the checks may publish. Without one, the checks that need it print
   `skip <check>: no knowledge base configured` or `skip <check>: publishing turned off`; a language runner may
-  skip for no other reason. Reading a production history entry uses the publish agent's history, so without one it
+  skip for no other reason. Reading a history entry uses the publish agent's history, so without one it
   skips with `publishing turned off`; listing an empty history is a pass.
 - A check refused with 403 `PERMISSION_DENIED` reports `fail <check>: 403 PERMISSION_DENIED: <detail>`. The script
   turns that into `skip <check>: public role only` only when `CAITLYN_PUBLIC_ROLE_ONLY=1`, set while the workspace's
@@ -119,13 +122,14 @@ CAITLYN_WORKSPACE=your-workspace.example.com CAITLYN_AGENT_ID=… CAITLYN_TOKEN_
   empty in the CI job, so a run has to set it deliberately, and a run that sets it says so at the top of its summary.
 - The table lists every skip with its reason. A skip is not a pass: a skipped check blocks a release unless it is
   accepted for that release.
-- The checks put the workspace back as they found it. The draft checks change the draft and restore it; pinning
-  creates a uniquely named version and deleting removes it. Publishing, on the publish agent only, pins that agent's
-  draft as a uniquely named version, publishes it (with production's ETag as If-Match), checks `publishedAt`, then
-  deletes the pinned version; production keeps what was published. Each run adds a production history entry to
-  that agent, as publishing does.
+- The checks put the workspace back as they found it. The draft checks change the draft and restore it; saving
+  creates a uniquely named version and deleting removes it. Publishing, on the publish agent only, saves that agent's
+  draft as a uniquely named version, publishes it (with live's ETag as If-Match), checks `publishedAt`, then
+  deletes the saved version; live keeps what was published. Each run adds a history entry to that agent, as
+  publishing does.
 - The document checks delete every document they create. DeleteDocument deletes the document CreateDocument made
-  and WaitUntilDeleted waits for it to be gone; BatchDeleteDocuments deletes a second document together with an
+  and DeleteDocument.wait waits for it to be gone; DeleteDocument.processing deletes a document while it is
+  still being processed and expects the delete to be accepted and the document to stay gone; BatchDeleteDocuments deletes a second document together with an
   identifier that does not exist, and expects `accepted` for the document and `failed` with `NOT_FOUND` for the
   other, in request order. A check that fails part way still batch-deletes what the run created and waits until
   each is gone.

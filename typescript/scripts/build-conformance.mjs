@@ -33,7 +33,6 @@ await build({
   entryPoints: {
     'conformance.test': path.join(root, '../conformance/typescript/conformance.test.ts'),
     'auth.test': path.join(root, 'test/auth.test.ts'),
-    'waiter.test': path.join(root, 'test/waiter.test.ts'),
     'browser-guard.test': path.join(root, 'test/browser-guard.test.ts'),
     'request-handler.test': path.join(root, 'test/request-handler.test.ts'),
     'errors.test': path.join(root, 'test/errors.test.ts'),

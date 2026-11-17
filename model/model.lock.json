@@ -2,7 +2,7 @@
   "package": "caitlyn-v3-model",
   "registryProject": "custom-d/caitlyn/platform/caitlyn",
   "version": null,
-  "source": "local build of custom-d/caitlyn/platform/caitlyn!2062 at commit 43c9bbbef8 (not published)",
-  "sha256": "3dcc526194d7d5747cd32aaad32481c027028a60b2d62a02665b70435ae81011",
+  "source": "local build of custom-d/caitlyn/platform/caitlyn!2061 (v3/gate-1-model) at 57af839ca6, the approved DX redesign with one type per thing and the review round 1 fixes (not published)",
+  "sha256": "468dc242b483a6186950b38d6b9120a4caea8fb75469862a6ee64809d7b5dcff",
   "stampNext": "5.115.0"
 }
