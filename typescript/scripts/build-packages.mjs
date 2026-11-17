@@ -26,7 +26,9 @@ import path from 'node:path';
 import { checkRuntimeSchemas } from './check-runtime-schemas.mjs';
 import { coreBrowser, coreEdge, fetchRuntimeConfig, sdkRuntime } from './browser-plugins.mjs';
 
-const root = path.resolve(import.meta.dirname, '..');
+// The TypeScript workspace to build: this checkout's typescript/ by default, or CAITLYN_TS_ROOT, another laid out the
+// same way (scripts/dev-sdk.sh's, under build/dev-sdk/<name>/typescript).
+const root = process.env.CAITLYN_TS_ROOT ? path.resolve(process.env.CAITLYN_TS_ROOT) : path.resolve(import.meta.dirname, '..');
 const coreSrc = path.join(root, 'packages/sdk-core/src');
 
 async function buildPackage(dir, entryPoints, { plugins = [], edge, browser } = {}) {

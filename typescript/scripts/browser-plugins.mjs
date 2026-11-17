@@ -7,7 +7,9 @@
 //   (src/browser/auth-server.ts, aws.ts and files-node.ts in place of src/auth-server.ts, aws.ts and files-node.ts).
 import path from 'node:path';
 
-const root = path.resolve(import.meta.dirname, '..');
+// The TypeScript workspace to build: this checkout's typescript/ by default, or CAITLYN_TS_ROOT, another laid out the
+// same way (scripts/dev-sdk.sh's, under build/dev-sdk/<name>/typescript).
+const root = process.env.CAITLYN_TS_ROOT ? path.resolve(process.env.CAITLYN_TS_ROOT) : path.resolve(import.meta.dirname, '..');
 export const coreSrc = path.join(root, 'packages/sdk-core/src');
 const sdkSrc = path.join(root, 'packages/sdk/src');
 const runtimeBarrel = path.join(coreSrc, 'runtime/smithy.ts');
