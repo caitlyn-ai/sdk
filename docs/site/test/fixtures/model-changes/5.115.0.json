@@ -1,0 +1,21 @@
+{
+    "model": "caitlyn-v3-model",
+    "version": "5.115.0",
+    "previousVersion": "5.114.0",
+    "date": "2026-11-17",
+    "changes": [
+        {
+            "kind": "errorCodeAdded",
+            "surface": "beta",
+            "error": "ConflictError",
+            "code": "VERSIONS_NOT_NUMBERED",
+            "status": 409
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ReadersKind",
+            "value": "public"
+        }
+    ]
+}

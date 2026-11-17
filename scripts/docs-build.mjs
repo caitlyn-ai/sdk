@@ -15,12 +15,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { frontMatter, metadataProblems, sinceVersion } from './docs-metadata.mjs';
 import { MARKER, readPages } from './docs-guides.mjs';
-import { fillIfMatchOptional, fillNotAvailable, ifMatchOptional, kebab, loadModel, root } from './docs-model.mjs';
+import { allErrors, fillIfMatchOptional, fillNotAvailable, ifMatchOptional, kebab, loadModel, root } from './docs-model.mjs';
 import { RENAMED_TYPES, referencePages, sdkOverview } from './docs-reference.mjs';
 import { SDK_TYPES, addIngestionIntro, apiOverview, apiPages, entryTips, publishedOpenapi, sdkReturns, sdkTypePages, sidebarGroups, sidebarLabel } from './docs-api.mjs';
 import { documentProblems, lineProblems } from './docs-wording.mjs';
 import { LIVE_URL, isLive, lastModified, robotsTxt, sitemapXml } from './docs-sitemap.mjs';
-import { atomFeed, changelogPage, parseChangelog } from './docs-changelog.mjs';
+import { atomFeed, changelogPage, mergeReleases, parseChangelog, readApiReleases } from './docs-changelog.mjs';
 
 // Where the site is served: https://build.caitlyn.ai, at the root; a merge request's preview is the same build at the
 // root of its own host (docs:preview). pages.json, llms.txt, the sitemap and the moved pages name these addresses.
@@ -187,18 +187,42 @@ for (const [from, to] of moved) {
   if (pages.some((p) => `/${p.slug}/` === from)) fail('the redirects', `${from} redirects, but is a page`);
 }
 // The Changelog (/changelog/, scripts/docs-changelog.mjs): every SDK release in CHANGELOG.md, which semantic-release
-// writes, with links to the pages each change touches; its Atom feed is written beside it after the build
+// writes, and every API release in model/changes/ (scripts/model-pull.sh keeps each published model's changes.json
+// there), newest first, with links to the pages each change touches; its Atom feed is written beside it after the build
 const CHANGELOG_FEED = '/changelog/feed.xml';
-const releases = parseChangelog(fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8'));
-if (!releases.length) fail('CHANGELOG.md', 'no release headings the Changelog can read');
-for (const r of releases) if (!r.changes.length) fail('CHANGELOG.md', `the ${r.version} release lists no change the Changelog can read`);
+const sdkReleases = parseChangelog(fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8'));
+if (!sdkReleases.length) fail('CHANGELOG.md', 'no release headings the Changelog can read');
+for (const r of sdkReleases) if (!r.changes.length) fail('CHANGELOG.md', `the ${r.version} release lists no change the Changelog can read`);
+const apiReleases = readApiReleases(path.join(root, 'model/changes'));
+for (const problem of apiReleases.problems) fail('the API releases', problem);
+const releases = mergeReleases(sdkReleases, apiReleases.releases);
+// Each error class's codes, so an API release's error links to its code's page
+const errorCodes = Object.fromEntries(allErrors(ast).map((e) => [e.name, e.codes]));
+// The operations each error code belongs to, for a code an error class adds or drops: those that return its class and
+// give the code in an example or their documentation
+const codeOperations = {};
 {
-  const { body, operations } = changelogPage(releases, pages, { feed: CHANGELOG_FEED });
+  const service = Object.values(ast.shapes).find((x) => x.type === 'service');
+  const serviceErrors = new Set((service.errors ?? []).map((e) => e.target));
+  for (const e of allErrors(ast)) {
+    for (const c of e.codes) {
+      const ops = Object.entries(ast.shapes)
+        .filter(([, sh]) => sh.type === 'operation' && (serviceErrors.has(e.id) || (sh.errors ?? []).some((x) => x.target === e.id)))
+        .filter(([, sh]) => (sh.traits?.['smithy.api#documentation'] ?? '').includes(c) || JSON.stringify(sh.traits?.['smithy.api#examples'] ?? []).includes(`"${c}"`))
+        .map(([id]) => id.split('#')[1])
+        .sort();
+      if (ops.length) codeOperations[c] = ops;
+    }
+  }
+}
+{
+  const { body, siteBody, operations } = changelogPage(releases, pages, { feed: CHANGELOG_FEED, errorCodes, codeOperations });
   pages.push({
     slug: 'changelog',
     title: 'Changelog',
     metadata: { pageType: 'changelog', sinceVersion: 0, resources: [], integrations: [], operations },
     body,
+    siteBody,
     source: 'CHANGELOG.md',
     kind: 'pages',
   });
@@ -745,7 +769,7 @@ const llms = [
 ];
 fs.writeFileSync(path.join(site, 'llms.txt'), llms.join('\n'));
 // The Changelog's Atom feed, at the address the page and every page's head name (docs/site/astro.config.mjs)
-fs.writeFileSync(path.join(site, CHANGELOG_FEED), atomFeed(releases, pages, { base: PROD_URL, feed: CHANGELOG_FEED }));
+fs.writeFileSync(path.join(site, CHANGELOG_FEED), atomFeed(releases, pages, { base: PROD_URL, feed: CHANGELOG_FEED, errorCodes, codeOperations }));
 const ordered = [...startPages, ...kind('guides'), ...SECTIONS.flatMap((s) => kind(s.dir)), ...kind('reference'), ...kind('api'), ...kind('types'), ...kind('errors')];
 fs.writeFileSync(
   path.join(site, 'llms-full.txt'),

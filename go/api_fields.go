@@ -84,8 +84,8 @@ func (s *Fields) Create(ctx context.Context, in *CreateFieldInput, opts ...CallO
 //
 // For each field named, every document with no value yet gets one, and the search index and vectors
 // are brought up to date. Values someone set by hand are kept. Returns 202 with the job, which the
-// knowledge base's watch follows; estimate it first with EstimateFillInFields. Costs money: see the
-// estimate's `cost`.
+// knowledge base's watch follows; estimate it first with EstimateFillInFields. It is charged for: see
+// the estimate's `cost`, in the form the organisation sees it.
 //
 // It returns the response, as Result, with Wait, which follows the work the call started.
 //

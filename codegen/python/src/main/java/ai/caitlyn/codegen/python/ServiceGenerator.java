@@ -80,6 +80,7 @@ final class ServiceGenerator {
             byId.put(op.getId(), info);
         }
         writeOperations();
+        writeErrorCodes();
         writeClient();
         writeVersion();
         writeAuth();
@@ -91,6 +92,46 @@ final class ServiceGenerator {
 
     private String module(String name) {
         return settings.module(name);
+    }
+
+    // ------------------------------------------------------------------ errors.py: ErrorCode
+
+    /**
+     * {@code ErrorCode}: an open enum with a member for every stable code the model lists ({@code @errorCodes}),
+     * written into the errors module beside the error classes. It is a StrEnum, so {@code e.code == ErrorCode.NOT_FOUND}
+     * and {@code e.code == "NOT_FOUND"} are the same check, and a code this SDK does not know yet still parses.
+     */
+    private void writeErrorCodes() {
+        Map<String, StructureShape> codes = new TreeMap<>();
+        for (StructureShape e : serviceErrors()) {
+            CaitlynTraits.node(e, CaitlynTraits.ERROR_CODES).flatMap(Node::asArrayNode).ifPresent(a -> a.getElements()
+                    .forEach(c -> codes.putIfAbsent(c.expectStringNode().getValue(), e)));
+        }
+        if (codes.isEmpty()) {
+            return;
+        }
+        Symbol any = symbols.toSymbol(codes.values().iterator().next());
+        ctx.writerDelegator().useFileWriter(any.getDefinitionFile(), any.getNamespace(), w -> {
+            w.importFrom("caitlyn_core", "OpenEnum");
+            w.write("");
+            w.write("class ErrorCode(OpenEnum):");
+            w.indent();
+            w.write("$D\n", "The stable error codes the API documents. `e.code` is one of these, or a code this SDK does not know "
+                    + "yet (`ErrorCode(\"…\")` keeps it, with `is_known` False). A member is its own string, so "
+                    + "`e.code == ErrorCode.NOT_FOUND` and `e.code == \"NOT_FOUND\"` are the same check. Each code's page is "
+                    + "https://build.caitlyn.ai/errors/{code}.");
+            codes.forEach((code, e) -> {
+                w.write("$L = $L", code, Names.pyString(code));
+                w.write("$D", "Raised as " + symbols.toSymbol(e).getName() + " (" + e.expectTrait(HttpErrorTrait.class).getCode() + ").");
+            });
+            ai.caitlyn.codegen.model.SdkErrorCodes.CODES.forEach((code, what) -> {
+                if (!codes.containsKey(code)) {
+                    w.write("$L = $L", code, Names.pyString(code));
+                    w.write("$D", "Raised by the SDK itself, with status 0. " + what);
+                }
+            });
+            w.dedent();
+        });
     }
 
     // ------------------------------------------------------------------ _operations.py
@@ -1797,6 +1838,11 @@ final class ServiceGenerator {
                     w.importFrom(module("_client"), n);
                     names.add(n);
                 }
+            }
+            if (model.shapes().anyMatch(sh -> sh.hasTrait(CaitlynTraits.ERROR_CODES))) {
+                Symbol err = symbols.toSymbol(serviceErrors().get(0));
+                w.importFrom(err.getNamespace(), "ErrorCode");
+                names.add("ErrorCode");
             }
             for (String n : List.of("SDK_MODEL", "__version__")) {
                 w.importFrom(module("_version"), n);

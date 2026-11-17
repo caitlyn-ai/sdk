@@ -277,7 +277,7 @@ async function run(deps: SyncDeps, knowledgeBaseId: string, source: string | Syn
       const last = at + ITEMS_PER_CALL >= items.length;
       const r = await call('BatchCreateIngestionBatchItems', { knowledgeBaseId, ingestionBatchId: batchId, items: items.slice(at, at + ITEMS_PER_CALL), ...(last ? { last: true } : {}) }, signal);
       const failed = (r.results as Json[]).find((x) => x.status === 'failed');
-      if (failed) throw toError({ status: 0, code: failed.code ?? 'VALIDATION_FAILED', title: 'An item was refused', detail: `Item ${at + failed.index}: ${failed.detail ?? failed.code}` });
+      if (failed) throw toError({ status: 0, code: 'INGESTION_ITEM_REFUSED', title: 'An item was refused', detail: `Item ${at + failed.index} was refused${failed.code ? ` (${failed.code})` : ''}: ${failed.detail ?? 'no reason given'}`, itemCode: failed.code });
     }
 
     // 3. Plan: the batch's planned(), which follows its watch and raises the batch's own failure when planning
@@ -354,8 +354,13 @@ async function run(deps: SyncDeps, knowledgeBaseId: string, source: string | Syn
       else note(item);
     }
     const awaiting = await listAll(call, 'ListIngestionBatchItems', { knowledgeBaseId, ingestionBatchId: batchId, status: 'awaiting_upload', limit: 1000 }, 'items', signal);
-    // The batch's upload (./upload.ts), with this call's own files: an item it has no file for fails, as every item
-    // came from this call's folder or list. An upload that fails here reaches onItem and the report at once.
+    // Every item came from this call's folder or list, so one awaiting a file the call does not have is an error, as is
+    // a start that gave no upload policy for the items that need one (PROTOCOL.md 6.3).
+    const unknown = awaiting.find((item) => !byPath.has(item.path));
+    if (unknown) throw toError({ status: 0, code: 'INGESTION_ITEM_HAS_NO_FILE', title: 'An item has no file', detail: `The batch awaits bytes for ${unknown.path}, which is not one of the files given.` });
+    if (awaiting.length && !policy) throw toError({ status: 0, code: 'UPLOAD_POLICY_MISSING', title: 'No upload policy', detail: 'StartIngestionBatch returned no upload policy, but items are awaiting upload.' });
+    // The batch's upload (./upload.ts), with this call's own files. An upload that fails here reaches onItem and the
+    // report at once.
     const failedLocally = new Map<string, Json>();
     await uploadItems(
       deps,
@@ -363,8 +368,7 @@ async function run(deps: SyncDeps, knowledgeBaseId: string, source: string | Syn
       batchId,
       awaiting,
       async (item) => {
-        const local = byPath.get(item.path);
-        if (!local) throw Object.assign(new Error(`The batch asks for ${item.path}, which this call did not give.`), { code: 'UPLOAD_FAILED' });
+        const local = byPath.get(item.path)!;
         return { file: { ...local.prepared, name: local.file.name, contentType: local.file.contentType }, sha256: local.file.sha256 };
       },
       {

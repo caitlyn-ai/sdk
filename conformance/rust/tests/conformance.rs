@@ -919,6 +919,31 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             );
             Ok(())
         }),
+        "tolerance.unknown-error-code" => Box::pin(async move {
+            let body = json!({"type": "https://build.caitlyn.ai/errors/SOMETHING_NEW", "title": "Something new",
+                "status": 409, "code": "SOMETHING_NEW", "requestId": "r-1"});
+            m.faults(json!({"status": {"GetAgentVersion": [
+                {"status": 409, "contentType": "application/problem+json", "body": body.to_string()}
+            ]}}))
+            .await;
+            let r = client(m).agent(AGENT).draft().get().await;
+            ensure!(
+                matches!(&r, Err(Error::Conflict(e)) if e.status == 409 && e.code == "SOMETHING_NEW"),
+                "response: {:?}",
+                r.err()
+            );
+            m.reset().await;
+            m.faults(json!({"busyDocuments": {"doc-0002": true}, "jobOutcomes": {"doc-0002": "failed"},
+                "jobError": {"code": "SOMETHING_NEW", "detail": "A failure this SDK does not know."}}))
+                .await;
+            let r = client(m).knowledge_base(KB).document("doc-0002").wait().await;
+            ensure!(
+                matches!(&r, Err(Error::Api(e)) if e.status == 0 && e.code == "SOMETHING_NEW"),
+                "job: {:?}",
+                r.err()
+            );
+            Ok(())
+        }),
         "tolerance.unknown-enum" => Box::pin(async move {
             m.faults(json!({"unknownEnum": true})).await;
             let docs = list_all(&client(m), KB, None).await.map_err(s)?;
@@ -1169,7 +1194,26 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 .upload_id(up.id)
                 .folder("/hr/")
                 .await;
-            ensure!(matches!(&r, Err(Error::Conflict(e)) if e.code == "CONFLICT"), "got {:?}", r.err());
+            ensure!(
+                matches!(&r, Err(Error::Conflict(e)) if e.code == "CONFLICT" && e.code == ErrorCode::CONFLICT),
+                "got {:?}",
+                r.err()
+            );
+            Ok(())
+        }),
+        "errors.versions-not-numbered" => Box::pin(async move {
+            m.faults(json!({"versionsNotNumbered": {"doc-0001": true}})).await;
+            let doc = client(m).knowledge_base(KB).document("doc-0001");
+            let r = doc.version("1").delete().await;
+            ensure!(
+                matches!(&r, Err(Error::Conflict(e)) if e.status == 409 && e.code == ErrorCode::VERSIONS_NOT_NUMBERED),
+                "got {:?}",
+                r.err()
+            );
+            let deletes = m.matching(|r| str_at(r, "method") == "DELETE").await;
+            ensure!(deletes.len() == 1, "{} DELETEs, want 1 (not retried)", deletes.len());
+            let d = doc.get().await.map_err(s)?;
+            ensure!(d.version_count == Some(1), "after: {:?}", d.version_count);
             Ok(())
         }),
         "errors.412" => Box::pin(async move {
@@ -1195,6 +1239,101 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 "got {:?}",
                 r.err()
             );
+            Ok(())
+        }),
+        "errors.decode-failed" => Box::pin(async move {
+            m.faults(json!({"status": {"GetDocument": [{"status": 200, "body": "this is not JSON", "contentType": "application/json"}]}}))
+                .await;
+            let e = client(m)
+                .knowledge_base(KB)
+                .document("doc-0001")
+                .get()
+                .await
+                .err()
+                .ok_or("get returned")?;
+            ensure!(e.code() == Some("DECODE_FAILED") && e.status() == Some(0), "got {e:?}");
+            let cause = std::error::Error::source(&e).ok_or("no cause")?;
+            ensure!(cause.downcast_ref::<serde_json::Error>().is_some(), "cause {cause:?}");
+            Ok(())
+        }),
+        "errors.job-failed-no-code" => Box::pin(async move {
+            m.faults(json!({"busyDocuments": {"doc-0002": true}, "jobOutcomes": {"doc-0002": "failed"},
+                "jobError": {"detail": "The job failed and said no more."}}))
+                .await;
+            let e = client(m)
+                .knowledge_base(KB)
+                .document("doc-0002")
+                .wait()
+                .timeout(Duration::from_secs(10))
+                .await
+                .err()
+                .ok_or("wait returned")?;
+            ensure!(
+                e.code() == Some("JOB_FAILED") && e.status() == Some(0) && matches!(e, Error::Api(_)),
+                "got {e:?}"
+            );
+            Ok(())
+        }),
+        "errors.file-unreadable" => Box::pin(async move {
+            /// Some bytes, then the read fails, as a disk going away would.
+            struct Failing(bool);
+            impl tokio::io::AsyncRead for Failing {
+                fn poll_read(
+                    mut self: Pin<&mut Self>,
+                    _: &mut std::task::Context<'_>,
+                    buf: &mut tokio::io::ReadBuf<'_>,
+                ) -> std::task::Poll<std::io::Result<()>> {
+                    if self.0 {
+                        return std::task::Poll::Ready(Err(std::io::Error::other("the disk went away")));
+                    }
+                    self.0 = true;
+                    buf.put_slice(b"%PDF-1.7 first part");
+                    std::task::Poll::Ready(Ok(()))
+                }
+            }
+            let c = client(m);
+            let e = c
+                .core()
+                .uploads()
+                .send(UploadFile::from_reader("scan.pdf", Failing(false)))
+                .await
+                .err()
+                .ok_or("send returned")?;
+            ensure!(e.code() == Some("FILE_UNREADABLE") && e.status() == Some(0), "stream: got {e:?}");
+            let cause = std::error::Error::source(&e)
+                .and_then(|c| c.downcast_ref::<std::io::Error>())
+                .ok_or("no io cause")?;
+            ensure!(cause.to_string() == "the disk went away", "stream cause {cause}");
+            let missing = root().join("build/rust-conformance-tmp/no-such-file.pdf");
+            let e = c
+                .core()
+                .uploads()
+                .send(UploadFile::path_unchecked(&missing))
+                .await
+                .err()
+                .ok_or("send returned")?;
+            ensure!(e.code() == Some("FILE_UNREADABLE") && e.status() == Some(0), "path: got {e:?}");
+            let cause = std::error::Error::source(&e)
+                .and_then(|c| c.downcast_ref::<std::io::Error>())
+                .ok_or("no io cause")?;
+            ensure!(cause.kind() == std::io::ErrorKind::NotFound, "path cause {cause}");
+            ensure!(m.api().await.is_empty(), "nothing was sent");
+            Ok(())
+        }),
+        "errors.item-has-no-file" => Box::pin(async move {
+            m.faults(json!({"strayItem": "/hr/stray.pdf"})).await;
+            let dir = folder_of(&[("annual-leave.md", "Staff receive 20 days of annual leave.")]);
+            let e = client(m)
+                .knowledge_base(KB)
+                .ingestion()
+                .sync(SyncInput::dir(&dir).folder("/hr/"))
+                .await
+                .err()
+                .ok_or("sync returned")?;
+            ensure!(e.code() == Some("INGESTION_ITEM_HAS_NO_FILE") && e.status() == Some(0), "got {e:?}");
+            ensure!(e.to_string().contains("/hr/stray.pdf"), "message {e}");
+            let forms = m.matching(|r| str_at(r, "method") == "POST" && str_at(r, "path") == "/__s3/").await;
+            ensure!(forms.is_empty(), "uploaded {forms:?}");
             Ok(())
         }),
         "errors.429-exhausted" => Box::pin(async move {
@@ -2135,6 +2274,29 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             ensure!(matches!(r, Err(Error::PreconditionFailed(_))), "stale: got {:?}", r.err());
             Ok(())
         }),
+        "access.public" => Box::pin(async move {
+            let kb = client(m).knowledge_base(KB);
+            let folder = kb.folder("/policies/");
+            folder.access().set().readers("public").await.map_err(s)?;
+            let put = m.matching(|r| str_at(r, "method") == "PUT").await;
+            let body: Value = serde_json::from_str(str_at(put.last().ok_or("no PUT")?, "body")).map_err(s)?;
+            ensure!(body == json!({"readers": {"kind": "public"}}), "sent {body}");
+            let read = folder.access().get().await.map_err(s)?;
+            ensure!(
+                matches!(read.readers.as_ref().map(|r| &r.kind), Some(ReadersKind::Public)),
+                "read {:?}",
+                read.readers
+            );
+            let doc = kb.document("doc-0001");
+            doc.access().set().readers(Readers::public()).await.map_err(s)?;
+            let read = doc.access().get().await.map_err(s)?;
+            ensure!(
+                read.readers.as_ref().map(|r| r.kind.as_str()) == Some("public"),
+                "document readers {:?}",
+                read.readers
+            );
+            Ok(())
+        }),
         "access.set-no-if-match" => Box::pin(async move {
             let folder = client(m).knowledge_base(KB).folder("/hr/investigations/");
             folder.access().set().readers(Readers::roles(["hr-team"])).await.map_err(s)?;
@@ -2164,6 +2326,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             for readers in [
                 Readers::from("inherit"),
                 Readers::everyone(),
+                Readers::public(),
                 Readers::specific(["hr-team"], ["user-7"]),
             ] {
                 let current = folder.access().get().await.map_err(s)?;
@@ -2179,6 +2342,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 puts == [
                     json!({"readers": {"kind": "inherit"}}),
                     json!({"readers": {"kind": "everyone"}}),
+                    json!({"readers": {"kind": "public"}}),
                     json!({"readers": {"kind": "specific", "roles": ["hr-team"], "people": ["user-7"]}}),
                 ],
                 "bodies {puts:?}"
@@ -2657,16 +2821,125 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             ensure!(text == ANSWER, "text {text:?}");
             Ok(())
         }),
-        "wait.expired" => Box::pin(async move {
-            // A server of this case's own: the batch's watch shows its plan expired.
-            let snapshot = json!({"batch": batch_json("expired"), "jobs": [], "progress": []});
-            let sse = format!("id: s-1\nevent: snapshot\ndata: {snapshot}\n\n");
-            let fake = Fake::start(vec![(200, "text/event-stream", sse.clone()), (200, "text/event-stream", sse)]).await;
-            let batch = fake.client().knowledge_base(KB).ingestion().batch("batch-1");
-            for (which, r) in [("planned", batch.planned().await), ("wait", batch.wait().await)] {
-                let e = r.err().ok_or(format!("{which} returned"))?;
-                ensure!(e.code() == Some("EXPIRED") && e.status() == Some(0), "{which}: got {e:?}");
-            }
+        "wait.deadline-reread" => Box::pin(async move {
+            // The mock's deadlinePassed: only GetIngestionBatch ends a batch past its deadline, and its watch never
+            // shows the end. 'uploads': started, nothing uploaded, uploadsExpireAt a minute gone.
+            let batch_reads = |reqs: Vec<Value>| {
+                reqs.iter()
+                    .filter(|r| str_at(r, "method") == "GET" && str_at(r, "path").rsplit('/').nth(1) == Some("ingestion-batches"))
+                    .count()
+            };
+            m.faults(json!({"deadlinePassed": "uploads"})).await;
+            let c = client(m);
+            let data = b"%PDF-1.7 annual leave";
+            let batch = hand_batch(&c, vec![ingest_item("/hr/annual-leave.pdf", data)], true).await?;
+            let done: IngestionBatch = batch.wait().timeout(Duration::from_secs(10)).await.map_err(s)?;
+            ensure!(done.status.as_str() == "completed_with_failures", "wait: {done:?}");
+            let items = batch.items().list().collect().await.map_err(s)?;
+            ensure!(
+                items.len() == 1 && items[0].status.as_str() == "failed" && items[0].failure_code.as_deref() == Some("UPLOAD_EXPIRED"),
+                "items {items:?}"
+            );
+            // watch() yields the read as a snapshot: a fresh batch, so that only the SDK's read can show it ended.
+            m.reset().await;
+            m.faults(json!({"deadlinePassed": "uploads"})).await;
+            let c = client(m);
+            let watched = hand_batch(&c, vec![ingest_item("/hr/annual-leave.pdf", data)], true).await?;
+            let before = batch_reads(m.api().await);
+            let mut watch = watched.watch().await.map_err(s)?;
+            let ended = tokio::time::timeout(Duration::from_secs(10), async {
+                while let Some(ev) = watch.next().await {
+                    if let KnowledgeBaseEvent::Snapshot(snap) = ev.map_err(s)? {
+                        if let Some(b) = snap.batch.filter(|b| b.status.as_str() == "completed_with_failures") {
+                            return Ok::<_, String>(Some(b));
+                        }
+                    }
+                }
+                Ok(None)
+            })
+            .await
+            .map_err(|_| "the watch never showed the batch ended".to_owned())??;
+            drop(watch);
+            ensure!(ended.is_some_and(|b| b.id == watched.id()), "no snapshot of the batch ended");
+            ensure!(batch_reads(m.api().await) > before, "no GetIngestionBatch was sent");
+            // A sync whose batch is past its upload deadline, with its one upload failing (so it is never made),
+            // finishes: the read ends the batch. The report keeps the SDK's own UPLOAD_FAILED for the item; the
+            // server's is UPLOAD_EXPIRED.
+            m.reset().await;
+            m.faults(json!({"deadlinePassed": "uploads", "failUploads": {"/new/a.pdf": true}}))
+                .await;
+            let c = client(m);
+            let input = SyncInput::items(vec![SyncItem::file("/new/a.pdf", pdf("a.pdf", data))]);
+            let report = tokio::time::timeout(Duration::from_secs(30), c.knowledge_base(KB).ingestion().sync(input))
+                .await
+                .map_err(|_| "the sync never finished".to_owned())?
+                .map_err(s)?;
+            ensure!(
+                report.batch.status.as_str() == "completed_with_failures",
+                "sync: {:?}",
+                report.batch
+            );
+            ensure!(
+                report.items.len() == 1
+                    && report.items[0].status.as_str() == "failed"
+                    && report.items[0].failure_code.as_deref() == Some("UPLOAD_FAILED"),
+                "report items {:?}",
+                report.items
+            );
+            let listed = c
+                .knowledge_base(KB)
+                .ingestion()
+                .batch(report.batch.id.clone())
+                .items()
+                .list()
+                .collect()
+                .await
+                .map_err(s)?;
+            ensure!(
+                listed.len() == 1 && listed[0].failure_code.as_deref() == Some("UPLOAD_EXPIRED"),
+                "listed items {listed:?}"
+            );
+            // Each deadline is read once: a server of this case's own whose batch is past its deadline, and whose read
+            // returns the same deadline. Its watch ends after each snapshot and reconnects with the same one, which is
+            // not read again.
+            let due = (chrono::Utc::now() - chrono::Duration::seconds(31)).to_rfc3339();
+            let mut running = batch_json("running");
+            running["uploadsExpireAt"] = json!(due);
+            let sse = format!(
+                "id: s-1\nevent: snapshot\ndata: {}\n\n",
+                json!({"batch": running, "jobs": [], "progress": []})
+            );
+            let got = (200, "application/json", running.to_string());
+            let stream = |b: &String| (200, "text/event-stream", b.clone());
+            let fake = Fake::start(vec![stream(&sse), got, stream(&sse), stream(&sse)]).await;
+            let mut watch = fake
+                .client()
+                .knowledge_base(KB)
+                .ingestion()
+                .batch("batch-1")
+                .watch()
+                .await
+                .map_err(s)?;
+            let mut snapshots = 0;
+            let _ = tokio::time::timeout(Duration::from_millis(1500), async {
+                while let Some(Ok(ev)) = watch.next().await {
+                    if matches!(ev, KnowledgeBaseEvent::Snapshot(_)) {
+                        snapshots += 1;
+                    }
+                }
+            })
+            .await;
+            drop(watch);
+            let reads = fake
+                .requests()
+                .iter()
+                .filter(|l| l.starts_with("GET ") && l.contains("/ingestion-batches/batch-1 "))
+                .count();
+            ensure!(
+                reads == 1 && snapshots >= 2,
+                "one deadline: {reads} reads and {snapshots} snapshots, from {:?}",
+                fake.requests()
+            );
             Ok(())
         }),
         "watch.gone" => Box::pin(async move {
@@ -2757,23 +3030,25 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             );
             let e = batch.wait().await.err().ok_or("batch.wait() on a cancelled batch returned")?;
             ensure!(e.code() == Some("CANCELLED") && e.status() == Some(0), "batch.wait(): {e:?}");
-            // A document whose processing job ends cancelled (a fake server: the mock cannot stop processing yet).
-            let job = json!({"id": "op-1", "kind": "ingest", "status": "cancelled", "target": {"documentId": "doc-1"},
-                "createdAt": "2026-11-01T00:00:00.000Z", "endedAt": "2026-11-01T00:00:01.000Z"});
-            let snapshot = format!(
-                "event: snapshot\ndata: {}\n\n",
-                json!({"document": document_json("indexed"), "jobs": [job], "progress": []})
-            );
-            let fake = Fake::start(vec![
-                (200, "application/json", document_json("processing").to_string()),
-                (200, "text/event-stream", snapshot.clone()),
-                (200, "application/json", document_json("indexed").to_string()),
-                (200, "text/event-stream", snapshot),
-            ])
-            .await;
-            let doc = fake.client().knowledge_base(KB).document("doc-1");
+            // doc.cancel_processing().wait() returns the document as it then stands: its processing (started by a
+            // first watch, busyDocuments) is stopped by the call (cancellableProcessing), and the job it cancelled
+            // raises nothing.
+            m.reset().await;
+            m.faults(json!({"busyDocuments": {"doc-0001": true}, "jobSteps": 10_000, "cancellableProcessing": true}))
+                .await;
+            let doc = client(m).knowledge_base(KB).document("doc-0001");
+            let mut watch = doc.watch().await.map_err(s)?;
+            watch.next().await.ok_or("no snapshot")?.map_err(s)?;
+            drop(watch);
             let stopped: Document = doc.cancel_processing().wait().await.map_err(s)?;
-            ensure!(stopped.id == "doc-1", "cancel_processing().wait() {stopped:?}");
+            ensure!(
+                stopped.id == "doc-0001" && stopped.processing.is_none(),
+                "cancel_processing().wait() {stopped:?}"
+            );
+            // Any other wait on a job that ends cancelled still raises CANCELLED.
+            m.reset().await;
+            m.faults(json!({"busyDocuments": {"doc-0001": true}, "jobOutcomes": {"doc-0001": "cancelled"}}))
+                .await;
             let e = doc.wait().await.err().ok_or("doc.wait() after a cancelled job returned")?;
             ensure!(e.code() == Some("CANCELLED"), "doc.wait(): {e:?}");
             Ok(())
@@ -3908,6 +4183,51 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 "when_planned stopped at planned: got {e:?}"
             );
             ensure!(form_posts(m).await.len() == 1, "something was sent for the stopped batch");
+            Ok(())
+        }),
+        "batch-upload.keep-alive" => Box::pin(async move {
+            // A compressed clock: each policy is due for renewal 2 s after it is issued, and the batch stops waiting for
+            // bytes 4 s after the latest one. The one file takes 6 s to arrive.
+            let renewals = || async {
+                m.matching(|r| str_at(r, "method") == "POST" && str_at(r, "path").ends_with("/upload-policies"))
+                    .await
+                    .len()
+            };
+            let faults = json!({"uploadReservation": {"policySeconds": 302, "reservationSeconds": 4}, "uploadDelayMs": 6000});
+            m.faults(faults.clone()).await;
+            let c = client(m);
+            let data = b"Staff receive 20 days of annual leave.";
+            let files = || BatchFiles::by_path([("/new/annual-leave.pdf".to_owned(), pdf("annual-leave.pdf", data))]);
+            let batch = hand_batch(&c, vec![ingest_item("/new/annual-leave.pdf", data)], true).await?;
+            let done = batch.upload(files()).await.map_err(s)?;
+            let items = &done.result().items;
+            ensure!(
+                items.len() == 1 && items[0].status.as_str() == "ingesting",
+                "items {items:?}: the one accepted, not UPLOAD_EXPIRED"
+            );
+            let sent = renewals().await;
+            ensure!(
+                sent >= 3,
+                "{sent} policies asked for: the first, then at least two while the upload was in flight"
+            );
+            tokio::time::sleep(Duration::from_millis(2500)).await;
+            ensure!(renewals().await == sent, "a renewal after the call returned");
+            // Cancelled during the slow upload: no renewal after the cancellation is raised.
+            m.reset().await;
+            m.faults(faults).await;
+            let c = client(m);
+            let batch = hand_batch(&c, vec![ingest_item("/new/annual-leave.pdf", data)], true).await?;
+            let token = CancellationToken::new();
+            let t = token.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(2500)).await;
+                t.cancel();
+            });
+            let r = batch.upload(files()).cancel_on(token).await;
+            ensure!(matches!(r, Err(Error::Cancelled)), "got {:?}", r.err());
+            let at_cancel = renewals().await;
+            tokio::time::sleep(Duration::from_millis(2500)).await;
+            ensure!(renewals().await == at_cancel, "a renewal after the cancellation");
             Ok(())
         }),
         "batch-upload.sends" => Box::pin(async move {
@@ -6538,7 +6858,7 @@ async fn example(m: &Mock, ex: &Value) -> R {
 const PROBLEM_404: &str = r#"{"type":"https://build.caitlyn.ai/errors/NOT_FOUND","title":"Not found","status":404,"code":"NOT_FOUND","requestId":"01FAKE00000000000000000000"}"#;
 
 /// A tiny HTTP server answering each connection with the next canned response, then closing it: for states the mock
-/// server has no fault for (a plan that expired, a thing gone between a watch's connections).
+/// server has no fault for (a thing gone between a watch's connections, a batch past its upload deadline).
 struct Fake {
     base: String,
     seen: Arc<Mutex<Vec<String>>>,
@@ -7431,33 +7751,18 @@ fn rust_case<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                     || r.as_ref().err().is_some_and(|e| e.code() == Some("CANCELLED")),
                 "cancel's wait {r:?}"
             );
-            // cancel_processing (the mock has no way to stop processing yet: a fake server): result() is the
-            // document, wait() follows it until no job runs on it, then reads it.
-            let snapshot = format!(
-                "event: snapshot\ndata: {}\n\n",
-                json!({"document": document_json("indexed"), "jobs": [], "progress": []})
-            );
-            let fake = Fake::start(vec![
-                (200, "application/json", document_json("processing").to_string()),
-                (200, "text/event-stream", snapshot),
-                (200, "application/json", document_json("indexed").to_string()),
-            ])
-            .await;
-            let stopping = fake
-                .client()
-                .knowledge_base(KB)
-                .document("doc-1")
-                .cancel_processing()
-                .send()
-                .await
-                .map_err(s)?;
+            // cancel_processing: result() is the document, wait() follows it until no job runs on it, then reads it.
+            m.faults(json!({"busyDocuments": {"doc-0001": true}, "jobSteps": 10_000, "cancellableProcessing": true}))
+                .await;
+            let doc = c.knowledge_base(KB).document("doc-0001");
+            let mut watch = doc.watch().await.map_err(s)?;
+            watch.next().await.ok_or("no snapshot")?.map_err(s)?;
+            drop(watch);
+            let stopping = doc.cancel_processing().send().await.map_err(s)?;
             let _: &Document = stopping.result();
+            ensure!(stopping.result().id == "doc-0001", "result {:?}", stopping.result());
             let idle: Document = stopping.wait().await.map_err(s)?;
-            let seen = fake.requests();
-            ensure!(
-                idle.id == "doc-1" && idle.status.as_str() == "indexed" && seen.len() == 3,
-                "cancel_processing: {idle:?}, {seen:?}"
-            );
+            ensure!(idle.id == "doc-0001" && idle.processing.is_none(), "cancel_processing: {idle:?}");
             Ok(())
         }),
         "rust.into-stream" => Box::pin(async move {

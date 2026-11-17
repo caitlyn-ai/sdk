@@ -176,7 +176,7 @@ export interface WaitSpec<T> {
 }
 
 const FINAL_JOB = new Set(['succeeded', 'completed_with_failures', 'failed', 'cancelled']);
-const FINAL_BATCH = new Set(['succeeded', 'completed_with_failures', 'failed', 'cancelled', 'expired']);
+const FINAL_BATCH = new Set(['succeeded', 'completed_with_failures', 'failed', 'cancelled']);
 const PAST_PLANNING = new Set(['planned', 'running', ...FINAL_BATCH]);
 /** A thing in one of these is still being worked on, whether or not its job is known yet. */
 // One list for every kind (PROTOCOL.md 16): a knowledge base creating, moving or deleting; a document pending or
@@ -184,6 +184,78 @@ const PAST_PLANNING = new Set(['planned', 'running', ...FINAL_BATCH]);
 const BUSY = new Set(['creating', 'moving', 'deleting', 'pending', 'processing', 'planning', 'running']);
 
 const isNotFound = (err: unknown) => (err as { status?: number })?.status === 404;
+
+/** A failed job's error: its own, or JOB_FAILED (the generic error, status 0) when it has no code (PROTOCOL.md 6.3). */
+const failedJobError = (job: Json): Json =>
+  job.error?.code ? job.error : { ...job.error, code: 'JOB_FAILED', detail: job.error?.detail ?? `Job ${job.id} failed.` };
+
+/** How long after a batch's deadline its watch reads it, if it is still open (PROTOCOL.md 16). Fixed: not an option. */
+export const DEADLINE_GRACE_MS = 30_000;
+/** A batch's deadline, in milliseconds: its uploadsExpireAt, while it is open. None once it has ended. */
+export function batchDeadline(batch: Json | undefined): number | undefined {
+  if (!batch || FINAL_BATCH.has(batch.status) || !batch.uploadsExpireAt) return undefined;
+  return new Date(batch.uploadsExpireAt).getTime();
+}
+
+/**
+ * A batch's watch, reading the batch again once its deadline has passed (PROTOCOL.md 16). The server ends a batch whose
+ * deadline has passed only when the batch is next read, so its watch can stay silent. Each time the batch is seen (a
+ * snapshot, or a read), the read is due at its uploadsExpireAt plus 30 seconds; if nothing has shown the batch again by then,
+ * `read` (its GetIngestionBatch) is called and its batch is yielded as a `snapshot` with no jobs and no progress. A
+ * snapshot that arrives already past its due time has its batch read at once, and is yielded with the read's batch in
+ * its place. A deadline is read once: a read that returns the same deadline schedules nothing more.
+ */
+export function rereadAtDeadline<S extends AsyncIterable<any>>(stream: S, read: (signal: AbortSignal) => Promise<unknown>, options?: { signal?: AbortSignal }): S {
+  const open = stream[Symbol.asyncIterator].bind(stream);
+  // A read is made only while the watch is being read, so the caller's signal is the only one that can end it.
+  const signal = options?.signal ?? new AbortController().signal;
+  async function* events(): AsyncGenerator<Json> {
+    const inner = open() as AsyncIterator<Json>;
+    const done = new Set<number>(); // deadlines already read
+    let deadline: number | undefined;
+    let due: number | undefined;
+    let pending: Promise<IteratorResult<Json>> | undefined;
+    const see = (batch: Json) => {
+      deadline = batchDeadline(batch);
+      due = deadline === undefined || done.has(deadline) ? undefined : deadline + DEADLINE_GRACE_MS;
+      return batch;
+    };
+    const reread = async () => {
+      done.add(deadline!);
+      return see((await read(signal)) as Json);
+    };
+    try {
+      for (;;) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const next = await Promise.race([
+          (pending ??= inner.next()),
+          ...(due === undefined ? [] : [new Promise<undefined>((resolve) => (timer = setTimeout(() => resolve(undefined), due! - Date.now())))]),
+        ]);
+        clearTimeout(timer);
+        if (!next) {
+          const event: Json = { type: 'snapshot', batch: await reread(), jobs: [], progress: [] };
+          withProcessing({ batch: event.batch.id })(event);
+          yield event;
+          continue;
+        }
+        pending = undefined;
+        if (next.done) return;
+        const event = next.value;
+        if (event.type === 'snapshot' && event.batch) {
+          see(event.batch);
+          if (due !== undefined && due <= Date.now()) event.batch = await reread();
+        }
+        yield event;
+      }
+    } finally {
+      // A read of the watch still waiting is abandoned with it: its rejection is not the caller's.
+      pending?.catch(() => {});
+      await inner.return?.();
+    }
+  }
+  Object.defineProperty(stream, Symbol.asyncIterator, { configurable: true, value: events });
+  return stream;
+}
 
 /** Joins the caller's signal and a time limit into one, for one wait. */
 function waitSignal(options: WaitOptions): { signal: AbortSignal; done: () => void } {
@@ -303,7 +375,7 @@ function settle<T>(spec: WaitSpec<T>, thing: Json | undefined, jobs: Map<string,
   for (const id of followed) {
     const job = jobs.get(id);
     if (!job || !FINAL_JOB.has(job.status)) return 'waiting';
-    if (job.status === 'failed') throw spec.jobError(job.error ?? { code: 'INTERNAL', detail: `Job ${job.id} failed.` });
+    if (job.status === 'failed') throw spec.jobError(failedJobError(job));
     // A delete stops the thing's work: a job it cancelled is part of the delete, and the wait ends on the gone rule.
     if (job.status === 'cancelled' && (spec.deleting || spec.cancelling)) continue;
     if (job.status === 'cancelled') throw spec.toError({ status: 0, code: 'CANCELLED', title: 'The work was cancelled', detail: `Job ${job.id} (${job.kind}) was cancelled.`, jobId: job.id });
@@ -317,7 +389,6 @@ function settle<T>(spec: WaitSpec<T>, thing: Json | undefined, jobs: Map<string,
     }
     if (status === 'cancelled' && spec.cancelling) return {};
     if (status === 'cancelled') throw spec.toError({ status: 0, code: 'CANCELLED', title: 'The ingestion batch was cancelled', detail: `Ingestion batch ${thing.id} was cancelled.`, ingestionBatchId: thing.id });
-    if (status === 'expired') throw spec.toError({ status: 0, code: 'EXPIRED', title: 'The ingestion batch expired', detail: `Ingestion batch ${thing.id} expired before it was started.`, ingestionBatchId: thing.id });
     if (spec.until === 'planned') return PAST_PLANNING.has(status) ? {} : 'waiting';
     return FINAL_BATCH.has(status) ? {} : 'waiting';
   }
@@ -361,7 +432,7 @@ export async function waitForJob(spec: Omit<WaitSpec<Json>, 'kind' | 'get' | 'de
         if (event.type === 'snapshot') job = ((event.jobs ?? []) as Json[]).find((j) => j.id === spec.jobId) ?? job;
         else if ((event.type === 'job.progress' || event.type === 'job.finished') && event.job?.id === spec.jobId) job = event.job;
         if (!job || !FINAL_JOB.has(job.status)) continue;
-        if (job.status === 'failed') throw spec.jobError(job.error ?? { code: 'INTERNAL', detail: `Job ${job.id} failed.` });
+        if (job.status === 'failed') throw spec.jobError(failedJobError(job));
         if (job.status === 'cancelled') throw spec.toError({ status: 0, code: 'CANCELLED', title: 'The work was cancelled', detail: `Job ${job.id} (${job.kind}) was cancelled.`, jobId: job.id });
         return job;
       }
@@ -378,14 +449,14 @@ export async function waitForJob(spec: Omit<WaitSpec<Json>, 'kind' | 'get' | 'de
 }
 
 /** Who may read a folder or document: the shorthand access.set takes, beside the modelled `{kind, roles, people}`. */
-export type ReadersShorthand = 'inherit' | 'everyone' | { roles?: string[]; people?: string[] };
+export type ReadersShorthand = 'inherit' | 'public' | 'everyone' | { roles?: string[]; people?: string[] };
 
 /**
- * The readers shorthand as the modelled shape: `'inherit'` and `'everyone'` are `{kind}`, and `{roles, people}` is
+ * The readers shorthand as the modelled shape: `'inherit'`, `'public'` and `'everyone'` are `{kind}`, and `{roles, people}` is
  * `{kind: 'specific', roles, people}`. A value that already has `kind` is sent as it is.
  */
 export function readers(value: unknown): unknown {
-  if (value === 'inherit' || value === 'everyone') return { kind: value };
+  if (value === 'inherit' || value === 'public' || value === 'everyone') return { kind: value };
   if (value && typeof value === 'object' && !('kind' in value)) return { kind: 'specific', ...(value as object) };
   return value;
 }

@@ -1,0 +1,2413 @@
+{
+    "model": "caitlyn-v3-model",
+    "version": "5.114.0",
+    "previousVersion": "5.113.0",
+    "date": "2026-11-10",
+    "changes": [
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "BatchCreateIngestionBatchItems",
+            "stability": "beta",
+            "title": "Add items to a batch"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "CancelDocumentProcessing",
+            "stability": "beta",
+            "title": "Stop processing a document"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "CancelIngestionBatch",
+            "stability": "beta",
+            "title": "Cancel an ingestion batch"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "CancelOperation",
+            "stability": "beta",
+            "title": "Cancel an operation"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "CompareAgentVersions",
+            "stability": "beta",
+            "title": "Compare versions"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "CompleteIngestionBatchUploads",
+            "stability": "beta",
+            "title": "Report finished uploads"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "CreateAgent",
+            "stability": "beta",
+            "title": "Create an agent"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "CreateDocumentVersion",
+            "stability": "beta",
+            "title": "Replace a document's file"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "CreateField",
+            "stability": "beta",
+            "title": "Create a field"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "CreateFolder",
+            "stability": "beta",
+            "title": "Create a folder"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "CreateIngestionBatch",
+            "stability": "beta",
+            "title": "Create an ingestion batch"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "CreateIngestionBatchUploadPolicy",
+            "stability": "beta",
+            "title": "Get the upload policy"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "CreateKnowledgeBase",
+            "stability": "beta",
+            "title": "Create a knowledge base"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "DeleteAgent",
+            "stability": "beta",
+            "title": "Delete an agent"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "DeleteDocumentVersion",
+            "stability": "beta",
+            "title": "Delete a document version"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "DeleteField",
+            "stability": "beta",
+            "title": "Delete a field"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "DeleteFolder",
+            "stability": "beta",
+            "title": "Delete a folder"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "DeleteKnowledgeBase",
+            "stability": "beta",
+            "title": "Delete a knowledge base"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "EnableLayoutAwareSearch",
+            "stability": "beta",
+            "title": "Enable layout-aware search"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "EstimateDocumentVersion",
+            "stability": "beta",
+            "title": "Estimate replacing the file"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "EstimateFillInFields",
+            "stability": "beta",
+            "title": "Estimate a fill-in"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "EstimateIngestion",
+            "stability": "beta",
+            "title": "Estimate adding documents"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "EstimateLayoutAwareSearch",
+            "stability": "beta",
+            "title": "Estimate layout-aware search"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "EstimateReprocessDocuments",
+            "stability": "beta",
+            "title": "Estimate reprocessing"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "FillInFields",
+            "stability": "beta",
+            "title": "Fill in fields"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "GetAccess",
+            "stability": "beta",
+            "title": "Get access"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "GetAgent",
+            "stability": "beta",
+            "title": "Get an agent"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "GetConversation",
+            "stability": "beta",
+            "title": "Get a conversation"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "GetDocumentContent",
+            "stability": "beta",
+            "title": "Link to a document's bytes"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "GetDocumentDownload",
+            "stability": "beta",
+            "title": "Download a document"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "GetDocumentVersion",
+            "stability": "beta",
+            "title": "Get a document version"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "GetField",
+            "stability": "beta",
+            "title": "Get a field"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "GetHistoryEntry",
+            "stability": "beta",
+            "title": "Get a live history entry"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "GetIngestionBatch",
+            "stability": "beta",
+            "title": "Get an ingestion batch"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "GetIngestionBatchItem",
+            "stability": "beta",
+            "title": "Get a batch item"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "GetKnowledgeBase",
+            "stability": "beta",
+            "title": "Get a knowledge base"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "GetOperation",
+            "stability": "beta",
+            "title": "Get an operation"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "ListAgents",
+            "stability": "beta",
+            "title": "List agents"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "ListConversations",
+            "stability": "beta",
+            "title": "List an agent's conversations"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "ListDocumentVersions",
+            "stability": "beta",
+            "title": "List a document's versions"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "ListFields",
+            "stability": "beta",
+            "title": "List fields"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "ListFolders",
+            "stability": "beta",
+            "title": "List folders"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "ListGuardrails",
+            "stability": "beta",
+            "title": "List guardrails"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "ListHistoryEntries",
+            "stability": "beta",
+            "title": "List live history"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "ListIngestionBatchItems",
+            "stability": "beta",
+            "title": "List a batch's items"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "ListIngestionBatches",
+            "stability": "beta",
+            "title": "List ingestion batches"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "ListKnowledgeBases",
+            "stability": "beta",
+            "title": "List knowledge bases"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "ListMemoryStores",
+            "stability": "beta",
+            "title": "List memory stores"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "ListMessages",
+            "stability": "beta",
+            "title": "List messages"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "ListModels",
+            "stability": "beta",
+            "title": "List models"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "ListOperations",
+            "stability": "beta",
+            "title": "List operations"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "ListTools",
+            "stability": "beta",
+            "title": "List tools"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "ListVoices",
+            "stability": "beta",
+            "title": "List voices"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "PutAccess",
+            "stability": "beta",
+            "title": "Set access"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "ReplaceDraftVersion",
+            "stability": "beta",
+            "title": "Replace the draft"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "ReprocessDocuments",
+            "stability": "beta",
+            "title": "Reprocess documents"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "RetryDocument",
+            "stability": "beta",
+            "title": "Retry a document"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "SaveDraftVersion",
+            "stability": "beta",
+            "title": "Save the draft as a version"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "StartIngestionBatch",
+            "stability": "beta",
+            "title": "Start an ingestion batch"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "UpdateAgent",
+            "stability": "beta",
+            "title": "Update an agent"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "UpdateDocument",
+            "stability": "beta",
+            "title": "Update a document's details"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "UpdateField",
+            "stability": "beta",
+            "title": "Update a field"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "UpdateFolder",
+            "stability": "beta",
+            "title": "Rename or move a folder"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "UpdateIngestionBatch",
+            "stability": "beta",
+            "title": "Change a batch's rules"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "UpdateIngestionBatchItem",
+            "stability": "beta",
+            "title": "Resolve a batch item"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "UpdateKnowledgeBase",
+            "stability": "beta",
+            "title": "Update a knowledge base"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "WatchKnowledgeBase",
+            "stability": "beta",
+            "title": "Watch a knowledge base"
+        },
+        {
+            "kind": "operationAdded",
+            "surface": "beta",
+            "operation": "WatchOperation",
+            "stability": "beta",
+            "title": "Watch an operation"
+        },
+        {
+            "kind": "operationRemoved",
+            "surface": "beta",
+            "operation": "GetProductionHistoryEntry",
+            "stability": "beta"
+        },
+        {
+            "kind": "operationRemoved",
+            "surface": "beta",
+            "operation": "ListProductionHistoryEntries",
+            "stability": "beta"
+        },
+        {
+            "kind": "operationRemoved",
+            "surface": "beta",
+            "operation": "PinDraftVersion",
+            "stability": "beta"
+        },
+        {
+            "kind": "errorAdded",
+            "surface": "beta",
+            "operation": "DeleteAgentVersion",
+            "error": "ConflictError",
+            "status": 409
+        },
+        {
+            "kind": "errorRemoved",
+            "surface": "beta",
+            "operation": "DeleteDocument",
+            "error": "ConflictError",
+            "status": 409
+        },
+        {
+            "kind": "errorRemoved",
+            "surface": "beta",
+            "operation": "PublishAgentVersion",
+            "error": "PreconditionRequiredError",
+            "status": 428
+        },
+        {
+            "kind": "errorRemoved",
+            "surface": "beta",
+            "operation": "UpdateDraftVersion",
+            "error": "PreconditionRequiredError",
+            "status": 428
+        },
+        {
+            "kind": "errorCodeAdded",
+            "surface": "beta",
+            "error": "ConflictError",
+            "code": "DOCUMENT_INGESTION_IN_PROGRESS",
+            "status": 409
+        },
+        {
+            "kind": "errorCodeAdded",
+            "surface": "beta",
+            "error": "ConflictError",
+            "code": "INGESTION_BATCH_UNRESOLVED",
+            "status": 409
+        },
+        {
+            "kind": "errorCodeAdded",
+            "surface": "beta",
+            "error": "ConflictError",
+            "code": "TARGET_IN_USE",
+            "status": 409
+        },
+        {
+            "kind": "errorCodeAdded",
+            "surface": "beta",
+            "error": "ConflictError",
+            "code": "VERSION_IN_HISTORY",
+            "status": 409
+        },
+        {
+            "kind": "errorCodeAdded",
+            "surface": "beta",
+            "error": "ConflictError",
+            "code": "VERSION_IN_USE",
+            "status": 409
+        },
+        {
+            "kind": "errorCodeAdded",
+            "surface": "beta",
+            "error": "UnprocessableContentError",
+            "code": "BATCH_ITEM_CONTENT_AMBIGUOUS",
+            "status": 422
+        },
+        {
+            "kind": "errorCodeAdded",
+            "surface": "beta",
+            "error": "UnprocessableContentError",
+            "code": "CONTENT_REJECTED",
+            "status": 422
+        },
+        {
+            "kind": "errorCodeAdded",
+            "surface": "beta",
+            "error": "UnprocessableContentError",
+            "code": "METADATA_FIELD_PASSAGE_SCOPED",
+            "status": 422
+        },
+        {
+            "kind": "errorCodeAdded",
+            "surface": "beta",
+            "error": "UnprocessableContentError",
+            "code": "METADATA_FIELD_UNDEFINED",
+            "status": 422
+        },
+        {
+            "kind": "errorCodeAdded",
+            "surface": "beta",
+            "error": "UnprocessableContentError",
+            "code": "METADATA_LIMIT_EXCEEDED",
+            "status": 422
+        },
+        {
+            "kind": "errorCodeAdded",
+            "surface": "beta",
+            "error": "UnprocessableContentError",
+            "code": "METADATA_VALUE_INVALID",
+            "status": 422
+        },
+        {
+            "kind": "errorCodeAdded",
+            "surface": "beta",
+            "error": "ValidationError",
+            "code": "ATTACHMENTS_NOT_ACCEPTED",
+            "status": 400
+        },
+        {
+            "kind": "errorCodeAdded",
+            "surface": "beta",
+            "error": "ValidationError",
+            "code": "CONFIGURATION_TOO_LARGE",
+            "status": 400
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "AgentConfiguration",
+            "member": "answers",
+            "target": "AnswerSettings",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "AgentConfiguration",
+            "member": "connectors",
+            "target": "ConnectorBindingList",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "AgentConfiguration",
+            "member": "conversation",
+            "target": "ConversationSettings",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "AgentConfiguration",
+            "member": "guidance",
+            "target": "AgentGuidance",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "AgentConfiguration",
+            "member": "journey",
+            "target": "JourneySettings",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "AgentConfiguration",
+            "member": "liveAvatar",
+            "target": "LiveAvatarSettings",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "AgentConfiguration",
+            "member": "memory",
+            "target": "MemorySettings",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "AgentConfiguration",
+            "member": "models",
+            "target": "AgentModels",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "AgentConfiguration",
+            "member": "policies",
+            "target": "PolicyBindingList",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "AgentConfiguration",
+            "member": "runAs",
+            "target": "RunAs",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "AgentConfiguration",
+            "member": "voice",
+            "target": "VoiceSettings",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "AgentConfiguration",
+            "member": "workflow",
+            "target": "AgentWorkflow",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "AgentVersionBody",
+            "member": "changedMembers",
+            "target": "ConfigurationPathList",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "AgentVersionBody",
+            "member": "createdBy",
+            "target": "Actor",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "AgentVersionBody",
+            "member": "liveVersion",
+            "target": "AgentVersionName",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "AgentVersionBody",
+            "member": "matchesLive",
+            "target": "Boolean",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "AttachmentSettings",
+            "member": "acceptedTypes",
+            "target": "DocumentExtensionList",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "AttachmentSettings",
+            "member": "maxByteSize",
+            "target": "Long",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "ConflictError",
+            "member": "retryAfterSeconds",
+            "target": "RetryAfterSeconds",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "ContentSafety",
+            "member": "guardrail",
+            "target": "GuardrailChoice",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "CreateConversationOutput",
+            "member": "conversation",
+            "target": "Conversation",
+            "required": true
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "CreateDocumentInput",
+            "member": "externalId",
+            "target": "ExternalId",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "CreateDocumentInput",
+            "member": "extraMetadata",
+            "target": "ExtraMetadata",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "CreateDocumentInput",
+            "member": "metadata",
+            "target": "DocumentMetadata",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "CreateDocumentInput",
+            "member": "sourceUrl",
+            "target": "SourceUrl",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "CreateDocumentOutput",
+            "member": "etag",
+            "target": "EntityTag",
+            "required": true
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "CreateUploadInput",
+            "member": "purpose",
+            "target": "UploadPurpose",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "DeleteDocumentOutput",
+            "member": "document",
+            "target": "Document",
+            "required": true
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "DeleteDocumentOutput",
+            "member": "etag",
+            "target": "EntityTag",
+            "required": true
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Document",
+            "member": "durationSeconds",
+            "target": "Double",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Document",
+            "member": "etag",
+            "target": "EntityTag",
+            "required": true
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Document",
+            "member": "externalId",
+            "target": "ExternalId",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Document",
+            "member": "extraMetadata",
+            "target": "ExtraMetadata",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Document",
+            "member": "inheritedFrom",
+            "target": "FolderPath",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Document",
+            "member": "latestVersion",
+            "target": "LatestVersion",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Document",
+            "member": "metadata",
+            "target": "DocumentMetadata",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Document",
+            "member": "outOfDate",
+            "target": "Boolean",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Document",
+            "member": "pageCount",
+            "target": "Integer",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Document",
+            "member": "processing",
+            "target": "DocumentProcessing",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Document",
+            "member": "readers",
+            "target": "Readers",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Document",
+            "member": "sourceUrl",
+            "target": "SourceUrl",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Document",
+            "member": "superseded",
+            "target": "Boolean",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Document",
+            "member": "version",
+            "target": "Integer",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Document",
+            "member": "versionCount",
+            "target": "Integer",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "DocumentBody",
+            "member": "durationSeconds",
+            "target": "Double",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "DocumentBody",
+            "member": "externalId",
+            "target": "ExternalId",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "DocumentBody",
+            "member": "extraMetadata",
+            "target": "ExtraMetadata",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "DocumentBody",
+            "member": "inheritedFrom",
+            "target": "FolderPath",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "DocumentBody",
+            "member": "latestVersion",
+            "target": "LatestVersion",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "DocumentBody",
+            "member": "metadata",
+            "target": "DocumentMetadata",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "DocumentBody",
+            "member": "outOfDate",
+            "target": "Boolean",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "DocumentBody",
+            "member": "pageCount",
+            "target": "Integer",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "DocumentBody",
+            "member": "processing",
+            "target": "DocumentProcessing",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "DocumentBody",
+            "member": "readers",
+            "target": "Readers",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "DocumentBody",
+            "member": "sourceUrl",
+            "target": "SourceUrl",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "DocumentBody",
+            "member": "superseded",
+            "target": "Boolean",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "DocumentBody",
+            "member": "version",
+            "target": "Integer",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "DocumentBody",
+            "member": "versionCount",
+            "target": "Integer",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "GetAgentVersionOutput",
+            "member": "version",
+            "target": "AgentVersion",
+            "required": true
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "GetDocumentOutput",
+            "member": "document",
+            "target": "Document",
+            "required": true
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "GetDocumentOutput",
+            "member": "etag",
+            "target": "EntityTag",
+            "required": true
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "GetUploadOutput",
+            "member": "upload",
+            "target": "Upload",
+            "required": true
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "KnowledgeBaseBinding",
+            "member": "description",
+            "target": "BindingDescription",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "KnowledgeBaseBinding",
+            "member": "evaluation",
+            "target": "ResultEvaluation",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "KnowledgeBaseBinding",
+            "member": "maxQueries",
+            "target": "Integer",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "KnowledgeBaseBinding",
+            "member": "minimumRelevance",
+            "target": "Float",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "KnowledgeBaseBinding",
+            "member": "transcriptPanel",
+            "target": "Boolean",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "ListDocumentsInput",
+            "member": "contentTypePrefix",
+            "target": "ContentType",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "ListDocumentsInput",
+            "member": "deep",
+            "target": "Boolean",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "ListDocumentsInput",
+            "member": "externalId",
+            "target": "ExternalId",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "ListDocumentsInput",
+            "member": "outOfDate",
+            "target": "Boolean",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "ListDocumentsInput",
+            "member": "q",
+            "target": "SearchText",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "ListDocumentsInput",
+            "member": "sha256",
+            "target": "Sha256",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Message",
+            "member": "attachments",
+            "target": "MessageAttachmentList",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Operation",
+            "member": "costSoFar",
+            "target": "Cost",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Operation",
+            "member": "createdBy",
+            "target": "Actor",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Operation",
+            "member": "endedAt",
+            "target": "DateTime",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Operation",
+            "member": "error",
+            "target": "OperationError",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Operation",
+            "member": "eta",
+            "target": "Eta",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Operation",
+            "member": "partialFailures",
+            "target": "PartialFailureList",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Operation",
+            "member": "percent",
+            "target": "Integer",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Operation",
+            "member": "progress",
+            "target": "OperationProgress",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Operation",
+            "member": "startedAt",
+            "target": "DateTime",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Operation",
+            "member": "target",
+            "target": "OperationTarget",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "Operation",
+            "member": "updatedAt",
+            "target": "DateTime",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "PublishAgentVersionInput",
+            "member": "expectedLive",
+            "target": "AgentVersionName",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "PublishAgentVersionOutput",
+            "member": "historyEntry",
+            "target": "HistoryEntry",
+            "required": true
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "PublishAgentVersionOutput",
+            "member": "live",
+            "target": "LiveState",
+            "required": true
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "PublishAgentVersionOutput",
+            "member": "version",
+            "target": "AgentVersion",
+            "required": true
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "ResetDraftVersionOutput",
+            "member": "version",
+            "target": "AgentVersion",
+            "required": true
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "SendMessageInput",
+            "member": "attachments",
+            "target": "AttachmentList",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionInput",
+            "member": "answers",
+            "target": "AnswerSettings",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionInput",
+            "member": "connectors",
+            "target": "ConnectorBindingList",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionInput",
+            "member": "conversation",
+            "target": "ConversationSettings",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionInput",
+            "member": "guidance",
+            "target": "AgentGuidance",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionInput",
+            "member": "journey",
+            "target": "JourneySettings",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionInput",
+            "member": "liveAvatar",
+            "target": "LiveAvatarSettings",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionInput",
+            "member": "memory",
+            "target": "MemorySettings",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionInput",
+            "member": "models",
+            "target": "AgentModels",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionInput",
+            "member": "policies",
+            "target": "PolicyBindingList",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionInput",
+            "member": "runAs",
+            "target": "RunAs",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionInput",
+            "member": "voice",
+            "target": "VoiceSettings",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionInput",
+            "member": "workflow",
+            "target": "AgentWorkflow",
+            "required": false
+        },
+        {
+            "kind": "memberAdded",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionOutput",
+            "member": "version",
+            "target": "AgentVersion",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "AgentConfiguration",
+            "member": "identity",
+            "target": "AgentIdentity",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "AgentConfiguration",
+            "member": "instructions",
+            "target": "AgentInstructions",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "AgentConfiguration",
+            "member": "model",
+            "target": "ModelName",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "AgentVersionBody",
+            "member": "etag",
+            "target": "EntityTag",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "AgentVersionBody",
+            "member": "matchesProduction",
+            "target": "Boolean",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "ContentSafety",
+            "member": "guardrailId",
+            "target": "GuardrailId",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "CreateConversationOutput",
+            "member": "agentId",
+            "target": "AgentId",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "CreateConversationOutput",
+            "member": "createdAt",
+            "target": "DateTime",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "CreateConversationOutput",
+            "member": "id",
+            "target": "ConversationId",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "CreateConversationOutput",
+            "member": "title",
+            "target": "ConversationTitle",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "CreateConversationOutput",
+            "member": "version",
+            "target": "AgentVersionName",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "DeleteDocumentOutput",
+            "member": "byteSize",
+            "target": "Long",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "DeleteDocumentOutput",
+            "member": "contentType",
+            "target": "ContentType",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "DeleteDocumentOutput",
+            "member": "createdAt",
+            "target": "DateTime",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "DeleteDocumentOutput",
+            "member": "failure",
+            "target": "DocumentFailure",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "DeleteDocumentOutput",
+            "member": "folder",
+            "target": "FolderPath",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "DeleteDocumentOutput",
+            "member": "id",
+            "target": "DocumentId",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "DeleteDocumentOutput",
+            "member": "knowledgeBaseId",
+            "target": "KnowledgeBaseId",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "DeleteDocumentOutput",
+            "member": "name",
+            "target": "DocumentName",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "DeleteDocumentOutput",
+            "member": "partialFailures",
+            "target": "PartialFailureList",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "DeleteDocumentOutput",
+            "member": "sha256",
+            "target": "Sha256",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "DeleteDocumentOutput",
+            "member": "stage",
+            "target": "ProcessingStage",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "DeleteDocumentOutput",
+            "member": "status",
+            "target": "DocumentStatus",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "DeleteDocumentOutput",
+            "member": "updatedAt",
+            "target": "DateTime",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetAgentVersionOutput",
+            "member": "agentId",
+            "target": "AgentId",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetAgentVersionOutput",
+            "member": "basedOn",
+            "target": "AgentVersionName",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetAgentVersionOutput",
+            "member": "configuration",
+            "target": "AgentConfiguration",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetAgentVersionOutput",
+            "member": "createdAt",
+            "target": "DateTime",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetAgentVersionOutput",
+            "member": "matchesProduction",
+            "target": "Boolean",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetAgentVersionOutput",
+            "member": "name",
+            "target": "AgentVersionName",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetAgentVersionOutput",
+            "member": "note",
+            "target": "Note",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetAgentVersionOutput",
+            "member": "publishedAt",
+            "target": "DateTime",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetAgentVersionOutput",
+            "member": "publishedBy",
+            "target": "Actor",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetAgentVersionOutput",
+            "member": "source",
+            "target": "VersionSource",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetDocumentOutput",
+            "member": "byteSize",
+            "target": "Long",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetDocumentOutput",
+            "member": "contentType",
+            "target": "ContentType",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetDocumentOutput",
+            "member": "createdAt",
+            "target": "DateTime",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetDocumentOutput",
+            "member": "failure",
+            "target": "DocumentFailure",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetDocumentOutput",
+            "member": "folder",
+            "target": "FolderPath",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetDocumentOutput",
+            "member": "id",
+            "target": "DocumentId",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetDocumentOutput",
+            "member": "knowledgeBaseId",
+            "target": "KnowledgeBaseId",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetDocumentOutput",
+            "member": "name",
+            "target": "DocumentName",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetDocumentOutput",
+            "member": "partialFailures",
+            "target": "PartialFailureList",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetDocumentOutput",
+            "member": "sha256",
+            "target": "Sha256",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetDocumentOutput",
+            "member": "stage",
+            "target": "ProcessingStage",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetDocumentOutput",
+            "member": "status",
+            "target": "DocumentStatus",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetDocumentOutput",
+            "member": "updatedAt",
+            "target": "DateTime",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetUploadOutput",
+            "member": "expiresAt",
+            "target": "DateTime",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetUploadOutput",
+            "member": "id",
+            "target": "UploadId",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "GetUploadOutput",
+            "member": "status",
+            "target": "UploadStatus",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "PublishAgentVersionOutput",
+            "member": "agentId",
+            "target": "AgentId",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "PublishAgentVersionOutput",
+            "member": "basedOn",
+            "target": "AgentVersionName",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "PublishAgentVersionOutput",
+            "member": "configuration",
+            "target": "AgentConfiguration",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "PublishAgentVersionOutput",
+            "member": "createdAt",
+            "target": "DateTime",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "PublishAgentVersionOutput",
+            "member": "matchesProduction",
+            "target": "Boolean",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "PublishAgentVersionOutput",
+            "member": "name",
+            "target": "AgentVersionName",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "PublishAgentVersionOutput",
+            "member": "note",
+            "target": "Note",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "PublishAgentVersionOutput",
+            "member": "publishedAt",
+            "target": "DateTime",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "PublishAgentVersionOutput",
+            "member": "publishedBy",
+            "target": "Actor",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "PublishAgentVersionOutput",
+            "member": "source",
+            "target": "VersionSource",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "ResetDraftVersionOutput",
+            "member": "agentId",
+            "target": "AgentId",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "ResetDraftVersionOutput",
+            "member": "basedOn",
+            "target": "AgentVersionName",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "ResetDraftVersionOutput",
+            "member": "configuration",
+            "target": "AgentConfiguration",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "ResetDraftVersionOutput",
+            "member": "createdAt",
+            "target": "DateTime",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "ResetDraftVersionOutput",
+            "member": "matchesProduction",
+            "target": "Boolean",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "ResetDraftVersionOutput",
+            "member": "name",
+            "target": "AgentVersionName",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "ResetDraftVersionOutput",
+            "member": "note",
+            "target": "Note",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "ResetDraftVersionOutput",
+            "member": "publishedAt",
+            "target": "DateTime",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "ResetDraftVersionOutput",
+            "member": "publishedBy",
+            "target": "Actor",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "ResetDraftVersionOutput",
+            "member": "source",
+            "target": "VersionSource",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionInput",
+            "member": "identity",
+            "target": "AgentIdentity",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionInput",
+            "member": "instructions",
+            "target": "AgentInstructions",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionInput",
+            "member": "model",
+            "target": "ModelName",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionOutput",
+            "member": "agentId",
+            "target": "AgentId",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionOutput",
+            "member": "basedOn",
+            "target": "AgentVersionName",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionOutput",
+            "member": "configuration",
+            "target": "AgentConfiguration",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionOutput",
+            "member": "createdAt",
+            "target": "DateTime",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionOutput",
+            "member": "matchesProduction",
+            "target": "Boolean",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionOutput",
+            "member": "name",
+            "target": "AgentVersionName",
+            "required": true
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionOutput",
+            "member": "note",
+            "target": "Note",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionOutput",
+            "member": "publishedAt",
+            "target": "DateTime",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionOutput",
+            "member": "publishedBy",
+            "target": "Actor",
+            "required": false
+        },
+        {
+            "kind": "memberRemoved",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionOutput",
+            "member": "source",
+            "target": "VersionSource",
+            "required": false
+        },
+        {
+            "kind": "memberChanged",
+            "surface": "beta",
+            "shape": "AgentVersionBody",
+            "member": "configuration",
+            "from": {
+                "target": "AgentConfiguration",
+                "required": true
+            },
+            "to": {
+                "target": "AgentConfiguration",
+                "required": false
+            }
+        },
+        {
+            "kind": "memberChanged",
+            "surface": "beta",
+            "shape": "GetCallerOutput",
+            "member": "scopes",
+            "from": {
+                "target": "ScopeList",
+                "required": true
+            },
+            "to": {
+                "target": "OAuthScopeList",
+                "required": true
+            }
+        },
+        {
+            "kind": "memberChanged",
+            "surface": "beta",
+            "shape": "ListAgentVersionsOutput",
+            "member": "items",
+            "from": {
+                "target": "AgentVersionSummaryList",
+                "required": true
+            },
+            "to": {
+                "target": "AgentVersionList",
+                "required": true
+            }
+        },
+        {
+            "kind": "memberChanged",
+            "surface": "beta",
+            "shape": "Message",
+            "member": "text",
+            "from": {
+                "target": "MessageText",
+                "required": true
+            },
+            "to": {
+                "target": "MessageContent",
+                "required": true
+            }
+        },
+        {
+            "kind": "memberChanged",
+            "surface": "beta",
+            "shape": "PublishAgentVersionInput",
+            "member": "ifMatch",
+            "from": {
+                "target": "EntityTagCondition",
+                "required": true
+            },
+            "to": {
+                "target": "EntityTagCondition",
+                "required": false
+            }
+        },
+        {
+            "kind": "memberChanged",
+            "surface": "beta",
+            "shape": "TextDelta",
+            "member": "delta",
+            "from": {
+                "target": "MessageText",
+                "required": true
+            },
+            "to": {
+                "target": "MessageContent",
+                "required": true
+            }
+        },
+        {
+            "kind": "memberChanged",
+            "surface": "beta",
+            "shape": "UpdateDraftVersionInput",
+            "member": "ifMatch",
+            "from": {
+                "target": "EntityTag",
+                "required": true
+            },
+            "to": {
+                "target": "EntityTag",
+                "required": false
+            }
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "conversation.inputPlaceholder"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "guidance.definitions"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "guidance.identity"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "guidance.instructions"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "guidance.limitedEvidence"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "guidance.relevance"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "guidance.resultEvaluation"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "guidance.searchTopics"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "journey"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "liveAvatar"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "memory"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "models.answer"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "models.classification"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "models.planning"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "models.searchTopics"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "models.summary"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "models.title"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "runAs"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "voice"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "workflow.capabilities"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "DocumentFailureCode",
+            "value": "cancelled"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "OperationKind",
+            "value": "document_update"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "OperationKind",
+            "value": "fill_in"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "OperationKind",
+            "value": "folder_change"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "OperationKind",
+            "value": "knowledge_base_deletion"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "OperationKind",
+            "value": "layout_aware_search"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "OperationKind",
+            "value": "permissions_change"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "OperationKind",
+            "value": "reprocess"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "OperationStatus",
+            "value": "completed_with_failures"
+        },
+        {
+            "kind": "enumValueAdded",
+            "surface": "beta",
+            "shape": "VersionSource",
+            "value": "save"
+        },
+        {
+            "kind": "enumValueRemoved",
+            "surface": "beta",
+            "shape": "ClearableDraftField",
+            "value": "identity"
+        },
+        {
+            "kind": "enumValueRemoved",
+            "surface": "beta",
+            "shape": "OperationStatus",
+            "value": "succeeded_with_failures"
+        },
+        {
+            "kind": "enumValueRemoved",
+            "surface": "beta",
+            "shape": "VersionSource",
+            "value": "pin"
+        }
+    ]
+}

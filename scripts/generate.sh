@@ -55,6 +55,7 @@ rm -rf rust/caitlyn-sdk
 cp -R "$out/rust/caitlyn-rust-client-codegen" rust/caitlyn-sdk
 rustfmt --edition 2021 --config-path rust/rustfmt.toml rust/caitlyn-sdk/src/lib.rs
 
+node scripts/check-error-codes.mjs
 node scripts/version.mjs check
 node scripts/version.mjs assets
 echo "Generated from $(node -p "require('./model/model.lock.json').version ?? 'an unpublished model'")."

@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use caitlyn_sdk::{
-    BatchFiles, CancellationToken, Client, Error, IngestionBatch, IngestionHints,
+    BatchFiles, CancellationToken, Client, CostUnit, Error, IngestionBatch, IngestionHints,
     IngestionItemInput, IngestionItemStatus, ItemCreateStatus, KnowledgeBaseEvent, StartMode,
     SyncInput, SyncReport, UploadFile,
 };
@@ -36,7 +36,15 @@ pub async fn sync_with_confirm(
                         estimate.duration_seconds.high
                     );
                     if let Some(cost) = &estimate.cost {
-                        println!("{}-{} {}", cost.low, cost.high, cost.unit); // only for callers who may see cost
+                        // only for callers who may see cost
+                        match &cost.unit {
+                            // the form the organisation sees its costs in
+                            CostUnit::Usd => println!("US${:.2}-{:.2}", cost.low, cost.high),
+                            CostUnit::PercentOfPlan => {
+                                println!("{:.1}-{:.1}% of usage", cost.low, cost.high)
+                            }
+                            other => println!("{}-{} {}", cost.low, cost.high, other),
+                        }
                     }
                     estimate.documents < 500
                 })

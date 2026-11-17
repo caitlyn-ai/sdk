@@ -30,7 +30,10 @@ export interface PutAccessCommandOutput extends PutAccessOutput, __MetadataBeare
  * 412.
  *
  * Without `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or
- * `document`, send `readers`; `kind: inherit` makes it follow its folder again. The root folder
+ * `document`, send `readers`; `kind: inherit` makes it follow its folder again. The knowledge base's
+ * role grants are set only without a target, under the knowledge base's own permission, as v2's
+ * knowledge base permissions route sets them, so `roles` with `folder` or `document`, `readers`
+ * without one, and both `folder` and `document` are refused with 400 `VALIDATION_FAILED`. The root folder
  * (`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there
  * with 400 `VALIDATION_FAILED`. Applying readers to
  * the passages a folder or document holds continues after the response; the returned access says
@@ -54,7 +57,7 @@ export interface PutAccessCommandOutput extends PutAccessOutput, __MetadataBeare
  *     },
  *   ],
  *   readers: { // Readers
- *     kind: "inherit" || "everyone" || "specific", // required
+ *     kind: "inherit" || "public" || "everyone" || "specific", // required
  *     roles: [ // RoleIdList
  *       "STRING_VALUE",
  *     ],
@@ -84,7 +87,7 @@ export interface PutAccessCommandOutput extends PutAccessOutput, __MetadataBeare
  * //       },
  * //     ],
  * //     readers: { // Readers
- * //       kind: "inherit" || "everyone" || "specific", // required
+ * //       kind: "inherit" || "public" || "everyone" || "specific", // required
  * //       roles: [ // RoleIdList
  * //         "STRING_VALUE",
  * //       ],
@@ -195,6 +198,29 @@ export interface PutAccessCommandOutput extends PutAccessOutput, __MetadataBeare
  *   },
  *   etag: `"2"`
  * }
+ * *\/
+ * ```
+ *
+ * @example Role grants sent with a folder
+ * ```javascript
+ * //
+ * const input = {
+ *   folder: "/hr/",
+ *   knowledgeBaseId: "KB4T7YQ2WL",
+ *   roles: [
+ *     {
+ *       can: [
+ *         "find",
+ *         "read"
+ *       ],
+ *       roleId: "hr-team"
+ *     }
+ *   ]
+ * };
+ * const command = new PutAccessCommand(input);
+ * const response = await client.send(command);
+ * /* response is
+ * { /* metadata only *\/ }
  * *\/
  * ```
  *

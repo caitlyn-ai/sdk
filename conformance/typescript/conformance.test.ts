@@ -19,6 +19,8 @@ import {
   CaitlynConnectionError,
   CaitlynError,
   ConflictError,
+  ErrorCode,
+  ReadersKind,
   NotFoundError,
   NotSupportedByServer,
   PreconditionFailedError,
@@ -45,7 +47,7 @@ import {
   type OAuthTokens,
   type TokenStore,
 } from '@caitlyn-ai/sdk';
-import { CONTENT_TYPES, LONG_CONNECTION_MS, streamClock, describeFile, estimateSync, sync as coreSync, type SyncDeps } from '@caitlyn-ai/sdk-core';
+import { CONTENT_TYPES, LONG_CONNECTION_MS, streamClock, describeFile, rereadAtDeadline, batchDeadline, DEADLINE_GRACE_MS, estimateSync, sync as coreSync, type SyncDeps } from '@caitlyn-ai/sdk-core';
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { propagation, SpanStatusCode } from '@opentelemetry/api';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
@@ -576,6 +578,42 @@ test('[tolerance.unknown-enum] an unknown enum value is kept, not raised', async
   assert.equal(docs[1]!.status as string, 'archived');
   const v = await client().agents('GHT7YRWXPL').draft.get();
   assert.equal(v.source as string, 'cloned_from_template');
+  // Types: every enum is open, so a switch over its known values is not exhaustive, and a value this SDK does not
+  // know yet is accepted where the enum is. tsc checks this file, so a closed enum type fails the build.
+  const label = (kind: ReadersKind): string => {
+    switch (kind) {
+      case ReadersKind.INHERIT:
+      case ReadersKind.PUBLIC:
+      case ReadersKind.EVERYONE:
+      case ReadersKind.SPECIFIC:
+        return kind;
+      default: {
+        // The known values are handled, yet kind is still a string here: the unknown case must be handled too.
+        // @ts-expect-error an open enum is never narrowed to `never`
+        const exhausted: never = kind;
+        return `unknown: ${String(exhausted)}`;
+      }
+    }
+  };
+  const future: ReadersKind = 'friends_of_friends';
+  assert.equal(label(future), 'unknown: friends_of_friends');
+  assert.equal(label(ReadersKind.PUBLIC), 'public');
+});
+
+test('[tolerance.unknown-error-code] an error code this SDK does not know keeps its status class, or is the generic error on a job', async () => {
+  const body = JSON.stringify({ type: 'https://build.caitlyn.ai/errors/SOMETHING_NEW', title: 'Something new', status: 409, code: 'SOMETHING_NEW', requestId: 'r-1' });
+  await faults({ status: { GetAgentVersion: [{ status: 409, contentType: 'application/problem+json', body }] } });
+  const http = await expectError(client().agents('GHT7YRWXPL').draft.get());
+  assert.ok(http instanceof ConflictError, `got ${http.name}`);
+  assert.equal(http.status, 409);
+  assert.equal(http.code, 'SOMETHING_NEW');
+  await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
+  await faults({ busyDocuments: { 'doc-0002': true }, jobOutcomes: { 'doc-0002': 'failed' }, jobError: { code: 'SOMETHING_NEW', detail: 'A failure this SDK does not know.' } });
+  const job = await expectError(client().knowledgeBases('KB4T7YQ2WL').documents('doc-0002').wait());
+  assert.ok(job instanceof CaitlynError && !(job instanceof ConflictError), `got ${job.name}`);
+  assert.equal(job.name, 'CaitlynError');
+  assert.equal(job.status, 0);
+  assert.equal(job.code, 'SOMETHING_NEW');
 });
 
 test('[tolerance.unknown-field-raw] unknown fields are kept in raw on the output', async () => {
@@ -619,6 +657,19 @@ test('[errors.409] a 409 is ConflictError', async () => {
   assert.ok(err instanceof ConflictError);
   assert.equal(err.status, 409);
   assert.equal(err.code, 'CONFLICT');
+  assert.equal(err.code, ErrorCode.CONFLICT, 'the constant is the code itself');
+});
+
+test('[errors.versions-not-numbered] deleting a version by number before the versions are numbered is ConflictError VERSIONS_NOT_NUMBERED', async () => {
+  await faults({ versionsNotNumbered: { 'doc-0001': true } });
+  const doc = client().knowledgeBases('KB4T7YQ2WL').documents('doc-0001');
+  const err = await expectError(doc.versions('1').delete());
+  assert.ok(err instanceof ConflictError, `got ${err.name}`);
+  assert.equal(err.status, 409);
+  assert.equal(err.code, ErrorCode.VERSIONS_NOT_NUMBERED);
+  const deletes = (await api()).filter((r) => r.method === 'DELETE');
+  assert.equal(deletes.length, 1, 'not retried');
+  assert.equal((await doc.get()).versionCount, 1, 'nothing deleted');
 });
 
 test('[errors.412] a 412 on a stale ETag is PreconditionFailedError', async () => {
@@ -629,6 +680,50 @@ test('[errors.412] a 412 on a stale ETag is PreconditionFailedError', async () =
   assert.ok(err instanceof PreconditionFailedError);
   assert.equal(err.code, 'PRECONDITION_FAILED');
   assert.ok(err.requestId);
+});
+
+test('[errors.decode-failed] a 200 whose body is not JSON raises DECODE_FAILED, the generic error with status 0, with the parse failure as its cause', async () => {
+  await faults({ status: { GetDocument: [{ status: 200, body: 'this is not JSON', contentType: 'application/json' }] } });
+  const err = await expectError(client().knowledgeBases(KB).documents('doc-0001').get());
+  assert.equal(err.code, 'DECODE_FAILED');
+  assert.equal(err.status, 0);
+  assert.equal(err.name, 'CaitlynError');
+  assert.ok((err as { cause?: unknown }).cause instanceof SyntaxError, `cause ${(err as { cause?: unknown }).cause}`);
+});
+
+test('[errors.job-failed-no-code] wait() on a job that failed with no error code raises JOB_FAILED, the generic error with status 0', async () => {
+  await busy('doc-0002', 'failed', { jobError: { detail: 'The job failed and said no more.' } });
+  const err = await expectError(client().knowledgeBases(KB).documents('doc-0002').wait());
+  assert.equal(err.code, 'JOB_FAILED');
+  assert.equal(err.status, 0);
+  assert.equal(err.name, 'CaitlynError');
+});
+
+test('[errors.file-unreadable] a file that cannot be read raises FILE_UNREADABLE (status 0) with the native error as its cause, and nothing is sent', async () => {
+  const broken = new Error('the disk went away');
+  async function* failing() {
+    yield enc('%PDF-1.7 first part');
+    throw broken;
+  }
+  const err = await expectError(client().core.uploads.send(UploadFile.fromStream(failing(), { name: 'scan.pdf' })));
+  assert.equal(err.code, 'FILE_UNREADABLE');
+  assert.equal(err.status, 0);
+  assert.equal((err as { cause?: unknown }).cause, broken);
+  if (!BROWSER_BUILD) {
+    const missing = await expectError(client().core.uploads.send(path.join(tempDir('caitlyn-missing-'), 'no-such-file.pdf')));
+    assert.equal(missing.code, 'FILE_UNREADABLE');
+    assert.equal(((missing as { cause?: { code?: string } }).cause)?.code, 'ENOENT');
+  }
+  assert.deepEqual(await api(), [], 'nothing was sent');
+});
+
+test('[errors.item-has-no-file] a sync whose batch awaits a file the call has none for raises INGESTION_ITEM_HAS_NO_FILE (status 0), and nothing is uploaded', async () => {
+  await faults({ strayItem: '/hr/stray.pdf' });
+  const err = await expectError(client().knowledgeBases(KB).ingestion.sync(await syncSource(someFiles(1)), { folder: '/hr/' }));
+  assert.equal(err.code, 'INGESTION_ITEM_HAS_NO_FILE');
+  assert.equal(err.status, 0);
+  assert.match(err.message, /\/hr\/stray\.pdf/);
+  assert.deepEqual(await forms(), [], 'nothing was uploaded');
 });
 
 test('[errors.429-exhausted] a 429 after retries are exhausted carries retryAfterSeconds', async () => {
@@ -1424,13 +1519,14 @@ test('[access.set-no-if-match] access.set with no ifMatch sends no If-Match and 
   assert.ok(stale instanceof PreconditionFailedError, `got ${stale.name}`);
 });
 
-test("[access.readers-shorthand] access.set({readers}) takes 'inherit', 'everyone' or {roles, people}, and sends the modelled {kind, …} shape", async () => {
+test("[access.readers-shorthand] access.set({readers}) takes 'inherit', 'public', 'everyone' or {roles, people}, and sends the modelled {kind, …} shape", async () => {
   const kb = client().knowledgeBases(KB);
   const folder = kb.folders('/hr/investigations/');
   const cases: [NonNullable<Parameters<typeof folder.access.set>[0]>['readers'], unknown][] = [
     [{ roles: ['hr-team'] }, { kind: 'specific', roles: ['hr-team'] }],
     [{ roles: ['hr-team'], people: ['u-7'] }, { kind: 'specific', roles: ['hr-team'], people: ['u-7'] }],
     ['everyone', { kind: 'everyone' }],
+    ['public', { kind: 'public' }],
     ['inherit', { kind: 'inherit' }],
     [{ kind: 'specific', roles: ['staff'] }, { kind: 'specific', roles: ['staff'] }],
   ];
@@ -1446,6 +1542,17 @@ test("[access.readers-shorthand] access.set({readers}) takes 'inherit', 'everyon
   const { etag } = await doc.access.get();
   await doc.access.set({ readers: 'everyone' }, { ifMatch: etag });
   assert.deepEqual(JSON.parse((await api()).at(-1).body), { readers: { kind: 'everyone' } });
+});
+
+test("[access.public] access.set({readers: 'public'}) sends {kind: 'public'}, and the access read back has kind public", async () => {
+  const folder = client().knowledgeBases(KB).folders('/policies/');
+  await folder.access.set({ readers: 'public' });
+  assert.deepEqual(JSON.parse((await api()).at(-1).body), { readers: { kind: 'public' } });
+  const read = await folder.access.get();
+  assert.equal(read.readers?.kind, ReadersKind.PUBLIC);
+  const doc = client().knowledgeBases(KB).documents('doc-0001');
+  await doc.access.set({ readers: { kind: ReadersKind.PUBLIC } });
+  assert.equal((await doc.access.get()).readers?.kind, 'public');
 });
 
 // ---------------------------------------------------------------- watching and waiting (PROTOCOL.md 16)
@@ -1731,16 +1838,83 @@ test("[send.text] a conversation's send() stream has text(), which yields only t
   assert.deepEqual(parts, ['Staff receive ', '20 days of annual leave.']);
 });
 
-test('[wait.expired] a batch whose plan expired before it was started ends wait() and planned() with EXPIRED (status 0)', async () => {
-  await faults({ planExpires: true });
+test('[wait.deadline-reread] a batch past its uploadsExpireAt (plus 30 s) and still open is read again by wait() and watch(), which carry on from the read', async () => {
   const kb = client().knowledgeBases(KB);
-  const batch = await kb.ingestion.batches.create({ start: 'manual', items: [{ path: '/hr/a.pdf', sha256: await sha256(PDF), byteSize: PDF.length, contentType: 'application/pdf' }] });
-  for (const call of [() => kb.ingestion.batches(batch.id).planned(), () => kb.ingestion.batches(batch.id).wait()]) {
-    const err = await expectError(call());
-    assert.equal(err.code, 'EXPIRED');
-    assert.equal(err.status, 0);
+  const batchReads = async () => (await api()).filter((r) => r.method === 'GET' && /\/ingestion-batches\/[^/]+$/.test(r.path)).length;
+  // The mock's deadlinePassed: only GetIngestionBatch ends a batch past its deadline, and its watch never shows the end.
+  // 'uploads': started, nothing uploaded, uploadsExpireAt a minute gone.
+  await faults({ deadlinePassed: 'uploads' });
+  const batch = await startedBatch({ '/hr/annual-leave.pdf': PDF });
+  const done: IngestionBatch = await batch.wait({ timeoutMs: 10_000 });
+  assert.equal(done.status, 'completed_with_failures');
+  const [item] = await itemsOf(batch);
+  assert.equal(item.status, 'failed');
+  assert.equal(item.failureCode, 'UPLOAD_EXPIRED');
+  // watch() yields the read as a snapshot: a fresh batch, so that only the SDK's read can show it ended.
+  await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
+  await faults({ deadlinePassed: 'uploads' });
+  const watched = await startedBatch({ '/hr/annual-leave.pdf': PDF });
+  const before = await batchReads();
+  let ended: Record<string, any> | undefined;
+  for await (const event of watched.watch({ signal: AbortSignal.timeout(10_000) })) {
+    if (event.type === 'snapshot' && event.batch?.status === 'completed_with_failures') {
+      ended = event;
+      break;
+    }
   }
+  assert.equal(ended?.batch.id, watched.id);
+  assert.ok((await batchReads()) > before, 'GetIngestionBatch was sent');
+  await readOncePerDeadline();
 });
+
+/** wait.deadline-reread: each deadline is read once, and a new snapshot starts the timer again. */
+async function readOncePerDeadline() {
+  // A watch of our own: a running batch due to be read in 100 ms, then 300 ms later a snapshot with a renewed deadline,
+  // also due in 100 ms. Each read returns the same deadline as the snapshot before it, and the batch still running.
+  const at = (ms: number) => new Date(Date.now() - DEADLINE_GRACE_MS + ms);
+  const batch = (uploadsExpireAt: Date) => ({ id: 'IB1', status: 'running', uploadsExpireAt });
+  const first = batch(at(100));
+  let second: ReturnType<typeof batch> | undefined;
+  let closed = false;
+  const watch: AsyncIterable<Record<string, any>> = {
+    [Symbol.asyncIterator]() {
+      let n = 0;
+      return {
+        next: async () => {
+          if (n++ === 0) return { done: false, value: { type: 'snapshot', batch: first, jobs: [], progress: [] } };
+          if (n === 2) {
+            await new Promise((r) => setTimeout(r, 300));
+            second = batch(at(100));
+            return { done: false, value: { type: 'snapshot', batch: second, jobs: [], progress: [] } };
+          }
+          return new Promise<never>(() => {});
+        },
+        return: async () => {
+          closed = true;
+          return { done: true, value: undefined };
+        },
+      };
+    },
+  };
+  const reads: Date[] = [];
+  const stream = rereadAtDeadline(watch, async () => {
+    const b = reads.length === 0 ? first : second!;
+    reads.push(b.uploadsExpireAt);
+    return { ...b };
+  });
+  const seen: Record<string, any>[] = [];
+  // Four events: the snapshot, its read, the new snapshot, its read. A deadline read twice would be the third.
+  const limit = setTimeout(() => assert.fail(`only ${seen.length} events in 2 s`), 2_000);
+  for await (const event of stream) {
+    seen.push(event);
+    if (seen.length === 4) break;
+  }
+  clearTimeout(limit);
+  assert.deepEqual(reads, [first.uploadsExpireAt, second!.uploadsExpireAt], 'one read per deadline, the second after the new snapshot');
+  assert.deepEqual(seen.map((e) => [e.type, e.jobs.length]), [['snapshot', 0], ['snapshot', 0], ['snapshot', 0], ['snapshot', 0]]);
+  assert.equal(batchDeadline(seen[1].batch), first.uploadsExpireAt.getTime());
+  assert.ok(closed, 'leaving the watch closes it');
+}
 
 test("[watch.gone] a 404 when watch() reconnects ends the watch at once, as the thing gone, without counting towards STREAM_LOST", async () => {
   await busy('doc-0002', undefined, { watchDrops: { count: 1, afterEvents: 1 }, watchGoneAfterDrop: true });
@@ -3126,6 +3300,33 @@ test('[batch-upload.not-started] upload() on a batch not started raises INGESTIO
   assert.deepEqual(uploaded.items.map((i) => i.status), ['ingesting', 'ingesting']);
   assert.equal((await forms()).length, 2);
   assert.ok(!(await api()).some((r) => r.path.endsWith(':start') || r.path.endsWith('/start')), 'no StartIngestionBatch from the SDK');
+});
+
+test('[batch-upload.keep-alive] while an upload is in flight the policy is renewed on a timer, so a long final upload is accepted; no renewal after the call returns or is cancelled', async () => {
+  // A compressed clock: each policy is due for renewal 2 s after it is issued, and the batch stops waiting for bytes
+  // 4 s after the latest one. The one file takes 6 s to arrive.
+  const renewals = async () => (await api()).filter((r) => r.method === 'POST' && r.path.endsWith('/upload-policies')).length;
+  const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  await faults({ uploadReservation: { policySeconds: 302, reservationSeconds: 4 }, uploadDelayMs: 6000 });
+  const files = handFiles(1);
+  const batch = await startedBatch(files);
+  const uploaded = await batch.upload(asUploads(files));
+  assert.deepEqual(uploaded.items.map((i) => [i.status, i.failureCode]), [['ingesting', undefined]], 'the item was accepted, not UPLOAD_EXPIRED');
+  const sent = await renewals();
+  assert.ok(sent >= 3, `${sent} policies asked for: the first, then at least two while the upload was in flight`);
+  await pause(2500);
+  assert.equal(await renewals(), sent, 'no renewal after the call returned');
+  // Cancelled during a slow upload: no renewal after the cancellation is raised.
+  await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
+  await faults({ uploadReservation: { policySeconds: 302, reservationSeconds: 4 }, uploadDelayMs: 6000 });
+  const again = await startedBatch(files);
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 2500);
+  const err = await again.upload(asUploads(files), { signal: controller.signal }).then(() => undefined, (e: unknown) => e as Error);
+  assert.equal(err?.name, 'AbortError');
+  const atCancel = await renewals();
+  await pause(2500);
+  assert.equal(await renewals(), atCancel, 'no renewal after the cancellation');
 });
 
 test('[batch-upload.sends] only awaiting items that have a file are sent: at most 6 at once, the form’s fields in order, Complete in groups of at most 100', async () => {

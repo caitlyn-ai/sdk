@@ -1587,6 +1587,22 @@
                 "smithy.api#uniqueItems": {}
             }
         },
+        "ai.caitlyn.traits#ConversationAgentCheck": {
+            "type": "structure",
+            "members": {
+                "level": {
+                    "target": "ai.caitlyn.traits#GrantLevel",
+                    "traits": {
+                        "smithy.api#documentation": "The grant needed on the conversation's agent, one of the `agents` grant types.",
+                        "smithy.api#required": {}
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#documentation": "The check on a conversation's own agent and version.",
+                "smithy.api#private": {}
+            }
+        },
         "ai.caitlyn.traits#FilterOperator": {
             "type": "enum",
             "members": {
@@ -2126,7 +2142,7 @@
                 }
             },
             "traits": {
-                "smithy.api#documentation": "The operation binds `If-Match`, but does not require it: without one, the change applies to the\nresource as it is. Allowed only with a reason, and only on the operations Sam approved on\n17 November 2026 (the draft's update, replace and save, publishing, access, starting a batch,\nadding a document version, a field's update and resolving a batch item), which a validator test\npins; every other write requires `If-Match`.",
+                "smithy.api#documentation": "The operation binds `If-Match`, but does not require it: without one, the change applies to the\nresource as it is. Allowed only with a reason, and only on the operations Sam approved on\n17 November 2026 (the draft's update, replace and save, publishing, access, starting a batch,\nadding a document version, a field's update and resolving a batch item), which a validator test\npins; every other write that binds `If-Match` requires it.",
                 "smithy.api#trait": {
                     "selector": "operation"
                 }
@@ -2232,7 +2248,7 @@
                 }
             },
             "traits": {
-                "smithy.api#documentation": "The operation checks no permission and needs no scope of its own: any signed-in caller of the\nlisted credential types may call it. Unlike `@optionalAuth`, a credential is still required. It\nis allowed on two kinds of read only:\n\n- an operation that describes the caller's own credential, such as `GET /v3/me`, which takes no\n  input and is not a List;\n- an event stream (`@sseEvents`) with no path labels, such as the workspace event stream, which\n  names no record: the server checks each event against the caller's own permission and scope\n  for that event's subject before sending it, as a read of that subject would.\n\nAnything that names or lists records declares the `@permission` that guards them. This is the\nstandard trait for \"signed in, no scope needed\"; a new use needs the `smithy/` code owners'\napproval, like `@noAudit`.",
+                "smithy.api#documentation": "The operation checks no permission and needs no scope of its own: any signed-in caller of the\nlisted credential types may call it. Unlike `@optionalAuth`, a credential is still required. It\nis allowed on two kinds of read only:\n\n- an operation that describes the caller's own credential, such as `GET /v3/me`, which takes no\n  input and is not a List;\n- an event stream (`@sseEvents`) with no path labels, such as the workspace event stream: the\n  server checks each event against the caller's own permission and scope for that event's subject\n  before sending it, as a read of that subject would. A stream that names records in a filter\n  (the workspace stream's `conversationIds`) relies on that check, which it records with a\n  reasoned `@suppress` of CaitlynPermissions.NamesRecords.\n\nAnything that names or lists records declares the `@permission` that guards them. This is the\nstandard trait for \"signed in, no scope needed\"; a new use needs the `smithy/` code owners'\napproval, like `@noAudit`.",
                 "smithy.api#trait": {
                     "selector": "operation [trait|readonly]",
                     "conflicts": [
@@ -2263,6 +2279,12 @@
                     "target": "ai.caitlyn.traits#PermissionEntity",
                     "traits": {
                         "smithy.api#documentation": "The record the grant check follows. Required on every operation that takes a record\nidentifier."
+                    }
+                },
+                "conversationAgent": {
+                    "target": "ai.caitlyn.traits#ConversationAgentCheck",
+                    "traits": {
+                        "smithy.api#documentation": "On an operation whose entity is a conversation: also check the agent and version the\nconversation was started on, which the server reads from the conversation, as v2's chat turns\ndo (nativeChatRouteGuards.ts). The caller needs the agent grant at `level` on that agent, and\nthe version check on that version (the agent's version access grant for any version other\nthan live), so revoking either stops the caller chatting in conversations already started."
                     }
                 },
                 "whenPresent": {
@@ -2495,10 +2517,18 @@
                         "smithy.api#documentation": "The member of the same structure that holds the agent version name.",
                         "smithy.api#required": {}
                     }
+                },
+                "action": {
+                    "target": "smithy.api#String",
+                    "traits": {
+                        "smithy.api#documentation": "The permission reading that version needs, as GetAgentVersion's, for example\n\"agents.aliases.read\".",
+                        "smithy.api#pattern": "^[a-z][a-z0-9-]*(\\.[a-zA-Z][a-zA-Z0-9-]*)+$",
+                        "smithy.api#required": {}
+                    }
                 }
             },
             "traits": {
-                "smithy.api#documentation": "The member holds what reading an agent version shows, so it is present only when the caller may\nread the version `versionMember` names, by the check GetAgentVersion makes: the agent grant for\nthe version live points at now, and the agent's version access grant for any other. Without that\naccess the server leaves the member out and returns the rest of the record, so the record itself\nstays readable under its own permission.",
+                "smithy.api#documentation": "The member holds what reading an agent version shows, so it is present only when the caller may\nread the version `versionMember` names, by the check GetAgentVersion makes: the permission\n`action` (v2 reads a configuration only under `agents.aliases.read`), and the agent grant for the\nversion live points at now or the agent's version access grant for any other. Without both the\nserver leaves the member out and returns the rest of the record, so the record itself stays\nreadable under its own permission. It applies wherever the structure appears: a single read, a\nlist row, an event, or inside another operation's result.",
                 "smithy.api#trait": {
                     "selector": "structure > member"
                 }
@@ -4283,7 +4313,7 @@
                     "cancels": true
                 },
                 "ai.caitlyn.traits#permission": {
-                    "action": "knowledge-bases.ingestions.update",
+                    "action": "knowledge-bases.ingestions.create",
                     "entity": {
                         "type": "knowledge-bases",
                         "from": "knowledgeBaseId",
@@ -4431,7 +4461,7 @@
             ],
             "traits": {
                 "ai.caitlyn.traits#permission": {
-                    "action": "files.update",
+                    "action": "files.read",
                     "entity": {
                         "type": "knowledge-bases",
                         "from": "knowledgeBaseId",
@@ -4444,7 +4474,7 @@
                 },
                 "ai.caitlyn.traits#since": "next",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Cancels an Operation's work.\n\nWork not started yet is dropped; work running is stopped where its kind allows. Only\n`document_ingestion` can be cancelled today: a cancelled first version removes the document, and a\ncancelled new version leaves the current one serving. Any other kind is refused with 409\n`OPERATION_NOT_CANCELLABLE`, and a final Operation with 409 `CONFLICT`. Returns the Operation, which\nbecomes `cancelled` once the work has stopped.\n\nCancelling needs what starting that kind of work needs, on the same record, which the server\nreads from the Operation before it acts: for `document_ingestion`, what CancelDocumentProcessing\nneeds (`files.update` and the document's readers); for `document_update`, the same; for\n`fill_in`, `reprocess` and `layout_aware_search`, `knowledge-bases.update` and\n`knowledge-bases.ingestions.update`; for a `folder_change`, the permission of the change\n(`files.create`, `files.update` or `files.delete`) and the folder's readers; for\n`permissions_change`, `files.permissions.update` and the record's readers; for\n`knowledge_base_deletion`, `knowledge-bases.delete`. A caller without it gets 404, as for an\nOperation it may not see. Its declared permission is the one every cancellable kind needs today.",
+                "smithy.api#documentation": "Cancels an Operation's work.\n\nWork not started yet is dropped; work running is stopped where its kind allows. Only\n`document_ingestion` can be cancelled today: a cancelled first version removes the document, and a\ncancelled new version leaves the current one serving. Any other kind is refused with 409\n`OPERATION_NOT_CANCELLABLE`, and a final Operation with 409 `CONFLICT`. Returns the Operation, which\nbecomes `cancelled` once the work has stopped.\n\nCancelling needs what starting that kind of work needs, on the same record, which the server\nreads from the Operation and checks per kind before it acts: for `document_ingestion`, the\npermission that started it (`files.create` for a new document, `files.update` for a new version\nor a retry) and the document's readers; for `document_update`, `files.update` and its readers; for\n`fill_in`, `reprocess` and `layout_aware_search`, `knowledge-bases.update` and\n`knowledge-bases.ingestions.update`; for a `folder_change`, the permission of the change\n(`files.create`, `files.update` or `files.delete`) and the folder's readers; for\n`permissions_change`, `files.permissions.update` and the record's readers; for\n`knowledge_base_deletion`, `knowledge-bases.delete`. A caller without it gets 404, as for an\nOperation it may not see. No one permission is common to every kind, so the operation declares\nonly what reading an Operation needs (`files.read`, as GetOperation), and the per-kind check does\nthe rest.",
                 "smithy.api#examples": [
                     {
                         "title": "Stop a document's ingestion",
@@ -5120,7 +5150,7 @@
                 },
                 "ai.caitlyn.traits#lowLevel": {},
                 "ai.caitlyn.traits#permission": {
-                    "action": "knowledge-bases.ingestions.update",
+                    "action": "knowledge-bases.ingestions.create",
                     "alsoActions": [
                         "files.create"
                     ],
@@ -5291,9 +5321,10 @@
                     "VERSION_IN_HISTORY",
                     "DOCUMENT_INGESTION_IN_PROGRESS",
                     "INGESTION_BATCH_UNRESOLVED",
-                    "TARGET_IN_USE"
+                    "TARGET_IN_USE",
+                    "VERSIONS_NOT_NUMBERED"
                 ],
-                "smithy.api#documentation": "The resource's state does not allow the request, a unique name is taken, or a request with the\nsame idempotency key is still in progress. An agent version that live points at\n(`VERSION_IN_USE`) or that live history names (`VERSION_IN_HISTORY`) cannot be deleted. A\ndocument still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an\ningestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document\nan ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry\n`Retry-After`.",
+                "smithy.api#documentation": "The resource's state does not allow the request, a unique name is taken, or a request with the\nsame idempotency key is still in progress. An agent version that live points at\n(`VERSION_IN_USE`) or that live history names (`VERSION_IN_HISTORY`) cannot be deleted. A\ndocument still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an\ningestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document\nan ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry\n`Retry-After`. A document whose versions are not numbered yet cannot have one deleted by number\n(`VERSIONS_NOT_NUMBERED`).",
                 "smithy.api#error": "client",
                 "smithy.api#httpError": 409
             }
@@ -5910,13 +5941,13 @@
                 "unit": {
                     "target": "ai.caitlyn.v3#CostUnit",
                     "traits": {
-                        "smithy.api#documentation": "The form `low` and `high` are in: money, or a share of the plan for an organisation that\nsees usage rather than dollars.",
+                        "smithy.api#documentation": "Which form `low` and `high` are in: the one the organisation sees its costs in, `usd` for\ndollars or `percent_of_plan` for usage.",
                         "smithy.api#required": {}
                     }
                 }
             },
             "traits": {
-                "smithy.api#documentation": "An amount of money, as a range, in the organisation's chosen form."
+                "smithy.api#documentation": "What work is expected to cost, as a range, in the form the organisation sees its costs."
             }
         },
         "ai.caitlyn.v3#CostUnit": {
@@ -5932,13 +5963,13 @@
                 "PERCENT_OF_PLAN": {
                     "target": "smithy.api#Unit",
                     "traits": {
-                        "smithy.api#documentation": "A percentage of the organisation's monthly plan.",
+                        "smithy.api#documentation": "A percentage of the organisation's monthly usage allowance. 100 is the whole month.",
                         "smithy.api#enumValue": "percent_of_plan"
                     }
                 }
             },
             "traits": {
-                "smithy.api#documentation": "The form a cost is given in. Open: new values may be added."
+                "smithy.api#documentation": "The form a cost is given in, which follows how the organisation sees its costs. Open: new values\nmay be added."
             }
         },
         "ai.caitlyn.v3#CreateAgent": {
@@ -7082,7 +7113,7 @@
                 },
                 "ai.caitlyn.traits#since": "next",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Makes an ingestion batch for one knowledge base, and plans it unless more items will follow.\n\nTakes up to 10,000 items; add more with BatchCreateIngestionBatchItems while `awaitMoreItems` is\ntrue. Returns 202 with the batch, and `Location` names it; wait for the plan with the SDKs'\n`batch.planned()`. Needs the files list permission and read access to the knowledge base, so a\ncaller allowed only to look can plan; a batch with a `fetchUrl` item also needs the files create\npermission.",
+                "smithy.api#documentation": "Makes an ingestion batch for one knowledge base, and plans it unless more items will follow.\n\nTakes up to 10,000 items; add more with BatchCreateIngestionBatchItems while `awaitMoreItems` is\ntrue. Returns 202 with the batch, and `Location` names it; wait for the plan with the SDKs'\n`batch.planned()`. Needs the ingestion create permission and read access to the knowledge base,\nas v2's ingestion route does; starting the batch, which hands out an upload policy, also needs the\nfiles create permission. A `fetchUrl` item needs the files create permission when it is added,\nwhich the server checks, because the trait cannot follow an item's member.",
                 "smithy.api#examples": [
                     {
                         "title": "Plan a folder of policies before uploading anything",
@@ -7276,7 +7307,7 @@
                 },
                 "ai.caitlyn.traits#lowLevel": {},
                 "ai.caitlyn.traits#permission": {
-                    "action": "knowledge-bases.ingestions.update",
+                    "action": "knowledge-bases.ingestions.create",
                     "alsoActions": [
                         "files.create"
                     ],
@@ -8222,7 +8253,7 @@
                 },
                 "ai.caitlyn.traits#since": "next",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Deletes one version of a document that is neither current nor processing.\n\nThe version, its passages and its renders are removed; its bytes are kept while another version\nor document has the same ones. The current version and a version still processing are refused with\n409 `CONFLICT`; to remove the current version, delete the document. Like every change, it is\naudited.",
+                "smithy.api#documentation": "Deletes one version of a document that is neither current nor processing.\n\nThe version, its passages and its renders are removed; its bytes are kept while another version\nor document has the same ones. The current version and a version still processing are refused with\n409 `CONFLICT`; to remove the current version, delete the document. Like every change, it is\naudited.\n\nA version's number is its place in upload order, so deleting by number needs the document's\nversions to be numbered already: until they are, a number is refused with 409\n`VERSIONS_NOT_NUMBERED`, because deleting would shift every later number. Try again later, or\ndelete `latest`, which works either way.",
                 "smithy.api#examples": [
                     {
                         "title": "Delete an old version",
@@ -8249,6 +8280,25 @@
                                 "code": "CONFLICT",
                                 "detail": "Version 2 is the current version of document doc-3b7f9e21. Delete the document to remove it.",
                                 "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BD3"
+                            }
+                        }
+                    },
+                    {
+                        "title": "A version number before the document's versions are numbered",
+                        "input": {
+                            "knowledgeBaseId": "KB4T7YQ2WL",
+                            "documentId": "doc-3b7f9e21",
+                            "version": "1"
+                        },
+                        "error": {
+                            "shapeId": "ai.caitlyn.v3#ConflictError",
+                            "content": {
+                                "type": "https://build.caitlyn.ai/errors/VERSIONS_NOT_NUMBERED",
+                                "title": "Versions not numbered",
+                                "status": 409,
+                                "code": "VERSIONS_NOT_NUMBERED",
+                                "detail": "Document doc-3b7f9e21's versions are not numbered yet. Try again later, or delete latest.",
+                                "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BD5"
                             }
                         }
                     }
@@ -11266,7 +11316,7 @@
                 },
                 "ai.caitlyn.traits#since": "next",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Fills in metadata fields for the documents that still need them; the work continues after the\nresponse.\n\nFor each field named, every document with no value yet gets one, and the search index and vectors\nare brought up to date. Values someone set by hand are kept. Returns 202 with the job, which the\nknowledge base's watch follows; estimate it first with EstimateFillInFields. Costs money: see the\nestimate's `cost`.",
+                "smithy.api#documentation": "Fills in metadata fields for the documents that still need them; the work continues after the\nresponse.\n\nFor each field named, every document with no value yet gets one, and the search index and vectors\nare brought up to date. Values someone set by hand are kept. Returns 202 with the job, which the\nknowledge base's watch follows; estimate it first with EstimateFillInFields. It is charged for: see\nthe estimate's `cost`, in the form the organisation sees it.",
                 "smithy.api#examples": [
                     {
                         "title": "Fill in the policy owner",
@@ -13098,7 +13148,7 @@
                 },
                 "ai.caitlyn.traits#since": "next",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Gets one live history entry, with the configuration live had after the change.\n\nThe configuration is that of the entry's `version`, which never changes. Reading the entry (who\nchanged live, when, and to which version) needs agent read; its `configuration` needs what\nreading that version needs, so a caller without the agent's version access grant gets the entry\nwithout it unless the version is live now. It is also absent when that version was deleted\nthrough an older API that does not protect versions named in live history.",
+                "smithy.api#documentation": "Gets one live history entry, with the configuration live had after the change.\n\nThe configuration is that of the entry's `version`, which never changes. Reading the entry (who\nchanged live, when, and to which version) needs agent read; its `configuration` needs what\nreading that version needs, so a caller without the permission to read versions, or without the\nagent's version access grant for a version that is not live now, gets the entry without it. It is also absent when that version was deleted\nthrough an older API that does not protect versions named in live history.",
                 "smithy.api#examples": [
                     {
                         "title": "Live as it was after the November publish",
@@ -13223,7 +13273,7 @@
             ],
             "traits": {
                 "ai.caitlyn.traits#permission": {
-                    "action": "files.list",
+                    "action": "knowledge-bases.ingestions.list",
                     "entity": {
                         "type": "knowledge-bases",
                         "from": "knowledgeBaseId",
@@ -13337,7 +13387,7 @@
             ],
             "traits": {
                 "ai.caitlyn.traits#permission": {
-                    "action": "files.list",
+                    "action": "knowledge-bases.ingestions.list",
                     "entity": {
                         "type": "knowledge-bases",
                         "from": "knowledgeBaseId",
@@ -14106,9 +14156,10 @@
                     "target": "ai.caitlyn.v3#AgentConfiguration",
                     "traits": {
                         "ai.caitlyn.traits#versionAccessOnly": {
-                            "versionMember": "version"
+                            "versionMember": "version",
+                            "action": "agents.aliases.read"
                         },
-                        "smithy.api#documentation": "The configuration of `version`. Present only when the caller may read that version: the agent\ngrant if it is live now, and the agent's version access grant if it is not, as GetAgentVersion\nchecks. Absent otherwise, in a list, and when that version no longer exists."
+                        "smithy.api#documentation": "The configuration of `version`. Present only when the caller may read that version, as\nGetAgentVersion checks: the permission to read versions, and the agent grant if it is live now\nor the agent's version access grant if it is not. Absent otherwise, in a list, and when that\nversion no longer exists."
                     }
                 }
             },
@@ -14350,7 +14401,14 @@
                 "planExpiresAt": {
                     "target": "ai.caitlyn.v3#DateTime",
                     "traits": {
-                        "smithy.api#documentation": "When the plan goes stale, 5 minutes after planning. StartIngestionBatch on a stale plan plans\nagain first."
+                        "smithy.api#documentation": "When the plan goes stale, 5 minutes after planning. A stale plan does not end the batch:\nStartIngestionBatch on a stale plan plans again first."
+                    }
+                },
+                "uploadsExpireAt": {
+                    "target": "ai.caitlyn.v3#DateTime",
+                    "traits": {
+                        "ai.caitlyn.traits#since": "next",
+                        "smithy.api#documentation": "When uploads must arrive by: at or after the upload policy's `expiresAt`. An item whose bytes\nhave not arrived by then fails with `UPLOAD_EXPIRED`; bytes that arrived in time are accepted\nwhen they are reported, however late. A caller watching the batch can read it again after this\ntime to see which items failed. Renewing the upload policy moves it later. Absent when no item\nis awaiting upload."
                     }
                 },
                 "createdBy": {
@@ -14579,7 +14637,7 @@
                 "failureCode": {
                     "target": "ai.caitlyn.v3#ErrorCode",
                     "traits": {
-                        "smithy.api#documentation": "Why the item failed, as a stable code: for example `UPLOAD_EXPIRED` (no bytes arrived before\nthe upload policy expired), `CHECKSUM_MISMATCH`, `PERMISSION_DENIED`, for `new_version`\n`VALIDATION_FAILED` (another file type) or `DOCUMENT_INGESTION_IN_PROGRESS`, or a document's\nfailure code. Present only when `status` is `failed`."
+                        "smithy.api#documentation": "Why the item failed, as a stable code: for example `UPLOAD_EXPIRED` (no bytes arrived by the\nbatch's `uploadsExpireAt`), `CHECKSUM_MISMATCH`, `PERMISSION_DENIED`, for `new_version`\n`VALIDATION_FAILED` (another file type) or `DOCUMENT_INGESTION_IN_PROGRESS`, or a document's\nfailure code. Present only when `status` is `failed`."
                     }
                 },
                 "failureDetail": {
@@ -14725,7 +14783,7 @@
                     "collection": "ingestion.batches",
                     "singular": "batch"
                 },
-                "smithy.api#documentation": "Many documents ingested into one knowledge base as one unit of work, planned before anything is\nuploaded.\n\nA batch moves from `draft` (taking items) to `planning`, `planned` (each item has an outcome and a\nresolution), `running` (items are uploaded and ingested) and a final state. A batch never started\nis cleared after 7 days. A batch belongs to its knowledge base: in the SDKs it is\n`kb.ingestion.batches(batchId)`, and `kb.ingestion.sync(…)` runs the whole flow."
+                "smithy.api#documentation": "Many documents ingested into one knowledge base as one unit of work, planned before anything is\nuploaded.\n\nA batch moves from `draft` (taking items) to `planning`, `planned` (each item has an outcome and a\nresolution), `running` (items are uploaded and ingested) and a final state. A batch never started\nis deleted after 7 days; reading it after that answers 404. A batch belongs to its knowledge base: in the SDKs it is\n`kb.ingestion.batches(batchId)`, and `kb.ingestion.sync(…)` runs the whole flow."
             }
         },
         "ai.caitlyn.v3#IngestionBatchStatus": {
@@ -14786,17 +14844,10 @@
                         "smithy.api#documentation": "Stopped by a cancel before every item finished. Final.",
                         "smithy.api#enumValue": "cancelled"
                     }
-                },
-                "EXPIRED": {
-                    "target": "smithy.api#Unit",
-                    "traits": {
-                        "smithy.api#documentation": "Never started, and cleared after 7 days. Final.",
-                        "smithy.api#enumValue": "expired"
-                    }
                 }
             },
             "traits": {
-                "smithy.api#documentation": "Where an ingestion batch is. Open: new values may be added. `succeeded`,\n`completed_with_failures`, `failed`, `cancelled` and `expired` are final."
+                "smithy.api#documentation": "Where an ingestion batch is. Open: new values may be added. `succeeded`,\n`completed_with_failures`, `failed` and `cancelled` are final."
             }
         },
         "ai.caitlyn.v3#IngestionBoundary": {
@@ -14983,7 +15034,7 @@
                 "fetchUrl": {
                     "target": "ai.caitlyn.v3#Url",
                     "traits": {
-                        "smithy.api#documentation": "For fetched content: the `http` or `https` address the server fetches the bytes from while\nplanning, at most 100 MB. Needs the files create permission."
+                        "smithy.api#documentation": "For fetched content: the `http` or `https` address the server fetches the bytes from while\nplanning, at most 100 MB. Needs the files create permission, which the server checks when the\nitem is added."
                     }
                 },
                 "sourceUrl": {
@@ -17908,7 +17959,7 @@
                     ]
                 },
                 "ai.caitlyn.traits#permission": {
-                    "action": "files.list",
+                    "action": "knowledge-bases.ingestions.list",
                     "entity": {
                         "type": "knowledge-bases",
                         "from": "knowledgeBaseId",
@@ -18109,7 +18160,7 @@
                     ]
                 },
                 "ai.caitlyn.traits#permission": {
-                    "action": "files.list",
+                    "action": "knowledge-bases.ingestions.list",
                     "entity": {
                         "type": "knowledge-bases",
                         "from": "knowledgeBaseId",
@@ -18155,6 +18206,7 @@
                                             "skipped": 1
                                         }
                                     },
+                                    "uploadsExpireAt": "2026-11-16T01:38:00.000Z",
                                     "createdAt": "2026-11-16T01:02:03.000Z",
                                     "updatedAt": "2026-11-16T01:03:00.000Z",
                                     "startedAt": "2026-11-16T01:03:00.000Z"
@@ -22480,7 +22532,7 @@
                 },
                 "ai.caitlyn.traits#since": "next",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Sets who may use a knowledge base, or who may read a folder or a document in it.\n\n`If-Match` is optional. Without it the write is unconditional and the last writer wins, which is\nsafe because the caller sends the whole list. With it, access that changed since is refused with\n412.\n\nWithout `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or\n`document`, send `readers`; `kind: inherit` makes it follow its folder again. The root folder\n(`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there\nwith 400 `VALIDATION_FAILED`. Applying readers to\nthe passages a folder or document holds continues after the response; the returned access says\nwhat is set, and the knowledge base's watch shows the work.",
+                "smithy.api#documentation": "Sets who may use a knowledge base, or who may read a folder or a document in it.\n\n`If-Match` is optional. Without it the write is unconditional and the last writer wins, which is\nsafe because the caller sends the whole list. With it, access that changed since is refused with\n412.\n\nWithout `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or\n`document`, send `readers`; `kind: inherit` makes it follow its folder again. The knowledge base's\nrole grants are set only without a target, under the knowledge base's own permission, as v2's\nknowledge base permissions route sets them, so `roles` with `folder` or `document`, `readers`\nwithout one, and both `folder` and `document` are refused with 400 `VALIDATION_FAILED`. The root folder\n(`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there\nwith 400 `VALIDATION_FAILED`. Applying readers to\nthe passages a folder or document holds continues after the response; the returned access says\nwhat is set, and the knowledge base's watch shows the work.",
                 "smithy.api#examples": [
                     {
                         "title": "Only the HR team may read investigations",
@@ -22526,6 +22578,40 @@
                                     "kind": "inherit"
                                 },
                                 "inheritedFrom": "/hr/"
+                            }
+                        }
+                    },
+                    {
+                        "title": "Role grants sent with a folder",
+                        "input": {
+                            "knowledgeBaseId": "KB4T7YQ2WL",
+                            "folder": "/hr/",
+                            "roles": [
+                                {
+                                    "roleId": "hr-team",
+                                    "can": [
+                                        "find",
+                                        "read"
+                                    ]
+                                }
+                            ]
+                        },
+                        "error": {
+                            "shapeId": "ai.caitlyn.v3#ValidationError",
+                            "content": {
+                                "type": "https://build.caitlyn.ai/errors/VALIDATION_FAILED",
+                                "title": "Validation failed",
+                                "status": 400,
+                                "code": "VALIDATION_FAILED",
+                                "detail": "A folder's or document's access is its readers; set the knowledge base's role grants without a folder or document.",
+                                "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BJ2",
+                                "errors": [
+                                    {
+                                        "pointer": "/roles",
+                                        "code": "VALIDATION_FAILED",
+                                        "detail": "Not allowed with folder or document."
+                                    }
+                                ]
                             }
                         }
                     },
@@ -22665,27 +22751,34 @@
                 "INHERIT": {
                     "target": "smithy.api#Unit",
                     "traits": {
-                        "smithy.api#documentation": "The same as the folder it is in. Never on the root folder, whose readers every folder falls\nback to.",
+                        "smithy.api#documentation": "Follow the folder it is in, so a change there applies here too. Never on the root folder,\nwhose readers every folder falls back to. On a document it removes the document's own list,\nwhich also needs the permission to delete readers (`files.permissions.delete`), as v2's revert\ndoes; on a folder it is a change like any other.",
                         "smithy.api#enumValue": "inherit"
+                    }
+                },
+                "PUBLIC": {
+                    "target": "smithy.api#Unit",
+                    "traits": {
+                        "smithy.api#documentation": "Anyone who can reach the knowledge base, signed in or not: guests and anonymous visitors of a\npublic agent included. For content meant to be shared openly.",
+                        "smithy.api#enumValue": "public"
                     }
                 },
                 "EVERYONE": {
                     "target": "smithy.api#Unit",
                     "traits": {
-                        "smithy.api#documentation": "Anyone signed in to the workspace who may read the knowledge base.",
+                        "smithy.api#documentation": "Anyone signed in to the workspace who may read the knowledge base, but no guest or anonymous\nvisitor. For content every colleague may see.",
                         "smithy.api#enumValue": "everyone"
                     }
                 },
                 "SPECIFIC": {
                     "target": "smithy.api#Unit",
                     "traits": {
-                        "smithy.api#documentation": "Only the roles and people listed.",
+                        "smithy.api#documentation": "Only the roles and people listed in `roles` and `people`. For restricted content.",
                         "smithy.api#enumValue": "specific"
                     }
                 }
             },
             "traits": {
-                "smithy.api#documentation": "How a folder's or document's readers are decided. Open: new values may be added."
+                "smithy.api#documentation": "How a folder's or document's readers are decided, which sets how widely its contents can be read.\nFrom widest to narrowest: `public`, `everyone`, `specific`; `inherit` takes the folder's. Each is\nread back as it was stored: a list open to anyone reads as `public`, so a read never widens or\nnarrows what was set. Open: new values may be added."
             }
         },
         "ai.caitlyn.v3#ReasoningEffort": {
@@ -23036,7 +23129,7 @@
                 },
                 "ai.caitlyn.traits#since": "next",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Processes documents again the newest way; the work continues after the response.\n\nGive `outOfDate: true` for every document processed in an older way than the newest, or\n`documentIds` for particular documents. Each document's current version keeps serving until its\nnew processing is indexed. Returns 202 with the job, which the knowledge base's watch follows;\nestimate it first with EstimateReprocessDocuments. Costs money: see the estimate's `cost`.",
+                "smithy.api#documentation": "Processes documents again the newest way; the work continues after the response.\n\nGive `outOfDate: true` for every document processed in an older way than the newest, or\n`documentIds` for particular documents. Each document's current version keeps serving until its\nnew processing is indexed. Returns 202 with the job, which the knowledge base's watch follows;\nestimate it first with EstimateReprocessDocuments. It is charged for: see the estimate's `cost`, in\nthe form the organisation sees it.",
                 "smithy.api#examples": [
                     {
                         "title": "Update every out-of-date document",
@@ -23990,6 +24083,9 @@
                         "from": "conversationId",
                         "level": "update"
                     },
+                    "conversationAgent": {
+                        "level": "list"
+                    },
                     "callers": [
                         "person",
                         "api_client",
@@ -24003,7 +24099,7 @@
                     "final": "messageCompleted"
                 },
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Sends a message and streams the answer as server-sent events.\n\nThe message is sent when the call is made, whether or not anyone reads the stream. The stream ends\nwith exactly one `message.completed` or `message.failed`. If the connection drops, the SDK\nre-attaches with `WatchConversation` and `Last-Event-ID`, so no event is lost or repeated. Not retried automatically: a send that fails before the stream starts is\nreported to the caller.\n\nA message may carry documents in `attachments`, each named by an upload reserved for this\nconversation. The SDKs also take files there: each file is uploaded for the conversation first,\nand the message is sent once every upload has arrived.\n\nOnly a participant may send: whoever started the conversation, or someone it is shared with for\nwriting (the update grant). A caller who may only read it, or may not see it, gets 404.",
+                "smithy.api#documentation": "Sends a message and streams the answer as server-sent events.\n\nThe message is sent when the call is made, whether or not anyone reads the stream. The stream ends\nwith exactly one `message.completed` or `message.failed`. If the connection drops, the SDK\nre-attaches with `WatchConversation` and `Last-Event-ID`, so no event is lost or repeated. Not retried automatically: a send that fails before the stream starts is\nreported to the caller.\n\nA message may carry documents in `attachments`, each named by an upload reserved for this\nconversation. The SDKs also take files there: each file is uploaded for the conversation first,\nand the message is sent once every upload has arrived.\n\nOnly a participant may send: whoever started the conversation, or someone it is shared with for\nwriting (the update grant), who may still see the conversation's agent, and, when it was started\non a version other than live, holds that agent's version access grant. A caller without any of\nthese gets 404, so revoking someone's access to the agent stops them chatting in conversations\nthey already started.",
                 "smithy.api#examples": [
                     {
                         "title": "Ask a question",
@@ -24290,7 +24386,7 @@
                     "filter": "batch"
                 },
                 "ai.caitlyn.traits#permission": {
-                    "action": "knowledge-bases.ingestions.update",
+                    "action": "knowledge-bases.ingestions.create",
                     "alsoActions": [
                         "files.create"
                     ],
@@ -24330,6 +24426,7 @@
                                     }
                                 },
                                 "itemCount": 3,
+                                "uploadsExpireAt": "2026-11-16T01:38:00.000Z",
                                 "createdAt": "2026-11-16T01:02:03.000Z",
                                 "updatedAt": "2026-11-16T01:03:00.000Z",
                                 "startedAt": "2026-11-16T01:03:00.000Z"
@@ -25989,7 +26086,7 @@
             ],
             "traits": {
                 "ai.caitlyn.traits#permission": {
-                    "action": "knowledge-bases.ingestions.update",
+                    "action": "knowledge-bases.ingestions.create",
                     "entity": {
                         "type": "knowledge-bases",
                         "from": "knowledgeBaseId",
@@ -26133,7 +26230,7 @@
                     "reason": "Resolving an item sets one value the plan offered; without If-Match it applies to the item as it is."
                 },
                 "ai.caitlyn.traits#permission": {
-                    "action": "knowledge-bases.ingestions.update",
+                    "action": "knowledge-bases.ingestions.create",
                     "entity": {
                         "type": "knowledge-bases",
                         "from": "knowledgeBaseId",
@@ -27514,7 +27611,7 @@
                 },
                 "smithy.api#readonly": {},
                 "smithy.api#suppress": [
-                    "CaitlynPermissions"
+                    "CaitlynPermissions.NamesRecords"
                 ],
                 "smithy.api#title": "Watch the workspace"
             }

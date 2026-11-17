@@ -31,6 +31,7 @@ from ._protocol import (
     error_from_problem,
     read_error,
     read_result,
+    sdk_error,
     with_idempotency_token,
 )
 from ._files import FileInput, PreparedFile, UploadFile
@@ -258,6 +259,10 @@ class SyncClientCore(_CoreBase):
                     time.sleep(delay)
                     call.context.attempt += 1
                     continue
+                except httpx.HTTPError as e:  # not a connection failure: the HTTP client itself failed
+                    failure = sdk_error("HTTP_CLIENT_FAILED", "The HTTP client failed", f"{spec.name}: {type(e).__name__}: {e}")
+                    self._after_attempt(call, span, request, None, e, failure)
+                    raise failure from e
                 except BaseException as e:  # signing in failed, or interrupted while waiting
                     self._after_attempt(call, span, request, None, e)
                     raise
@@ -424,6 +429,10 @@ class AsyncClientCore(_CoreBase):
                     await asyncio.sleep(delay)
                     call.context.attempt += 1
                     continue
+                except httpx.HTTPError as e:  # not a connection failure: the HTTP client itself failed
+                    failure = sdk_error("HTTP_CLIENT_FAILED", "The HTTP client failed", f"{spec.name}: {type(e).__name__}: {e}")
+                    self._after_attempt(call, span, request, None, e, failure)
+                    raise failure from e
                 except BaseException as e:  # cancelled while waiting for the response
                     self._after_attempt(call, span, request, None, e)
                     raise
@@ -668,9 +677,9 @@ class _StreamState[E: CaitlynEvent, F]:
             return None  # an event type this SDK does not know: skipped
         try:
             data: Any = json.loads(message.data) if message.data else {}
-        except ValueError:
-            data = {}
-        event = cls.from_wire(data)
+            event = cls.from_wire(data)
+        except (ValueError, TypeError) as e:  # not JSON, or not the event's shape (pydantic's ValidationError)
+            raise sdk_error("DECODE_FAILED", "An event could not be decoded", f"{self.spec.name}: the {message.event} event: {e}") from e
         event.event_id = message.id if message.own_id else None
         if self.resume is not None and self.resume.watched is not None:
             event._bind_watch(self.resume.watched)  # pyright: ignore[reportPrivateUsage]

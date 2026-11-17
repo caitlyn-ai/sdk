@@ -149,6 +149,13 @@ and the Smithy sources under `smithy/model/` that `model.json` and `openapi.json
 `scripts/model-pull.sh` writes them together with `model/model.lock.json`, so a pulled snapshot always changes the
 lock file.
 
+A pull also keeps `model/changes/<version>.json`: the `changes.json` the app publishes beside each release's model,
+listing what changed in the public API since the release before. It keeps one for every published version after the
+previous lock's, up to and including the one it pulls, so a release the SDKs skipped still has its entry; the files
+accumulate across pulls, and the developer site's Changelog lists each as an API release. A version published before
+the app wrote `changes.json` is skipped with a note, and `--from-build` keeps the build's `build/changes.json` only
+when it has one.
+
 An edit made to `model/` here would be erased by the next pull. So the `model:snapshot-only` job, on every merge
 request pipeline, fails when a file under `model/` changes and `model/model.lock.json` does not, and its message
 says where to make the change. `make model-snapshot-check` runs the same check locally against `origin/main`, and

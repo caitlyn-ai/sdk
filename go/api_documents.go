@@ -145,7 +145,8 @@ func (s *Documents) DeleteMany(ctx context.Context, in *BatchDeleteDocumentsInpu
 // Give `outOfDate: true` for every document processed in an older way than the newest, or
 // `documentIds` for particular documents. Each document's current version keeps serving until its
 // new processing is indexed. Returns 202 with the job, which the knowledge base's watch follows;
-// estimate it first with EstimateReprocessDocuments. Costs money: see the estimate's `cost`.
+// estimate it first with EstimateReprocessDocuments. It is charged for: see the estimate's `cost`, in
+// the form the organisation sees it.
 //
 // It returns the response, as Result, with Wait, which follows the work the call started.
 //

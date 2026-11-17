@@ -1,6 +1,6 @@
 // Package documents holds the developer docs' Go code for knowledge bases and their documents, one region each: the
 // jobs on the landing page (add a document, keep a folder in step, replace, watch, restrict access, watch a knowledge
-// base, delete things, and the jobs that cost money with their estimates), and the building blocks under them. The
+// base, delete things, and the jobs that have a cost, with their estimates), and the building blocks under them. The
 // live examples (examples/go/live, run by scripts/examples-live/go.sh) call these functions against a real Caitlyn
 // workspace, so the code on the pages is known to work. scripts/test-go.sh builds and vets it.
 package documents
@@ -66,8 +66,15 @@ func SyncEstimate(ctx context.Context, client *caitlyn.Client, knowledgeBaseID, 
 	for _, item := range plan.Items {
 		fmt.Println(*item.Path, *item.Outcome) // new, changed, unchanged, moved, to_remove…
 	}
-	if e := plan.Estimate; e != nil && e.Cost != nil { // cost only for callers who may see it, in the organisation's form
-		fmt.Printf("%d documents, %.2f–%.2f %s\n", e.Documents, e.Cost.Low, e.Cost.High, e.Cost.Unit)
+	if e := plan.Estimate; e != nil && e.Cost != nil { // cost only for callers who may see it
+		switch e.Cost.Unit { // the form the organisation sees its costs in
+		case caitlyn.CostUnitUsd:
+			fmt.Printf("%d documents, US$%.2f–%.2f\n", e.Documents, e.Cost.Low, e.Cost.High)
+		case caitlyn.CostUnitPercentOfPlan:
+			fmt.Printf("%d documents, %.1f–%.1f%% of usage\n", e.Documents, e.Cost.Low, e.Cost.High)
+		default:
+			fmt.Printf("%d documents, %.2f–%.2f %s\n", e.Documents, e.Cost.Low, e.Cost.High, e.Cost.Unit)
+		}
 	}
 	// #endregion
 	return plan, nil
@@ -110,7 +117,7 @@ func WatchDocument(ctx context.Context, client *caitlyn.Client, knowledgeBaseID,
 func SetAccess(ctx context.Context, client *caitlyn.Client, knowledgeBaseID, documentID, etag string) error {
 	// #region set-access
 	kb := client.KnowledgeBase(knowledgeBaseID)
-	// ReadersOf(roles, people), ReadersEveryone or ReadersInherit
+	// ReadersOf(roles, people), ReadersEveryone, ReadersPublic or ReadersInherit
 	if _, err := kb.Folder("/hr/investigations/").Access.Set(ctx, &caitlyn.PutAccessInput{
 		Readers: caitlyn.ReadersOf([]string{"hr-team"}, nil),
 	}); err != nil {
@@ -186,7 +193,14 @@ func FillInFields(ctx context.Context, client *caitlyn.Client, knowledgeBaseID s
 		return nil, err
 	}
 	if estimate.Cost != nil {
-		fmt.Printf("%d documents, %.2f–%.2f %s\n", estimate.Documents, estimate.Cost.Low, estimate.Cost.High, estimate.Cost.Unit)
+		switch estimate.Cost.Unit { // the form the organisation sees its costs in
+		case caitlyn.CostUnitUsd:
+			fmt.Printf("%d documents, US$%.2f–%.2f\n", estimate.Documents, estimate.Cost.Low, estimate.Cost.High)
+		case caitlyn.CostUnitPercentOfPlan:
+			fmt.Printf("%d documents, %.1f–%.1f%% of usage\n", estimate.Documents, estimate.Cost.Low, estimate.Cost.High)
+		default:
+			fmt.Printf("%d documents, %.2f–%.2f %s\n", estimate.Documents, estimate.Cost.Low, estimate.Cost.High, estimate.Cost.Unit)
+		}
 	}
 	started, err := fields.FillIn(ctx, keys)
 	if err != nil {

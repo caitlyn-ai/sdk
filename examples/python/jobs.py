@@ -1,4 +1,4 @@
-# The ten jobs on the developer docs' landing page, and the jobs that cost money, one region each, with the same
+# The ten jobs on the developer docs' landing page, and the jobs that have a cost, one region each, with the same
 # region names in every language. scripts/test-python.sh type-checks this file against the SDK (pyright --strict).
 # In every region `kb` is `caitlyn.knowledge_bases(kb_id)`: a scope, which sends nothing until you call something on it.
 from pathlib import Path
@@ -47,8 +47,8 @@ def sync_estimate(kb: KnowledgeBaseScope) -> SyncPlan[IngestionBatch, IngestionB
     plan = kb.ingestion.sync.estimate("./policies", folder="/policies/", remove_missing=True)
     if plan.estimate is not None:
         print(plan.estimate.documents, "documents,", plan.estimate.duration_seconds.high, "seconds at most")
-        if plan.estimate.cost:  # only for callers allowed to see cost
-            print(plan.estimate.cost.low, "to", plan.estimate.cost.high, plan.estimate.cost.unit)
+        if cost := plan.estimate.cost:  # only for callers allowed to see cost, in the form the organisation sees it
+            print(f"US${cost.low:.2f}–{cost.high:.2f}" if cost.unit == "usd" else f"{cost.low:.1f}–{cost.high:.1f}% of usage")
     # #endregion
     return plan
 
@@ -147,8 +147,8 @@ def delete_things(caitlyn: Caitlyn, kb: KnowledgeBaseScope, document_id: str, ag
 def fill_in_fields(kb: KnowledgeBaseScope) -> None:
     # #region fill-in-fields
     estimate = kb.fields.fill_in.estimate(["policyOwner"])
-    if estimate.cost:
-        print(f"{estimate.documents} documents, {estimate.cost.low}–{estimate.cost.high} {estimate.cost.unit}")
+    if cost := estimate.cost:  # in the form the organisation sees its costs
+        print(f"{estimate.documents} documents,", f"US${cost.low:.2f}–{cost.high:.2f}" if cost.unit == "usd" else f"{cost.low:.1f}–{cost.high:.1f}% of usage")
     kb.fields.fill_in(["policyOwner"]).wait()
     # #endregion
 

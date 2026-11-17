@@ -54,6 +54,11 @@ func (s *DocumentVersionScope) Get(ctx context.Context, opts ...CallOption) (*Do
 // 409 `CONFLICT`; to remove the current version, delete the document. Like every change, it is
 // audited.
 //
+// A version's number is its place in upload order, so deleting by number needs the document's
+// versions to be numbered already: until they are, a number is refused with 409
+// `VERSIONS_NOT_NUMBERED`, because deleting would shift every later number. Try again later, or
+// delete `latest`, which works either way.
+//
 // Since Caitlyn 5.115.0; beta.
 func (s *DocumentVersionScope) Delete(ctx context.Context, opts ...CallOption) (*DeleteDocumentVersionResult, error) {
 	p := &deleteDocumentVersionParams{}

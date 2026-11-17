@@ -88,7 +88,7 @@
       "after": "ingestion.sync",
       "summary": "What the same sync would do and cost, before anything is uploaded.",
       "description": [
-        "What `kb.ingestion.sync` with the same arguments would do and cost, before anything is uploaded: it hashes the files, creates the batch and waits until it is planned, then prices every item that could need its bytes, items still unresolved whose outcome could take bytes included, so the estimate is the most the batch could cost. It returns the plan, each item with what would happen to it, and the estimate: the documents to process, how long that takes, and its cost when you may see costs, in your organisation's chosen form.",
+        "What `kb.ingestion.sync` with the same arguments would do and cost, before anything is uploaded: it hashes the files, creates the batch and waits until it is planned, then prices every item that could need its bytes, items still unresolved whose outcome could take bytes included, so the estimate is the most the batch could cost. It returns the plan, each item with what would happen to it, and the estimate: the documents to process, how long that takes, and its cost when you may see costs, in the form your organisation sees it.",
         "Nothing is uploaded or processed. The batch is left planned: its plan goes stale after 5 minutes (starting it plans it again), and a batch that is never started is cleared after 7 days."
       ],
       "spellings": {
@@ -167,6 +167,7 @@
       "description": [
         "Follows a batch as it changes, from its identifier alone, so it works the same on a batch you have just made and on one you looked up after a page reload.",
         "The first event is a snapshot: how it stands, its running and recently finished jobs, and the progress of what is being processed. Then one event per change. A dropped connection, or the clean end the server makes after at most an hour, reconnects by itself and starts with a new snapshot, so nothing is lost and nothing is replayed. If the batch is deleted, the watch ends.",
+        "The server gives up a batch's items still awaiting upload once its `uploadsExpireAt` has passed, but only when the batch is next read, so once that deadline is 30 seconds gone and the batch is still open, the watch reads it with [Get an ingestion batch](/reference/get-ingestion-batch/) and yields what it returns as a snapshot, with no jobs and no progress.",
         "It is the knowledge base's watch, filtered to this batch: [Watch a knowledge base](/reference/watch-knowledge-base/) has every event and how each is sent."
       ],
       "sections": [
@@ -180,7 +181,8 @@
       ],
       "options": [],
       "calls": [
-        "WatchKnowledgeBase"
+        "WatchKnowledgeBase",
+        "GetIngestionBatch"
       ],
       "resources": [
         "knowledge-base"
@@ -209,8 +211,9 @@
           "body": [
             "- **Busy** means a job runs on the batch, or the batch is `planning` or `running`.",
             "- **Some failures.** Work that ended `completed_with_failures` returns, with the partial failures on the batch.",
-            "- **Failure.** Work that failed raises the typed error for its code. Work that was cancelled raises `CANCELLED`. A batch that expired (it was never started, and its plan was cleared) raises `EXPIRED`.",
+            "- **Failure.** Work that failed raises the typed error for its code. Work that was cancelled raises `CANCELLED`.",
             "- **Gone.** A batch that is gone ends the wait: after you deleted it, as success; otherwise as `NOT_FOUND`.",
+            "- **A passed upload deadline.** Once the batch's `uploadsExpireAt` is 30 seconds gone and it is still open, the wait reads it, which ends it on the server: items never uploaded fail with `UPLOAD_EXPIRED`, and the batch returns `completed_with_failures` once the rest have finished.",
             "- **Time.** There is no time limit unless you give one. A wait that runs out raises `WAIT_TIMEOUT` as the language's own timeout: `TimeoutError` in TypeScript and Python, an error for which `errors.Is(err, context.DeadlineExceeded)` holds in Go, `Error::Timeout` in Rust. Cancelling it is the language's own cancellation."
           ]
         }
@@ -268,7 +271,6 @@
           "body": [
             "- **Busy** means the batch is still `planning`.",
             "- **Planned or past it.** A batch that is `planned`, `running` or finished returns at once.",
-            "- **Expired.** A batch that expired (it was never started, and its plan was cleared) raises `EXPIRED`.",
             "- **Failure.** Planning that failed raises the typed error for its code.",
             "- **Gone.** A batch that is gone ends the wait as `NOT_FOUND`.",
             "- **Time.** There is no time limit unless you give one. A wait that runs out raises `WAIT_TIMEOUT` as the language's own timeout: `TimeoutError` in TypeScript and Python, an error for which `errors.Is(err, context.DeadlineExceeded)` holds in Go, `Error::Timeout` in Rust. Cancelling it is the language's own cancellation."
@@ -294,6 +296,191 @@
       "resources": [
         "knowledge-base"
       ]
+    },
+    {
+      "id": "batch.upload.estimate",
+      "name": "batch.upload.estimate()",
+      "title": "Estimate the upload",
+      "after": "batch.planned",
+      "summary": "What uploading a batch's files would take and cost, before you start the batch.",
+      "description": [
+        "What uploading the files of an ingestion batch you built yourself would take and cost, before you start it: the documents to process, how long that takes, and its cost when you may see costs, in the form your organisation sees it. It is the step [Sync a folder](/reference/helpers/ingestion-sync/) takes before it starts its batch, for a batch you created with `start: 'manual'`. `batch` is `kb.ingestion.batches(batchId)`.",
+        "It reads the batch first. A draft batch, whose last items have not been added, is refused before anything is sent; a batch still planning is waited on until it is planned, so you can call it straight after creating the batch. It then prices every item that could need its bytes and has none yet: those resolved to add, to make a new version or to overwrite, and those still unresolved whose outcome could take bytes, so the estimate is the most the batch could cost. With nothing to price, it returns an empty estimate and sends nothing.",
+        "No file is read or hashed. With `files`, each item is described by its file's name, content type and size, plus any hints you gave with the file, such as its page count; without them, by the item's own path, content type and size. A file that matches no priced item is ignored. Where a document has no hints, the estimate prices a typical file of its kind and size, and counts it in `documentsOfUnknownLength`. The same files serve [Upload files](/reference/helpers/batch-upload/), which ignores the hints."
+      ],
+      "spellings": {
+        "typescript": "kb.ingestion.batches(batchId).upload.estimate(files?, { timeoutMs, signal })",
+        "python": "kb.ingestion.batches(batch_id).upload.estimate(files=None, timeout=…)",
+        "go": "kb.Ingestion.Batch(batchID).EstimateUpload(ctx, files, opts...)",
+        "rust": "kb.ingestion().batch(batch_id).estimate_upload().files(files).timeout(d)"
+      },
+      "sections": [
+        {
+          "heading": "What it returns",
+          "body": [
+            "The estimate [Estimate adding documents](/reference/estimate-ingestion/) returns, the same one every ingestion estimate gives: `documents`, `pages`, `mediaSeconds`, `documentsOfUnknownLength`, `durationSeconds`, `cost` and `details`. Over 10,000 documents, it is priced in parts and added together."
+          ]
+        },
+        {
+          "heading": "Giving hints with a file",
+          "body": [
+            "Hints travel on the file itself, so one set of files serves the estimate and the upload:",
+            "| Language | A file with hints |\n| --- | --- |\n| TypeScript | `withHints(file, { pages: 40 })` |\n| Python | `UploadFile.from_path(path, hints=IngestionHints(pages=40))` |\n| Go | `caitlyn.FileFromPath(path, caitlyn.WithHints(&caitlyn.IngestionHints{Pages: caitlyn.Ptr[int64](40)}))` |\n| Rust | `UploadFile::from(path).hints(IngestionHints { pages: Some(40), ..Default::default() })` |"
+          ]
+        },
+        {
+          "heading": "Errors",
+          "body": [
+            "- `INGESTION_BATCH_NOT_PLANNED` (status 0, never retried): the batch is a draft. Add its last items (`last: true`) so it is planned, then estimate again. Nothing was sent.\n- A batch whose planning failed raises the typed error for its code, as [Wait until planned](/reference/helpers/batch-planned/) does, and a wait that runs out raises `WAIT_TIMEOUT`.\n- Any error from [Get an ingestion batch](/reference/get-ingestion-batch/), [List a batch's items](/reference/list-ingestion-batch-items/) or [Estimate adding documents](/reference/estimate-ingestion/)."
+          ]
+        },
+        {
+          "heading": "Types",
+          "body": [
+            "The batch is an [IngestionBatch](/reference/types/ingestion-batch/), and each item it prices an [IngestionBatchItem](/reference/types/ingestion-batch-item/)."
+          ]
+        }
+      ],
+      "options": [
+        {
+          "option": "Files",
+          "spellings": {
+            "typescript": "{ '/hr/leave.pdf': file }, a Map, or (item) => file",
+            "python": "{\"/hr/leave.pdf\": file}, or a function of the item",
+            "go": "caitlyn.FilesByPath(files), or any caitlyn.BatchFiles function",
+            "rust": "BatchFiles::by_path([...]), or BatchFiles::with(|item| ...)"
+          },
+          "doc": "Each item's file, by the item's path as the batch stores it (`/hr/leave.pdf`; a key without the leading `/` matches too), or a function from an item to its file. Optional: without it, each item is priced from itself."
+        },
+        {
+          "option": "Time limit",
+          "spellings": {
+            "typescript": "{ timeoutMs }",
+            "python": "timeout=…",
+            "go": "caitlyn.WithTimeLimit(d)",
+            "rust": ".timeout(d)"
+          },
+          "doc": "Bounds the wait for a batch still planning, as for [Wait until planned](/reference/helpers/batch-planned/). No limit by default."
+        }
+      ],
+      "calls": [
+        "GetIngestionBatch",
+        "WatchKnowledgeBase",
+        "ListIngestionBatchItems",
+        "EstimateIngestion"
+      ],
+      "resources": [
+        "knowledge-base",
+        "document"
+      ],
+      "example": {
+        "typescript": "examples/typescript/ingestion.ts#build-batch",
+        "python": "examples/python/ingestion.py#build-batch",
+        "go": "examples/go/ingestion/ingestion.go#build-batch",
+        "rust": "examples/rust/src/ingestion.rs#build-batch"
+      }
+    },
+    {
+      "id": "batch.upload",
+      "name": "batch.upload()",
+      "title": "Upload files",
+      "after": "batch.upload.estimate",
+      "summary": "Sends the files of a started batch's items awaiting upload, as sync does.",
+      "description": [
+        "Sends the files of an ingestion batch you built yourself, once it has started: each item awaiting upload that you give a file for, with the uploader [Sync a folder](/reference/helpers/ingestion-sync/) uses. `batch` is `kb.ingestion.batches(batchId)`. Start the batch first (`batch.start()`). A batch created with `start: 'when_planned'` that is still planning is followed until it runs.",
+        "The call lists the items awaiting upload, gets the batch's upload policy and sends the files six at a time, renewing the policy when less than five minutes of it are left, and once more after storage says it has expired. While any upload is in flight the policy is kept alive on a timer, so the batch keeps waiting for a large file still on its way. Each upload that storage accepts is reported, at most 100 items a call; an item reported back with `CHECKSUM_MISMATCH` is sent once more. One item's failure is that item's alone: the other uploads carry on.",
+        "Files are not hashed. A file whose size is not its item's fails that item before any bytes are sent, and storage refuses bytes that do not match the item's checksum. An item awaiting upload that you give no file for is left awaiting upload, so you can upload in several calls or from several workers; a second call sends only the items still awaiting upload. Anything never sent ends under the batch's reservation rules.",
+        "Cancelling the call stops new uploads, aborts those in flight and raises your language's own cancellation error. It leaves the batch as it is: cancel the batch itself with `batch.cancel()`."
+      ],
+      "spellings": {
+        "typescript": "kb.ingestion.batches(batchId).upload(files, { concurrency, onProgress, onItem, signal })",
+        "python": "kb.ingestion.batches(batch_id).upload(files, concurrency=…, on_progress=…, on_item=…)",
+        "go": "kb.Ingestion.Batch(batchID).Upload(ctx, files, &caitlyn.BatchUploadOptions{Concurrency: …, OnProgress: …, OnItem: …})",
+        "rust": "kb.ingestion().batch(batch_id).upload(files).concurrency(n).on_progress(f).on_item(f)"
+      },
+      "sections": [
+        {
+          "heading": "What it returns",
+          "body": [
+            "Awaiting the call gives what it did; its wait gives the batch once it has finished:",
+            "- **`batch`**: the [IngestionBatch](/reference/types/ingestion-batch/) as it stood when the call ended.\n- **`items`**: one [IngestionBatchItem](/reference/types/ingestion-batch-item/) for each item the call dealt with: `ingesting` once its upload was accepted, or `failed` with its `failureCode` and `failureDetail`.\n- **`notGiven`**: the paths of items awaiting upload that were given no file. They stay awaiting upload, and are neither failed nor reported.\n- **`unmatched`**: the paths you gave that match no item awaiting upload. Nothing was sent for them.",
+            "| Language | What the call did | The finished batch |\n| --- | --- | --- |\n| TypeScript | `await batch.upload(files)` | `await batch.upload(files).wait()` |\n| Python | `started = batch.upload(files)`, then `started.result` (its fields read on `started` too) | `started.wait()` |\n| Go | `started, err := batch.Upload(ctx, files, nil)`, then `started.Result` | `started.Wait(ctx)` |\n| Rust | `let started = batch.upload(files).await?`, then `started.result()` | `started.wait().await?` |",
+            "A batch that has already finished has nothing awaiting upload: the call returns with `items` empty and every path you gave in `unmatched`."
+          ]
+        },
+        {
+          "heading": "Errors",
+          "body": [
+            "- `INGESTION_BATCH_NOT_STARTED` (status 0, never retried): the batch is a draft, is planned and waiting for `batch.start()`, or was created to start once planned but stopped at planned because an item is unresolved. Start it with `batch.start()`, resolving any unresolved item first. Nothing was sent.\n- A failed renewal of the upload policy stops the call with its error, as does any error from the operations below that is not one item's."
+          ]
+        },
+        {
+          "heading": "Items that fail",
+          "body": [
+            "A failed upload is never raised. It is the item's `failureCode`, in `items` and passed to `onItem`; it is never reported as uploaded.",
+            "- `UPLOAD_FAILED`: the upload still failed after its retries.\n- `FILE_CHANGED`: the file's size is not the item's, found before sending, or storage refused its bytes against the item's checksum. It is not retried: the same bytes would be refused again.\n- `CHECKSUM_MISMATCH`: the upload was reported back with this code twice; the first time, the file is sent once more."
+          ]
+        }
+      ],
+      "options": [
+        {
+          "option": "Files",
+          "spellings": {
+            "typescript": "{ '/hr/leave.pdf': file }, a Map, or (item) => file",
+            "python": "{\"/hr/leave.pdf\": file}, or a function of the item",
+            "go": "caitlyn.FilesByPath(files), or any caitlyn.BatchFiles function",
+            "rust": "BatchFiles::by_path([...]), or BatchFiles::with(|item| ...)"
+          },
+          "doc": "Each item's file, by the item's path as the batch stores it (`/hr/leave.pdf`; a key without the leading `/` matches too), or a function from an item to its file, for files made or fetched only when needed."
+        },
+        {
+          "option": "Concurrency",
+          "spellings": {
+            "typescript": "{ concurrency }",
+            "python": "concurrency=…",
+            "go": "Concurrency: n",
+            "rust": ".concurrency(n)"
+          },
+          "doc": "Uploads at once. Default 6."
+        },
+        {
+          "option": "Progress",
+          "spellings": {
+            "typescript": "{ onProgress }",
+            "python": "on_progress=…",
+            "go": "OnProgress: fn",
+            "rust": ".on_progress(f)"
+          },
+          "doc": "Called in the `upload` phase with the bytes sent of the bytes to send, and the item; then in the `queued` phase with the items accepted of the items uploaded."
+        },
+        {
+          "option": "Failed items",
+          "spellings": {
+            "typescript": "{ onItem }",
+            "python": "on_item=…",
+            "go": "OnItem: fn",
+            "rust": ".on_item(f)"
+          },
+          "doc": "Called with each item that fails during the call. Accepted items end later, during ingestion, and the batch's watch and wait report them."
+        }
+      ],
+      "calls": [
+        "GetIngestionBatch",
+        "WatchKnowledgeBase",
+        "ListIngestionBatchItems",
+        "CreateIngestionBatchUploadPolicy",
+        "CompleteIngestionBatchUploads"
+      ],
+      "resources": [
+        "knowledge-base",
+        "document"
+      ],
+      "example": {
+        "typescript": "examples/typescript/ingestion.ts#build-batch",
+        "python": "examples/python/ingestion.py#build-batch",
+        "go": "examples/go/ingestion/ingestion.go#build-batch",
+        "rust": "examples/rust/src/ingestion.rs#build-batch"
+      }
     },
     {
       "id": "document.watch",

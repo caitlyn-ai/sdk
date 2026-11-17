@@ -13593,6 +13593,8 @@ pub struct WatchKnowledgeBaseRequest {
     /// The identifiers of the scope the request was made on.
     #[allow(dead_code)]
     ids: Vec<String>,
+    /// A batch scope's watch: reads the batch again once its deadline has passed (PROTOCOL.md 16).
+    reread: Option<rt::stream::Reread<KnowledgeBaseEvent, Error>>,
 }
 
 impl WatchKnowledgeBaseRequest {
@@ -13602,7 +13604,14 @@ impl WatchKnowledgeBaseRequest {
             input,
             opts: rt::CallOptions::default(),
             ids,
+            reread: None,
         }
+    }
+
+    /// A batch scope's watch reads the batch with `read` once its deadline has passed (PROTOCOL.md 16).
+    pub(crate) fn reread_at_deadline(mut self, read: rt::stream::Reread<KnowledgeBaseEvent, Error>) -> Self {
+        self.reread = Some(read);
+        self
     }
 
     /// Only this document's events.
@@ -13648,7 +13657,9 @@ impl WatchKnowledgeBaseRequest {
     /// Sends the request; the stream starts once the response does. Errors during the stream (a failure event, a
     /// connection that could not be resumed, cancellation) end it with that error.
     pub fn send(self) -> rt::BoxFuture<'static, Result<KnowledgeBaseEventStream, Error>> {
-        let WatchKnowledgeBaseRequest { core, input, opts, .. } = self;
+        let WatchKnowledgeBaseRequest {
+            core, input, opts, reread, ..
+        } = self;
         Box::pin(async move {
             let req = build_watch_knowledge_base(&input).map_err(Error::from)?;
             let resp = core.send(&OP_WATCH_KNOWLEDGE_BASE, req, &opts).await.map_err(Error::from)?;
@@ -13666,7 +13677,7 @@ impl WatchKnowledgeBaseRequest {
                     core.send(&OP_WATCH_KNOWLEDGE_BASE, rreq, &opts).await
                 })
             });
-            Ok(rt::Stream::open(
+            let mut stream = rt::Stream::open(
                 resp,
                 rt::StreamSpec {
                     decode: decode_knowledge_base_event,
@@ -13675,7 +13686,11 @@ impl WatchKnowledgeBaseRequest {
                     resume: Some(resume),
                     fresh: true,
                 },
-            ))
+            );
+            if let Some(read) = reread {
+                stream.reread_at_deadline(read);
+            }
+            Ok(stream)
         })
     }
 }
@@ -14070,6 +14085,14 @@ impl Readers {
         }
     }
 
+    /// Anyone who can reach the knowledge base, signed in or not: guests and anonymous visitors included (`public`).
+    pub fn public() -> Self {
+        Readers {
+            kind: ReadersKind::from("public"),
+            ..Default::default()
+        }
+    }
+
     /// Anyone signed in who may read the knowledge base (`everyone`).
     pub fn everyone() -> Self {
         Readers {
@@ -14107,7 +14130,7 @@ impl Readers {
     }
 }
 
-/// `"inherit"` or `"everyone"`: `.readers("inherit")`. Any other value is sent as the kind it names.
+/// `"inherit"`, `"public"` or `"everyone"`: `.readers("inherit")`. Any other value is sent as the kind it names.
 impl From<&str> for Readers {
     fn from(kind: &str) -> Self {
         Readers {

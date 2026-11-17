@@ -37,7 +37,8 @@ pub enum Error {
     /// document still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an
     /// ingestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document
     /// an ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry
-    /// `Retry-After`.
+    /// `Retry-After`. A document whose versions are not numbered yet cannot have one deleted by number
+    /// (`VERSIONS_NOT_NUMBERED`).
     Conflict(Box<rt::ApiError>),
     /// HTTP 412 (`PreconditionFailedError` in the model). `If-Match` does not match the resource's current
     /// ETag: it changed since the caller read it.
@@ -256,6 +257,7 @@ pub(crate) const ERROR_CODES: &[(&str, u16)] = &[
     ("DOCUMENT_INGESTION_IN_PROGRESS", 409),
     ("INGESTION_BATCH_UNRESOLVED", 409),
     ("TARGET_IN_USE", 409),
+    ("VERSIONS_NOT_NUMBERED", 409),
     ("PRECONDITION_FAILED", 412),
     ("PAYLOAD_TOO_LARGE", 413),
     ("IDEMPOTENCY_KEY_REUSED", 422),
@@ -270,6 +272,134 @@ pub(crate) const ERROR_CODES: &[(&str, u16)] = &[
     ("INTERNAL", 500),
     ("SERVICE_UNAVAILABLE", 503),
 ];
+
+/// The stable error codes the API documents, as associated constants. An error's `code` is a `String`, so
+/// `e.code == ErrorCode::NOT_FOUND` and `e.code == "NOT_FOUND"` are the same check, and a code this SDK does
+/// not know yet is still a string. Each code's page is <https://build.caitlyn.ai/errors/{code}>.
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct ErrorCode;
+
+impl ErrorCode {
+    /// `ALREADY_EXISTS`: raised as [`Error::Conflict`] (409).
+    pub const ALREADY_EXISTS: &'static str = "ALREADY_EXISTS";
+    /// `ATTACHMENTS_NOT_ACCEPTED`: raised as [`Error::Validation`] (400).
+    pub const ATTACHMENTS_NOT_ACCEPTED: &'static str = "ATTACHMENTS_NOT_ACCEPTED";
+    /// `BATCH_ITEM_CONTENT_AMBIGUOUS`: raised as [`Error::UnprocessableContent`] (422).
+    pub const BATCH_ITEM_CONTENT_AMBIGUOUS: &'static str = "BATCH_ITEM_CONTENT_AMBIGUOUS";
+    /// `CONFIGURATION_TOO_LARGE`: raised as [`Error::Validation`] (400).
+    pub const CONFIGURATION_TOO_LARGE: &'static str = "CONFIGURATION_TOO_LARGE";
+    /// `CONFLICT`: raised as [`Error::Conflict`] (409).
+    pub const CONFLICT: &'static str = "CONFLICT";
+    /// `CONTENT_REJECTED`: raised as [`Error::UnprocessableContent`] (422).
+    pub const CONTENT_REJECTED: &'static str = "CONTENT_REJECTED";
+    /// `DOCUMENT_INGESTION_IN_PROGRESS`: raised as [`Error::Conflict`] (409).
+    pub const DOCUMENT_INGESTION_IN_PROGRESS: &'static str = "DOCUMENT_INGESTION_IN_PROGRESS";
+    /// `IDEMPOTENCY_KEY_IN_USE`: raised as [`Error::Conflict`] (409).
+    pub const IDEMPOTENCY_KEY_IN_USE: &'static str = "IDEMPOTENCY_KEY_IN_USE";
+    /// `IDEMPOTENCY_KEY_REUSED`: raised as [`Error::UnprocessableContent`] (422).
+    pub const IDEMPOTENCY_KEY_REUSED: &'static str = "IDEMPOTENCY_KEY_REUSED";
+    /// `INGESTION_BATCH_UNRESOLVED`: raised as [`Error::Conflict`] (409).
+    pub const INGESTION_BATCH_UNRESOLVED: &'static str = "INGESTION_BATCH_UNRESOLVED";
+    /// `INTERNAL`: raised as [`Error::Internal`] (500).
+    pub const INTERNAL: &'static str = "INTERNAL";
+    /// `INVALID_CURSOR`: raised as [`Error::Validation`] (400).
+    pub const INVALID_CURSOR: &'static str = "INVALID_CURSOR";
+    /// `METADATA_FIELD_PASSAGE_SCOPED`: raised as [`Error::UnprocessableContent`] (422).
+    pub const METADATA_FIELD_PASSAGE_SCOPED: &'static str = "METADATA_FIELD_PASSAGE_SCOPED";
+    /// `METADATA_FIELD_UNDEFINED`: raised as [`Error::UnprocessableContent`] (422).
+    pub const METADATA_FIELD_UNDEFINED: &'static str = "METADATA_FIELD_UNDEFINED";
+    /// `METADATA_LIMIT_EXCEEDED`: raised as [`Error::UnprocessableContent`] (422).
+    pub const METADATA_LIMIT_EXCEEDED: &'static str = "METADATA_LIMIT_EXCEEDED";
+    /// `METADATA_VALUE_INVALID`: raised as [`Error::UnprocessableContent`] (422).
+    pub const METADATA_VALUE_INVALID: &'static str = "METADATA_VALUE_INVALID";
+    /// `NOT_AVAILABLE_TO_CREDENTIALS`: raised as [`Error::PermissionDenied`] (403).
+    pub const NOT_AVAILABLE_TO_CREDENTIALS: &'static str = "NOT_AVAILABLE_TO_CREDENTIALS";
+    /// `NOT_FOUND`: raised as [`Error::NotFound`] (404).
+    pub const NOT_FOUND: &'static str = "NOT_FOUND";
+    /// `OPERATION_NOT_CANCELLABLE`: raised as [`Error::Conflict`] (409).
+    pub const OPERATION_NOT_CANCELLABLE: &'static str = "OPERATION_NOT_CANCELLABLE";
+    /// `PAYLOAD_TOO_LARGE`: raised as [`Error::PayloadTooLarge`] (413).
+    pub const PAYLOAD_TOO_LARGE: &'static str = "PAYLOAD_TOO_LARGE";
+    /// `PERMISSION_DENIED`: raised as [`Error::PermissionDenied`] (403).
+    pub const PERMISSION_DENIED: &'static str = "PERMISSION_DENIED";
+    /// `PRECONDITION_FAILED`: raised as [`Error::PreconditionFailed`] (412).
+    pub const PRECONDITION_FAILED: &'static str = "PRECONDITION_FAILED";
+    /// `PRECONDITION_REQUIRED`: raised as [`Error::PreconditionRequired`] (428).
+    pub const PRECONDITION_REQUIRED: &'static str = "PRECONDITION_REQUIRED";
+    /// `PRIMARY_WORKSPACE_REQUIRED`: raised as [`Error::PermissionDenied`] (403).
+    pub const PRIMARY_WORKSPACE_REQUIRED: &'static str = "PRIMARY_WORKSPACE_REQUIRED";
+    /// `RATE_LIMITED`: raised as [`Error::TooManyRequests`] (429).
+    pub const RATE_LIMITED: &'static str = "RATE_LIMITED";
+    /// `SERVICE_UNAVAILABLE`: raised as [`Error::ServiceUnavailable`] (503).
+    pub const SERVICE_UNAVAILABLE: &'static str = "SERVICE_UNAVAILABLE";
+    /// `TARGET_IN_USE`: raised as [`Error::Conflict`] (409).
+    pub const TARGET_IN_USE: &'static str = "TARGET_IN_USE";
+    /// `UNAUTHENTICATED`: raised as [`Error::Unauthenticated`] (401).
+    pub const UNAUTHENTICATED: &'static str = "UNAUTHENTICATED";
+    /// `UNKNOWN_FIELD`: raised as [`Error::Validation`] (400).
+    pub const UNKNOWN_FIELD: &'static str = "UNKNOWN_FIELD";
+    /// `UNKNOWN_FILTER`: raised as [`Error::Validation`] (400).
+    pub const UNKNOWN_FILTER: &'static str = "UNKNOWN_FILTER";
+    /// `UNKNOWN_SORT`: raised as [`Error::Validation`] (400).
+    pub const UNKNOWN_SORT: &'static str = "UNKNOWN_SORT";
+    /// `VALIDATION_FAILED`: raised as [`Error::Validation`] (400).
+    pub const VALIDATION_FAILED: &'static str = "VALIDATION_FAILED";
+    /// `VERSIONS_NOT_NUMBERED`: raised as [`Error::Conflict`] (409).
+    pub const VERSIONS_NOT_NUMBERED: &'static str = "VERSIONS_NOT_NUMBERED";
+    /// `VERSION_IN_HISTORY`: raised as [`Error::Conflict`] (409).
+    pub const VERSION_IN_HISTORY: &'static str = "VERSION_IN_HISTORY";
+    /// `VERSION_IN_USE`: raised as [`Error::Conflict`] (409).
+    pub const VERSION_IN_USE: &'static str = "VERSION_IN_USE";
+    /// `VERSION_NOT_DELETABLE`: raised as [`Error::Validation`] (400).
+    pub const VERSION_NOT_DELETABLE: &'static str = "VERSION_NOT_DELETABLE";
+    /// `BAD_METHOD`: raised by the SDK itself, with status 0. An operation's HTTP method could not be used.
+    pub const BAD_METHOD: &'static str = "BAD_METHOD";
+    /// `CANCELLED`: raised by the SDK itself, with status 0. The work a wait followed was cancelled, or a sync's plan was declined.
+    pub const CANCELLED: &'static str = "CANCELLED";
+    /// `CONNECTION_ERROR`: raised by the SDK itself, with status 0. No response arrived from Caitlyn, after the SDK's retries.
+    pub const CONNECTION_ERROR: &'static str = "CONNECTION_ERROR";
+    /// `DECODE_FAILED`: raised by the SDK itself, with status 0. A response or event could not be decoded as the operation's output.
+    pub const DECODE_FAILED: &'static str = "DECODE_FAILED";
+    /// `FILE_ALREADY_READ`: raised by the SDK itself, with status 0. A stream given as a file was already read by an earlier call.
+    pub const FILE_ALREADY_READ: &'static str = "FILE_ALREADY_READ";
+    /// `FILE_CHANGED`: raised by the SDK itself, with status 0. A file's size or bytes no longer match what was described for it.
+    pub const FILE_CHANGED: &'static str = "FILE_CHANGED";
+    /// `FILE_TOO_LARGE`: raised by the SDK itself, with status 0. A file is larger than the operation accepts.
+    pub const FILE_TOO_LARGE: &'static str = "FILE_TOO_LARGE";
+    /// `FILE_UNREADABLE`: raised by the SDK itself, with status 0. A file could not be read.
+    pub const FILE_UNREADABLE: &'static str = "FILE_UNREADABLE";
+    /// `HTTP_CLIENT_FAILED`: raised by the SDK itself, with status 0. The HTTP client could not be built, or could not make the request.
+    pub const HTTP_CLIENT_FAILED: &'static str = "HTTP_CLIENT_FAILED";
+    /// `INGESTION_BATCH_FAILED`: raised by the SDK itself, with status 0. An ingestion batch ended failed without a failure code of its own.
+    pub const INGESTION_BATCH_FAILED: &'static str = "INGESTION_BATCH_FAILED";
+    /// `INGESTION_BATCH_NOT_PLANNED`: raised by the SDK itself, with status 0. The upload estimate was asked for on a draft batch.
+    pub const INGESTION_BATCH_NOT_PLANNED: &'static str = "INGESTION_BATCH_NOT_PLANNED";
+    /// `INGESTION_BATCH_NOT_STARTED`: raised by the SDK itself, with status 0. Files were uploaded to a batch that has not started.
+    pub const INGESTION_BATCH_NOT_STARTED: &'static str = "INGESTION_BATCH_NOT_STARTED";
+    /// `INGESTION_ITEM_HAS_NO_FILE`: raised by the SDK itself, with status 0. A sync's batch awaits a file this call has none for.
+    pub const INGESTION_ITEM_HAS_NO_FILE: &'static str = "INGESTION_ITEM_HAS_NO_FILE";
+    /// `INGESTION_ITEM_REFUSED`: raised by the SDK itself, with status 0. An item a sync added to its batch was refused.
+    pub const INGESTION_ITEM_REFUSED: &'static str = "INGESTION_ITEM_REFUSED";
+    /// `JOB_FAILED`: raised by the SDK itself, with status 0. A job ended failed without an error code of its own.
+    pub const JOB_FAILED: &'static str = "JOB_FAILED";
+    /// `NO_FINAL_EVENT`: raised by the SDK itself, with status 0. A stream ended without its final event.
+    pub const NO_FINAL_EVENT: &'static str = "NO_FINAL_EVENT";
+    /// `REDIRECT_UNREADABLE`: raised by the SDK itself, with status 0. A browser hid a redirect's address from the page.
+    pub const REDIRECT_UNREADABLE: &'static str = "REDIRECT_UNREADABLE";
+    /// `SERIALIZATION_FAILED`: raised by the SDK itself, with status 0. A request could not be serialised.
+    pub const SERIALIZATION_FAILED: &'static str = "SERIALIZATION_FAILED";
+    /// `STREAM_LOST`: raised by the SDK itself, with status 0. A stream or watch dropped and could not be resumed.
+    pub const STREAM_LOST: &'static str = "STREAM_LOST";
+    /// `UPLOAD_FAILED`: raised by the SDK itself, with status 0. A file's upload still failed after its retries; only its item fails.
+    pub const UPLOAD_FAILED: &'static str = "UPLOAD_FAILED";
+    /// `UPLOAD_POLICY_MISSING`: raised by the SDK itself, with status 0. A batch gave no upload policy for the files awaiting upload.
+    pub const UPLOAD_POLICY_MISSING: &'static str = "UPLOAD_POLICY_MISSING";
+    /// `UPLOAD_PUT_FAILED`: raised by the SDK itself, with status 0. A file's bytes could not be sent to its upload address.
+    pub const UPLOAD_PUT_FAILED: &'static str = "UPLOAD_PUT_FAILED";
+    /// `WAIT_TIMEOUT`: raised by the SDK itself, with status 0. A wait's time limit passed.
+    pub const WAIT_TIMEOUT: &'static str = "WAIT_TIMEOUT";
+}
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

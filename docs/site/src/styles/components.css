@@ -2445,3 +2445,127 @@ main:has(.caitlyn-page-header[data-reference]) .sl-markdown-content > p.caitlyn-
 .caitlyn-op-panel-picker > .caitlyn-kicker {
   margin: 0;
 }
+
+/* ------------------------------------------------------------- the Changelog's timeline */
+/* A row per release (scripts/docs-changelog.mjs changelogPage): its version, SDK or API tag, date and compare link on
+   the left; its entries on the right, grouped under the stability badges' shape (Breaking, New, Fixed, Changed). A
+   hairline between releases. A release with a breaking change marks its Breaking group with a clay rule. On a phone the
+   version stacks above the entries. */
+.sl-markdown-content .caitlyn-releases {
+  margin-top: 32px; /* space-8 */
+  border-bottom: 1px solid var(--caitlyn-rule);
+}
+.sl-markdown-content .caitlyn-release {
+  display: grid;
+  grid-template-columns: 9.5rem minmax(0, 1fr);
+  column-gap: 32px; /* space-8 */
+  margin: 0;
+  padding: 24px 0; /* space-6 */
+  border-top: 1px solid var(--caitlyn-rule);
+}
+.sl-markdown-content .caitlyn-release > * {
+  margin: 0;
+}
+.sl-markdown-content .caitlyn-release-meta > * {
+  margin: 0;
+}
+.sl-markdown-content .caitlyn-release-meta .sl-heading-wrapper,
+.sl-markdown-content .caitlyn-release-meta h2 {
+  margin: 0;
+}
+.sl-markdown-content .caitlyn-release-meta h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px; /* space-1, between space-2 and space-3 */
+  font-size: var(--caitlyn-text-section-title);
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+.sl-markdown-content .caitlyn-release-meta .sl-anchor-link {
+  display: none;
+}
+/* The SDK or API tag: a hairline outline, so it reads as a label and not as a change's badge */
+.sl-markdown-content .caitlyn-release-kind {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--caitlyn-rule);
+  border-radius: var(--caitlyn-radius-inline);
+  color: var(--caitlyn-muted);
+  font-size: var(--caitlyn-text-kicker);
+  font-weight: 500;
+  line-height: 1.6;
+  letter-spacing: 0.08em;
+}
+.sl-markdown-content .caitlyn-release-date,
+.sl-markdown-content .caitlyn-release-compare {
+  margin-top: 4px; /* space-1 */
+  color: var(--caitlyn-muted);
+  font-size: var(--caitlyn-text-body);
+  line-height: 1.4;
+}
+.sl-markdown-content .caitlyn-release-compare a {
+  color: var(--caitlyn-muted);
+}
+.sl-markdown-content .caitlyn-release-entries > * {
+  margin: 0;
+}
+.sl-markdown-content .caitlyn-release-entries > * + * {
+  margin-top: 16px; /* space-4 */
+}
+.sl-markdown-content .caitlyn-release-intro {
+  color: var(--caitlyn-muted);
+}
+.sl-markdown-content .caitlyn-release-label {
+  margin: 0;
+  line-height: 1;
+}
+.sl-markdown-content .caitlyn-release-group ul {
+  margin: 8px 0 0; /* space-2 */
+  padding-inline-start: 1.1em;
+}
+.sl-markdown-content .caitlyn-release-group li + li {
+  margin-top: 6px;
+}
+/* The change badges, in the stability badges' shape and fixed dark ink: New field green, as GA; Fixed and Changed the
+   light neutral; Stability amber, as Beta; Breaking (and an API release's Removed) clay, the strongest tint */
+.caitlyn-stability[data-change='new'] {
+  background: var(--caitlyn-field-accent-01);
+}
+.caitlyn-stability[data-change='fixed'],
+.caitlyn-stability[data-change='changed'] {
+  background: var(--caitlyn-primary-light-10);
+  box-shadow: inset 0 0 0 1px var(--caitlyn-rule);
+}
+.caitlyn-stability[data-change='stability'] {
+  background: var(--caitlyn-amber-primary);
+}
+.caitlyn-stability[data-change='breaking'] {
+  background: var(--caitlyn-clay-primary);
+}
+/* A breaking group stands out from the rest of its release with a clay rule beside it; its entries keep the body weight */
+.sl-markdown-content .caitlyn-release-group[data-change='breaking'] {
+  padding-inline-start: 14px;
+  border-inline-start: 3px solid var(--caitlyn-clay-primary);
+}
+.sl-markdown-content .caitlyn-release-group li > ul {
+  margin-top: 6px;
+}
+@media (max-width: 50rem) {
+  .sl-markdown-content .caitlyn-release {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 12px; /* space-3 */
+    padding: 20px 0; /* space-5 */
+  }
+  .sl-markdown-content .caitlyn-release-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 12px; /* space-3 */
+  }
+  .sl-markdown-content .caitlyn-release-meta .sl-heading-wrapper,
+  .sl-markdown-content .caitlyn-release-meta h2 {
+    flex-basis: 100%;
+  }
+}

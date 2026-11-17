@@ -37,7 +37,10 @@ export interface SendMessageCommandOutput extends Omit<SendMessageOutput, "event
  * and the message is sent once every upload has arrived.
  *
  * Only a participant may send: whoever started the conversation, or someone it is shared with for
- * writing (the update grant). A caller who may only read it, or may not see it, gets 404.
+ * writing (the update grant), who may still see the conversation's agent, and, when it was started
+ * on a version other than live, holds that agent's version access grant. A caller without any of
+ * these gets 404, so revoking someone's access to the agent stops them chatting in conversations
+ * they already started.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript
@@ -91,7 +94,8 @@ export interface SendMessageCommandOutput extends Omit<SendMessageOutput, "event
  * document still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an
  * ingestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document
  * an ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry
- * `Retry-After`.
+ * `Retry-After`. A document whose versions are not numbered yet cannot have one deleted by number
+ * (`VERSIONS_NOT_NUMBERED`).
  *
  * @throws {@link NotFoundError} (client fault)
  *  The record does not exist, or the caller may not see it. The two are deliberately the same, so

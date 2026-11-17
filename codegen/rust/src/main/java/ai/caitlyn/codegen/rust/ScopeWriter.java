@@ -454,7 +454,34 @@ final class ScopeWriter {
             w.l("\n" + Names.doc("Watches this thing (PROTOCOL.md 16): " + watch.name + " with its identifier as the filter. The first event of "
                     + "every connection is a `snapshot` of how it stands, then one event per change; a dropped connection is reopened with no "
                     + "cursor and starts with a snapshot again.", "    "));
-            w.l("    pub fn watch(&self) -> " + watchReq + " {\n" + b + "        " + watchReq + "::new(self.core.clone(), input, vec![])\n    }\n");
+            String made = watchReq + "::new(self.core.clone(), input, vec![])";
+            if (plans(n)) {
+                // A batch's watch reads the batch again once its deadline has passed (PROTOCOL.md 16): with its get, put
+                // into a snapshot (in place of the one given, or with no jobs and no progress), and its typed deadline.
+                String union = "crate::types::" + events(n).getId().getName();
+                String snapshot = "crate::types::" + events(n).getMember("snapshot").orElseThrow().getTarget().getName();
+                String key = Names.snake(thingKey(n));
+                b.append("        let this = self.clone();\n");
+                made += "\n            .reread_at_deadline(rt::stream::Reread::new(\n"
+                        + "                move |base| {\n"
+                        + "                    let get = this.get();\n"
+                        + "                    Box::pin(async move {\n"
+                        + "                        let mut snapshot = match base {\n"
+                        // The server's JSON showed the batch as it no longer stands.
+                        + "                            Some(" + union + "::Snapshot(s)) => " + snapshot + " { raw: Default::default(), ..s },\n"
+                        + "                            _ => " + snapshot + "::default(),\n"
+                        + "                        };\n"
+                        + "                        snapshot." + key + " = Some(get.send().await?);\n"
+                        + "                        Ok(" + union + "::Snapshot(snapshot))\n"
+                        + "                    })\n"
+                        + "                },\n"
+                        + "                |ev| match ev {\n"
+                        + "                    " + union + "::Snapshot(s) => s." + key + ".as_ref().map(|b| rt::stream::batch_deadline(b.status.as_str(), b.uploads_expire_at)),\n"
+                        + "                    _ => None,\n"
+                        + "                },\n"
+                        + "            ))";
+            }
+            w.l("    pub fn watch(&self) -> " + watchReq + " {\n" + b + "        " + made + "\n    }\n");
         }
         String wt = waitType(n);
         boolean batch = plans(n);

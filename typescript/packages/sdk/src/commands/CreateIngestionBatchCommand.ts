@@ -27,9 +27,10 @@ export interface CreateIngestionBatchCommandOutput extends CreateIngestionBatchO
  *
  * Takes up to 10,000 items; add more with BatchCreateIngestionBatchItems while `awaitMoreItems` is
  * true. Returns 202 with the batch, and `Location` names it; wait for the plan with the SDKs'
- * `batch.planned()`. Needs the files list permission and read access to the knowledge base, so a
- * caller allowed only to look can plan; a batch with a `fetchUrl` item also needs the files create
- * permission.
+ * `batch.planned()`. Needs the ingestion create permission and read access to the knowledge base,
+ * as v2's ingestion route does; starting the batch, which hands out an upload policy, also needs the
+ * files create permission. A `fetchUrl` item needs the files create permission when it is added,
+ * which the server checks, because the trait cannot follow an item's member.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript
@@ -89,7 +90,7 @@ export interface CreateIngestionBatchCommandOutput extends CreateIngestionBatchO
  * //   batch: { // IngestionBatch
  * //     id: "STRING_VALUE", // required
  * //     knowledgeBaseId: "STRING_VALUE", // required
- * //     status: "draft" || "planning" || "planned" || "running" || "succeeded" || "completed_with_failures" || "failed" || "cancelled" || "expired", // required
+ * //     status: "draft" || "planning" || "planned" || "running" || "succeeded" || "completed_with_failures" || "failed" || "cancelled", // required
  * //     start: "when_planned" || "manual", // required
  * //     awaitMoreItems: true || false, // required
  * //     policy: { // IngestionPolicy
@@ -126,6 +127,7 @@ export interface CreateIngestionBatchCommandOutput extends CreateIngestionBatchO
  * //       },
  * //     },
  * //     planExpiresAt: new Date("TIMESTAMP"),
+ * //     uploadsExpireAt: new Date("TIMESTAMP"),
  * //     createdBy: { // Actor
  * //       userId: "STRING_VALUE",
  * //       apiClientId: "STRING_VALUE",
@@ -158,7 +160,8 @@ export interface CreateIngestionBatchCommandOutput extends CreateIngestionBatchO
  * document still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an
  * ingestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document
  * an ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry
- * `Retry-After`.
+ * `Retry-After`. A document whose versions are not numbered yet cannot have one deleted by number
+ * (`VERSIONS_NOT_NUMBERED`).
  *
  * @throws {@link NotFoundError} (client fault)
  *  The record does not exist, or the caller may not see it. The two are deliberately the same, so

@@ -111,6 +111,10 @@ export const ERROR_CODES = {
     meaning: "An ingestion batch is working on this document, so other changes to it are refused until the batch has finished with it.",
     action: "Wait for the batch to finish, or cancel it, then try again. The error's `Retry-After` says when.",
   },
+  VERSIONS_NOT_NUMBERED: {
+    meaning: "A document version was deleted by its number before the document's versions are numbered. A version's number is its place in upload order, and until the versions are numbered, deleting one would shift every later number, so the delete is refused.",
+    action: "Try again later, once the versions are numbered. Or delete `latest`, which works either way.",
+  },
   METADATA_FIELD_UNDEFINED: {
     meaning: "The metadata names a field the knowledge base does not define.",
     action: "Use only the knowledge base's own metadata fields (they are on the knowledge base), or add the field to the knowledge base first. `errors` points at each field at fault.",

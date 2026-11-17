@@ -60,7 +60,7 @@ export interface GetAccessCommandOutput extends GetAccessOutput, __MetadataBeare
  * //       },
  * //     ],
  * //     readers: { // Readers
- * //       kind: "inherit" || "everyone" || "specific", // required
+ * //       kind: "inherit" || "public" || "everyone" || "specific", // required
  * //       roles: [ // RoleIdList
  * //         "STRING_VALUE",
  * //       ],

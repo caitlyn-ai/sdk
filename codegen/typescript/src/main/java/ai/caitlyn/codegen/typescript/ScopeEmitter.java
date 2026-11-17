@@ -126,6 +126,7 @@ final class ScopeEmitter {
         StringBuilder out = new StringBuilder(FacadeGenerator.HEADER)
             .append("import { CaitlynClient } from \"../CaitlynClient\";\n")
             .append("import { clientConfig, createAuth, getCaitlynAuthPlugin, getCaitlynConnectionErrorPlugin, getCaitlynTelemetryPlugin, WorkPromise, waitFor, waitForJob, readers, trimFolder, withFields, eager, describeFile")
+            .append(usesReread ? ", rereadAtDeadline" : "")
             .append(sync ? ", thingOf, batchUpload, estimateUpload, type BatchFiles, type BatchUpload, type BatchUploadOptions, sync as runSync, estimateSync, type SyncDeps, type SyncItemInput, type SyncOptions, type SyncPlan, type SyncReport" : "")
             .append(", type AuthSession, type CaitlynOptions, type CallOptions, type FileInput, type ReadersShorthand, type UploadDescription, type ScopeWatchAccessor, type SseStream, type WaitOptions, type WaitSpec, type WithRaw } from \"@caitlyn-ai/sdk-core\";\n")
             .append("import type { MetadataBearer as __MetadataBearer } from \"@caitlyn-ai/sdk-core\";\n")
@@ -561,11 +562,24 @@ final class ScopeEmitter {
     }
 
     private String watchCall(Node scope, String ids, String options) {
+        if (rereadGet(scope).isPresent()) return "watch" + nameOf(scope) + "(c, " + idsRef(ids) + ", " + options + ")";
+        return opsWatchCall(scope, ids, options);
+    }
+
+    private String opsWatchCall(Node scope, String ids, String options) {
         ScopeTree.LongRunning lr = scope.watch.get();
         OperationShape watchOp = model.expectShape(lr.watch(), OperationShape.class);
         String value = lr.filter().map(f -> idsRef(ids) + "." + ownId(scope).orElseThrow()).orElse(null);
         return "ops." + FacadeGenerator.lowerCamelName(watchOp) + "(c, " + watchFills(watchOp, ids, lr.filter().orElse(null), value) + ", " + options + ")";
     }
+
+    /** A batch's get: its watch reads the batch again with it once its deadline has passed (PROTOCOL.md 16). */
+    private Optional<Method> rereadGet(Node scope) {
+        return getOf(scope).filter(gm -> kindOf(scope).equals("batch") && hasPlannedStatus(gm.operation));
+    }
+
+    /** Some scope's watch is a batch's, which reads it again at its deadline: client.ts imports rereadAtDeadline. */
+    private boolean usesReread;
 
     private Optional<Method> getOf(Node scope) {
         return scope.methods.stream().filter(x -> x.name.equals("get")).findFirst();
@@ -629,6 +643,13 @@ final class ScopeEmitter {
             return "(signal: AbortSignal) => ops." + gp.fn + "(c, " + gp.inputExpr("ids") + ", { signal })";
         }).orElse(null);
         String own = ownId(n).orElseThrow();
+        rereadGet(n).ifPresent(gm -> {
+            usesReread = true;
+            Plan gp = new Plan(gm);
+            impl.insert(0, "/** `" + n.path() + "`'s watch, which reads it again once its deadline has passed (PROTOCOL.md 16). */\n"
+                + "function watch" + type + "(c: CaitlynClient, ids: Ids, options?: CallOptions) {\n"
+                + "  return rereadAtDeadline(" + opsWatchCall(n, "ids", "options") + ", (signal: AbortSignal) => ops." + gp.fn + "(c, " + gp.inputExpr("ids") + ", { signal }), options);\n}\n\n");
+        });
         impl.insert(0, "/** How `" + n.path() + "` is waited on: its watch, and its get. */\n"
             + "function spec" + type + "(c: CaitlynClient, ids: Ids): WaitSpec<" + specType + "> {\n"
             + "  return {\n"

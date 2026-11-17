@@ -21,6 +21,7 @@ import threading
 import time
 import urllib.parse
 import uuid
+from types import SimpleNamespace
 from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from datetime import datetime
@@ -61,6 +62,7 @@ from caitlyn.auth import Auth, AwsCredentials, AwsIam, CaitlynAuthError, ClientC
 from caitlyn.events import TextDeltaEvent
 from caitlyn.models import AgentGuidance, AgentVersion, DocumentProcessing, Job
 from caitlyn_core import _client as core_client  # pyright: ignore[reportPrivateUsage]
+from caitlyn_core import _deadline as core_deadline  # pyright: ignore[reportPrivateUsage]
 from caitlyn_core import _files as core_files  # pyright: ignore[reportPrivateUsage]
 from caitlyn_core import _sync as core_sync  # pyright: ignore[reportPrivateUsage]
 from caitlyn_core import workspace_endpoint
@@ -622,6 +624,20 @@ async def test_unknown_enum(mock: Mock, case_id: str) -> None:
     assert v.source == "cloned_from_template"
 
 
+@case("tolerance.unknown-error-code")
+async def test_unknown_error_code(mock: Mock, case_id: str) -> None:
+    body = json.dumps({"type": "https://build.caitlyn.ai/errors/SOMETHING_NEW", "title": "Something new", "status": 409, "code": "SOMETHING_NEW", "requestId": "r-1"})
+    mock.faults(status={"GetAgentVersion": [{"status": 409, "contentType": "application/problem+json", "body": body}]})
+    http = await expect_error(client(mock).agents("GHT7YRWXPL").draft.get())
+    assert isinstance(http, ConflictError)
+    assert (http.status, http.code) == (409, "SOMETHING_NEW")
+    mock.reset()
+    mock.faults(busyDocuments={"doc-0002": True}, jobOutcomes={"doc-0002": "failed"}, jobError={"code": "SOMETHING_NEW", "detail": "A failure this SDK does not know."})
+    job = await expect_error(client(mock).knowledge_bases("KB4T7YQ2WL").documents("doc-0002").wait(timeout=10))
+    assert type(job) is CaitlynError
+    assert (job.status, job.code) == (0, "SOMETHING_NEW")
+
+
 @case("tolerance.unknown-field-raw")
 async def test_unknown_field_raw(mock: Mock, case_id: str) -> None:
     mock.faults(unknownField=True)
@@ -668,6 +684,18 @@ async def test_409(mock: Mock, case_id: str) -> None:
     err = await expect_error(c.knowledge_bases("KB4T7YQ2WL").documents.create(upload_id=up.id, folder="/hr/"))
     assert isinstance(err, ConflictError)
     assert (err.status, err.code) == (409, "CONFLICT")
+    assert err.code == caitlyn.ErrorCode.CONFLICT and caitlyn.ErrorCode(err.code).is_known
+
+
+@case("errors.versions-not-numbered")
+async def test_versions_not_numbered(mock: Mock, case_id: str) -> None:
+    mock.faults(versionsNotNumbered={"doc-0001": True})
+    doc = client(mock).knowledge_bases(KB).documents("doc-0001")
+    err = await expect_error(doc.versions("1").delete())
+    assert isinstance(err, ConflictError)
+    assert (err.status, err.code) == (409, caitlyn.ErrorCode.VERSIONS_NOT_NUMBERED)
+    assert len([r for r in mock.api() if r["method"] == "DELETE"]) == 1, "not retried"
+    assert (await doc.get()).version_count == 1, "nothing deleted"
 
 
 @case("errors.412")
@@ -679,6 +707,54 @@ async def test_412(mock: Mock, case_id: str) -> None:
     assert isinstance(err, PreconditionFailedError)
     assert (err.status, err.code) == (412, "PRECONDITION_FAILED")
     assert err.request_id
+
+
+@case("errors.decode-failed")
+async def test_decode_failed(mock: Mock, case_id: str) -> None:
+    mock.faults(status={"GetDocument": [{"status": 200, "body": "this is not JSON", "contentType": "application/json"}]})
+    err = await expect_error(client(mock).knowledge_bases(KB).documents("doc-0001").get())
+    assert (type(err), err.status, err.code) == (CaitlynError, 0, "DECODE_FAILED")
+    assert isinstance(err.__cause__, ValueError), repr(err.__cause__)
+
+
+@case("errors.job-failed-no-code")
+async def test_job_failed_no_code(mock: Mock, case_id: str) -> None:
+    # The model requires OperationError.code, and this SDK's models hold to it: a job error with no code at all is not
+    # the model's shape, so the watch's event is DECODE_FAILED. One whose code is empty is the failure with no code.
+    mock.faults(busyDocuments={"doc-0002": True}, jobOutcomes={"doc-0002": "failed"}, jobError={"code": "", "detail": "The job failed and said no more."})
+    err = await expect_error(client(mock).knowledge_bases(KB).documents("doc-0002").wait(timeout=10))
+    assert (type(err), err.status, err.code) == (CaitlynError, 0, "JOB_FAILED")
+    mock.reset()
+    mock.faults(busyDocuments={"doc-0002": True}, jobOutcomes={"doc-0002": "failed"}, jobError={"detail": "The job failed and said no more."})
+    err = await expect_error(client(mock).knowledge_bases(KB).documents("doc-0002").wait(timeout=10))
+    assert (err.status, err.code) == (0, "DECODE_FAILED")
+
+
+@case("errors.file-unreadable")
+async def test_file_unreadable(mock: Mock, tmp_path: Path, case_id: str) -> None:
+    broken = OSError("the disk went away")
+
+    async def failing() -> AsyncIterator[bytes]:
+        yield b"%PDF-1.7 first part"
+        raise broken
+
+    c = client(mock)
+    err = await expect_error(c.core.uploads.send(UploadFile.from_stream(failing(), name="scan.pdf")))
+    assert (err.status, err.code, err.__cause__) == (0, "FILE_UNREADABLE", broken)
+    missing = await expect_error(c.core.uploads.send(str(tmp_path / "no-such-file.pdf")))
+    assert (missing.status, missing.code) == (0, "FILE_UNREADABLE")
+    assert isinstance(missing.__cause__, FileNotFoundError), repr(missing.__cause__)
+    assert mock.api() == [], "nothing was sent"
+
+
+@case("errors.item-has-no-file")
+async def test_item_has_no_file(mock: Mock, tmp_path: Path, case_id: str) -> None:
+    mock.faults(strayItem="/hr/stray.pdf")
+    root = folder_of(tmp_path, {"annual-leave.md": b"Staff receive 20 days of annual leave."})
+    err = await expect_error(client(mock).knowledge_bases(KB).ingestion.sync(root, folder="/hr/"))
+    assert (err.status, err.code) == (0, "INGESTION_ITEM_HAS_NO_FILE")
+    assert "/hr/stray.pdf" in str(err)
+    assert forms(mock) == [], "nothing was uploaded"
 
 
 @case("errors.429-exhausted")
@@ -1854,13 +1930,14 @@ async def test_scope_estimate(mock: Mock, tmp_path: Path, case_id: str) -> None:
 async def test_access_readers_shorthand(mock: Mock, case_id: str) -> None:
     folder = client(mock).knowledge_bases(KB).folders("/hr/investigations/")
     sent: list[Any] = []
-    for readers in ({"roles": ["hr-team"]}, "everyone", "inherit", {"roles": ["hr-team"], "people": ["u-7"]}):
+    for readers in ({"roles": ["hr-team"]}, "everyone", "public", "inherit", {"roles": ["hr-team"], "people": ["u-7"]}):
         current = await folder.access.get()
         await folder.access.set(readers=readers, if_match=current.etag)  # pyright: ignore[reportArgumentType]
         sent.append(json.loads(mock.api()[-1]["body"])["readers"])
     assert sent == [
         {"kind": "specific", "roles": ["hr-team"]},
         {"kind": "everyone"},
+        {"kind": "public"},
         {"kind": "inherit"},
         {"kind": "specific", "roles": ["hr-team"], "people": ["u-7"]},
     ]
@@ -1870,6 +1947,22 @@ async def test_access_readers_shorthand(mock: Mock, case_id: str) -> None:
     current = await folder.access.get()
     await folder.access.set(readers=Readers.model_validate({"kind": "everyone"}), if_match=current.etag)
     assert json.loads(mock.api()[-1]["body"])["readers"] == {"kind": "everyone"}
+
+
+@case("access.public")
+async def test_access_public(mock: Mock, case_id: str) -> None:
+    from caitlyn.models import ReadersKind
+
+    kb = client(mock).knowledge_bases(KB)
+    folder = kb.folders("/policies/")
+    await folder.access.set(readers="public")
+    assert json.loads(mock.api()[-1]["body"]) == {"readers": {"kind": "public"}}
+    read = await folder.access.get()
+    assert read.readers is not None and read.readers.kind == ReadersKind.PUBLIC
+    doc = kb.documents("doc-0001")
+    await doc.access.set(readers={"kind": ReadersKind.PUBLIC})  # pyright: ignore[reportArgumentType]
+    doc_read = await doc.access.get()
+    assert doc_read.readers is not None and doc_read.readers.kind == "public"
 
 
 @case("access.set-no-if-match")
@@ -2309,17 +2402,79 @@ async def test_watch_gone(mock: Mock, case_id: str) -> None:
     assert (type(err), err.status) == (NotFoundError, 404)
 
 
-@case("wait.expired")
-async def test_wait_expired(mock: Mock, case_id: str) -> None:
-    # The mock's planExpires: planning ends the batch expired, as a plan left unstarted for 5 minutes does.
-    mock.faults(planExpires=True)
-    kb = client(mock).knowledge_bases(KB)
-    item = IngestionItemInput(path="/hr/a.md", sha256=sha_b64(b"a"), byte_size=1, content_type="text/markdown")
-    batch = await kb.ingestion.batches.create(start="manual", items=[item])
-    for wait in (batch.planned, batch.wait):
-        err = await expect_error(wait(timeout=10))
-        assert (type(err), err.status, err.code) == (CaitlynError, 0, "EXPIRED")
-    assert str((await batch.get()).status) == "expired"
+@case("wait.deadline-reread")
+async def test_wait_deadline_reread(mock: Mock, tmp_path: Path, case_id: str) -> None:
+    def batch_reads() -> int:
+        return sum(1 for r in mock.api() if r.get("method") == "GET" and re.search(r"/ingestion-batches/[^/]+$", str(r["path"])))
+
+    # The mock's deadlinePassed: only GetIngestionBatch ends a batch past its deadline, and its watch never shows the
+    # end. 'uploads': started, nothing uploaded, uploadsExpireAt a minute gone.
+    mock.faults(deadlinePassed="uploads")
+    data = b"%PDF-1.7 annual leave"
+    batch = await built_batch(client(mock), {"/hr/annual-leave.pdf": data})
+    done = await batch.wait(timeout=10)
+    assert str(done.status) == "completed_with_failures"
+    [item] = [i async for i in batch.items.list()]
+    assert (str(item.status), item.failure_code) == ("failed", "UPLOAD_EXPIRED")
+
+    # watch() yields the read as a snapshot: a fresh batch, so that only the SDK's read can show it ended.
+    mock.reset()
+    mock.faults(deadlinePassed="uploads")
+    watched = await built_batch(client(mock), {"/hr/annual-leave.pdf": data})
+    before = batch_reads()
+    ended: Any = None
+    async with asyncio.timeout(10):
+        async with watched.watch() as stream:
+            async for event in stream:
+                if event.type == "snapshot" and event.batch is not None and str(event.batch.status) == "completed_with_failures":
+                    ended = event.batch
+                    break
+    assert ended is not None and ended.id == watched.ingestion_batch_id
+    assert batch_reads() > before, "GetIngestionBatch was sent"
+
+    # The synchronous client's wait, whose watch is read on a thread of its own.
+    mock.reset()
+    mock.faults(deadlinePassed="uploads")
+    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    made = sync.knowledge_bases(KB).ingestion.batches.create(start="manual", items=[batch_item("/hr/annual-leave.pdf", data)])
+    made.planned(timeout=10)
+    started = made.start()
+    finished = await asyncio.to_thread(lambda: started.wait(timeout=10))
+    assert str(finished.status) == "completed_with_failures"
+
+    # A sync whose batch is past its upload deadline, with its one upload failing (so it is never made), finishes: the
+    # read ends the batch. The report keeps the SDK's own UPLOAD_FAILED for the item; the server's is UPLOAD_EXPIRED.
+    for use_sync in (False, True):
+        mock.reset()
+        mock.faults(deadlinePassed="uploads", failUploads={"/hr/annual-leave.md": True})
+        root = folder_of(tmp_path / str(use_sync), {"annual-leave.md": b"Staff receive 20 days of annual leave."})
+        async with asyncio.timeout(30):
+            if use_sync:
+                report = await asyncio.to_thread(lambda: sync.knowledge_bases(KB).ingestion.sync(root, folder="/hr/"))
+            else:
+                report = await client(mock).knowledge_bases(KB).ingestion.sync(root, folder="/hr/")
+        assert str(report.batch.status) == "completed_with_failures", report.batch
+        [synced] = report.items
+        assert (str(synced.status), synced.failure_code) == ("failed", "UPLOAD_FAILED")
+        [listed] = [i async for i in client(mock).knowledge_bases(KB).ingestion.batches(report.batch.id).items.list()]
+        assert (str(listed.status), listed.failure_code) == ("failed", "UPLOAD_EXPIRED")
+
+    # Each deadline is read once: a read that returns the same deadline schedules nothing more, and a snapshot with a
+    # new deadline starts the timer again.
+    def seen(status: str, uploads_expire_at: str) -> Any:
+        return SimpleNamespace(status=status, uploads_expire_at=datetime.fromisoformat(uploads_expire_at))
+
+    clock = core_deadline.DeadlineClock()
+    first = seen("running", "2026-11-17T10:00:00Z")
+    clock.see(first)
+    assert clock.due == first.uploads_expire_at.timestamp() + core_deadline.DEADLINE_GRACE
+    clock.reading()
+    clock.see(seen("running", "2026-11-17T10:00:00Z"))
+    assert clock.due is None, "the same deadline is not read again"
+    clock.see(seen("running", "2026-11-17T10:30:00Z"))
+    assert clock.due is not None, "a new deadline is"
+    clock.see(seen("completed_with_failures", "2026-11-17T11:00:00Z"))
+    assert clock.due is None, "an ended batch is not read"
 
 
 @case("wait.progress")
@@ -3492,6 +3647,37 @@ async def test_batch_upload_not_started(mock: Mock, case_id: str) -> None:
     assert str((await when.get()).status) == "planning"
     done = await c.knowledge_bases(KB).ingestion.batches(when.id).upload(by_path({"/hr/c.md": b"c"}))
     assert [str(i.path) for i in done.items] == ["/hr/c.md"] and sent_for(mock, b"c") == 1
+
+
+@case("batch-upload.keep-alive")
+async def test_batch_upload_keep_alive(mock: Mock, case_id: str) -> None:
+    # A compressed clock: each policy is due for renewal 2 s after it is issued, and the batch stops waiting for bytes
+    # 4 s after the latest one. The one file takes 6 s to arrive.
+    def renewals() -> int:
+        return len(calls(mock, "/upload-policies"))
+
+    reservation = {"policySeconds": 302, "reservationSeconds": 4}
+    contents = {"/hr/annual-leave.md": b"Staff receive 20 days of annual leave."}
+    mock.faults(uploadReservation=reservation, uploadDelayMs=6000)
+    c = client(mock)
+    uploaded = await (await built_batch(c, contents)).upload(by_path(contents))
+    assert [(str(i.status), i.failure_code) for i in uploaded.items] == [("ingesting", None)], "accepted, not UPLOAD_EXPIRED"
+    sent = renewals()
+    assert sent >= 3, f"{sent} policies asked for: the first, then at least two while the upload was in flight"
+    await asyncio.sleep(2.5)
+    assert renewals() == sent, "no renewal after the call returned"
+    # Cancelled during the slow upload: no renewal after the cancellation is raised.
+    mock.reset()
+    mock.faults(uploadReservation=reservation, uploadDelayMs=6000)
+    batch = await built_batch(c, contents)
+    task = asyncio.create_task(batch.upload(by_path(contents)))
+    await asyncio.sleep(2.5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    at_cancel = renewals()
+    await asyncio.sleep(2.5)
+    assert renewals() == at_cancel, "no renewal after the cancellation"
 
 
 @case("batch-upload.sends")

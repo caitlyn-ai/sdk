@@ -67,10 +67,10 @@ func WithSize(size int64) FileOption {
 func FileFromPath(p string, opts ...FileOption) (*UploadFile, error) {
 	fi, err := os.Stat(p)
 	if err != nil {
-		return nil, err
+		return nil, unreadable(p, err)
 	}
 	if !fi.Mode().IsRegular() {
-		return nil, fmt.Errorf("caitlyn: %s is not a regular file", p)
+		return nil, unreadable(p, fmt.Errorf("%s is not a regular file", p))
 	}
 	f := &UploadFile{name: filepath.Base(p), path: p, size: fi.Size()}
 	return f.with(opts), nil
@@ -207,9 +207,11 @@ func (p *PreparedFile) Open() (io.ReadCloser, error) {
 		if fi.Size() != p.Size || !fi.ModTime().Equal(p.modTime) {
 			return nil, fileChanged(p.file.path, nil)
 		}
-		return os.Open(p.file.path)
+		fh, err := os.Open(p.file.path)
+		return fh, unreadable(p.file.path, err)
 	case p.temp != "":
-		return os.Open(p.temp)
+		fh, err := os.Open(p.temp)
+		return fh, unreadable(p.Name, err)
 	case p.spooled != nil:
 		return io.NopCloser(bytes.NewReader(p.spooled)), nil
 	default:
@@ -234,6 +236,25 @@ func (p *PreparedFile) Close() error {
 // FILE_TOO_LARGE, before any of it is read when its size is known. A stream is copied aside as it is read; a
 // stream already read by an earlier call fails. Close the result when the call ends.
 func (f *UploadFile) Prepare(ctx context.Context) (*PreparedFile, error) {
+	p, err := f.prepare(ctx)
+	if err != nil && f != nil {
+		return nil, unreadable(f.name, err)
+	}
+	return p, err
+}
+
+// unreadable is FILE_UNREADABLE for a file read that failed (PROTOCOL.md 6.3), with the native error as its Cause. A
+// Caitlyn error, an input error and a cancellation pass as they are; nil stays nil.
+func unreadable(name string, err error) error {
+	var api *APIError
+	var input *InputError
+	if err == nil || errors.As(err, &api) || errors.As(err, &input) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	return sdkError("FILE_UNREADABLE", name+" could not be read", err)
+}
+
+func (f *UploadFile) prepare(ctx context.Context) (*PreparedFile, error) {
 	if f == nil {
 		return nil, &InputError{Operation: "UploadFile", Member: "file", Reason: "is required"}
 	}
@@ -293,6 +314,14 @@ func (f *UploadFile) Prepare(ctx context.Context) (*PreparedFile, error) {
 // and a stream is copied once, to memory or a temporary file, so each attempt can send it from the start. Digest and
 // SHA256 are left empty.
 func (f *UploadFile) PrepareUnhashed(ctx context.Context) (*PreparedFile, error) {
+	p, err := f.prepareUnhashed(ctx)
+	if err != nil && f != nil {
+		return nil, unreadable(f.name, err)
+	}
+	return p, err
+}
+
+func (f *UploadFile) prepareUnhashed(ctx context.Context) (*PreparedFile, error) {
 	if f == nil {
 		return nil, &InputError{Operation: "UploadFile", Member: "file", Reason: "is required"}
 	}

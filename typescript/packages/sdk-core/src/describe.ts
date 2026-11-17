@@ -6,7 +6,7 @@
 // A caller may give the description itself in place of the file. The SDK's own carries the name, content type and size, and no `hints`: the server prices a file it knows
 // only by its size as a typical one and says so (`documentsOfUnknownLength`). Reading hints as the Caitlyn app does
 // (its PDF, Word and Markdown readers) would add about 8.4 KB gzipped to every browser bundle that includes the client.
-import { UploadFile, contentTypeFor, isFileInput, measureStream, type FileInput, type PreparedFile, type ToError } from './files.js';
+import { UploadFile, contentTypeFor, isFileInput, measureStream, unreadable, type FileInput, type PreparedFile, type ToError } from './files.js';
 import { pathFile } from './files-node.js';
 
 /** A file described for an estimate, before it is uploaded: what the SDK sends, or what a caller who knows more gives. */
@@ -40,10 +40,10 @@ export async function describeFile(file: FileInput | PreparedFile | UploadDescri
   const src = f.source;
   const contentType = f.contentType ?? contentTypeFor(f.name);
   const byteSize =
-    src.kind === 'path' ? (await pathFile(src.path, signal)).byteSize
+    src.kind === 'path' ? (await pathFile(src.path, signal).catch((cause) => { throw unreadable(cause, toError, f.name); })).byteSize
     : src.kind === 'blob' ? src.blob.size
     : src.kind === 'bytes' ? src.bytes.byteLength
     // A one-shot stream has to be read to be measured: it is counted, never hashed or kept, unless its size is given.
-    : src.size ?? (await measureStream(src.stream, signal));
+    : src.size ?? (await measureStream(src.stream, signal).catch((cause) => { throw unreadable(cause, toError, f.name); }));
   return described(f.name, contentType, byteSize, f.hints);
 }

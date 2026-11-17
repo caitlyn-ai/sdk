@@ -74,6 +74,28 @@ type Stream[E any, F any] struct {
 	err        error
 	requestID  string
 	apiVersion string
+	// inter adds events of the SDK's own between the server's (Interject); cancel ends the context the stream was
+	// opened with, so that its reader stops.
+	inter  Interjector[E]
+	cancel context.CancelFunc
+}
+
+// Interjector adds events of the SDK's own to a stream, between the server's: a batch's watch reading the batch once
+// its deadline has passed (PROTOCOL.md 16).
+type Interjector[E any] interface {
+	// See takes each event the server sent, and returns the event to yield: the same one, or one made in its place.
+	See(ctx context.Context, ev E) (E, error)
+	// Due is when the interjector's next event is due, if one is.
+	Due() (time.Time, bool)
+	// Fire makes that event, once it is due.
+	Fire(ctx context.Context) (E, error)
+}
+
+// Interject has Events yield i's events beside the server's. The stream is then read on a goroutine of its own, so
+// cancel must end the context the stream was opened with: leaving the loop, or Close, calls it.
+func (s *Stream[E, F]) Interject(i Interjector[E], cancel context.CancelFunc) *Stream[E, F] {
+	s.inter, s.cancel = i, cancel
+	return s
 }
 
 // OpenStream wraps a 2xx text/event-stream response.
@@ -99,6 +121,9 @@ func (s *Stream[E, F]) APIVersion() string { return s.apiVersion }
 
 // Close releases the connection.
 func (s *Stream[E, F]) Close() error {
+	if s.cancel != nil {
+		s.cancel()
+	}
 	s.done = true
 	if s.resp != nil {
 		err := s.resp.Body.Close()
@@ -111,6 +136,10 @@ func (s *Stream[E, F]) Close() error {
 // Events yields each known event once. After an error the iteration ends.
 func (s *Stream[E, F]) Events() iter.Seq2[E, error] {
 	return func(yield func(E, error) bool) {
+		if s.inter != nil {
+			s.interjected(yield)
+			return
+		}
 		for {
 			ev, err := s.next()
 			if errors.Is(err, io.EOF) {
@@ -128,6 +157,85 @@ func (s *Stream[E, F]) Events() iter.Seq2[E, error] {
 				}
 				return
 			}
+		}
+	}
+}
+
+// interjected is Events with an Interjector: the server's events are read on a goroutine and passed over a channel,
+// so that the next of them and the interjector's due time can be waited on together.
+func (s *Stream[E, F]) interjected(yield func(E, error) bool) {
+	type item struct {
+		ev  E
+		err error
+	}
+	var zero E
+	events := make(chan item)
+	stop := make(chan struct{})
+	pumped := make(chan struct{})
+	go func() {
+		defer close(pumped)
+		defer close(events)
+		for {
+			ev, err := s.next()
+			if errors.Is(err, io.EOF) {
+				return
+			}
+			select {
+			case events <- item{ev, err}:
+			case <-stop:
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	// Leaving the loop, however it ends, ends the reader before the stream is closed, so the two never meet.
+	defer func() {
+		close(stop)
+		s.cancel()
+		<-pumped
+		s.Close()
+	}()
+	for {
+		var due <-chan time.Time
+		var timer *time.Timer
+		if at, ok := s.inter.Due(); ok {
+			timer = time.NewTimer(time.Until(at))
+			due = timer.C
+		}
+		var ev E
+		var it item
+		var fired, open bool
+		select {
+		case it, open = <-events:
+		case <-due:
+			fired = true
+		}
+		if timer != nil {
+			timer.Stop()
+		}
+		switch {
+		case fired:
+			var err error
+			if ev, err = s.inter.Fire(s.ctx); err != nil {
+				yield(zero, err)
+				return
+			}
+		case !open:
+			return
+		case it.err != nil:
+			yield(zero, it.err)
+			return
+		default:
+			var err error
+			if ev, err = s.inter.See(s.ctx, it.ev); err != nil {
+				yield(zero, err)
+				return
+			}
+		}
+		if !yield(ev, nil) {
+			return
 		}
 	}
 }
@@ -213,6 +321,10 @@ func (s *Stream[E, F]) next() (E, error) {
 		}
 		ev, ok, derr := s.spec.Decode(name, id, data)
 		if derr != nil {
+			var api *APIError
+			if !errors.As(derr, &api) {
+				derr = sdkError("DECODE_FAILED", "The "+name+" event could not be decoded", derr)
+			}
 			return zero, s.fail(derr)
 		}
 		if !ok {

@@ -4,8 +4,10 @@
 
 use std::collections::HashSet;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use futures_util::{Stream as FutStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 
@@ -47,6 +49,118 @@ pub enum Decoded<E> {
     Failure(E),
     /// An event name this SDK does not know: skipped.
     Skip,
+}
+
+/// How long after a batch's deadline its watch reads it, if it is still open (PROTOCOL.md 16). Fixed: not an option.
+pub const DEADLINE_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
+
+const BATCH_FINAL: &[&str] = &["succeeded", "completed_with_failures", "failed", "cancelled"];
+
+/// A batch's deadline (PROTOCOL.md 16): its `uploadsExpireAt`, while the batch is open. None once it has ended. The one
+/// place each stream that reads a batch at its deadline asks.
+pub fn batch_deadline(status: &str, uploads_expire_at: Option<DateTime<Utc>>) -> Option<DateTime<Utc>> {
+    if BATCH_FINAL.contains(&status) {
+        return None;
+    }
+    uploads_expire_at
+}
+
+/// Reads a batch and makes a snapshot event of it, from the snapshot it replaces, if any.
+type ReadFn<E, Er> = dyn Fn(Option<E>) -> BoxFuture<'static, Result<E, Er>> + Send + Sync;
+
+/// How a batch's watch reads the batch again once its deadline has passed (PROTOCOL.md 16). Generated code makes one
+/// from the batch scope's `get` and the watch's event type; the `sync` helper makes its own for its JSON events.
+pub struct Reread<E, Er> {
+    /// Reads the batch and makes a snapshot of it: in place of the snapshot given (one that arrived past its due time,
+    /// whose jobs and progress it keeps), or with no jobs and no progress.
+    read: Arc<ReadFn<E, Er>>,
+    /// The deadline an event shows: `None` for an event that does not show the batch, `Some(None)` for a batch with no
+    /// deadline (see [`batch_deadline`]).
+    deadline: fn(&E) -> Option<Option<DateTime<Utc>>>,
+}
+
+impl<E, Er> Reread<E, Er> {
+    pub fn new(
+        read: impl Fn(Option<E>) -> BoxFuture<'static, Result<E, Er>> + Send + Sync + 'static,
+        deadline: fn(&E) -> Option<Option<DateTime<Utc>>>,
+    ) -> Self {
+        Reread {
+            read: Arc::new(read),
+            deadline,
+        }
+    }
+}
+
+impl<E, Er> Clone for Reread<E, Er> {
+    fn clone(&self) -> Self {
+        Reread {
+            read: self.read.clone(),
+            deadline: self.deadline,
+        }
+    }
+}
+
+impl<E, Er> std::fmt::Debug for Reread<E, Er> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Reread")
+    }
+}
+
+/// When a batch's read is due, from what was last seen of it; each deadline is read once.
+struct Deadline<E, Er> {
+    reread: Reread<E, Er>,
+    done: HashSet<DateTime<Utc>>,
+    deadline: Option<DateTime<Utc>>,
+    due: Option<DateTime<Utc>>,
+}
+
+impl<E, Er> Deadline<E, Er> {
+    fn new(reread: Reread<E, Er>) -> Self {
+        Deadline {
+            reread,
+            done: HashSet::new(),
+            deadline: None,
+            due: None,
+        }
+    }
+
+    /// Takes in an event: true when it showed the batch.
+    fn see(&mut self, ev: &E) -> bool {
+        let Some(deadline) = (self.reread.deadline)(ev) else { return false };
+        self.deadline = deadline;
+        self.due = self
+            .deadline
+            .filter(|d| !self.done.contains(d))
+            .map(|d| d + chrono::Duration::from_std(DEADLINE_GRACE).unwrap_or_default());
+        true
+    }
+
+    fn reading(&mut self) {
+        if let Some(d) = self.deadline {
+            self.done.insert(d);
+        }
+        self.due = None;
+    }
+
+    /// How long until the read is due (zero when it already is), or `None` when none is.
+    fn wait(&self) -> Option<std::time::Duration> {
+        self.due.map(|due| (due - Utc::now()).to_std().unwrap_or_default())
+    }
+}
+
+/// Sleeps until the deadline's read is due; never, when none is.
+async fn due(wait: Option<std::time::Duration>) {
+    match wait {
+        Some(d) => tokio::time::sleep(d).await,
+        None => std::future::pending().await,
+    }
+}
+
+/// What a stream's next read came to: an event read, the deadline's read falling due, or cancellation.
+enum Next<T> {
+    Read(T),
+    Due,
+    Cancelled,
 }
 
 /// The pause before the nth reconnect in a row (PROTOCOL.md 5.6): an exponential backoff with jitter, 0.25-0.5 s,
@@ -97,6 +211,12 @@ pub struct Stream<E, F, Er> {
     done: bool,
     request_id: Option<String>,
     api_version: Option<String>,
+    /// A batch's watch: reads the batch again once its deadline has passed (PROTOCOL.md 16).
+    deadline: Option<Deadline<E, Er>>,
+    /// When the pause before a reconnect ends, while the deadline's read has cut that pause short.
+    paused_until: Option<tokio::time::Instant>,
+    /// An event's partial lines, kept across reads, so that a read given up for the deadline loses nothing.
+    partial: (String, Option<String>, Vec<u8>, bool),
 }
 
 impl<E, F, Er> std::fmt::Debug for Stream<E, F, Er> {
@@ -129,9 +249,22 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
             done: false,
             request_id,
             api_version,
+            deadline: None,
+            paused_until: None,
+            partial: Default::default(),
         };
         s.attach(resp);
         s
+    }
+
+    /// A batch's watch (PROTOCOL.md 16): the server ends a batch whose deadline has passed only when the batch is next
+    /// read, so its watch can stay silent. Each time the batch is seen (a snapshot, or a read), the read is due at its
+    /// deadline plus [`DEADLINE_GRACE`]; if nothing has shown the batch again by then, `read` is called and its batch
+    /// yielded as a `snapshot` with no jobs and no progress. A snapshot that arrives already past its due time has its
+    /// batch read at once, and is yielded with the read's batch in its place. A deadline is read once: a read that
+    /// returns the same deadline schedules nothing more.
+    pub fn reread_at_deadline(&mut self, reread: Reread<E, Er>) {
+        self.deadline = Some(Deadline::new(reread));
     }
 
     fn attach(&mut self, resp: Response) {
@@ -139,6 +272,7 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
         self.on_connection = 0;
         self.body = Some(Box::pin(resp.inner.bytes_stream()));
         self.buf.clear();
+        self.partial = Default::default();
     }
 
     /// The first response's `Caitlyn-Request-Id`.
@@ -169,19 +303,26 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
             if self.done {
                 return None;
             }
-            let read = match self.cancel.clone() {
-                Some(t) => {
-                    let r = tokio::select! {
-                        biased;
-                        _ = t.cancelled() => None,
-                        r = self.read_event() => Some(r),
-                    };
-                    match r {
-                        Some(r) => r,
-                        None => return self.fail(Error::Cancelled),
+            let wait = self.deadline.as_ref().and_then(Deadline::wait);
+            let next = {
+                let cancel = self.cancel.clone();
+                let cancelled = async {
+                    match &cancel {
+                        Some(t) => t.cancelled().await,
+                        None => std::future::pending().await,
                     }
+                };
+                tokio::select! {
+                    biased;
+                    _ = cancelled => Next::Cancelled,
+                    _ = due(wait) => Next::Due,
+                    r = self.read_event() => Next::Read(r),
                 }
-                None => self.read_event().await,
+            };
+            let read = match next {
+                Next::Read(r) => r,
+                Next::Cancelled => return self.fail(Error::Cancelled),
+                Next::Due => return self.reread(None).await,
             };
             let (name, id, data) = match read {
                 Ok(Some(ev)) => ev,
@@ -201,10 +342,12 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
                             Some(e) => Error::sdk("STREAM_LOST", "The stream was lost", Some(Box::new(e))),
                         });
                     }
-                    if let Err(e) = self.reconnect(cause).await {
-                        return self.fail(e);
+                    match self.reconnect(cause).await {
+                        Ok(true) => continue,
+                        // The deadline's read fell due during the pause: the pause carries on at the next call.
+                        Ok(false) => return self.reread(None).await,
+                        Err(e) => return self.fail(e),
                     }
-                    continue;
                 }
             };
             if let Some(id) = &id {
@@ -230,6 +373,11 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
                 }
                 Ok(Decoded::Failure(ev)) => return Some(Ok(ev)),
                 Ok(Decoded::Event(ev)) => {
+                    if let Some(d) = self.deadline.as_mut() {
+                        if d.see(&ev) && d.wait() == Some(std::time::Duration::ZERO) {
+                            return self.reread(Some(ev)).await;
+                        }
+                    }
                     if let Some(f) = self.spec.final_of.and_then(|final_of| final_of(&ev)) {
                         self.final_ = Some(f);
                         self.close();
@@ -264,31 +412,49 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
         futures_util::stream::unfold(self, |mut s| async move { s.next().await.map(|r| (r, s)) })
     }
 
-    async fn reconnect(&mut self, cause: Option<reqwest::Error>) -> Result<(), Error> {
-        self.body = None;
-        // A connection that stayed open a minute or more starts the count again, like a new event: the server ends every
-        // stream within an hour, and a quiet watch must outlive that (PROTOCOL.md 5.6).
-        if let Some(opened_at) = self.opened_at.take() {
-            if stream_clock().saturating_sub(opened_at) >= LONG_CONNECTION {
-                self.attempts = 0;
+    /// Reconnects after a pause (PROTOCOL.md 5.6). `Ok(false)`: a batch's deadline read fell due during the pause, which
+    /// the next call carries on with, without counting another reconnect.
+    async fn reconnect(&mut self, cause: Option<reqwest::Error>) -> Result<bool, Error> {
+        if self.paused_until.is_none() {
+            self.body = None;
+            // A connection that stayed open a minute or more starts the count again, like a new event: the server ends
+            // every stream within an hour, and a quiet watch must outlive that (PROTOCOL.md 5.6).
+            if let Some(opened_at) = self.opened_at.take() {
+                if stream_clock().saturating_sub(opened_at) >= LONG_CONNECTION {
+                    self.attempts = 0;
+                }
             }
         }
         let mut cause: Option<Box<dyn std::error::Error + Send + Sync>> = cause.map(|e| Box::new(e) as _);
         loop {
-            if self.attempts >= MAX_RECONNECTS {
-                return Err(Error::sdk("STREAM_LOST", "The stream was lost and could not be resumed", cause));
+            let until = match self.paused_until {
+                Some(until) => until,
+                None => {
+                    if self.attempts >= MAX_RECONNECTS {
+                        return Err(Error::sdk("STREAM_LOST", "The stream was lost and could not be resumed", cause));
+                    }
+                    self.reconnects += 1;
+                    self.attempts += 1;
+                    let until = tokio::time::Instant::now() + reconnect_delay(self.attempts);
+                    self.paused_until = Some(until);
+                    until
+                }
+            };
+            let wait = self.deadline.as_ref().and_then(Deadline::wait);
+            let cancel = self.cancel.clone();
+            let cancelled = async {
+                match &cancel {
+                    Some(t) => t.cancelled().await,
+                    None => std::future::pending().await,
+                }
+            };
+            tokio::select! {
+                biased;
+                _ = cancelled => return Err(Error::Cancelled),
+                _ = due(wait) => return Ok(false),
+                _ = tokio::time::sleep_until(until) => {}
             }
-            self.reconnects += 1;
-            self.attempts += 1;
-            let pause = tokio::time::sleep(reconnect_delay(self.attempts));
-            match self.cancel.clone() {
-                Some(t) => tokio::select! {
-                    biased;
-                    _ = t.cancelled() => return Err(Error::Cancelled),
-                    _ = pause => {}
-                },
-                None => pause.await,
-            }
+            self.paused_until = None;
             let resume = self.spec.resume.as_ref().expect("resume checked by the caller");
             if self.spec.fresh {
                 // No cursor: the new connection starts again from a snapshot, whose ids may repeat the last one's.
@@ -298,7 +464,7 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
             match resume(self.last_id.clone().unwrap_or_default()).await {
                 Ok(resp) => {
                     self.attach(resp);
-                    return Ok(());
+                    return Ok(true);
                 }
                 Err(Error::Cancelled) => return Err(Error::Cancelled),
                 // The thing is gone (PROTOCOL.md 16): the watch ends at once, with no further reconnect.
@@ -308,15 +474,45 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
         }
     }
 
-    /// Reads one event: `Ok(None)` at a clean end of stream.
+    /// Reads the batch for its deadline, and returns it as a snapshot: in place of `base` (a snapshot that arrived past
+    /// its due time, whose jobs and progress it keeps), or as one of its own, with no jobs and no progress.
+    async fn reread(&mut self, base: Option<E>) -> Option<Result<E, Er>> {
+        let d = self.deadline.as_mut()?;
+        d.reading();
+        let read = (d.reread.read)(base);
+        let got = match self.cancel.clone() {
+            Some(t) => tokio::select! {
+                biased;
+                _ = t.cancelled() => return self.fail(Error::Cancelled),
+                r = read => r,
+            },
+            None => read.await,
+        };
+        match got {
+            Ok(ev) => {
+                if let Some(d) = self.deadline.as_mut() {
+                    d.see(&ev);
+                }
+                Some(Ok(ev))
+            }
+            Err(e) => {
+                self.close();
+                Some(Err(e))
+            }
+        }
+    }
+
+    /// Reads one event: `Ok(None)` at a clean end of stream. The lines read so far are kept on the stream, so a read
+    /// given up part way (for a batch's deadline) carries on where it stopped.
     async fn read_event(&mut self) -> Result<Option<(String, Option<String>, Vec<u8>)>, reqwest::Error> {
-        let (mut name, mut id, mut data, mut has_data) = (String::new(), None, Vec::new(), false);
         loop {
             let Some(line) = self.read_line().await? else { return Ok(None) };
+            let (name, id, data, has_data) = &mut self.partial;
             if line.is_empty() {
-                if !has_data && name.is_empty() {
+                if !*has_data && name.is_empty() {
                     continue;
                 }
+                let (name, id, data, _) = std::mem::take(&mut self.partial);
                 return Ok(Some((name, id, data)));
             }
             if line.starts_with(':') {
@@ -327,15 +523,15 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
                 None => (line.as_str(), ""),
             };
             match field {
-                "event" => name = value.to_owned(),
+                "event" => *name = value.to_owned(),
                 "data" => {
-                    if has_data {
+                    if *has_data {
                         data.push(b'\n');
                     }
                     data.extend_from_slice(value.as_bytes());
-                    has_data = true;
+                    *has_data = true;
                 }
-                "id" => id = Some(value.to_owned()),
+                "id" => *id = Some(value.to_owned()),
                 _ => {}
             }
         }
@@ -409,5 +605,42 @@ impl<E: TextDeltas, F: Clone, Er> Stream<E, F, Er> {
     /// Only the answer's text deltas, in order; the stream ends at the answer's end.
     pub fn text(self) -> Text<E, F, Er> {
         Text { stream: self }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn at(s: &str) -> Option<DateTime<Utc>> {
+        DateTime::parse_from_rfc3339(s).ok().map(|t| t.with_timezone(&Utc))
+    }
+
+    /// A stand-in event: the deadline it shows, if it shows the batch.
+    type Ev = Option<Option<DateTime<Utc>>>;
+
+    #[test]
+    fn each_deadline_is_read_once() {
+        let mut d: Deadline<Ev, Error> = Deadline::new(Reread::new(|_| Box::pin(async { Ok(None) }), |ev| *ev));
+        let first = at("2026-11-17T10:00:00Z");
+        assert!(d.see(&Some(first)));
+        assert_eq!(d.due, first.map(|t| t + chrono::Duration::seconds(30)));
+        d.reading();
+        // A read that returns the same deadline schedules nothing more.
+        d.see(&Some(first));
+        assert_eq!(d.due, None);
+        // A renewed deadline is read in its turn; an event that does not show the batch changes nothing.
+        d.see(&Some(at("2026-11-17T10:30:00Z")));
+        assert!(d.due.is_some());
+        assert!(!d.see(&None));
+        assert!(d.due.is_some());
+    }
+
+    #[test]
+    fn which_deadline() {
+        let u = at("2026-11-17T11:00:00Z");
+        assert_eq!(batch_deadline("running", u), u);
+        assert_eq!(batch_deadline("running", None), None);
+        assert_eq!(batch_deadline("completed_with_failures", u), None);
     }
 }

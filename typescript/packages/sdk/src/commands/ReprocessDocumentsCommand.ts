@@ -28,7 +28,8 @@ export interface ReprocessDocumentsCommandOutput extends ReprocessDocumentsOutpu
  * Give `outOfDate: true` for every document processed in an older way than the newest, or
  * `documentIds` for particular documents. Each document's current version keeps serving until its
  * new processing is indexed. Returns 202 with the job, which the knowledge base's watch follows;
- * estimate it first with EstimateReprocessDocuments. Costs money: see the estimate's `cost`.
+ * estimate it first with EstimateReprocessDocuments. It is charged for: see the estimate's `cost`, in
+ * the form the organisation sees it.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript
@@ -115,7 +116,8 @@ export interface ReprocessDocumentsCommandOutput extends ReprocessDocumentsOutpu
  * document still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an
  * ingestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document
  * an ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry
- * `Retry-After`.
+ * `Retry-After`. A document whose versions are not numbered yet cannot have one deleted by number
+ * (`VERSIONS_NOT_NUMBERED`).
  *
  * @throws {@link NotFoundError} (client fault)
  *  The record does not exist, or the caller may not see it. The two are deliberately the same, so

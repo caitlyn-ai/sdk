@@ -79,7 +79,7 @@ export interface GetDocumentCommandOutput extends GetDocumentOutput, __MetadataB
  * //       "<keys>": "DOCUMENT_VALUE",
  * //     },
  * //     readers: { // Readers
- * //       kind: "inherit" || "everyone" || "specific", // required
+ * //       kind: "inherit" || "public" || "everyone" || "specific", // required
  * //       roles: [ // RoleIdList
  * //         "STRING_VALUE",
  * //       ],

@@ -57,9 +57,91 @@ type policyHolder struct {
 	policy *UploadPolicy
 	fields []core.FormField
 	gen    int
+	// sending counts the uploads in flight; wake tells the keep-alive when the first one starts.
+	sending int
+	wake    chan struct{}
+	// lastRenewal is when the last renewal ended, whoever asked for it: the keep-alive's floor counts from it.
+	lastRenewal time.Time
+}
+
+// keepAliveFloor is how often at most the keep-alive renews, so a policy that is already short cannot loop.
+const keepAliveFloor = time.Second
+
+// begin and end bracket one upload in flight, for the keep-alive.
+func (h *policyHolder) begin() {
+	h.mu.Lock()
+	h.sending++
+	first := h.sending == 1
+	h.mu.Unlock()
+	if first {
+		select {
+		case h.wake <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func (h *policyHolder) end() {
+	h.mu.Lock()
+	h.sending--
+	h.mu.Unlock()
+}
+
+// keepAlive renews the policy on a timer while any upload is in flight (PROTOCOL.md 15): once it has less than
+// SyncPolicyRenewBefore left, at most once every keepAliveFloor. The server judges each file by when its bytes arrive
+// against the batch's uploadsExpireAt, which a renewal moves on. A renewal that fails leaves the uploads in flight on
+// the policy they have, and is tried again at the next tick. It returns when stop is closed.
+func (h *policyHolder) keepAlive(ctx context.Context, stop <-chan struct{}) {
+	for {
+		h.mu.Lock()
+		active := h.sending > 0
+		wait := time.Until(h.policy.ExpiresAt) - SyncPolicyRenewBefore
+		if floor := time.Until(h.lastRenewal.Add(keepAliveFloor)); floor > wait {
+			wait = floor
+		}
+		h.mu.Unlock()
+		var tick <-chan time.Time
+		var t *time.Timer
+		if active {
+			t = time.NewTimer(max(wait, 0))
+			tick = t.C
+		}
+		fired := false
+		select {
+		case <-stop:
+		case <-ctx.Done():
+		case <-h.wake:
+		case <-tick:
+			fired = true
+		}
+		if t != nil {
+			t.Stop()
+		}
+		if !fired {
+			select {
+			case <-stop:
+				return
+			case <-ctx.Done():
+				return
+			default:
+				continue // woken: the first upload began, so the timer is armed from the policy as it stands
+			}
+		}
+		// The lock waits out a renewal in flight; one that ended less than a second ago, whoever asked for it, is this
+		// tick's, and the loop waits again from the policy as it then stands.
+		h.mu.Lock()
+		if h.sending > 0 && time.Since(h.lastRenewal) >= keepAliveFloor && time.Until(h.policy.ExpiresAt) < SyncPolicyRenewBefore {
+			_ = h.renewLocked(ctx) // the policy in hand is valid until it expires: the next tick tries again
+		}
+		h.mu.Unlock()
+	}
 }
 
 func (h *policyHolder) set(p *UploadPolicy) error {
+	if p == nil || p.UploadURL == "" {
+		// A policy the server did not give (PROTOCOL.md 6.3).
+		return core.NewError("UPLOAD_POLICY_MISSING", "The batch's upload policy is missing", nil)
+	}
 	fields, err := core.OrderedFields(p.RawJSON(), "formFields")
 	if err != nil {
 		// A policy built in code has no JSON: its fields in name order are the best there is.
@@ -75,6 +157,7 @@ func (h *policyHolder) set(p *UploadPolicy) error {
 }
 
 func (h *policyHolder) renewLocked(ctx context.Context) error {
+	defer func() { h.lastRenewal = time.Now() }()
 	res, err := h.u.c.Core.Ingestion.UploadPolicy(ctx, h.u.kb, h.u.batchID)
 	if err != nil {
 		return err
@@ -117,10 +200,21 @@ func (u *uploader) run(parent context.Context, policy *UploadPolicy, jobs []uplo
 	}
 	ctx, cancel := context.WithCancelCause(parent)
 	defer cancel(nil)
-	holder := &policyHolder{u: u}
+	holder := &policyHolder{u: u, wake: make(chan struct{}, 1)}
 	if err := holder.set(policy); err != nil {
 		return err
 	}
+	// The keep-alive stops, and is waited for, before run returns, so no renewal starts after the call has ended.
+	stopKeepAlive := make(chan struct{})
+	keptAlive := make(chan struct{})
+	go func() {
+		defer close(keptAlive)
+		holder.keepAlive(ctx, stopKeepAlive)
+	}()
+	defer func() {
+		close(stopKeepAlive)
+		<-keptAlive
+	}()
 
 	queue := make(chan uploadJob, 2*len(jobs))
 	uploaded := make(chan uploadJob, 2*len(jobs))
@@ -151,7 +245,9 @@ func (u *uploader) run(parent context.Context, policy *UploadPolicy, jobs []uplo
 				case <-ctx.Done():
 					return
 				case j := <-queue:
+					holder.begin()
 					itemErr, err := u.send(ctx, holder, j)
+					holder.end()
 					if err != nil {
 						cancel(err)
 						return

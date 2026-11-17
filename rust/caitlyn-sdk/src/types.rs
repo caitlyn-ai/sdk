@@ -5,14 +5,22 @@
 use caitlyn_sdk_core as rt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// How a folder's or document's readers are decided. Open: new values may be added.
+/// How a folder's or document's readers are decided, which sets how widely its contents can be read.
+/// From widest to narrowest: `public`, `everyone`, `specific`; `inherit` takes the folder's. Each is
+/// read back as it was stored: a list open to anyone reads as `public`, so a read never widens or
+/// narrows what was set. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ReadersKind::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ReadersKind::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ReadersKind {
     /// `inherit`
     Inherit,
+    /// `public`
+    Public,
     /// `everyone`
     Everyone,
     /// `specific`
@@ -26,6 +34,7 @@ impl ReadersKind {
     pub fn as_str(&self) -> &str {
         match self {
             ReadersKind::Inherit => "inherit",
+            ReadersKind::Public => "public",
             ReadersKind::Everyone => "everyone",
             ReadersKind::Specific => "specific",
             ReadersKind::Unknown(s) => s,
@@ -42,6 +51,7 @@ impl From<&str> for ReadersKind {
     fn from(s: &str) -> Self {
         match s {
             "inherit" => ReadersKind::Inherit,
+            "public" => ReadersKind::Public,
             "everyone" => ReadersKind::Everyone,
             "specific" => ReadersKind::Specific,
             other => ReadersKind::Unknown(other.to_owned()),
@@ -114,6 +124,9 @@ impl<'de> Deserialize<'de> for Readers {
 /// One thing a role may do with a knowledge base. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`AccessAction::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`AccessAction::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum AccessAction {
@@ -345,6 +358,9 @@ impl<'de> Deserialize<'de> for Actor {
 /// An agent avatar's colour. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`AvatarColour::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`AvatarColour::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum AvatarColour {
@@ -419,6 +435,9 @@ impl<'de> Deserialize<'de> for AvatarColour {
 /// A named icon for an agent's avatar. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`AgentIconName::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`AgentIconName::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum AgentIconName {
@@ -1050,6 +1069,9 @@ impl<'de> Deserialize<'de> for JourneySettings {
 /// How much effort a model spends reasoning. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ReasoningEffort::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ReasoningEffort::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ReasoningEffort {
@@ -1208,6 +1230,9 @@ impl<'de> Deserialize<'de> for ModelSettings {
 /// How search results are judged. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ResultEvaluationMethod::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ResultEvaluationMethod::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ResultEvaluationMethod {
@@ -1448,6 +1473,9 @@ impl<'de> Deserialize<'de> for PauseAndResume {
 /// A live avatar provider. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`LiveAvatarProvider::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`LiveAvatarProvider::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum LiveAvatarProvider {
@@ -1514,6 +1542,9 @@ impl<'de> Deserialize<'de> for LiveAvatarProvider {
 /// A speech-to-text provider for a live avatar. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`SpeechToTextProvider::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`SpeechToTextProvider::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum SpeechToTextProvider {
@@ -1917,6 +1948,9 @@ impl<'de> Deserialize<'de> for RunAs {
 /// Where an agent's voice comes from. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`VoiceProvider::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`VoiceProvider::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum VoiceProvider {
@@ -1987,6 +2021,9 @@ impl<'de> Deserialize<'de> for VoiceProvider {
 /// How natural a cloud voice sounds. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`VoiceQuality::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`VoiceQuality::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum VoiceQuality {
@@ -2094,6 +2131,9 @@ impl<'de> Deserialize<'de> for VoiceSettings {
 /// Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ConversationSharing::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ConversationSharing::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ConversationSharing {
@@ -2239,6 +2279,9 @@ impl<'de> Deserialize<'de> for PhaseAction {
 /// What an attribution check does with a failure. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`AttributionCheckMode::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`AttributionCheckMode::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum AttributionCheckMode {
@@ -2341,6 +2384,9 @@ impl<'de> Deserialize<'de> for AttributionChecks {
 /// What a phase field is. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`PhaseFieldKind::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`PhaseFieldKind::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum PhaseFieldKind {
@@ -2411,6 +2457,9 @@ impl<'de> Deserialize<'de> for PhaseFieldKind {
 /// Where a phase field's value comes from. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`FieldSourceKind::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`FieldSourceKind::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum FieldSourceKind {
@@ -2532,6 +2581,9 @@ impl<'de> Deserialize<'de> for FieldSource {
 /// What kind of value a phase field holds. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`PhaseFieldType::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`PhaseFieldType::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum PhaseFieldType {
@@ -2659,6 +2711,9 @@ impl<'de> Deserialize<'de> for PhaseField {
 /// What kind of phase it is. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`PhaseKind::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`PhaseKind::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum PhaseKind {
@@ -2737,6 +2792,9 @@ impl<'de> Deserialize<'de> for PhaseKind {
 /// What a phase does when it ends the conversation. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`PhaseEndType::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`PhaseEndType::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum PhaseEndType {
@@ -3004,6 +3062,9 @@ impl<'de> Deserialize<'de> for ToolCallChecks {
 /// How a search treats its results. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`SearchMode::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`SearchMode::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum SearchMode {
@@ -3105,6 +3166,9 @@ impl<'de> Deserialize<'de> for ToolSearchSettings {
 /// How the agent uses what a tool returns. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ToolUse::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ToolUse::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ToolUse {
@@ -3231,6 +3295,9 @@ impl<'de> Deserialize<'de> for PhaseTool {
 /// How a way out of a phase is gated. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`TransitionKind::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`TransitionKind::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum TransitionKind {
@@ -3305,6 +3372,9 @@ impl<'de> Deserialize<'de> for TransitionKind {
 /// Where a transition reads its value. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`TransitionMatchSource::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`TransitionMatchSource::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum TransitionMatchSource {
@@ -3714,6 +3784,9 @@ impl<'de> Deserialize<'de> for DeleteAgentResult {
 /// How a version was made. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`VersionSource::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`VersionSource::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum VersionSource {
@@ -3883,6 +3956,9 @@ impl AgentVersion {
 /// string.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ClearableDraftField::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ClearableDraftField::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ClearableDraftField {
@@ -4025,6 +4101,9 @@ impl<'de> Deserialize<'de> for ClearableDraftField {
 /// What kind of change moved live. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`HistoryChangeKind::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`HistoryChangeKind::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum HistoryChangeKind {
@@ -4128,9 +4207,10 @@ pub struct HistoryEntry {
     /// written. Lists are compared by their items' keys.
     #[serde(rename = "changedMembers", skip_serializing_if = "Option::is_none")]
     pub changed_members: Option<Vec<String>>,
-    /// The configuration of `version`. Present only when the caller may read that version: the agent
-    /// grant if it is live now, and the agent's version access grant if it is not, as GetAgentVersion
-    /// checks. Absent otherwise, in a list, and when that version no longer exists.
+    /// The configuration of `version`. Present only when the caller may read that version, as
+    /// GetAgentVersion checks: the permission to read versions, and the agent grant if it is live now
+    /// or the agent's version access grant if it is not. Absent otherwise, in a list, and when that
+    /// version no longer exists.
     #[serde(rename = "configuration", skip_serializing_if = "Option::is_none")]
     pub configuration: Option<AgentConfiguration>,
     /// The response this thing was read from; see [`response_metadata`](Self::response_metadata).
@@ -4264,6 +4344,9 @@ impl<'de> Deserialize<'de> for ListAgentsPage {
 /// Whether a conversation is answering. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ConversationStatus::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ConversationStatus::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ConversationStatus {
@@ -4445,6 +4528,9 @@ impl<'de> Deserialize<'de> for ListConversationsPage {
 /// The agent members that can be cleared. Open: an older SDK may send a newer value as a string.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ClearableAgentField::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ClearableAgentField::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ClearableAgentField {
@@ -4788,6 +4874,9 @@ impl<'de> Deserialize<'de> for AttachmentReference {
 /// What an item does. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`IngestionItemAction::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`IngestionItemAction::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum IngestionItemAction {
@@ -4880,7 +4969,8 @@ pub struct IngestionItemInput {
     #[serde(rename = "contentType", skip_serializing_if = "Option::is_none")]
     pub content_type: Option<String>,
     /// For fetched content: the `http` or `https` address the server fetches the bytes from while
-    /// planning, at most 100 MB. Needs the files create permission.
+    /// planning, at most 100 MB. Needs the files create permission, which the server checks when the
+    /// item is added.
     #[serde(rename = "fetchUrl", skip_serializing_if = "Option::is_none")]
     pub fetch_url: Option<String>,
     /// The address a citation of the document links to. Defaults to `fetchUrl`.
@@ -4953,6 +5043,9 @@ impl<'de> Deserialize<'de> for DocumentMatch {
 /// What the plan found for an item. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`IngestionItemOutcome::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`IngestionItemOutcome::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum IngestionItemOutcome {
@@ -5047,6 +5140,9 @@ impl<'de> Deserialize<'de> for IngestionItemOutcome {
 /// Why an item is a conflict, or why its fetch failed. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`IngestionItemReason::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`IngestionItemReason::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum IngestionItemReason {
@@ -5157,6 +5253,9 @@ impl<'de> Deserialize<'de> for IngestionItemReason {
 /// What will be done with an item. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`IngestionItemResolution::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`IngestionItemResolution::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum IngestionItemResolution {
@@ -5251,6 +5350,9 @@ impl<'de> Deserialize<'de> for IngestionItemResolution {
 /// Where an item is. Open: new values may be added. Every value after `ingesting` is final.
 ///
 /// Open: a value this SDK does not know yet is kept as [`IngestionItemStatus::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`IngestionItemStatus::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum IngestionItemStatus {
@@ -5375,7 +5477,8 @@ pub struct IngestionBatchItem {
     #[serde(rename = "contentType", skip_serializing_if = "Option::is_none")]
     pub content_type: Option<String>,
     /// For fetched content: the `http` or `https` address the server fetches the bytes from while
-    /// planning, at most 100 MB. Needs the files create permission.
+    /// planning, at most 100 MB. Needs the files create permission, which the server checks when the
+    /// item is added.
     #[serde(rename = "fetchUrl", skip_serializing_if = "Option::is_none")]
     pub fetch_url: Option<String>,
     /// The address a citation of the document links to. Defaults to `fetchUrl`.
@@ -5419,8 +5522,8 @@ pub struct IngestionBatchItem {
     /// The document version the item made or changed.
     #[serde(rename = "version", skip_serializing_if = "Option::is_none")]
     pub version: Option<i32>,
-    /// Why the item failed, as a stable code: for example `UPLOAD_EXPIRED` (no bytes arrived before
-    /// the upload policy expired), `CHECKSUM_MISMATCH`, `PERMISSION_DENIED`, for `new_version`
+    /// Why the item failed, as a stable code: for example `UPLOAD_EXPIRED` (no bytes arrived by the
+    /// batch's `uploadsExpireAt`), `CHECKSUM_MISMATCH`, `PERMISSION_DENIED`, for `new_version`
     /// `VALIDATION_FAILED` (another file type) or `DOCUMENT_INGESTION_IN_PROGRESS`, or a document's
     /// failure code. Present only when `status` is `failed`.
     #[serde(rename = "failureCode", skip_serializing_if = "Option::is_none")]
@@ -5470,6 +5573,9 @@ impl IngestionBatchItem {
 /// Whether an item was added. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ItemCreateStatus::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ItemCreateStatus::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ItemCreateStatus {
@@ -5621,6 +5727,9 @@ impl<'de> Deserialize<'de> for BatchCreateIngestionBatchItemsResult {
 /// Whether a document's delete was accepted. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`DocumentDeleteStatus::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`DocumentDeleteStatus::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum DocumentDeleteStatus {
@@ -5840,6 +5949,9 @@ impl<'de> Deserialize<'de> for Citation {
 /// Who wrote a message. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`MessageRole::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`MessageRole::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum MessageRole {
@@ -6035,6 +6147,9 @@ impl<'de> Deserialize<'de> for ContextItem {
 /// What kind of credential made a request. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`CredentialKind::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`CredentialKind::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum CredentialKind {
@@ -6351,6 +6466,9 @@ impl<'de> Deserialize<'de> for DocumentCounts {
 /// What an embedding model reads. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`EngineInput::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`EngineInput::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum EngineInput {
@@ -6421,6 +6539,9 @@ impl<'de> Deserialize<'de> for EngineInput {
 /// How a knowledge base searches. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`SearchType::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`SearchType::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum SearchType {
@@ -6530,6 +6651,9 @@ impl<'de> Deserialize<'de> for KnowledgeBaseEngine {
 /// Where a knowledge base is in its lifecycle. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`KnowledgeBaseStatus::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`KnowledgeBaseStatus::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum KnowledgeBaseStatus {
@@ -6688,9 +6812,13 @@ impl KnowledgeBase {
     }
 }
 
-/// The form a cost is given in. Open: new values may be added.
+/// The form a cost is given in, which follows how the organisation sees its costs. Open: new values
+/// may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`CostUnit::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`CostUnit::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum CostUnit {
@@ -6758,7 +6886,7 @@ impl<'de> Deserialize<'de> for CostUnit {
     }
 }
 
-/// An amount of money, as a range, in the organisation's chosen form.
+/// What work is expected to cost, as a range, in the form the organisation sees its costs.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
 pub struct Cost {
@@ -6768,8 +6896,8 @@ pub struct Cost {
     /// The highest the cost is likely to be.
     #[serde(rename = "high")]
     pub high: f64,
-    /// The form `low` and `high` are in: money, or a share of the plan for an organisation that
-    /// sees usage rather than dollars.
+    /// Which form `low` and `high` are in: the one the organisation sees its costs in, `usd` for
+    /// dollars or `percent_of_plan` for usage.
     #[serde(rename = "unit")]
     pub unit: CostUnit,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
@@ -6879,6 +7007,9 @@ impl<'de> Deserialize<'de> for Eta {
 /// modelled.
 ///
 /// Open: a value this SDK does not know yet is kept as [`OperationKind::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`OperationKind::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum OperationKind {
@@ -7005,6 +7136,9 @@ impl<'de> Deserialize<'de> for PartialFailure {
 /// What a unit of an Operation's work is. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ProgressUnit::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ProgressUnit::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ProgressUnit {
@@ -7115,6 +7249,9 @@ impl<'de> Deserialize<'de> for OperationProgress {
 /// `failed` and `cancelled` are final.
 ///
 /// Open: a value this SDK does not know yet is kept as [`OperationStatus::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`OperationStatus::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum OperationStatus {
@@ -7201,6 +7338,9 @@ impl<'de> Deserialize<'de> for OperationStatus {
 /// The kind of thing an Operation's work is on. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`OperationTargetType::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`OperationTargetType::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum OperationTargetType {
@@ -7455,6 +7595,9 @@ impl<'de> Deserialize<'de> for DeleteKnowledgeBaseResult {
 /// Why a document failed. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`DocumentFailureCode::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`DocumentFailureCode::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum DocumentFailureCode {
@@ -7564,6 +7707,9 @@ impl<'de> Deserialize<'de> for DocumentFailure {
 /// `partially_indexed` are final. `failed` is final too, until RetryDocument starts it again.
 ///
 /// Open: a value this SDK does not know yet is kept as [`DocumentStatus::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`DocumentStatus::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum DocumentStatus {
@@ -7720,6 +7866,9 @@ impl<'de> Deserialize<'de> for ProcessingEstimate {
 /// What kind of work runs on a document. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ProcessingKind::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ProcessingKind::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ProcessingKind {
@@ -7798,6 +7947,9 @@ impl<'de> Deserialize<'de> for ProcessingKind {
 /// A stage of the work on a document. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ProcessingStep::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ProcessingStep::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ProcessingStep {
@@ -8147,6 +8299,9 @@ impl<'de> Deserialize<'de> for CreateDocumentResult {
 /// What adding a version did. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`VersionResult::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`VersionResult::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum VersionResult {
@@ -8967,6 +9122,9 @@ impl<'de> Deserialize<'de> for RetryDocumentResult {
 /// one key, and an older SDK may send a newer value as a string.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ClearableDocumentField::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ClearableDocumentField::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ClearableDocumentField {
@@ -9329,6 +9487,9 @@ impl<'de> Deserialize<'de> for FieldInstructions {
 /// added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`PartialDates::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`PartialDates::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum PartialDates {
@@ -9400,6 +9561,9 @@ impl<'de> Deserialize<'de> for PartialDates {
 /// document or each passage has its own. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`FieldLevel::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`FieldLevel::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum FieldLevel {
@@ -9470,6 +9634,9 @@ impl<'de> Deserialize<'de> for FieldLevel {
 /// A metadata field's type. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`FieldType::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`FieldType::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum FieldType {
@@ -10135,6 +10302,9 @@ impl<'de> Deserialize<'de> for IngestionBatchCounts {
 /// Why an ingestion batch failed. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`IngestionBatchFailureCode::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`IngestionBatchFailureCode::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum IngestionBatchFailureCode {
@@ -10239,6 +10409,9 @@ impl<'de> Deserialize<'de> for IngestionBatchFailure {
 /// What to do with a conflict. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ConflictRule::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ConflictRule::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ConflictRule {
@@ -10367,6 +10540,9 @@ impl<'de> Deserialize<'de> for ConflictRules {
 /// What to do with content found at another path. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`MovedRule::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`MovedRule::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum MovedRule {
@@ -10441,6 +10617,9 @@ impl<'de> Deserialize<'de> for MovedRule {
 /// What to do with a `remove` item. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`RemoveRule::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`RemoveRule::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum RemoveRule {
@@ -10515,6 +10694,9 @@ impl<'de> Deserialize<'de> for RemoveRule {
 /// What to do with unchanged bytes. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`UnchangedRule::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`UnchangedRule::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum UnchangedRule {
@@ -10650,6 +10832,9 @@ impl<'de> Deserialize<'de> for IngestionBoundary {
 /// When a planned ingestion batch starts. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`StartMode::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`StartMode::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum StartMode {
@@ -10718,9 +10903,12 @@ impl<'de> Deserialize<'de> for StartMode {
 }
 
 /// Where an ingestion batch is. Open: new values may be added. `succeeded`,
-/// `completed_with_failures`, `failed`, `cancelled` and `expired` are final.
+/// `completed_with_failures`, `failed` and `cancelled` are final.
 ///
 /// Open: a value this SDK does not know yet is kept as [`IngestionBatchStatus::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`IngestionBatchStatus::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum IngestionBatchStatus {
@@ -10740,8 +10928,6 @@ pub enum IngestionBatchStatus {
     Failed,
     /// `cancelled`
     Cancelled,
-    /// `expired`
-    Expired,
     /// A value this SDK does not know yet, as received.
     Unknown(String),
 }
@@ -10758,7 +10944,6 @@ impl IngestionBatchStatus {
             IngestionBatchStatus::CompletedWithFailures => "completed_with_failures",
             IngestionBatchStatus::Failed => "failed",
             IngestionBatchStatus::Cancelled => "cancelled",
-            IngestionBatchStatus::Expired => "expired",
             IngestionBatchStatus::Unknown(s) => s,
         }
     }
@@ -10780,7 +10965,6 @@ impl From<&str> for IngestionBatchStatus {
             "completed_with_failures" => IngestionBatchStatus::CompletedWithFailures,
             "failed" => IngestionBatchStatus::Failed,
             "cancelled" => IngestionBatchStatus::Cancelled,
-            "expired" => IngestionBatchStatus::Expired,
             other => IngestionBatchStatus::Unknown(other.to_owned()),
         }
     }
@@ -10854,14 +11038,25 @@ pub struct IngestionBatch {
     /// How long is left: the longest of its documents' times left.
     #[serde(rename = "eta", skip_serializing_if = "Option::is_none")]
     pub eta: Option<Eta>,
-    /// When the plan goes stale, 5 minutes after planning. StartIngestionBatch on a stale plan plans
-    /// again first.
+    /// When the plan goes stale, 5 minutes after planning. A stale plan does not end the batch:
+    /// StartIngestionBatch on a stale plan plans again first.
     #[serde(
         rename = "planExpiresAt",
         with = "::caitlyn_sdk_core::time::rfc3339_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub plan_expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// When uploads must arrive by: at or after the upload policy's `expiresAt`. An item whose bytes
+    /// have not arrived by then fails with `UPLOAD_EXPIRED`; bytes that arrived in time are accepted
+    /// when they are reported, however late. A caller watching the batch can read it again after this
+    /// time to see which items failed. Renewing the upload policy moves it later. Absent when no item
+    /// is awaiting upload.
+    #[serde(
+        rename = "uploadsExpireAt",
+        with = "::caitlyn_sdk_core::time::rfc3339_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub uploads_expire_at: Option<chrono::DateTime<chrono::Utc>>,
     /// Who made the batch.
     #[serde(rename = "createdBy", skip_serializing_if = "Option::is_none")]
     pub created_by: Option<Actor>,
@@ -10931,6 +11126,9 @@ impl IngestionBatch {
 /// Whether an item's upload was accepted. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`UploadCompletionStatus::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`UploadCompletionStatus::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum UploadCompletionStatus {
@@ -11405,6 +11603,9 @@ impl<'de> Deserialize<'de> for ListOperationsPage {
 /// string.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ClearableKnowledgeBaseField::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ClearableKnowledgeBaseField::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ClearableKnowledgeBaseField {
@@ -11628,6 +11829,9 @@ impl<'de> Deserialize<'de> for ListMemoryStoresPage {
 /// Whether a model reasons before it answers. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ModelReasoning::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ModelReasoning::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ModelReasoning {
@@ -11988,6 +12192,9 @@ impl<'de> Deserialize<'de> for UploadPurpose {
 /// are final.
 ///
 /// Open: a value this SDK does not know yet is kept as [`UploadStatus::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`UploadStatus::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum UploadStatus {
@@ -12179,6 +12386,9 @@ impl Upload {
 /// The kind of caller that caused an event. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ActorType::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ActorType::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ActorType {
@@ -12596,6 +12806,9 @@ impl<'de> Deserialize<'de> for PhaseChanged {
 /// A progress step's status. Open: new values may be added. `succeeded` and `failed` are final.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ProgressStatus::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ProgressStatus::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ProgressStatus {
@@ -12769,6 +12982,9 @@ impl<'de> Deserialize<'de> for TextDelta {
 /// How a tool call ended. Open: new values may be added. Every value is final.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ToolStatus::Unknown`], never an error.
+/// A value that is `Unknown("x")` today becomes its own variant in the SDK version that knows it, so
+/// an arm matching `Unknown("x")` stops matching after that upgrade: match on [`ToolStatus::as_str`]
+/// for a value this version does not name.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ToolStatus {

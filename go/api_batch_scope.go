@@ -18,7 +18,8 @@ import (
 //
 // A batch moves from `draft` (taking items) to `planning`, `planned` (each item has an outcome and a
 // resolution), `running` (items are uploaded and ingested) and a final state. A batch never started
-// is cleared after 7 days. A batch belongs to its knowledge base: in the SDKs it is
+// is deleted after 7 days; reading it after that answers 404. A batch belongs to its knowledge base:
+// in the SDKs it is
 // `kb.ingestion.batches(batchId)`, and `kb.ingestion.sync(…)` runs the whole flow.
 type BatchScope struct {
 	Items *Items
@@ -188,7 +189,13 @@ func (s *BatchScope) Watch(ctx context.Context, opts ...CallOption) (*KnowledgeB
 	p := &watchKnowledgeBaseParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
 	p.Batch = Ptr(s.ingestionBatchID)
-	return s.c.streamWatchKnowledgeBase(ctx, p, opts)
+	ctx, cancel := context.WithCancel(ctx)
+	st, err := s.c.streamWatchKnowledgeBase(ctx, p, opts)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	return rereadAtDeadline(st, cancel, s.Get), nil
 }
 
 // Wait waits until no job is running on the batch, through Watch, then returns the thing as Get

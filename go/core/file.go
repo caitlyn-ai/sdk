@@ -52,7 +52,7 @@ func (f *UploadFile) Describe(ctx context.Context) (FileInfo, error) {
 	case f.path != "":
 		fi, err := os.Stat(f.path)
 		if err != nil {
-			return info, err
+			return info, unreadable(f.path, err)
 		}
 		info.Size = fi.Size()
 	case f.reader != nil:
@@ -70,7 +70,7 @@ func (f *UploadFile) Describe(ctx context.Context) (FileInfo, error) {
 		}
 		n, err := io.Copy(io.Discard, &ctxReader{ctx, io.LimitReader(f.reader, MaxFileSize+1)})
 		if err != nil {
-			return info, err
+			return info, unreadable(f.name, err)
 		}
 		info.Size = n
 	default:

@@ -91,7 +91,7 @@ export interface ListDocumentsCommandOutput extends ListDocumentsOutput, __Metad
  * //         "<keys>": "DOCUMENT_VALUE",
  * //       },
  * //       readers: { // Readers
- * //         kind: "inherit" || "everyone" || "specific", // required
+ * //         kind: "inherit" || "public" || "everyone" || "specific", // required
  * //         roles: [ // RoleIdList
  * //           "STRING_VALUE",
  * //         ],

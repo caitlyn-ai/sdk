@@ -779,8 +779,9 @@ impl HistoryEntryScope {
     ///
     /// The configuration is that of the entry's `version`, which never changes. Reading the entry (who
     /// changed live, when, and to which version) needs agent read; its `configuration` needs what
-    /// reading that version needs, so a caller without the agent's version access grant gets the entry
-    /// without it unless the version is live now. It is also absent when that version was deleted
+    /// reading that version needs, so a caller without the permission to read versions, or without the
+    /// agent's version access grant for a version that is not live now, gets the entry without it. It is
+    /// also absent when that version was deleted
     /// through an older API that does not protect versions named in live history.
     ///
     /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
@@ -1193,7 +1194,10 @@ impl ConversationScope {
     /// and the message is sent once every upload has arrived.
     ///
     /// Only a participant may send: whoever started the conversation, or someone it is shared with for
-    /// writing (the update grant). A caller who may only read it, or may not see it, gets 404.
+    /// writing (the update grant), who may still see the conversation's agent, and, when it was started
+    /// on a version other than live, holds that agent's version access grant. A caller without any of
+    /// these gets 404, so revoking someone's access to the agent stops them chatting in conversations
+    /// they already started.
     ///
     /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
     /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]
@@ -1749,7 +1753,11 @@ impl KnowledgeBaseAccessScope {
     /// 412.
     ///
     /// Without `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or
-    /// `document`, send `readers`; `kind: inherit` makes it follow its folder again. The root folder
+    /// `document`, send `readers`; `kind: inherit` makes it follow its folder again. The knowledge base's
+    /// role grants are set only without a target, under the knowledge base's own permission, as v2's
+    /// knowledge base permissions route sets them, so `roles` with `folder` or `document`, `readers`
+    /// without one, and both `folder` and `document` are refused with 400 `VALIDATION_FAILED`. The root
+    /// folder
     /// (`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there
     /// with 400 `VALIDATION_FAILED`. Applying readers to
     /// the passages a folder or document holds continues after the response; the returned access says
@@ -1883,7 +1891,8 @@ impl KnowledgeBaseDocuments {
     /// Give `outOfDate: true` for every document processed in an older way than the newest, or
     /// `documentIds` for particular documents. Each document's current version keeps serving until its
     /// new processing is indexed. Returns 202 with the job, which the knowledge base's watch follows;
-    /// estimate it first with EstimateReprocessDocuments. Costs money: see the estimate's `cost`.
+    /// estimate it first with EstimateReprocessDocuments. It is charged for: see the estimate's `cost`, in
+    /// the form the organisation sees it.
     ///
     /// It starts work: `send().await` returns the response, and its `wait()` waits until the work has ended
     /// (PROTOCOL.md 16).
@@ -2397,6 +2406,11 @@ impl DocumentVersionScope {
     /// 409 `CONFLICT`; to remove the current version, delete the document. Like every change, it is
     /// audited.
     ///
+    /// A version's number is its place in upload order, so deleting by number needs the document's
+    /// versions to be numbered already: until they are, a number is refused with 409
+    /// `VERSIONS_NOT_NUMBERED`, because deleting would shift every later number. Try again later, or
+    /// delete `latest`, which works either way.
+    ///
     /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
     /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]
     /// (400), [`Error::Conflict`] (409), [`Error::NotFound`] (404); another status the API models has its
@@ -2467,7 +2481,11 @@ impl DocumentAccess {
     /// 412.
     ///
     /// Without `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or
-    /// `document`, send `readers`; `kind: inherit` makes it follow its folder again. The root folder
+    /// `document`, send `readers`; `kind: inherit` makes it follow its folder again. The knowledge base's
+    /// role grants are set only without a target, under the knowledge base's own permission, as v2's
+    /// knowledge base permissions route sets them, so `roles` with `folder` or `document`, `readers`
+    /// without one, and both `folder` and `document` are refused with 400 `VALIDATION_FAILED`. The root
+    /// folder
     /// (`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there
     /// with 400 `VALIDATION_FAILED`. Applying readers to
     /// the passages a folder or document holds continues after the response; the returned access says
@@ -2554,8 +2572,8 @@ impl KnowledgeBaseFields {
     ///
     /// For each field named, every document with no value yet gets one, and the search index and vectors
     /// are brought up to date. Values someone set by hand are kept. Returns 202 with the job, which the
-    /// knowledge base's watch follows; estimate it first with EstimateFillInFields. Costs money: see the
-    /// estimate's `cost`.
+    /// knowledge base's watch follows; estimate it first with EstimateFillInFields. It is charged for: see
+    /// the estimate's `cost`, in the form the organisation sees it.
     ///
     /// It starts work: `send().await` returns the response, and its `wait()` waits until the work has ended
     /// (PROTOCOL.md 16).
@@ -2992,7 +3010,11 @@ impl FolderAccess {
     /// 412.
     ///
     /// Without `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or
-    /// `document`, send `readers`; `kind: inherit` makes it follow its folder again. The root folder
+    /// `document`, send `readers`; `kind: inherit` makes it follow its folder again. The knowledge base's
+    /// role grants are set only without a target, under the knowledge base's own permission, as v2's
+    /// knowledge base permissions route sets them, so `roles` with `folder` or `document`, `readers`
+    /// without one, and both `folder` and `document` are refused with 400 `VALIDATION_FAILED`. The root
+    /// folder
     /// (`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there
     /// with 400 `VALIDATION_FAILED`. Applying readers to
     /// the passages a folder or document holds continues after the response; the returned access says
@@ -3082,9 +3104,10 @@ impl KnowledgeBaseIngestionBatches {
     ///
     /// Takes up to 10,000 items; add more with BatchCreateIngestionBatchItems while `awaitMoreItems` is
     /// true. Returns 202 with the batch, and `Location` names it; wait for the plan with the SDKs'
-    /// `batch.planned()`. Needs the files list permission and read access to the knowledge base, so a
-    /// caller allowed only to look can plan; a batch with a `fetchUrl` item also needs the files create
-    /// permission.
+    /// `batch.planned()`. Needs the ingestion create permission and read access to the knowledge base,
+    /// as v2's ingestion route does; starting the batch, which hands out an upload policy, also needs the
+    /// files create permission. A `fetchUrl` item needs the files create permission when it is added,
+    /// which the server checks, because the trait cannot follow an item's member.
     ///
     /// It starts work: `send().await` returns the new thing's scope, and its `wait()` waits until the work
     /// has ended (PROTOCOL.md 16).
@@ -3269,7 +3292,30 @@ impl BatchScope {
         let mut input = WatchKnowledgeBaseInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
         input.batch = Some(self.ingestion_batch_id.clone());
-        WatchKnowledgeBaseRequest::new(self.core.clone(), input, vec![])
+        let this = self.clone();
+        WatchKnowledgeBaseRequest::new(self.core.clone(), input, vec![]).reread_at_deadline(rt::stream::Reread::new(
+            move |base| {
+                let get = this.get();
+                Box::pin(async move {
+                    let mut snapshot = match base {
+                        Some(crate::types::KnowledgeBaseEvent::Snapshot(s)) => crate::types::KnowledgeBaseSnapshot {
+                            raw: Default::default(),
+                            ..s
+                        },
+                        _ => crate::types::KnowledgeBaseSnapshot::default(),
+                    };
+                    snapshot.batch = Some(get.send().await?);
+                    Ok(crate::types::KnowledgeBaseEvent::Snapshot(snapshot))
+                })
+            },
+            |ev| match ev {
+                crate::types::KnowledgeBaseEvent::Snapshot(s) => s
+                    .batch
+                    .as_ref()
+                    .map(|b| rt::stream::batch_deadline(b.status.as_str(), b.uploads_expire_at)),
+                _ => None,
+            },
+        ))
     }
 
     /// Waits until no job runs on this thing (the batch has ended), and returns it as `get` would
@@ -3780,14 +3826,17 @@ impl OperationScope {
     /// becomes `cancelled` once the work has stopped.
     ///
     /// Cancelling needs what starting that kind of work needs, on the same record, which the server
-    /// reads from the Operation before it acts: for `document_ingestion`, what CancelDocumentProcessing
-    /// needs (`files.update` and the document's readers); for `document_update`, the same; for
+    /// reads from the Operation and checks per kind before it acts: for `document_ingestion`, the
+    /// permission that started it (`files.create` for a new document, `files.update` for a new version
+    /// or a retry) and the document's readers; for `document_update`, `files.update` and its readers; for
     /// `fill_in`, `reprocess` and `layout_aware_search`, `knowledge-bases.update` and
     /// `knowledge-bases.ingestions.update`; for a `folder_change`, the permission of the change
     /// (`files.create`, `files.update` or `files.delete`) and the folder's readers; for
     /// `permissions_change`, `files.permissions.update` and the record's readers; for
     /// `knowledge_base_deletion`, `knowledge-bases.delete`. A caller without it gets 404, as for an
-    /// Operation it may not see. Its declared permission is the one every cancellable kind needs today.
+    /// Operation it may not see. No one permission is common to every kind, so the operation declares
+    /// only what reading an Operation needs (`files.read`, as GetOperation), and the per-kind check does
+    /// the rest.
     ///
     /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
     /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]

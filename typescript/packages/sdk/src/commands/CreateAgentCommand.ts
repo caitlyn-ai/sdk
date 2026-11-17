@@ -453,7 +453,8 @@ export interface CreateAgentCommandOutput extends CreateAgentOutput, __MetadataB
  * document still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an
  * ingestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document
  * an ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry
- * `Retry-After`.
+ * `Retry-After`. A document whose versions are not numbered yet cannot have one deleted by number
+ * (`VERSIONS_NOT_NUMBERED`).
  *
  * @throws {@link UnprocessableContentError} (client fault)
  *  The idempotency key was already used with a different request body; supplied metadata does not

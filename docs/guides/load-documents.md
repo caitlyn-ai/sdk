@@ -22,6 +22,8 @@ operations:
   - GetIngestionBatch
   - CreateUpload
   - GetUpload
+  - PutAccess
+  - GetAccess
 ---
 
 # Load documents
@@ -638,6 +640,86 @@ if err := deleted.Wait(ctx); err != nil {
 // Waits until the document is gone; `kb.document(id).delete().wait()` does both in one call.
 deleting.wait().await?;
 ```
+
+## Choose who can read
+
+Who may use a knowledge base is its role grants; who may read a folder's or a document's contents is its readers.
+`access.set` sets either, on the knowledge base, a folder or a document, and `access.get` reads them back as they
+were set.
+
+<!-- example: examples/typescript/jobs.ts#set-access -->
+```ts tab="TypeScript"
+await kb.folders('/hr/investigations/').access.set({ readers: { roles: ['hr-team'] } });
+await kb.documents(documentId).access.set({ readers: 'inherit' });
+```
+<!-- example: examples/python/jobs.py#set-access -->
+```python tab="Python"
+# Only the HR team may read what is in /hr/investigations/; the document follows its folder again.
+kb.folders("/hr/investigations/").access.set(readers={"roles": ["hr-team"]})
+kb.documents(document_id).access.set(readers="inherit")
+```
+<!-- example: examples/go/documents/documents.go#set-access -->
+```go tab="Go"
+kb := client.KnowledgeBase(knowledgeBaseID)
+// ReadersOf(roles, people), ReadersEveryone, ReadersPublic or ReadersInherit
+if _, err := kb.Folder("/hr/investigations/").Access.Set(ctx, &caitlyn.PutAccessInput{
+	Readers: caitlyn.ReadersOf([]string{"hr-team"}, nil),
+}); err != nil {
+	return err
+}
+// A guarded write: with the ETag you read, a change someone made since is refused (*caitlyn.PreconditionFailedError)
+if _, err := kb.Document(documentID).Access.Set(ctx, &caitlyn.PutAccessInput{Readers: caitlyn.ReadersInherit()},
+	caitlyn.WithIfMatch(etag)); err != nil {
+	return err
+}
+```
+<!-- example: examples/rust/src/documents.rs#set-access -->
+```rust tab="Rust"
+let kb = client.knowledge_base(knowledge_base_id);
+kb.folder("/hr/investigations/")
+    .access()
+    .set()
+    .readers(Readers::roles(["hr-team"]))
+    .await?;
+kb.document(document_id)
+    .access()
+    .set()
+    .readers("inherit")
+    .await?;
+
+// A guarded write: refused with Error::PreconditionFailed (412) if the access changed since it was read.
+let current = kb.folder("/hr/").access().get().await?;
+kb.folder("/hr/")
+    .access()
+    .set()
+    .readers(Readers::everyone())
+    .if_match(&current.etag)
+    .await?;
+```
+
+A folder's or a document's readers are one of these, widest first:
+
+| Readers | Who may read it | For | TypeScript | Python | Go | Rust |
+| --- | --- | --- | --- | --- | --- | --- |
+| Public | Anyone who can reach the knowledge base, signed in or not: guests and anonymous visitors of a public agent included | Content meant to be shared openly | `'public'` | `"public"` | `caitlyn.ReadersPublic()` | `Readers::public()` |
+| Everyone | Anyone signed in to the workspace who may read the knowledge base, but no guest or anonymous visitor | Content every colleague may see | `'everyone'` | `"everyone"` | `caitlyn.ReadersEveryone()` | `Readers::everyone()` |
+| Specific | Only the roles and people you list | Restricted content | `{ roles, people }` | `{"roles": …, "people": …}` | `caitlyn.ReadersOf(roles, people)` | `Readers::specific(roles, people)` |
+| Inherit | Whoever may read the folder it is in, so a change there applies here too | Following the folder | `'inherit'` | `"inherit"` | `caitlyn.ReadersInherit()` | `Readers::inherit()` |
+
+The difference between `public` and `everyone` is guests: a public agent's guests and anonymous visitors can read
+`public` content, never `everyone` content. The root folder holds the readers every other folder falls back to, so
+`inherit` is refused there with 400 `VALIDATION_FAILED`. On a document, `inherit` removes the document's own readers,
+which needs the permission to delete readers as well.
+
+A knowledge base's role grants are set on the knowledge base itself, with no folder or document: send `roles`, and
+the roles you send become the whole list. A folder or a document takes `readers`, never `roles`. So `roles` sent
+with a folder or a document, `readers` sent without one, and a folder and a document together are each refused with
+400 `VALIDATION_FAILED`.
+
+`If-Match` is optional: without it the last write wins, which is safe because each write sends the whole list. Give
+the ETag you read to have a change someone made since refused with 412
+([conditional writes](/errors/#conditional-writes-etags-and-if-match)). The new readers apply to the passages a
+folder or a document holds after the call returns; the knowledge base's watch shows that work.
 
 ## Under the hood
 

@@ -54,14 +54,17 @@ func (s *OperationScope) Get(ctx context.Context, opts ...CallOption) (*Operatio
 // becomes `cancelled` once the work has stopped.
 //
 // Cancelling needs what starting that kind of work needs, on the same record, which the server
-// reads from the Operation before it acts: for `document_ingestion`, what CancelDocumentProcessing
-// needs (`files.update` and the document's readers); for `document_update`, the same; for
+// reads from the Operation and checks per kind before it acts: for `document_ingestion`, the
+// permission that started it (`files.create` for a new document, `files.update` for a new version
+// or a retry) and the document's readers; for `document_update`, `files.update` and its readers; for
 // `fill_in`, `reprocess` and `layout_aware_search`, `knowledge-bases.update` and
 // `knowledge-bases.ingestions.update`; for a `folder_change`, the permission of the change
 // (`files.create`, `files.update` or `files.delete`) and the folder's readers; for
 // `permissions_change`, `files.permissions.update` and the record's readers; for
 // `knowledge_base_deletion`, `knowledge-bases.delete`. A caller without it gets 404, as for an
-// Operation it may not see. Its declared permission is the one every cancellable kind needs today.
+// Operation it may not see. No one permission is common to every kind, so the operation declares
+// only what reading an Operation needs (`files.read`, as GetOperation), and the per-kind check does
+// the rest.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *OperationScope) Cancel(ctx context.Context, opts ...CallOption) (*Operation, error) {

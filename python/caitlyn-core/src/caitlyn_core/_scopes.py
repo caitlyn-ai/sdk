@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 FINAL_JOB_STATUSES = frozenset({"succeeded", "completed_with_failures", "failed", "cancelled"})
 """A job (an Operation) in one of these has ended."""
-FINAL_BATCH_STATUSES = frozenset({"succeeded", "completed_with_failures", "failed", "cancelled", "expired"})
+FINAL_BATCH_STATUSES = frozenset({"succeeded", "completed_with_failures", "failed", "cancelled"})
 """An ingestion batch in one of these has ended."""
 BUSY_BATCH_STATUSES = frozenset({"planning", "running"})
 """An ingestion batch in one of these is working; ``draft`` and ``planned`` wait for the caller."""
@@ -70,9 +70,10 @@ class ReadersSpecific(TypedDict, total=False):
     people: Sequence[str]
 
 
-type ReadersShorthand = Literal["inherit", "everyone"] | ReadersSpecific
-"""Who may read a folder or a document: ``"inherit"`` (as the folder it is in), ``"everyone"`` (anyone signed in who may
-read the knowledge base), or ``{"roles": […], "people": […]}``."""
+type ReadersShorthand = Literal["inherit", "public", "everyone"] | ReadersSpecific
+"""Who may read a folder or a document: ``"inherit"`` (as the folder it is in), ``"public"`` (anyone who can reach the
+knowledge base, guests and anonymous visitors included), ``"everyone"`` (anyone signed in who may read the knowledge
+base), or ``{"roles": […], "people": […]}``."""
 
 
 def readers_input(value: object) -> object:
@@ -98,12 +99,6 @@ def error_for_code(codes: Mapping[str, type[CaitlynError]], code: str, detail: s
 def cancelled_error(what: str) -> CaitlynError:
     """``CANCELLED``: the job a wait followed was cancelled. The SDK raises it itself (PROTOCOL.md 16)."""
     return CaitlynError(f"CANCELLED: {what} was cancelled", status=0, code="CANCELLED", title=f"{what} was cancelled")
-
-
-def expired_error(batch_id: str) -> CaitlynError:
-    """``EXPIRED``: the batch's plan expired before it was started. The SDK raises it itself (PROTOCOL.md 16)."""
-    return CaitlynError(f"EXPIRED: batch {batch_id} expired before it was started", status=0, code="EXPIRED",
-                        title=f"Batch {batch_id} expired before it was started")
 
 
 PROGRESS_EVENTS = frozenset({"document.progress", "job.progress"})
@@ -311,8 +306,6 @@ class WaitTracker:
             raise error_for_code(self.codes, str(failure.get("code") or "INGESTION_BATCH_FAILED"), cast(str | None, failure.get("message")))
         if status == "cancelled" and not self.cancelled_ok:
             raise cancelled_error(f"batch {self.watched.key}")
-        if status == "expired":
-            raise expired_error(str(self.watched.key))
         return WaitDone(self.entity)
 
     def on_error(self, error: CaitlynError) -> WaitDone:
@@ -338,7 +331,13 @@ class Follow[T]:
         from ._client import Resume
 
         w = self.watched
-        return self.core.stream(w.spec, w.params, w.decoder, Resume(w.spec, w.params, watched=(w.filter, str(w.key)) if w.key is not None else None))
+        resume = Resume(w.spec, w.params, watched=(w.filter, str(w.key)) if w.key is not None else None)
+        if w.filter == "batch" and self.get is not None:
+            # A batch's watch reads the batch again once its deadline has passed (PROTOCOL.md 16).
+            from ._deadline import DeadlineEventStream
+
+            return DeadlineEventStream(self.core, w.spec, dict(w.params), w.decoder, resume, self.get)
+        return self.core.stream(w.spec, w.params, w.decoder, resume)
 
     def _run(self, tracker: WaitTracker, timeout: float | None, on_progress: Callable[[Any], object] | None = None) -> WaitDone:
         stream = self.watch()
@@ -410,7 +409,13 @@ class AsyncFollow[T]:
         from ._client import Resume
 
         w = self.watched
-        return self.core.stream(w.spec, w.params, w.decoder, Resume(w.spec, w.params, watched=(w.filter, str(w.key)) if w.key is not None else None))
+        resume = Resume(w.spec, w.params, watched=(w.filter, str(w.key)) if w.key is not None else None)
+        if w.filter == "batch" and self.get is not None:
+            # A batch's watch reads the batch again once its deadline has passed (PROTOCOL.md 16).
+            from ._deadline import AsyncDeadlineEventStream
+
+            return AsyncDeadlineEventStream(self.core, w.spec, dict(w.params), w.decoder, resume, self.get)
+        return self.core.stream(w.spec, w.params, w.decoder, resume)
 
     async def _run(self, tracker: WaitTracker, timeout: float | None, on_progress: Callable[[Any], object] | None = None) -> WaitDone:
         stream = self.watch()

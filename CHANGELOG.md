@@ -4,6 +4,11 @@
 ### Features
 
 * SDK 0.9.0: callable scopes, one type per thing, watch and wait, sync and batch upload, and the developer docs ([92e92e5](https://github.com/caitlyn-ai/sdk/commit/92e92e567a38736d5ec757f5a56526a4b35401bd))
+  * **Callable scopes:** `kb.documents(id)` names a document without sending anything, and every call on it is at hand. See [Groups and operations](https://build.caitlyn.ai/sdk/#groups-and-operations).
+  * **One type per thing:** a document is a `Document` wherever a call returns one, with no separate summary or output type. See [Document](https://build.caitlyn.ai/sdk/types/document/).
+  * **Watch and wait:** a document, folder, batch or job has `watch()` for its events and `wait()` for its end. See [Wait for a document](https://build.caitlyn.ai/sdk/helpers/document-wait/) and [Streaming](https://build.caitlyn.ai/streaming/).
+  * **Sync and batch upload:** `kb.ingestion.sync` keeps a folder in step, and a batch you build yourself has `upload.estimate` and `upload`. See [How ingestion works](https://build.caitlyn.ai/guides/how-ingestion-works/).
+  * **The developer docs:** guides, the SDK and API references, and this changelog. See [Getting started](https://build.caitlyn.ai/getting-started/).
 
 
 ### BREAKING CHANGES

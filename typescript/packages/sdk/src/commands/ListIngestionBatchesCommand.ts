@@ -38,7 +38,7 @@ export interface ListIngestionBatchesCommandOutput extends ListIngestionBatchesO
  *   limit: Number("int"),
  *   cursor: "STRING_VALUE",
  *   knowledgeBaseId: "STRING_VALUE", // required
- *   status: "draft" || "planning" || "planned" || "running" || "succeeded" || "completed_with_failures" || "failed" || "cancelled" || "expired",
+ *   status: "draft" || "planning" || "planned" || "running" || "succeeded" || "completed_with_failures" || "failed" || "cancelled",
  * };
  * const command = new ListIngestionBatchesCommand(input);
  * const response = await client.send(command);
@@ -49,7 +49,7 @@ export interface ListIngestionBatchesCommandOutput extends ListIngestionBatchesO
  * //     { // IngestionBatch
  * //       id: "STRING_VALUE", // required
  * //       knowledgeBaseId: "STRING_VALUE", // required
- * //       status: "draft" || "planning" || "planned" || "running" || "succeeded" || "completed_with_failures" || "failed" || "cancelled" || "expired", // required
+ * //       status: "draft" || "planning" || "planned" || "running" || "succeeded" || "completed_with_failures" || "failed" || "cancelled", // required
  * //       start: "when_planned" || "manual", // required
  * //       awaitMoreItems: true || false, // required
  * //       policy: { // IngestionPolicy
@@ -86,6 +86,7 @@ export interface ListIngestionBatchesCommandOutput extends ListIngestionBatchesO
  * //         },
  * //       },
  * //       planExpiresAt: new Date("TIMESTAMP"),
+ * //       uploadsExpireAt: new Date("TIMESTAMP"),
  * //       createdBy: { // Actor
  * //         userId: "STRING_VALUE",
  * //         apiClientId: "STRING_VALUE",
@@ -179,7 +180,8 @@ export interface ListIngestionBatchesCommandOutput extends ListIngestionBatchesO
  *       start: "manual",
  *       startedAt: "2026-11-16T01:03:00.000Z",
  *       status: "running",
- *       updatedAt: "2026-11-16T01:03:00.000Z"
+ *       updatedAt: "2026-11-16T01:03:00.000Z",
+ *       uploadsExpireAt: "2026-11-16T01:38:00.000Z"
  *     }
  *   ]
  * }
