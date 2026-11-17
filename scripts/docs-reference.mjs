@@ -788,6 +788,14 @@ function errorPage(ast, code, err, ops) {
   out.push(`| Retried by the SDKs | ${err.retryable ? 'Yes, for operations that are safe to repeat ([Retries](/retries/))' : 'No'} |`);
   out.push('');
   out.push('## What to do', '', text.action.trim(), '');
+  // Each code the model lists has a constant in every SDK (scripts/check-error-codes.mjs); the plain string compares the same.
+  const pascal = code.toLowerCase().split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join('');
+  out.push('## Check for it', '');
+  out.push(`Each SDK has a constant for this code. It is the code itself, so comparing with \`"${code}"\` works the same.`, '');
+  out.push('```ts tab="TypeScript"', `import { CaitlynError, ErrorCode } from '@caitlyn-ai/sdk';`, '', `if (err instanceof CaitlynError && err.code === ErrorCode.${code}) {`, '  // …', '}', '```');
+  out.push('```python tab="Python"', 'from caitlyn import CaitlynError, ErrorCode', '', 'try:', '    ...', 'except CaitlynError as err:', `    if err.code == ErrorCode.${code}:`, '        ...', '```');
+  out.push('```go tab="Go"', 'var apiErr *caitlyn.Error', `if errors.As(err, &apiErr) && apiErr.Code == caitlyn.ErrorCode${pascal} {`, '\t// …', '}', '```');
+  out.push('```rust tab="Rust"', 'use caitlyn_sdk::ErrorCode;', '', `if err.code() == Some(ErrorCode::${code}) {`, '    // …', '}', '```', '');
   out.push('## The error body', '');
   out.push(`Every error is an RFC 9457 problem details object with \`code\` set to \`${code}\` and \`type\` set to this page's address. \`requestId\` identifies the request; quote it to Caitlyn support. [Errors](/errors/) lists every field.`, '');
   if (ops.length) out.push(`Operations that document this error: ${ops.map((o) => `[${o.name}](/reference/${kebab(o.name)}/)`).join(', ')}. Any operation can return it, though: the SDKs choose the class by HTTP status.`, '');

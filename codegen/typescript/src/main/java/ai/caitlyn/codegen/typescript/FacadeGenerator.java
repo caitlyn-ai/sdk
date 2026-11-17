@@ -122,6 +122,7 @@ final class FacadeGenerator {
         context.fileManifest().writeFile("src/sdk/events.ts", events());
         context.fileManifest().writeFile("src/sdk/results.ts", resultsFile());
         context.fileManifest().writeFile("src/sdk/problems.ts", problemsFile());
+        context.fileManifest().writeFile("src/sdk/errorCodes.ts", errorCodesFile());
         context.fileManifest().writeFile("src/sdk/operations.ts", operationsFile(methods));
         context.fileManifest().writeFile("src/sdk/client.ts", new ScopeEmitter(this, model, service, context).clientFile());
         context.fileManifest().writeFile("src/sdk/connection.ts", connectionFile());
@@ -612,6 +613,7 @@ final class FacadeGenerator {
             + "export * from \"../models/enums\";\n"
             + "export * from \"../models/errors\";\n"
             + "export { CaitlynError } from \"./errors\";\n"
+            + "export { ErrorCode } from \"./errorCodes\";\n"
             + "export { CaitlynConnectionError } from \"./connection\";\n"
             + "export { NotSupportedByServer, SseStream, CaitlynAuthError, UploadFile, WorkPromise, contentTypeFor, createAuth, workspaceAudience, isSyncAborted, withHints, type FileInput, type UploadFileOptions, type UploadDescription, type BatchFiles, type BatchUpload, type BatchUploadOptions, type IngestionProgress, type SyncItemInput, type SyncOptions, type SyncPhase, type SyncPlan, type SyncReport, type SyncReportBatch, type SyncReportItem, type LocalFile, type ReadersShorthand, type WaitOptions, type AuthOptions, type AuthSession, type AwsCredentials, type OAuthTokens, type TokenStore, type CaitlynOptions, type CallOptions, type CaitlynErrorFields, type WithRaw } from \"@caitlyn-ai/sdk-core\";\n";
     }
@@ -646,8 +648,9 @@ final class FacadeGenerator {
             if (target instanceof ListShape l && model.expectShape(l.getMember().getTarget()).isStructureShape()) {
                 structures.add(tsType(l.getMember().getTarget()));
             }
+            String type = m.getMemberName().equals("code") ? "ErrorCode" : tsType(m.getTarget());
             fields.append(doc(m, "  ")).append("  ").append(m.getMemberName())
-                .append(alwaysSet.contains(m.getMemberName()) ? ": " : "?: ").append(tsType(m.getTarget())).append(";\n");
+                .append(alwaysSet.contains(m.getMemberName()) ? ": " : "?: ").append(type).append(";\n");
         }
         fields.append("  /** `Retry-After` in seconds, on 429 and 503 responses. */\n  retryAfterSeconds?: number;\n")
             .append("  /** The response body as received, as text, at most its first 8 KiB: the only view of a body that is not problem details. */\n  rawBody?: string;\n")
@@ -657,6 +660,7 @@ final class FacadeGenerator {
         return HEADER
             + "import type { SyncReport } from \"@caitlyn-ai/sdk-core\";\n"
             + "import { CaitlynServiceException, type __ServiceExceptionOptions } from \"../models/CaitlynServiceException\";\n"
+            + "import type { ErrorCode } from \"./errorCodes\";\n"
             + (structures.isEmpty() ? "" : "import type { " + String.join(", ", structures) + " } from \"../models/models_0\";\n")
             + "\n/**\n * Every Caitlyn error: the typed classes (NotFoundError, ValidationError…) and the generic error for a status\n"
             + " * the model does not name. Generated from the model's ProblemDetails (PROTOCOL.md 6.3).\n */\n"
@@ -808,6 +812,42 @@ final class FacadeGenerator {
             .append("export const storage = (client: CaitlynClient, signal?: AbortSignal): SendOptions => {\n")
             .append("  const c = client.config as { caitlynTracer?: SendOptions[\"tracer\"]; caitlynStorage?: { maxAttempts?: number; maxRetryDelayMs?: number } };\n")
             .append("  return { signal, tracer: c.caitlynTracer, ...c.caitlynStorage };\n};\n");
+        return out.toString();
+    }
+
+    // ------------------------------------------------------------------ errorCodes.ts
+
+    /**
+     * ErrorCode: a constant for every stable code the model lists (@errorCodes), and an open string type, so
+     * `e.code === ErrorCode.VERSIONS_NOT_NUMBERED` reads as `e.code === "VERSIONS_NOT_NUMBERED"` does, and a code this
+     * SDK does not know yet is still a string. Each constant names its error class and status.
+     */
+    private String errorCodesFile() {
+        Map<String, String> byCode = new TreeMap<>();
+        Map<String, Integer> statusOf = new TreeMap<>();
+        Set<ShapeId> errors = new TreeSet<>(service.getErrorsSet());
+        for (OperationShape op : operations()) errors.addAll(op.getErrorsSet());
+        for (ShapeId e : errors) {
+            Shape shape = model.expectShape(e);
+            shape.getTrait(software.amazon.smithy.model.traits.HttpErrorTrait.class).ifPresent(t -> statusOf.putIfAbsent(e.getName(), t.getCode()));
+            ai.caitlyn.codegen.model.CaitlynTraits.node(shape, ai.caitlyn.codegen.model.CaitlynTraits.ERROR_CODES).ifPresent(n ->
+                n.expectArrayNode().getElements().forEach(c -> byCode.putIfAbsent(c.expectStringNode().getValue(), e.getName())));
+        }
+        if (byCode.isEmpty()) throw new IllegalStateException("No error shape lists @errorCodes");
+        StringBuilder out = new StringBuilder(HEADER)
+            .append("\n/**\n * The stable error codes the API documents, one constant each: `e.code` is one of these, or a code this SDK\n")
+            .append(" * does not know yet. A constant is its own string, so `e.code === ErrorCode.NOT_FOUND` and\n")
+            .append(" * `e.code === \"NOT_FOUND\"` are the same check. Each code's page is `https://build.caitlyn.ai/errors/{code}`.\n")
+            .append(" * @public\n */\nexport const ErrorCode = {\n");
+        byCode.forEach((code, name) -> out.append("  /** `").append(code).append("`: raised as ").append(name)
+            .append(statusOf.containsKey(name) ? " (" + statusOf.get(name) + ")" : "").append(". */\n  ")
+            .append(code).append(": \"").append(code).append("\",\n"));
+        ai.caitlyn.codegen.model.SdkErrorCodes.CODES.forEach((code, what) -> {
+            if (!byCode.containsKey(code)) out.append("  /** `").append(code).append("`: raised by the SDK itself, with status 0. ").append(what)
+                .append(" */\n  ").append(code).append(": \"").append(code).append("\",\n");
+        });
+        out.append("} as const;\n\n/**\n * A stable error code: one of {@link ErrorCode}'s, or any other string, since codes are added over time.\n")
+            .append(" * @public\n */\nexport type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode] | (string & {});\n");
         return out.toString();
     }
 

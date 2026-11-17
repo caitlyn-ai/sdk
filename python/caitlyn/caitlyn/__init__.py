@@ -166,6 +166,7 @@ from caitlyn._client import (
 from caitlyn._version import SDK_MODEL, __version__
 from caitlyn.errors import (
     ConflictError,
+    ErrorCode,
     InternalError,
     NotFoundError,
     PayloadTooLargeError,
@@ -637,6 +638,7 @@ __all__ = [
     "DraftScope",
     "EnableLayoutAwareSearchResult",
     "EngineInput",
+    "ErrorCode",
     "EstimateDocumentVersionResult",
     "EstimateFillInFieldsResult",
     "EstimateIngestionResult",

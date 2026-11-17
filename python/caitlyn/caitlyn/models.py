@@ -7,19 +7,30 @@ from caitlyn_core import CaitlynModel, CaitlynResult, FieldError as FieldError, 
 from pydantic import JsonValue
 
 class ReadersKind(OpenEnum):
-    """How a folder's or document's readers are decided. Open: new values may be added.
+    """How a folder's or document's readers are decided, which sets how widely its contents can be read.
+    From widest to narrowest: `public`, `everyone`, `specific`; `inherit` takes the folder's. Each is
+    read back as it was stored: a list open to anyone reads as `public`, so a read never widens or
+    narrows what was set. Open: new values may be added.
 
     Open enum: a value this SDK version does not know is kept (its `is_known` is False).
     """
 
     INHERIT = "inherit"
-    """The same as the folder it is in. Never on the root folder, whose readers every folder falls
-    back to.
+    """Follow the folder it is in, so a change there applies here too. Never on the root folder,
+    whose readers every folder falls back to. On a document it removes the document's own list,
+    which also needs the permission to delete readers (`files.permissions.delete`), as v2's revert
+    does; on a folder it is a change like any other.
+    """
+    PUBLIC = "public"
+    """Anyone who can reach the knowledge base, signed in or not: guests and anonymous visitors of a
+    public agent included. For content meant to be shared openly.
     """
     EVERYONE = "everyone"
-    """Anyone signed in to the workspace who may read the knowledge base."""
+    """Anyone signed in to the workspace who may read the knowledge base, but no guest or anonymous
+    visitor. For content every colleague may see.
+    """
     SPECIFIC = "specific"
-    """Only the roles and people listed."""
+    """Only the roles and people listed in `roles` and `people`. For restricted content."""
 
 
 class Readers(CaitlynModel):
@@ -1375,9 +1386,10 @@ class HistoryEntry(CaitlynModel):
     written. Lists are compared by their items' keys.
     """
     configuration: AgentConfiguration | None = None
-    """The configuration of `version`. Present only when the caller may read that version: the agent
-    grant if it is live now, and the agent's version access grant if it is not, as GetAgentVersion
-    checks. Absent otherwise, in a list, and when that version no longer exists.
+    """The configuration of `version`. Present only when the caller may read that version, as
+    GetAgentVersion checks: the permission to read versions, and the agent grant if it is live now
+    or the agent's version access grant if it is not. Absent otherwise, in a list, and when that
+    version no longer exists.
     """
 
 
@@ -1676,7 +1688,8 @@ class IngestionItemInput(CaitlynModel):
     """For described content: the media type of the bytes."""
     fetch_url: str | None = None
     """For fetched content: the `http` or `https` address the server fetches the bytes from while
-    planning, at most 100 MB. Needs the files create permission.
+    planning, at most 100 MB. Needs the files create permission, which the server checks when the
+    item is added.
     """
     source_url: str | None = None
     """The address a citation of the document links to. Defaults to `fetchUrl`."""
@@ -1855,7 +1868,8 @@ class IngestionBatchItem(CaitlynModel):
     """For described content: the media type of the bytes."""
     fetch_url: str | None = None
     """For fetched content: the `http` or `https` address the server fetches the bytes from while
-    planning, at most 100 MB. Needs the files create permission.
+    planning, at most 100 MB. Needs the files create permission, which the server checks when the
+    item is added.
     """
     source_url: str | None = None
     """The address a citation of the document links to. Defaults to `fetchUrl`."""
@@ -1888,8 +1902,8 @@ class IngestionBatchItem(CaitlynModel):
     version: int | None = None
     """The document version the item made or changed."""
     failure_code: str | None = None
-    """Why the item failed, as a stable code: for example `UPLOAD_EXPIRED` (no bytes arrived before
-    the upload policy expired), `CHECKSUM_MISMATCH`, `PERMISSION_DENIED`, for `new_version`
+    """Why the item failed, as a stable code: for example `UPLOAD_EXPIRED` (no bytes arrived by the
+    batch's `uploadsExpireAt`), `CHECKSUM_MISMATCH`, `PERMISSION_DENIED`, for `new_version`
     `VALIDATION_FAILED` (another file type) or `DOCUMENT_INGESTION_IN_PROGRESS`, or a document's
     failure code. Present only when `status` is `failed`.
     """
@@ -2312,7 +2326,8 @@ class KnowledgeBase(CaitlynModel):
 
 
 class CostUnit(OpenEnum):
-    """The form a cost is given in. Open: new values may be added.
+    """The form a cost is given in, which follows how the organisation sees its costs. Open: new values
+    may be added.
 
     Open enum: a value this SDK version does not know is kept (its `is_known` is False).
     """
@@ -2320,19 +2335,19 @@ class CostUnit(OpenEnum):
     USD = "usd"
     """US dollars, at list price."""
     PERCENT_OF_PLAN = "percent_of_plan"
-    """A percentage of the organisation's monthly plan."""
+    """A percentage of the organisation's monthly usage allowance. 100 is the whole month."""
 
 
 class Cost(CaitlynModel):
-    """An amount of money, as a range, in the organisation's chosen form."""
+    """What work is expected to cost, as a range, in the form the organisation sees its costs."""
 
     low: float
     """The lowest the cost is likely to be."""
     high: float
     """The highest the cost is likely to be."""
     unit: CostUnit
-    """The form `low` and `high` are in: money, or a share of the plan for an organisation that
-    sees usage rather than dollars.
+    """Which form `low` and `high` are in: the one the organisation sees its costs in, `usd` for
+    dollars or `percent_of_plan` for usage.
     """
 
 
@@ -2900,6 +2915,11 @@ class DeleteDocumentVersionResult(CaitlynResult):
     or document has the same ones. The current version and a version still processing are refused with
     409 `CONFLICT`; to remove the current version, delete the document. Like every change, it is
     audited.
+
+    A version's number is its place in upload order, so deleting by number needs the document's
+    versions to be numbered already: until they are, a number is refused with 409
+    `VERSIONS_NOT_NUMBERED`, because deleting would shift every later number. Try again later, or
+    delete `latest`, which works either way.
     """
 
     request_id: str | None = None
@@ -3185,7 +3205,8 @@ class ReprocessDocumentsResult(CaitlynResult):
     Give `outOfDate: true` for every document processed in an older way than the newest, or
     `documentIds` for particular documents. Each document's current version keeps serving until its
     new processing is indexed. Returns 202 with the job, which the knowledge base's watch follows;
-    estimate it first with EstimateReprocessDocuments. Costs money: see the estimate's `cost`.
+    estimate it first with EstimateReprocessDocuments. It is charged for: see the estimate's `cost`, in
+    the form the organisation sees it.
     """
 
     job: Job
@@ -3560,8 +3581,8 @@ class FillInFieldsResult(CaitlynResult):
 
     For each field named, every document with no value yet gets one, and the search index and vectors
     are brought up to date. Values someone set by hand are kept. Returns 202 with the job, which the
-    knowledge base's watch follows; estimate it first with EstimateFillInFields. Costs money: see the
-    estimate's `cost`.
+    knowledge base's watch follows; estimate it first with EstimateFillInFields. It is charged for: see
+    the estimate's `cost`, in the form the organisation sees it.
     """
 
     job: Job
@@ -3903,7 +3924,7 @@ class StartMode(OpenEnum):
 
 class IngestionBatchStatus(OpenEnum):
     """Where an ingestion batch is. Open: new values may be added. `succeeded`,
-    `completed_with_failures`, `failed`, `cancelled` and `expired` are final.
+    `completed_with_failures`, `failed` and `cancelled` are final.
 
     Open enum: a value this SDK version does not know is kept (its `is_known` is False).
     """
@@ -3927,8 +3948,6 @@ class IngestionBatchStatus(OpenEnum):
     """The batch failed, for example because a policy rule said `fail`; `failure` says why. Final."""
     CANCELLED = "cancelled"
     """Stopped by a cancel before every item finished. Final."""
-    EXPIRED = "expired"
-    """Never started, and cleared after 7 days. Final."""
 
 
 class IngestionBatch(CaitlynModel):
@@ -3961,8 +3980,17 @@ class IngestionBatch(CaitlynModel):
     eta: Eta | None = None
     """How long is left: the longest of its documents' times left. Added in Caitlyn 5.115.0."""
     plan_expires_at: datetime | None = None
-    """When the plan goes stale, 5 minutes after planning. StartIngestionBatch on a stale plan plans
-    again first.
+    """When the plan goes stale, 5 minutes after planning. A stale plan does not end the batch:
+    StartIngestionBatch on a stale plan plans again first.
+    """
+    uploads_expire_at: datetime | None = None
+    """When uploads must arrive by: at or after the upload policy's `expiresAt`. An item whose bytes
+    have not arrived by then fails with `UPLOAD_EXPIRED`; bytes that arrived in time are accepted
+    when they are reported, however late. A caller watching the batch can read it again after this
+    time to see which items failed. Renewing the upload policy moves it later. Absent when no item
+    is awaiting upload.
+
+    Added in Caitlyn 5.115.0.
     """
     created_by: Actor | None = None
     """Who made the batch."""

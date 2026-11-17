@@ -246,9 +246,12 @@ func isCancelling(ctx context.Context) bool { v, _ := ctx.Value(cancellingKey{})
 func jobError(j *Job) error {
 	switch j.Status {
 	case OperationStatusFailed:
-		code, detail := "INTERNAL", "The job failed."
+		// A job that failed with no code of its own is JOB_FAILED, the generic error (PROTOCOL.md 6.3).
+		code, detail := "JOB_FAILED", "The job failed."
 		if j.Error != nil {
-			code = j.Error.Code
+			if j.Error.Code != "" {
+				code = j.Error.Code
+			}
 			if j.Error.Detail != nil {
 				detail = *j.Error.Detail
 			}
@@ -261,8 +264,7 @@ func jobError(j *Job) error {
 	return nil
 }
 
-// batchError is a batch's own outcome as an error: its failure when it failed, CANCELLED when it was cancelled, and
-// EXPIRED when its plan expired before it started.
+// batchError is a batch's own outcome as an error: its failure when it failed, and CANCELLED when it was cancelled.
 func batchError(b *IngestionBatch) error {
 	if b == nil {
 		return nil
@@ -276,8 +278,6 @@ func batchError(b *IngestionBatch) error {
 		return core.NewError(code, msg, nil)
 	case IngestionBatchStatusCancelled:
 		return core.NewError("CANCELLED", "The ingestion batch was cancelled", nil)
-	case IngestionBatchStatusExpired:
-		return core.NewError("EXPIRED", "The ingestion batch's plan expired before it was started", nil)
 	}
 	return nil
 }
@@ -415,7 +415,7 @@ func (s *BatchScope) Planned(ctx context.Context, opts ...WaitOption) (*Ingestio
 		switch f.snap.Batch.Status {
 		case IngestionBatchStatusDraft, IngestionBatchStatusPlanning:
 			return false, nil
-		case IngestionBatchStatusFailed, IngestionBatchStatusCancelled, IngestionBatchStatusExpired:
+		case IngestionBatchStatusFailed, IngestionBatchStatusCancelled:
 			return true, batchError(f.snap.Batch)
 		}
 		return true, nil

@@ -14,6 +14,7 @@ import io
 import os
 import tempfile
 from collections.abc import AsyncIterable, AsyncIterator, Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
@@ -87,6 +88,18 @@ def url_safe_sha256(sha256: str) -> str:
 def file_error(code: str, message: str) -> CaitlynError:
     """An error the SDK raises about a file before (or instead of) sending it: ``status`` is 0."""
     return CaitlynError(f"{code}: {message}", status=0, code=code, title=message)
+
+
+@contextmanager
+def reading(name: object) -> Iterator[None]:
+    """A file read: a failure that is not already a Caitlyn error is ``FILE_UNREADABLE`` (PROTOCOL.md 6.3), raised
+    ``from`` the native error, which stays the ``__cause__``."""
+    try:
+        yield
+    except CaitlynError:
+        raise
+    except Exception as e:
+        raise file_error("FILE_UNREADABLE", f"{name} could not be read: {e}") from e
 
 
 def _too_large(name: str, size: int) -> CaitlynError:
@@ -184,12 +197,14 @@ class UploadFile:
         if self.size is not None:
             size = self.size
         elif self._path is not None:
-            size = self._path.stat().st_size
+            with reading(self.name):
+                size = self._path.stat().st_size
         else:
             stream = self._stream
             if isinstance(stream, AsyncIterable):
                 raise TypeError("The synchronous client cannot read an async stream: use AsyncCaitlyn, or pass a sync iterable")
-            size = sum(len(chunk) for chunk in _sync_chunks(cast(Iterable[bytes] | BinaryIO, stream)))
+            with reading(self.name):
+                size = sum(len(chunk) for chunk in _sync_chunks(cast(Iterable[bytes] | BinaryIO, stream)))
         if size > MAX_FILE_SIZE:
             raise _too_large(self.name, size)
         return self._described(size)
@@ -214,8 +229,9 @@ class UploadFile:
         stream = self._stream
         if self.size is None and stream is not None and isinstance(stream, AsyncIterable):
             size = 0
-            async for chunk in stream:
-                size += len(chunk)
+            with reading(self.name):
+                async for chunk in stream:
+                    size += len(chunk)
             if size > MAX_FILE_SIZE:
                 raise _too_large(self.name, size)
             return self._described(size)
@@ -231,7 +247,8 @@ class UploadFile:
         if self._bytes is not None:
             return PreparedFile(self.name, self.content_type, len(self._bytes), sha256, data=self._bytes)
         if self._path is not None:
-            st = self._path.stat()
+            with reading(self.name):
+                st = self._path.stat()
             if st.st_size > MAX_FILE_SIZE:
                 raise _too_large(self.name, st.st_size)
             return PreparedFile(self.name, self.content_type, st.st_size, sha256, path=self._path, stat=(st.st_size, st.st_mtime_ns))
@@ -240,8 +257,9 @@ class UploadFile:
             raise TypeError("The synchronous client cannot read an async stream: use AsyncCaitlyn, or pass a sync iterable")
         spool = _Spool(self.name, hashing=False)
         try:
-            for chunk in _sync_chunks(cast(Iterable[bytes] | BinaryIO, stream)):
-                spool.write(chunk)
+            with reading(self.name):
+                for chunk in _sync_chunks(cast(Iterable[bytes] | BinaryIO, stream)):
+                    spool.write(chunk)
             return spool.finish(self, sha256)
         except BaseException:
             spool.discard()
@@ -254,8 +272,9 @@ class UploadFile:
             return await asyncio.to_thread(self.stage, sha256)
         spool = _Spool(self.name, hashing=False)
         try:
-            async for chunk in stream:
-                spool.write(chunk)
+            with reading(self.name):
+                async for chunk in stream:
+                    spool.write(chunk)
             return spool.finish(self, sha256)
         except BaseException:
             spool.discard()
@@ -268,14 +287,16 @@ class UploadFile:
         if self._bytes is not None:
             return PreparedFile.of_bytes(self, self._bytes)
         if self._path is not None:
-            return PreparedFile.of_path(self, self._path)
+            with reading(self.name):
+                return PreparedFile.of_path(self, self._path)
         stream = self._stream
         if isinstance(stream, AsyncIterable):
             raise TypeError("The synchronous client cannot read an async stream: use AsyncCaitlyn, or pass a sync iterable")
         spool = _Spool(self.name)
         try:
-            for chunk in _sync_chunks(cast(Iterable[bytes] | BinaryIO, stream)):
-                spool.write(chunk)
+            with reading(self.name):
+                for chunk in _sync_chunks(cast(Iterable[bytes] | BinaryIO, stream)):
+                    spool.write(chunk)
             return spool.finish(self)
         except BaseException:
             spool.discard()
@@ -288,8 +309,9 @@ class UploadFile:
             return await asyncio.to_thread(self.prepare)
         spool = _Spool(self.name)
         try:
-            async for chunk in stream:
-                spool.write(chunk)
+            with reading(self.name):
+                async for chunk in stream:
+                    spool.write(chunk)
             return spool.finish(self)
         except BaseException:
             spool.discard()
@@ -423,7 +445,7 @@ class PreparedFile:
             yield self.data
             return
         assert self.path is not None
-        with self.path.open("rb") as f:
+        with reading(self.path), self.path.open("rb") as f:
             while chunk := f.read(CHUNK):
                 yield chunk
 
@@ -433,7 +455,8 @@ class PreparedFile:
             yield self.data
             return
         assert self.path is not None
-        f = await asyncio.to_thread(self.path.open, "rb")
+        with reading(self.path):
+            f = await asyncio.to_thread(self.path.open, "rb")
         try:
             while chunk := await asyncio.to_thread(f.read, CHUNK):
                 yield chunk
@@ -445,7 +468,8 @@ class PreparedFile:
         if self.data is not None:
             return io.BytesIO(self.data)
         assert self.path is not None
-        return self.path.open("rb")
+        with reading(self.path):
+            return self.path.open("rb")
 
     def close(self) -> None:
         if self.temporary and self.path is not None:

@@ -476,6 +476,11 @@ final class ServiceGenerator {
         return m.isRequired() ? base : "Some(" + base + ")";
     }
 
+    /** A watch that can follow one ingestion batch (its `batch` filter): its stream can read the batch at its deadline. */
+    private static boolean watchesBatches(OperationInfo op) {
+        return op.sse.isPresent() && op.param("batch").isPresent();
+    }
+
     private void request(RustWriter w, OperationInfo op) {
         String req = requestType(op);
         String in = op.inputType();
@@ -493,11 +498,17 @@ final class ServiceGenerator {
                 + "    core: rt::Client,\n    input: " + in + ",\n    opts: rt::CallOptions,\n    /// The identifiers of the scope the request was made on.\n    #[allow(dead_code)]\n    ids: Vec<String>,\n"
                 + (withFile ? "    file: Option<rt::UploadFile>,\n" : "")
                 + (attached(op).isPresent() ? "    /// Files and uploads to attach, sent before the request (PROTOCOL.md 16, \"Attachments\").\n    attach: Option<Vec<rt::Attachment>>,\n" : "")
+                + (watchesBatches(op) ? "    /// A batch scope's watch: reads the batch again once its deadline has passed (PROTOCOL.md 16).\n    reread: Option<rt::stream::Reread<" + streamTypes(op).union() + ", Error>>,\n" : "")
                 + "}\n\n");
         w.l("impl " + req + " {\n");
         w.l("    pub(crate) fn new(core: rt::Client, input: " + in + ", ids: Vec<String>) -> Self {\n        " + req
                 + " {\n            core,\n            input,\n            opts: rt::CallOptions::default(),\n            ids,\n"
-                + (withFile ? "            file: None,\n" : "") + (attached(op).isPresent() ? "            attach: None,\n" : "") + "        }\n    }\n\n");
+                + (withFile ? "            file: None,\n" : "") + (attached(op).isPresent() ? "            attach: None,\n" : "")
+                + (watchesBatches(op) ? "            reread: None,\n" : "") + "        }\n    }\n\n");
+        if (watchesBatches(op)) {
+            w.l("    /// A batch scope's watch reads the batch with `read` once its deadline has passed (PROTOCOL.md 16).\n"
+                    + "    pub(crate) fn reread_at_deadline(mut self, read: rt::stream::Reread<" + streamTypes(op).union() + ", Error>) -> Self {\n        self.reread = Some(read);\n        self\n    }\n\n");
+        }
         if (withFile) {
             w.l("    pub(crate) fn with_file(mut self, file: rt::UploadFile) -> Self {\n        self.file = Some(file);\n        self\n    }\n\n");
         }
@@ -911,14 +922,17 @@ final class ServiceGenerator {
         w.l("    /// Sends the request; the stream starts once the response does. Errors during the stream (a failure event, a\n"
                 + "    /// connection that could not be resumed, cancellation) end it with that error.\n"
                 + "    pub fn send(self) -> rt::BoxFuture<'static, Result<" + alias + ", Error>> {\n"
-                + "        let " + requestType(op) + " { core, input, opts" + (attached(op).isPresent() ? ", attach" : "") + ", .. } = self;\n        Box::pin(async move {\n"
+                + "        let " + requestType(op) + " { core, input, opts" + (attached(op).isPresent() ? ", attach" : "") + (watchesBatches(op) ? ", reread" : "") + ", .. } = self;\n        Box::pin(async move {\n"
                 + attachStep(op)
                 + "            let req = build_" + fnName(op) + "(&input).map_err(Error::from)?;\n"
                 + "            let resp = core.send(&OP_" + Names.constant(op.name) + ", req, &opts).await.map_err(Error::from)?;\n"
                 + resumeSetup
-                + "            Ok(rt::Stream::open(resp, rt::StreamSpec {\n                decode: decode_" + Names.snake(st.union()) + ",\n"
+                + "            " + (watchesBatches(op) ? "let mut stream = " : "Ok(") + "rt::Stream::open(resp, rt::StreamSpec {\n                decode: decode_" + Names.snake(st.union()) + ",\n"
                 + "                final_of: " + st.finalFn() + ",\n                map_err: Error::from,\n                resume: " + resume + ",\n"
-                + "                fresh: " + fresh + ",\n            }))\n        })\n    }\n");
+                + "                fresh: " + fresh + ",\n            }" + (watchesBatches(op)
+                        ? ");\n            if let Some(read) = reread {\n                stream.reread_at_deadline(read);\n            }\n            Ok(stream)\n"
+                        : "))\n")
+                + "        })\n    }\n");
         // The alias and the final-event function go after the impl block (written by the caller with the rest).
         pendingTop.append(top);
     }
@@ -1040,7 +1054,7 @@ final class ServiceGenerator {
     // ------------------------------------------------------------------ the readers shorthand
 
     /**
-     * {@code access().set().readers(…)} takes {@code "inherit"}, {@code "everyone"} or roles and people (DX review 4.1,
+     * {@code access().set().readers(…)} takes {@code "inherit"}, {@code "public"}, {@code "everyone"} or roles and people (DX review 4.1,
      * PROTOCOL.md 11 {@code access.readers-shorthand}), mapped to the model's {@code {kind, roles, people}}.
      */
     private void readersShorthand(RustWriter w) {
@@ -1059,6 +1073,8 @@ final class ServiceGenerator {
         }
         w.l("impl Readers {\n    /// The same readers as the folder it is in (`inherit`). Refused on the root folder, which has no parent.\n"
                 + "    pub fn inherit() -> Self {\n        Readers {\n            kind: " + kindType + "::from(\"inherit\"),\n            ..Default::default()\n        }\n    }\n\n"
+                + "    /// Anyone who can reach the knowledge base, signed in or not: guests and anonymous visitors included (`public`).\n"
+                + "    pub fn public() -> Self {\n        Readers {\n            kind: " + kindType + "::from(\"public\"),\n            ..Default::default()\n        }\n    }\n\n"
                 + "    /// Anyone signed in who may read the knowledge base (`everyone`).\n"
                 + "    pub fn everyone() -> Self {\n        Readers {\n            kind: " + kindType + "::from(\"everyone\"),\n            ..Default::default()\n        }\n    }\n\n"
                 + "    /// Only these roles and people (`specific`).\n"
@@ -1071,7 +1087,7 @@ final class ServiceGenerator {
                 + "    /// Only these people.\n    pub fn people(people: impl IntoIterator<Item = impl Into<String>>) -> Self {\n"
                 + "        Readers {\n            kind: " + kindType + "::from(\"specific\"),\n            people: Some(people.into_iter().map(Into::into).collect()),\n"
                 + "            ..Default::default()\n        }\n    }\n}\n\n");
-        w.l("/// `\"inherit\"` or `\"everyone\"`: `.readers(\"inherit\")`. Any other value is sent as the kind it names.\n"
+        w.l("/// `\"inherit\"`, `\"public\"` or `\"everyone\"`: `.readers(\"inherit\")`. Any other value is sent as the kind it names.\n"
                 + "impl From<&str> for Readers {\n    fn from(kind: &str) -> Self {\n        Readers {\n            kind: " + kindType + "::from(kind),\n"
                 + "            ..Default::default()\n        }\n    }\n}\n\n");
     }
@@ -1287,6 +1303,23 @@ fn running(j: &Job) -> bool {
                     .forEach(c -> codes.append("    (").append(Names.str(c.expectStringNode().getValue())).append(", ").append(st).append("),\n"))));
             w.l("/// Every error code the model lists, with its HTTP status: a job that failed with a code is that status's variant.\n"
                     + "pub(crate) const ERROR_CODES: &[(&str, u16)] = &[\n" + codes + "];\n\n");
+            java.util.TreeMap<String, StructureShape> byCode = new java.util.TreeMap<>();
+            errorsByStatus.forEach((st, e) -> e.findTrait(CaitlynTraits.ERROR_CODES).ifPresent(t -> t.toNode().expectArrayNode().getElements()
+                    .forEach(c -> byCode.putIfAbsent(c.expectStringNode().getValue(), e))));
+            StringBuilder consts = new StringBuilder();
+            byCode.forEach((code, e) -> consts.append("    /// `").append(code).append("`: raised as [`Error::").append(variant(e))
+                    .append("`] (").append(e.expectTrait(HttpErrorTrait.class).getCode()).append(").\n    pub const ").append(code)
+                    .append(": &'static str = ").append(Names.str(code)).append(";\n"));
+            ai.caitlyn.codegen.model.SdkErrorCodes.CODES.forEach((code, what) -> {
+                if (!byCode.containsKey(code)) {
+                    consts.append("    /// `").append(code).append("`: raised by the SDK itself, with status 0. ").append(what)
+                            .append("\n    pub const ").append(code).append(": &'static str = ").append(Names.str(code)).append(";\n");
+                }
+            });
+            w.l("/// The stable error codes the API documents, as associated constants. An error's `code` is a `String`, so\n"
+                    + "/// `e.code == ErrorCode::NOT_FOUND` and `e.code == \"NOT_FOUND\"` are the same check, and a code this SDK does\n"
+                    + "/// not know yet is still a string. Each code's page is <https://build.caitlyn.ai/errors/{code}>.\n"
+                    + "#[derive(Debug, Clone, Copy)]\n#[non_exhaustive]\npub struct ErrorCode;\n\nimpl ErrorCode {\n" + consts + "}\n\n");
             w.l("impl std::fmt::Display for Error {\n    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n"
                     + "        match self {\n            Error::NotSupportedByServer(e) => e.fmt(f),\n            Error::Input(e) => e.fmt(f),\n"
                     + "            Error::Auth(e) => e.fmt(f),\n            Error::Connection(e) => e.fmt(f),\n"
@@ -1329,7 +1362,7 @@ fn running(j: &Job) -> bool {
                 + "# Ok(())\n# }\n```"));
         out.append("#![forbid(unsafe_code)]\n\n");
         out.append("mod error;\nmod operations;\npub mod scope;\npub mod types;\n\n");
-        out.append("pub use error::Error;\npub use operations::*;\npub use scope::{\n    BatchFiles, BatchUpload, BatchUploadRequest, Client, ClientBuilder, EstimateUploadRequest, IngestionProgress, LocalFile, SyncInput,\n    SyncItem, SyncPhase, SyncPlan, SyncReport,\n};\npub use types::*;\n");
+        out.append("pub use error::{Error, ErrorCode};\npub use operations::*;\npub use scope::{\n    BatchFiles, BatchUpload, BatchUploadRequest, Client, ClientBuilder, EstimateUploadRequest, IngestionProgress, LocalFile, SyncInput,\n    SyncItem, SyncPhase, SyncPlan, SyncReport,\n};\npub use types::*;\n");
         out.append("\npub use caitlyn_sdk_core::{\n    ApiError, Attachment, Auth, AuthError, AuthSession, AuthorizationUrl, AwsCredentialProvider, AwsCredentials, Call, CallOptions,\n"
                 + "    Callback, CancellationToken, ConnectionError, Created, FieldError, InputError, Items, MemoryTokenStore, NotSupportedByServer,\n"
                 + "    OAuthTokens, Pages, Propagator, Raw, ResponseMetadata, SigningAlgorithm, Started, Stream, TokenStore, UploadFile,\n"

@@ -266,6 +266,7 @@ var scopeCases = map[string]func(t *testing.T, m mock){
 			{caitlyn.ReadersOf([]string{"hr-team"}, nil), map[string]any{"kind": "specific", "roles": []any{"hr-team"}}},
 			{&caitlyn.Readers{Roles: []string{"hr-team"}, People: []string{"u-1"}}, map[string]any{"kind": "specific", "roles": []any{"hr-team"}, "people": []any{"u-1"}}},
 			{caitlyn.ReadersEveryone(), map[string]any{"kind": "everyone"}},
+			{caitlyn.ReadersPublic(), map[string]any{"kind": "public"}},
 			{caitlyn.ReadersInherit(), map[string]any{"kind": "inherit"}},
 		}
 		for _, tc := range cases {
@@ -280,6 +281,31 @@ var scopeCases = map[string]func(t *testing.T, m mock){
 			if got.Readers == nil || string(got.Readers.Kind) != tc.want["kind"] {
 				t.Fatalf("set %+v", got.Readers)
 			}
+		}
+	},
+
+	"access.public": func(t *testing.T, m mock) {
+		c := client(t, m)
+		folder := c.KnowledgeBase(kb).Folder("/policies/")
+		if _, err := folder.Access.Set(context.Background(), &caitlyn.PutAccessInput{Readers: caitlyn.ReadersPublic()}); err != nil {
+			t.Fatal(err)
+		}
+		if body := jsonBody(t, lastAPI(t, m)); !reflect.DeepEqual(body, map[string]any{"readers": map[string]any{"kind": "public"}}) {
+			t.Fatalf("sent %v", body)
+		}
+		read, err := folder.Access.Get(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if read.Readers == nil || read.Readers.Kind != caitlyn.ReadersKindPublic || !read.Readers.Kind.Known() {
+			t.Fatalf("read %+v", read.Readers)
+		}
+		doc := c.KnowledgeBase(kb).Document("doc-0001")
+		if _, err := doc.Access.Set(context.Background(), &caitlyn.PutAccessInput{Readers: &caitlyn.Readers{Kind: caitlyn.ReadersKindPublic}}); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := doc.Access.Get(context.Background()); err != nil || got.Readers == nil || got.Readers.Kind != "public" {
+			t.Fatalf("document readers %+v, %v", got, err)
 		}
 	},
 
@@ -751,19 +777,6 @@ func watchServer(t *testing.T, answers ...string) (*caitlyn.Client, *atomic.Int3
 }
 
 func init() {
-	protocol["wait.expired"] = func(t *testing.T, _ mock) {
-		snapshot := "id: s1\nevent: snapshot\ndata: {\"batch\":{\"id\":\"b-1\",\"knowledgeBaseId\":\"" + kb + "\",\"status\":\"expired\"},\"jobs\":[],\"progress\":[]}\n\n"
-		c, _ := watchServer(t, snapshot, snapshot)
-		b := c.KnowledgeBase(kb).Ingestion.Batch("b-1")
-		_, err := b.Planned(within(t))
-		var e *caitlyn.Error
-		if !errors.As(err, &e) || e.Code != "EXPIRED" || e.Status != 0 {
-			t.Fatalf("planned: %v; want EXPIRED with status 0", err)
-		}
-		if _, err := b.Wait(within(t)); !errors.As(err, &e) || e.Code != "EXPIRED" || e.Status != 0 {
-			t.Fatalf("wait: %v; want EXPIRED with status 0", err)
-		}
-	}
 	protocol["watch.gone"] = func(t *testing.T, _ mock) {
 		snapshot := "id: s1\nevent: snapshot\ndata: {\"document\":{\"id\":\"doc-1\",\"status\":\"processing\"},\"jobs\":[],\"progress\":[]}\n\n"
 		// One connection with the snapshot that then ends; every reconnect after it is a 404.

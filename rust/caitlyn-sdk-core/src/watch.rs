@@ -319,7 +319,8 @@ pub fn coded_error(code: &str, detail: Option<&str>, codes: &[(&str, u16)]) -> E
 fn job_failure(job: &Value, codes: &[(&str, u16)]) -> Option<Error> {
     match job["status"].as_str()? {
         "failed" => Some(coded_error(
-            job["error"]["code"].as_str().unwrap_or("JOB_FAILED"),
+            // A job that failed with no code of its own (none, or an empty one) is JOB_FAILED (PROTOCOL.md 6.3).
+            job["error"]["code"].as_str().filter(|c| !c.is_empty()).unwrap_or("JOB_FAILED"),
             job["error"]["detail"].as_str(),
             codes,
         )),
@@ -340,7 +341,6 @@ fn batch_failure(batch: &Value, codes: &[(&str, u16)]) -> Option<Error> {
             ))
         }
         "cancelled" => Some(Error::sdk("CANCELLED", "The batch was cancelled", None)),
-        "expired" => Some(Error::sdk("EXPIRED", "The batch's plan expired before it was started", None)),
         _ => None,
     }
 }

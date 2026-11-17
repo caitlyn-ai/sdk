@@ -2872,9 +2872,10 @@ export interface HistoryEntry {
   changedMembers?: string[] | undefined;
 
   /**
-   * The configuration of `version`. Present only when the caller may read that version: the agent
-   * grant if it is live now, and the agent's version access grant if it is not, as GetAgentVersion
-   * checks. Absent otherwise, in a list, and when that version no longer exists.
+   * The configuration of `version`. Present only when the caller may read that version, as
+   * GetAgentVersion checks: the permission to read versions, and the agent grant if it is live now
+   * or the agent's version access grant if it is not. Absent otherwise, in a list, and when that
+   * version no longer exists.
    * @public
    */
   configuration?: AgentConfiguration | undefined;
@@ -3623,7 +3624,8 @@ export interface IngestionItemInput {
 
   /**
    * For fetched content: the `http` or `https` address the server fetches the bytes from while
-   * planning, at most 100 MB. Needs the files create permission.
+   * planning, at most 100 MB. Needs the files create permission, which the server checks when the
+   * item is added.
    * @public
    */
   fetchUrl?: string | undefined;
@@ -3759,7 +3761,8 @@ export interface IngestionBatchItem {
 
   /**
    * For fetched content: the `http` or `https` address the server fetches the bytes from while
-   * planning, at most 100 MB. Needs the files create permission.
+   * planning, at most 100 MB. Needs the files create permission, which the server checks when the
+   * item is added.
    * @public
    */
   fetchUrl?: string | undefined;
@@ -3845,8 +3848,8 @@ export interface IngestionBatchItem {
   version?: number | undefined;
 
   /**
-   * Why the item failed, as a stable code: for example `UPLOAD_EXPIRED` (no bytes arrived before
-   * the upload policy expired), `CHECKSUM_MISMATCH`, `PERMISSION_DENIED`, for `new_version`
+   * Why the item failed, as a stable code: for example `UPLOAD_EXPIRED` (no bytes arrived by the
+   * batch's `uploadsExpireAt`), `CHECKSUM_MISMATCH`, `PERMISSION_DENIED`, for `new_version`
    * `VALIDATION_FAILED` (another file type) or `DOCUMENT_INGESTION_IN_PROGRESS`, or a document's
    * failure code. Present only when `status` is `failed`.
    * @public
@@ -4773,7 +4776,7 @@ export interface DeleteKnowledgeBaseInput {
 }
 
 /**
- * An amount of money, as a range, in the organisation's chosen form.
+ * What work is expected to cost, as a range, in the form the organisation sees its costs.
  * @public
  */
 export interface Cost {
@@ -4790,8 +4793,8 @@ export interface Cost {
   high: number;
 
   /**
-   * The form `low` and `high` are in: money, or a share of the plan for an organisation that
-   * sees usage rather than dollars.
+   * Which form `low` and `high` are in: the one the organisation sees its costs in, `usd` for
+   * dollars or `percent_of_plan` for usage.
    * @public
    */
   unit: CostUnit;
@@ -8183,11 +8186,21 @@ export interface IngestionBatch {
   eta?: Eta | undefined;
 
   /**
-   * When the plan goes stale, 5 minutes after planning. StartIngestionBatch on a stale plan plans
-   * again first.
+   * When the plan goes stale, 5 minutes after planning. A stale plan does not end the batch:
+   * StartIngestionBatch on a stale plan plans again first.
    * @public
    */
   planExpiresAt?: Date | undefined;
+
+  /**
+   * When uploads must arrive by: at or after the upload policy's `expiresAt`. An item whose bytes
+   * have not arrived by then fails with `UPLOAD_EXPIRED`; bytes that arrived in time are accepted
+   * when they are reported, however late. A caller watching the batch can read it again after this
+   * time to see which items failed. Renewing the upload policy moves it later. Absent when no item
+   * is awaiting upload.
+   * @public
+   */
+  uploadsExpireAt?: Date | undefined;
 
   /**
    * Who made the batch.

@@ -133,7 +133,7 @@ Every thing you read carries an `etag`. A write that changes a thing takes it ba
 | Field | What it holds |
 | --- | --- |
 | `status` | The HTTP status of the response, always (a `status` in the body is ignored for this). |
-| `code` | The stable code, for example `NOT_FOUND`, or `HTTP_<status>` when the body is not a Caitlyn error. |
+| `code` | The stable code, for example `NOT_FOUND`, or `HTTP_<status>` when the body is not a Caitlyn error. Each code the API documents has a constant: `ErrorCode.NOT_FOUND` in TypeScript and Python, `caitlyn.ErrorCodeNotFound` in Go, `ErrorCode::NOT_FOUND` in Rust. A constant is the code itself, so comparing with the string works the same, and a code your SDK version does not know yet is still a string. |
 | `title`, `detail`, `type` | A short summary, what went wrong this time, and the code's page here. |
 | `requestId` | The request's identifier. |
 | `retryAfterSeconds` | On 429 and 503: how long to wait, from `Retry-After`. |
@@ -166,14 +166,37 @@ you get your language's own cancellation error.
 
 ## Errors the SDK raises itself
 
-These have `status` 0 and nothing was received from Caitlyn:
+These have `status` 0 and nothing was received from Caitlyn. Each has a constant beside the API's codes
+(`ErrorCode.WAIT_TIMEOUT`, `caitlyn.ErrorCodeWaitTimeout`, `ErrorCode::WAIT_TIMEOUT`). Any failure during a call
+reaches you as one of these, never as the language's own error: that error is kept as the cause (TypeScript `cause`,
+Python `__cause__`, Go `Unwrap()`, Rust `source()`). Every SDK raises each of them wherever its case can happen:
 
 | Code | When |
 | --- | --- |
 | `CONNECTION_ERROR` | No response (above). |
-| `STREAM_LOST` | A [stream](/streaming/) dropped and could not be resumed after three tries. |
+| `STREAM_LOST` | A [stream](/streaming/) or a watch dropped and could not be resumed after three tries. |
 | `NO_FINAL_EVENT` | `finalMessage()` on a stream that ended without its final event, such as a resumed stream whose answer had already finished. |
+| `WAIT_TIMEOUT` | A wait's time limit passed. |
+| `CANCELLED` | The work a wait followed was cancelled, or a sync's plan was declined. |
+| `DECODE_FAILED` | A response or an event could not be read as the operation's output. |
+| `SERIALIZATION_FAILED` | A request could not be serialised. |
+| `HTTP_CLIENT_FAILED` | The HTTP client could not be built, or could not make the request. Not in TypeScript, which sends with `fetch`. |
+| `JOB_FAILED` | A job ended failed without an error code of its own. |
+| `INGESTION_BATCH_FAILED` | An ingestion batch ended failed without a failure code of its own. |
+| `FILE_UNREADABLE` | A file could not be read. |
+| `FILE_TOO_LARGE` | A file is larger than the operation accepts. |
+| `FILE_CHANGED` | A file's size or bytes no longer match what was described for it. |
 | `UPLOAD_PUT_FAILED` | An upload helper could not send the file's bytes to the upload address. |
+| `UPLOAD_FAILED` | A file's upload still failed after its retries: only its item fails, in a sync or a batch upload. |
+| `UPLOAD_POLICY_MISSING` | A batch gave no upload policy for the files awaiting upload. |
+| `INGESTION_ITEM_REFUSED` | An item a sync added to its batch was refused; the message names the item and why. |
+| `INGESTION_ITEM_HAS_NO_FILE` | A sync's batch awaits a file the call has none for. |
+| `INGESTION_BATCH_NOT_PLANNED` | [Estimate the upload](/reference/helpers/batch-upload-estimate/) on a draft batch: add its last items first. |
+| `INGESTION_BATCH_NOT_STARTED` | [Upload files](/reference/helpers/batch-upload/) on a batch that has not started: start it with `batch.start()`. |
+
+Three come from one SDK only, because their case exists only there: `REDIRECT_UNREADABLE` (TypeScript in a browser,
+a redirect whose address the browser hid from the page: use `download()` instead), `FILE_ALREADY_READ` (Go, one
+`io.Reader` given to two calls) and `BAD_METHOD` (Rust, an HTTP method its HTTP client cannot use).
 
 Two more are separate classes: `NotSupportedByServer`, raised before sending when the server is too old for the
 call ([Getting started](/getting-started/#versions-and-older-servers)), and the sign-in error, `CaitlynAuthError`,

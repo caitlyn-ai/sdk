@@ -124,7 +124,7 @@ test('the building blocks come last and collapsed, in both sidebars and the Open
 });
 
 test('the SDK helpers have pages, in the SDK reference only', () => {
-  for (const id of ['ingestion.sync', 'ingestion.sync.estimate', 'stream.text']) {
+  for (const id of ['ingestion.sync', 'ingestion.sync.estimate', 'stream.text', 'batch.upload.estimate', 'batch.upload']) {
     const page = reference.pages.find((p) => p.helper === id);
     assert.ok(page, id);
     for (const lang of ['TypeScript', 'Python', 'Go', 'Rust']) assert.match(page.body, new RegExp(`^\\| ${lang} \\| \``, 'm'), `${id} in ${lang}`);
@@ -133,6 +133,14 @@ test('the SDK helpers have pages, in the SDK reference only', () => {
   }
   assert.equal(tree.groupOf.get('stream.text'), tree.groupOf.get('SendMessage'));
   assert.equal(tree.groupOf.get('ingestion.sync'), 'knowledgeBases.ingestion');
+  // A hand-built batch's estimate and upload sit in the Batches group, after Wait until planned, in the order they are called
+  for (const id of ['batch.upload.estimate', 'batch.upload']) assert.equal(tree.groupOf.get(id), 'knowledgeBases.ingestion.batches', id);
+  const batches = siblings(sdkSidebar, '').find((s) => s.labels.includes('Estimate the upload'));
+  assert.ok(batches.labels.indexOf('Wait until planned') < batches.labels.indexOf('Estimate the upload') && batches.labels.indexOf('Estimate the upload') < batches.labels.indexOf('Upload files'), batches.labels.join(', '));
+  for (const id of ['batch.upload.estimate', 'batch.upload']) {
+    const body = reference.pages.find((p) => p.helper === id).body;
+    for (const type of ['ingestion-batch', 'ingestion-batch-item']) assert.match(body, new RegExp(`\\]\\(/reference/types/${type}/\\)`), `${id} links ${type}`);
+  }
 });
 
 // The fields OpenAPI 3.2 added: on a tag (nested tags), on a path item, and on a media type. A document that says 3.1

@@ -29,8 +29,8 @@ def sync_with_confirm(kb: KnowledgeBaseScope) -> SyncReport[IngestionBatch, Inge
         if estimate is None:  # nothing needs its bytes
             return True
         print(len(plan.items), "items,", estimate.documents, "to process, up to", estimate.duration_seconds.high, "s")
-        if estimate.cost:  # only for callers allowed to see cost
-            print(estimate.cost.low, "to", estimate.cost.high, estimate.cost.unit)
+        if cost := estimate.cost:  # only for callers allowed to see cost, in the form the organisation sees it
+            print(f"US${cost.low:.2f}–{cost.high:.2f}" if cost.unit == "usd" else f"{cost.low:.1f}–{cost.high:.1f}% of usage")
         return estimate.documents < 500
 
     report = kb.ingestion.sync(

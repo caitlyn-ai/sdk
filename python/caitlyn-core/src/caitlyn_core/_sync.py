@@ -16,6 +16,7 @@ budget and one HTTP client."""
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import fnmatch
 import inspect
 import os
@@ -52,9 +53,11 @@ COMPLETE_LIMIT: Final = 100
 """Item identifiers a CompleteIngestionBatchUploads call takes."""
 RENEW_BEFORE_SECONDS: Final = 300.0
 """The upload policy is renewed before an upload when it has less than this left."""
+KEEP_ALIVE_FLOOR_SECONDS: Final = 1.0
+"""The keep-alive renews at most this often, so a policy that is already short cannot loop."""
 DEFAULT_CONCURRENCY: Final = 6
 FINAL_ITEM_STATUSES: Final = frozenset({"indexed", "skipped", "moved", "updated", "removed", "failed", "cancelled"})
-FINAL_BATCH_STATUSES: Final = frozenset({"succeeded", "completed_with_failures", "failed", "cancelled", "expired"})
+FINAL_BATCH_STATUSES: Final = frozenset({"succeeded", "completed_with_failures", "failed", "cancelled"})
 IGNORE_FILE: Final = ".caitlynignore"
 
 type Phase = Literal["checksum", "upload", "planning", "planned", "queued", "processing"] | str
@@ -168,6 +171,10 @@ class SyncInterrupted(KeyboardInterrupt):
         self.report = report
 
 
+type _Get = tuple[OperationSpec, Mapping[str, object], type[CaitlynModel]]
+"""How a watch reads its batch again (PROTOCOL.md 16): GetIngestionBatch, its parameters and its result type."""
+
+
 class _Core(Protocol):
     """What ``ingest`` needs from a client core."""
 
@@ -181,7 +188,7 @@ class _Core(Protocol):
     @property
     def max_attempts(self) -> int: ...
     def take_retry(self) -> bool: ...
-    def watch(self, watched: Watched) -> AsyncIterator[CaitlynEvent]: ...
+    def watch(self, watched: Watched, get: _Get | None = None) -> AsyncIterator[CaitlynEvent]: ...
 
 
 class _ItemFailed(Exception):
@@ -297,6 +304,11 @@ class _Uploads[I]:
         """Items CompleteIngestionBatchUploads accepted, in the order it did."""
         self.uploaded = 0
         """Files storage took."""
+        self.sending = 0
+        """Uploads in flight: the keep-alive runs while there are any."""
+        self.last_renewal = -KEEP_ALIVE_FLOOR_SECONDS
+        """When the last renewal ended (the loop's clock), whoever asked for it: the keep-alive's floor counts from it."""
+        self.keep_alive: asyncio.Task[None] | None = None
 
     def _expires_in(self) -> float:
         expires = datetime.fromisoformat(str(self.policy["expiresAt"]).replace("Z", "+00:00"))
@@ -309,8 +321,39 @@ class _Uploads[I]:
                 return  # another upload renewed it already
             if stale is None and self._expires_in() >= RENEW_BEFORE_SECONDS:
                 return
-            out = await self.core.request(self.api.renew_policy, self.ids, _Json)
-            self.policy = cast(dict[str, Any], out.raw["uploadPolicy"])
+            try:
+                self.policy = _policy(await self.core.request(self.api.renew_policy, self.ids, _Json))
+            finally:
+                self.last_renewal = asyncio.get_running_loop().time()
+
+    async def _keep_alive(self) -> None:
+        """The keep-alive (PROTOCOL.md 15): while any upload is in flight, the policy is renewed once it has less than 5
+        minutes left, at most once a second. The server judges each file by when its bytes arrive against the batch's
+        uploadsExpireAt, which a renewal moves on. A renewal that fails leaves the uploads in flight on the policy they
+        have, and is tried again at the next tick."""
+        loop = asyncio.get_running_loop()
+        while True:
+            await asyncio.sleep(max(self._expires_in() - RENEW_BEFORE_SECONDS, self.last_renewal + KEEP_ALIVE_FLOOR_SECONDS - loop.time(), 0.0))
+            # A renewal in flight, or one that ended less than a second ago, whoever asked for it, is this tick's: it
+            # waits again from the policy as it then stands.
+            if self.renew_lock.locked():
+                async with self.renew_lock:
+                    pass
+                continue
+            if loop.time() - self.last_renewal < KEEP_ALIVE_FLOOR_SECONDS:
+                continue
+            try:
+                await self.renew()
+            except Exception:  # the policy in hand is valid until it expires: the next tick tries again
+                pass
+
+    async def stop_keep_alive(self) -> None:
+        """Stops the keep-alive, so no renewal starts once the uploads have settled or the call has ended."""
+        task, self.keep_alive = self.keep_alive, None
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
     async def _file(self, job: _Job[I]) -> PreparedFile:
         """The job's file, staged on first use. A file whose size is not the item's fails it with FILE_CHANGED, before
@@ -375,7 +418,16 @@ class _Uploads[I]:
         job = self.jobs[item_id]
         try:
             async with self.semaphore:
-                await self.send(job.key, await self._file(job))
+                file = await self._file(job)
+                self.sending += 1
+                if self.keep_alive is None:
+                    self.keep_alive = asyncio.create_task(self._keep_alive())
+                try:
+                    await self.send(job.key, file)
+                finally:
+                    self.sending -= 1
+                    if self.sending == 0:
+                        await self.stop_keep_alive()
         except _ItemFailed as e:
             await self.item_failed(item_id, e.error)  # that item only: the other uploads carry on
             return
@@ -425,6 +477,15 @@ class _Uploads[I]:
                 job.file.close()
 
 
+def _policy(out: _Json) -> dict[str, Any]:
+    """CreateIngestionBatchUploadPolicy's policy; one it did not give is ``UPLOAD_POLICY_MISSING`` (PROTOCOL.md 6.3)."""
+    policy = out.raw.get("uploadPolicy")
+    if not isinstance(policy, dict):
+        raise CaitlynError("CreateIngestionBatchUploadPolicy returned no upload policy", status=0, code="UPLOAD_POLICY_MISSING",
+                           title="No upload policy")
+    return cast(dict[str, Any], policy)
+
+
 async def _send[I](core: _Core, api: SyncApi, ids: dict[str, object], jobs: dict[str, _Job[I]], policy: dict[str, Any] | None,
                    concurrency: int, progress: Callable[[IngestionProgress[I]], Awaitable[None]],
                    item_failed: Callable[[str, CaitlynError], Awaitable[None]],
@@ -433,7 +494,7 @@ async def _send[I](core: _Core, api: SyncApi, ids: dict[str, object], jobs: dict
     policy renewed as it runs out, Complete in groups of at most 100. Without ``policy`` (``batch.upload``), a fresh one
     is asked for first. Cancellation aborts the uploads in flight and is raised as itself."""
     if policy is None:
-        policy = cast(dict[str, Any], (await core.request(api.renew_policy, ids, _Json)).raw["uploadPolicy"])
+        policy = _policy(await core.request(api.renew_policy, ids, _Json))
     uploads: _Uploads[I] = _Uploads(core, api, ids, policy, concurrency, progress, jobs, item_failed, reported)
     await progress(IngestionProgress("upload", 0, uploads.total_bytes))
     try:
@@ -448,6 +509,7 @@ async def _send[I](core: _Core, api: SyncApi, ids: dict[str, object], jobs: dict
         core.cancel_uploads()  # the uploads still sending in worker threads stop within a chunk
         raise
     finally:
+        await uploads.stop_keep_alive()
         uploads.close()
         await core.uploads_done()
     return uploads
@@ -531,7 +593,12 @@ async def _prepare[B: CaitlynModel, I: CaitlynModel, E: CaitlynResult](
         ids: dict[str, object] = {"knowledge_base_id": knowledge_base_id, "ingestion_batch_id": str(batch.raw["id"])}
         created(str(batch.raw["id"]))
         for i in range(0, len(rest), BATCH_LIMIT):
-            await core.request(api.add_items, {**ids, "items": rest[i : i + BATCH_LIMIT], "last": i + BATCH_LIMIT >= len(rest)}, _Json)
+            added = await core.request(api.add_items, {**ids, "items": rest[i : i + BATCH_LIMIT], "last": i + BATCH_LIMIT >= len(rest)}, _Json)
+            refused = next((r for r in cast(list[dict[str, Any]], added.raw.get("results") or []) if r.get("status") == "failed"), None)
+            if refused is not None:
+                code = f" ({refused['code']})" if refused.get("code") else ""
+                raise CaitlynError(f"item {BATCH_LIMIT + i + int(refused.get('index') or 0)} was refused{code}: {refused.get('detail') or 'no reason given'}",
+                                   status=0, code="INGESTION_ITEM_REFUSED", title="An item was refused")
 
         # 3. Plan, then price the items that need bytes
         await progress(IngestionProgress("planning", 0, len(items)))
@@ -740,7 +807,7 @@ async def sync_async[B: CaitlynModel, I: CaitlynModel, E: CaitlynResult](
                 file = prepared.get(str(path)) or by_sha.get(str(sha))
                 if file is None or object_key is None:
                     raise CaitlynError(f"item {getattr(i, 'id')} ({path}) is awaiting upload, but no file given has it",
-                                       status=0, code="SYNC_FILE_UNKNOWN", title="Unknown item")
+                                       status=0, code="INGESTION_ITEM_HAS_NO_FILE", title="An item has no file")
                 jobs[str(getattr(i, "id"))] = _Job(i, str(object_key), file.sha256, file.byte_size, file=file)
             by_id = {str(getattr(i, "id")): i for i in awaiting}
 
@@ -978,7 +1045,8 @@ async def _follow[B: CaitlynModel](core: _Core, api: SyncApi, batch_type: type[B
     batch_id = str(ids["ingestion_batch_id"])
     watched = Watched(api.watch, {"knowledge_base_id": ids["knowledge_base_id"], "batch": batch_id}, api.watch_events, "batch", batch_id)
     tracker = WaitTracker(watched, api.codes, job_id=None, gone_ok=False, until=until)
-    async for event in core.watch(watched):
+    # The batch's watch reads it again once its deadline has passed (PROTOCOL.md 16), as a batch scope's does.
+    async for event in core.watch(watched, (api.get, ids, batch_type)):
         done = tracker.feed(event)
         if each is not None and event.type == "snapshot" and tracker.entity is not None:
             await each(tracker.entity)
@@ -1057,8 +1125,13 @@ class AsyncHelperCore:
     def take_retry(self) -> bool:
         return self.core.retry_budget.acquire(RETRY_COST)
 
-    async def watch(self, watched: Watched) -> AsyncIterator[CaitlynEvent]:
-        stream = AsyncFollow[None](self.core, watched, {}).watch()
+    async def watch(self, watched: Watched, get: _Get | None = None) -> AsyncIterator[CaitlynEvent]:
+        core = self.core
+        get_batch: Callable[[], Awaitable[Any]] | None = None
+        if get is not None:
+            spec, params, result = get
+            get_batch = lambda: core.request(spec, params, result)
+        stream = AsyncFollow[Any](core, watched, {}, get_batch).watch()
         try:
             async for event in stream:
                 yield event
@@ -1113,11 +1186,16 @@ class SyncHelperCore:
     def take_retry(self) -> bool:
         return self.core.retry_budget.acquire(RETRY_COST)
 
-    async def watch(self, watched: Watched) -> AsyncIterator[CaitlynEvent]:
+    async def watch(self, watched: Watched, get: _Get | None = None) -> AsyncIterator[CaitlynEvent]:
         """The synchronous watch, read in a worker thread and handed to this loop event by event."""
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
-        stream = Follow[None](self.core, watched, {}).watch()
+        core = self.core
+        get_batch: Callable[[], Any] | None = None
+        if get is not None:
+            spec, params, result = get
+            get_batch = lambda: core.request(spec, params, result)
+        stream = Follow[Any](core, watched, {}, get_batch).watch()
 
         def post(item: tuple[str, object]) -> None:
             try:

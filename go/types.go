@@ -9,7 +9,11 @@ import (
 	"github.com/caitlyn-ai/sdk/go/core"
 )
 
-// ReadersKind: How a folder's or document's readers are decided. Open: new values may be added.
+// ReadersKind: How a folder's or document's readers are decided, which sets how widely its contents
+// can be read.
+// From widest to narrowest: `public`, `everyone`, `specific`; `inherit` takes the folder's. Each is
+// read back as it was stored: a list open to anyone reads as `public`, so a read never widens or
+// narrows what was set. Open: new values may be added.
 //
 // ReadersKind is open: a value this SDK does not know yet is kept as it is.
 type ReadersKind string
@@ -17,6 +21,7 @@ type ReadersKind string
 // ReadersKind values known to this SDK.
 const (
 	ReadersKindInherit  ReadersKind = "inherit"
+	ReadersKindPublic   ReadersKind = "public"
 	ReadersKindEveryone ReadersKind = "everyone"
 	ReadersKindSpecific ReadersKind = "specific"
 )
@@ -24,7 +29,7 @@ const (
 // Known reports whether v is one of the values known to this SDK.
 func (v ReadersKind) Known() bool {
 	switch v {
-	case ReadersKindInherit, ReadersKindEveryone, ReadersKindSpecific:
+	case ReadersKindInherit, ReadersKindPublic, ReadersKindEveryone, ReadersKindSpecific:
 		return true
 	}
 	return false
@@ -2466,9 +2471,10 @@ type HistoryEntry struct {
 	// The members that differ between `previousVersion` and `version`, computed when the entry was
 	// written. Lists are compared by their items' keys.
 	ChangedMembers []string `json:"changedMembers,omitzero"`
-	// The configuration of `version`. Present only when the caller may read that version: the agent
-	// grant if it is live now, and the agent's version access grant if it is not, as GetAgentVersion
-	// checks. Absent otherwise, in a list, and when that version no longer exists.
+	// The configuration of `version`. Present only when the caller may read that version, as
+	// GetAgentVersion checks: the permission to read versions, and the agent grant if it is live now
+	// or the agent's version access grant if it is not. Absent otherwise, in a list, and when that
+	// version no longer exists.
 	Configuration *AgentConfiguration `json:"configuration,omitempty"`
 
 	metadata core.ResponseMetadata
@@ -2993,7 +2999,8 @@ type IngestionItemInput struct {
 	// For described content: the media type of the bytes.
 	ContentType *string `json:"contentType,omitempty"`
 	// For fetched content: the `http` or `https` address the server fetches the bytes from while
-	// planning, at most 100 MB. Needs the files create permission.
+	// planning, at most 100 MB. Needs the files create permission, which the server checks when the
+	// item is added.
 	FetchURL *string `json:"fetchUrl,omitempty"`
 	// The address a citation of the document links to. Defaults to `fetchUrl`.
 	SourceURL *string `json:"sourceUrl,omitempty"`
@@ -3187,7 +3194,8 @@ type IngestionBatchItem struct {
 	// For described content: the media type of the bytes.
 	ContentType *string `json:"contentType,omitempty"`
 	// For fetched content: the `http` or `https` address the server fetches the bytes from while
-	// planning, at most 100 MB. Needs the files create permission.
+	// planning, at most 100 MB. Needs the files create permission, which the server checks when the
+	// item is added.
 	FetchURL *string `json:"fetchUrl,omitempty"`
 	// The address a citation of the document links to. Defaults to `fetchUrl`.
 	SourceURL *string `json:"sourceUrl,omitempty"`
@@ -3217,8 +3225,8 @@ type IngestionBatchItem struct {
 	DocumentID *string `json:"documentId,omitempty"`
 	// The document version the item made or changed.
 	Version *int32 `json:"version,omitempty"`
-	// Why the item failed, as a stable code: for example `UPLOAD_EXPIRED` (no bytes arrived before
-	// the upload policy expired), `CHECKSUM_MISMATCH`, `PERMISSION_DENIED`, for `new_version`
+	// Why the item failed, as a stable code: for example `UPLOAD_EXPIRED` (no bytes arrived by the
+	// batch's `uploadsExpireAt`), `CHECKSUM_MISMATCH`, `PERMISSION_DENIED`, for `new_version`
 	// `VALIDATION_FAILED` (another file type) or `DOCUMENT_INGESTION_IN_PROGRESS`, or a document's
 	// failure code. Present only when `status` is `failed`.
 	FailureCode *string `json:"failureCode,omitempty"`
@@ -4014,7 +4022,9 @@ func (v *KnowledgeBase) RawJSON() json.RawMessage { return v.raw.JSON() }
 // the zero value for a list item, a snapshot entry or one built in code. It is never marshalled.
 func (v *KnowledgeBase) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
-// CostUnit is the form a cost is given in. Open: new values may be added.
+// CostUnit: The form a cost is given in, which follows how the organisation sees its costs. Open: new
+// values
+// may be added.
 //
 // CostUnit is open: a value this SDK does not know yet is kept as it is.
 type CostUnit string
@@ -4034,14 +4044,14 @@ func (v CostUnit) Known() bool {
 	return false
 }
 
-// Cost is an amount of money, as a range, in the organisation's chosen form.
+// Cost: What work is expected to cost, as a range, in the form the organisation sees its costs.
 type Cost struct {
 	// The lowest the cost is likely to be.
 	Low float64 `json:"low"`
 	// The highest the cost is likely to be.
 	High float64 `json:"high"`
-	// The form `low` and `high` are in: money, or a share of the plan for an organisation that
-	// sees usage rather than dollars.
+	// Which form `low` and `high` are in: the one the organisation sees its costs in, `usd` for
+	// dollars or `percent_of_plan` for usage.
 	Unit CostUnit `json:"unit"`
 
 	raw core.Raw
@@ -6552,7 +6562,7 @@ func (v StartMode) Known() bool {
 }
 
 // IngestionBatchStatus: Where an ingestion batch is. Open: new values may be added. `succeeded`,
-// `completed_with_failures`, `failed`, `cancelled` and `expired` are final.
+// `completed_with_failures`, `failed` and `cancelled` are final.
 //
 // IngestionBatchStatus is open: a value this SDK does not know yet is kept as it is.
 type IngestionBatchStatus string
@@ -6567,13 +6577,12 @@ const (
 	IngestionBatchStatusCompletedWithFailures IngestionBatchStatus = "completed_with_failures"
 	IngestionBatchStatusFailed                IngestionBatchStatus = "failed"
 	IngestionBatchStatusCancelled             IngestionBatchStatus = "cancelled"
-	IngestionBatchStatusExpired               IngestionBatchStatus = "expired"
 )
 
 // Known reports whether v is one of the values known to this SDK.
 func (v IngestionBatchStatus) Known() bool {
 	switch v {
-	case IngestionBatchStatusDraft, IngestionBatchStatusPlanning, IngestionBatchStatusPlanned, IngestionBatchStatusRunning, IngestionBatchStatusSucceeded, IngestionBatchStatusCompletedWithFailures, IngestionBatchStatusFailed, IngestionBatchStatusCancelled, IngestionBatchStatusExpired:
+	case IngestionBatchStatusDraft, IngestionBatchStatusPlanning, IngestionBatchStatusPlanned, IngestionBatchStatusRunning, IngestionBatchStatusSucceeded, IngestionBatchStatusCompletedWithFailures, IngestionBatchStatusFailed, IngestionBatchStatusCancelled:
 		return true
 	}
 	return false
@@ -6609,9 +6618,15 @@ type IngestionBatch struct {
 	Percent *int32 `json:"percent,omitempty"`
 	// How long is left: the longest of its documents' times left.
 	Eta *Eta `json:"eta,omitempty"`
-	// When the plan goes stale, 5 minutes after planning. StartIngestionBatch on a stale plan plans
-	// again first.
+	// When the plan goes stale, 5 minutes after planning. A stale plan does not end the batch:
+	// StartIngestionBatch on a stale plan plans again first.
 	PlanExpiresAt *time.Time `json:"planExpiresAt,omitempty"`
+	// When uploads must arrive by: at or after the upload policy's `expiresAt`. An item whose bytes
+	// have not arrived by then fails with `UPLOAD_EXPIRED`; bytes that arrived in time are accepted
+	// when they are reported, however late. A caller watching the batch can read it again after this
+	// time to see which items failed. Renewing the upload policy moves it later. Absent when no item
+	// is awaiting upload.
+	UploadsExpireAt *time.Time `json:"uploadsExpireAt,omitempty"`
 	// Who made the batch.
 	CreatedBy *Actor `json:"createdBy,omitempty"`
 	// When the batch was made.

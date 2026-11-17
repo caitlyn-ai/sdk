@@ -78,7 +78,7 @@ export interface CancelDocumentProcessingCommandOutput extends CancelDocumentPro
  * //       "<keys>": "DOCUMENT_VALUE",
  * //     },
  * //     readers: { // Readers
- * //       kind: "inherit" || "everyone" || "specific", // required
+ * //       kind: "inherit" || "public" || "everyone" || "specific", // required
  * //       roles: [ // RoleIdList
  * //         "STRING_VALUE",
  * //       ],
@@ -147,7 +147,8 @@ export interface CancelDocumentProcessingCommandOutput extends CancelDocumentPro
  * document still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an
  * ingestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document
  * an ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry
- * `Retry-After`.
+ * `Retry-After`. A document whose versions are not numbered yet cannot have one deleted by number
+ * (`VERSIONS_NOT_NUMBERED`).
  *
  * @throws {@link NotFoundError} (client fault)
  *  The record does not exist, or the caller may not see it. The two are deliberately the same, so

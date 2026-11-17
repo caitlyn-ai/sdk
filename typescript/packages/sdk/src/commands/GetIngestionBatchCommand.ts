@@ -48,7 +48,7 @@ export interface GetIngestionBatchCommandOutput extends GetIngestionBatchOutput,
  * //   batch: { // IngestionBatch
  * //     id: "STRING_VALUE", // required
  * //     knowledgeBaseId: "STRING_VALUE", // required
- * //     status: "draft" || "planning" || "planned" || "running" || "succeeded" || "completed_with_failures" || "failed" || "cancelled" || "expired", // required
+ * //     status: "draft" || "planning" || "planned" || "running" || "succeeded" || "completed_with_failures" || "failed" || "cancelled", // required
  * //     start: "when_planned" || "manual", // required
  * //     awaitMoreItems: true || false, // required
  * //     policy: { // IngestionPolicy
@@ -85,6 +85,7 @@ export interface GetIngestionBatchCommandOutput extends GetIngestionBatchOutput,
  * //       },
  * //     },
  * //     planExpiresAt: new Date("TIMESTAMP"),
+ * //     uploadsExpireAt: new Date("TIMESTAMP"),
  * //     createdBy: { // Actor
  * //       userId: "STRING_VALUE",
  * //       apiClientId: "STRING_VALUE",

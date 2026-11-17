@@ -7,12 +7,15 @@
 //! follows the knowledge base's watch for the batch ([`crate::watch`]).
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::future::Future;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -21,7 +24,7 @@ use serde_json::{json, Value};
 use crate::client::Client;
 use crate::error::Error;
 use crate::request::{path_label, BoxFuture, CallOptions, Operation, Request};
-use crate::stream::{Stream, StreamSpec};
+use crate::stream::{batch_deadline, Reread, Stream, StreamSpec};
 use crate::upload::{ExternalFailure, PreparedFile, UploadFile};
 use crate::watch::{follow, Rules, Until};
 
@@ -35,6 +38,8 @@ pub const ESTIMATE_PER_CALL: usize = 10_000;
 pub const DEFAULT_CONCURRENCY: usize = 6;
 /// A policy with less time than this left is renewed before the next upload starts.
 pub const RENEW_BEFORE: Duration = Duration::from_secs(5 * 60);
+/// The keep-alive renews at most this often, so a policy that is already short cannot loop.
+const KEEP_ALIVE_FLOOR: Duration = Duration::from_secs(1);
 
 /// A file found in the folder, as the caller's functions see it.
 #[derive(Debug, Clone)]
@@ -687,6 +692,7 @@ fn open_batch_watch(
 ) -> impl FnOnce(CallOptions) -> BoxFuture<'static, Result<Stream<Value, (), Error>, Error>> {
     let c = c.clone();
     let path = format!("/v3/knowledge-bases/{}/events", path_label(kb));
+    let get = batch_path(kb, id, "");
     let id = id.to_owned();
     move |opts: CallOptions| {
         Box::pin(async move {
@@ -704,7 +710,7 @@ fn open_batch_watch(
                 let req = request();
                 Box::pin(async move { c.send(&OP_WATCH, req, &opts).await })
             });
-            Ok(Stream::open(
+            let mut stream = Stream::open(
                 resp,
                 StreamSpec {
                     decode: crate::watch::decode_json,
@@ -713,9 +719,44 @@ fn open_batch_watch(
                     resume: Some(resume),
                     fresh: true,
                 },
-            ))
+            );
+            // The batch is read again once its deadline has passed (PROTOCOL.md 16), as a batch scope's watch reads it.
+            let gopts = opts.cancellation_only();
+            stream.reread_at_deadline(Reread::new(
+                move |base: Option<Value>| {
+                    let (c, get, opts) = (c.clone(), get.clone(), gopts.clone());
+                    Box::pin(async move {
+                        let (batch, _) = call_json(&c, &OP_GET, Request::new(get), None, &opts).await?;
+                        let mut snapshot = match base {
+                            Some(Value::Object(o)) => Value::Object(o),
+                            _ => json!({ "type": "snapshot", "jobs": [], "progress": [] }),
+                        };
+                        snapshot["batch"] = batch;
+                        Ok(snapshot)
+                    })
+                },
+                json_deadline,
+            ));
+            Ok(stream)
         })
     }
+}
+
+/// The deadline a JSON watch event shows: its batch's, read as the model types it (`uploadsExpireAt`, a date-time).
+fn json_deadline(ev: &Value) -> Option<Option<DateTime<Utc>>> {
+    let batch = &ev["batch"];
+    if ev["type"] != "snapshot" || !batch.is_object() {
+        return None;
+    }
+    #[derive(Deserialize)]
+    struct Deadline {
+        #[serde(default)]
+        status: String,
+        #[serde(rename = "uploadsExpireAt", default)]
+        uploads_expire_at: Option<DateTime<Utc>>,
+    }
+    let d: Deadline = serde_json::from_value(batch.clone()).ok()?;
+    Some(batch_deadline(&d.status, d.uploads_expire_at))
 }
 
 /// Waits on the batch through the knowledge base's watch, then reads it (its ETag included).
@@ -902,11 +943,12 @@ where
         )
         .await?;
         if let Some(failed) = out["results"].as_array().into_iter().flatten().find(|r| r["status"] == "failed") {
-            return Err(Error::sdk(
-                failed["code"].as_str().unwrap_or("INGESTION_ITEM_REFUSED"),
-                failed["detail"].as_str().unwrap_or("An item was refused"),
-                None,
-            ));
+            let why = failed["detail"].as_str().unwrap_or("no reason given");
+            let title = match failed["code"].as_str() {
+                Some(code) => format!("An item was refused ({code}): {why}"),
+                None => format!("An item was refused: {why}"),
+            };
+            return Err(sdk("INGESTION_ITEM_REFUSED", &title));
         }
     }
 
@@ -1060,8 +1102,14 @@ where
         let mut reported: HashSet<String> = HashSet::new();
         // Items whose upload failed after its retries, as reported (`failed`, `UPLOAD_FAILED`), by id.
         let mut upload_failed: HashMap<String, Value> = HashMap::new();
+        let awaiting = list_items_json(c, kb, &id, Some(("filter[status][eq]", "awaiting_upload")), opts).await?;
+        if policy.is_none() && !awaiting.is_empty() {
+            return Err(sdk(
+                "UPLOAD_POLICY_MISSING",
+                "StartIngestionBatch returned no upload policy, but items are awaiting upload",
+            ));
+        }
         if let Some(policy) = policy {
-            let awaiting = list_items_json(c, kb, &id, Some(("filter[status][eq]", "awaiting_upload")), opts).await?;
             for item in &awaiting {
                 note(&mut latest, item.clone());
             }
@@ -1070,8 +1118,8 @@ where
                 let path = item["path"].as_str().unwrap_or_default().to_owned();
                 let Some(local) = locals.get(&path) else {
                     return Err(sdk(
-                        "INGESTION_FILE_MISSING",
-                        &format!("The batch awaits {path}, which this call has no file for"),
+                        "INGESTION_ITEM_HAS_NO_FILE",
+                        &format!("The batch awaits bytes for {path}, which is not one of the files given"),
                     ));
                 };
                 let key = item["objectKey"].as_str().unwrap_or_default().to_owned();
@@ -1237,6 +1285,7 @@ async fn send_files<It: DeserializeOwned + Clone>(s: Sending<'_, It>, jobs: Vec<
         kb: kb.to_owned(),
         id: id.to_owned(),
         policy: Arc::new(tokio::sync::Mutex::new(policy)),
+        last_renewal: Arc::new(Mutex::new(None)),
         opts: opts.clone(),
     };
     let cancelled = || opts.cancel.as_ref().is_some_and(|t| t.is_cancelled());
@@ -1245,6 +1294,9 @@ async fn send_files<It: DeserializeOwned + Clone>(s: Sending<'_, It>, jobs: Vec<
     let mut pending: Vec<Job> = Vec::new();
     let (mut done_bytes, mut uploaded) = (0u64, 0u64);
     let mut running = FuturesUnordered::new();
+    // The keep-alive (PROTOCOL.md 15), polled beside the uploads while any is in flight and dropped when none is, or
+    // when this call returns: no renewal starts after that.
+    let mut keep_alive: Option<Pin<Box<dyn Future<Output = ()> + Send>>> = None;
     loop {
         while running.len() < concurrency && !cancelled() {
             let Some(job) = queue.pop_front() else { break };
@@ -1254,11 +1306,23 @@ async fn send_files<It: DeserializeOwned + Clone>(s: Sending<'_, It>, jobs: Vec<
                 (job, r)
             });
         }
+        if running.is_empty() {
+            keep_alive = None;
+        } else if keep_alive.is_none() {
+            keep_alive = Some(Box::pin(uploader.clone().keep_alive()));
+        }
+        let renewing = async {
+            match keep_alive.as_mut() {
+                Some(k) => k.await,
+                None => std::future::pending().await,
+            }
+        };
         // Cancelling aborts the uploads in flight: they are dropped here.
         let next = tokio::select! {
             biased;
             _ = opts.cancelled() => return Err(Error::Cancelled),
             n = running.next() => n,
+            _ = renewing => continue, // never ends: it runs until it is dropped
         };
         let Some((job, r)) = next else {
             if cancelled() {
@@ -1487,7 +1551,7 @@ impl<It> Clone for UploadOptions<It> {
     }
 }
 
-const FINAL_BATCH: [&str; 5] = ["succeeded", "completed_with_failures", "failed", "cancelled", "expired"];
+const FINAL_BATCH: [&str; 4] = ["succeeded", "completed_with_failures", "failed", "cancelled"];
 
 /// `batch.upload.estimate(files?)` (PROTOCOL.md 15): reads the batch (a draft fails with the SDK's
 /// `INGESTION_BATCH_NOT_PLANNED`, status 0, with nothing more sent; a planning batch is waited on until planned), then
@@ -1650,9 +1714,12 @@ where
             &opts.cancellation_only(),
         )
         .await?;
-        let policy = holder
-            .upload_policy
-            .ok_or_else(|| sdk("DECODE_FAILED", "CreateIngestionBatchUploadPolicy returned no policy"))?;
+        let policy = holder.upload_policy.ok_or_else(|| {
+            sdk(
+                "UPLOAD_POLICY_MISSING",
+                "CreateIngestionBatchUploadPolicy returned no upload policy",
+            )
+        })?;
         let sending = Sending {
             c,
             kb,
@@ -1780,27 +1847,68 @@ struct Uploader {
     kb: String,
     id: String,
     policy: Arc<tokio::sync::Mutex<Policy>>,
+    /// When the last renewal ended, whoever asked for it: the keep-alive's floor counts from it.
+    last_renewal: Arc<Mutex<Option<tokio::time::Instant>>>,
     opts: CallOptions,
 }
 
 impl Uploader {
+    /// Renews the policy on a timer (PROTOCOL.md 15): once it has less than five minutes left, at most once a second.
+    /// The server judges each file by when its bytes arrive against the batch's uploadsExpireAt, which a renewal moves
+    /// on. A renewal that fails leaves the uploads in flight on the policy they have, and is tried again at the next
+    /// tick. It never ends: the caller polls it while uploads are in flight, and drops it.
+    async fn keep_alive(self) {
+        loop {
+            let left = { self.policy.lock().await.expires_at } - chrono::Utc::now();
+            let due = (left - chrono::Duration::from_std(RENEW_BEFORE).unwrap_or_default())
+                .to_std()
+                .unwrap_or_default();
+            tokio::time::sleep(due.max(self.floor_left())).await;
+            // The lock waits out a renewal in flight; one that ended less than a second ago, whoever asked for it, is
+            // this tick's, and the loop waits again from the policy as it then stands.
+            drop(self.policy.lock().await);
+            if !self.floor_left().is_zero() {
+                continue;
+            }
+            // Renews only when less than five minutes are left; an error leaves the policy in hand.
+            let _ = self.policy(None).await;
+        }
+    }
+
+    /// How long until the keep-alive may renew again: a second after the last renewal ended.
+    fn floor_left(&self) -> Duration {
+        self.last_renewal
+            .lock()
+            .ok()
+            .and_then(|l| *l)
+            .map(|l| (l + KEEP_ALIVE_FLOOR).saturating_duration_since(tokio::time::Instant::now()))
+            .unwrap_or_default()
+    }
+
     /// The current policy, renewed first when it has less than five minutes left.
     async fn policy(&self, force_after: Option<chrono::DateTime<chrono::Utc>>) -> Result<Policy, Error> {
         let mut p = self.policy.lock().await;
         let left = p.expires_at - chrono::Utc::now();
         let stale = force_after.is_some_and(|t| p.expires_at <= t);
         if stale || left < chrono::Duration::from_std(RENEW_BEFORE).unwrap_or_default() {
-            let (_, holder): (Value, PolicyHolder) = call_with(
+            let renewed = call_with(
                 &self.c,
                 &OP_RENEW,
                 Request::new(batch_path(&self.kb, &self.id, "/upload-policies")),
                 Some(&json!({})),
                 &self.opts.cancellation_only(),
             )
-            .await?;
-            *p = holder
-                .upload_policy
-                .ok_or_else(|| sdk("DECODE_FAILED", "CreateIngestionBatchUploadPolicy returned no policy"))?;
+            .await;
+            if let Ok(mut last) = self.last_renewal.lock() {
+                *last = Some(tokio::time::Instant::now());
+            }
+            let (_, holder): (Value, PolicyHolder) = renewed?;
+            *p = holder.upload_policy.ok_or_else(|| {
+                sdk(
+                    "UPLOAD_POLICY_MISSING",
+                    "CreateIngestionBatchUploadPolicy returned no upload policy",
+                )
+            })?;
         }
         Ok(p.clone())
     }

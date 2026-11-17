@@ -13,7 +13,10 @@ export async function syncWithConfirm(caitlyn: Caitlyn, kbId: string) {
     // Called once with the plan, before anything is uploaded: false cancels the batch
     confirm: ({ items, estimate }) => {
       console.log(`${items.length} items, ${estimate?.documents ?? 0} to process, up to ${estimate?.durationSeconds.high ?? 0} s`);
-      if (estimate?.cost) console.log(`${estimate.cost.low}–${estimate.cost.high} ${estimate.cost.unit}`);
+      if (estimate?.cost) {
+        const { low, high, unit } = estimate.cost; // in the form the organisation sees its costs
+        console.log(unit === 'usd' ? `US$${low.toFixed(2)}–${high.toFixed(2)}` : `${low.toFixed(1)}–${high.toFixed(1)}% of usage`);
+      }
       return (estimate?.documents ?? 0) < 500;
     },
     // Called once for each item, when its status is final
@@ -57,7 +60,11 @@ export async function buildBatch(caitlyn: Caitlyn, kbId: string, sha256Of: (path
   });
   // What the upload would take and cost; waits until the batch is planned, and reads no file
   const estimate = await batch.upload.estimate(files);
-  console.log(estimate.documents, estimate.durationSeconds, estimate.cost);
+  console.log(`${estimate.documents} documents, up to ${estimate.durationSeconds.high} s`);
+  if (estimate.cost) {
+    const { low, high, unit } = estimate.cost; // in the form the organisation sees its costs
+    console.log(unit === 'usd' ? `US$${low.toFixed(2)}–${high.toFixed(2)}` : `${low.toFixed(1)}–${high.toFixed(1)}% of usage`);
+  }
   await batch.start();
   const upload = batch.upload(files, { onItem: (item) => console.log(item.path, item.failureCode) }); // a failed upload
   const { notGiven, unmatched } = await upload; // items with no file given, and given paths that matched no item

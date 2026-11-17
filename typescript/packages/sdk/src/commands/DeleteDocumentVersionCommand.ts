@@ -29,6 +29,11 @@ export interface DeleteDocumentVersionCommandOutput extends DeleteDocumentVersio
  * or document has the same ones. The current version and a version still processing are refused with
  * 409 `CONFLICT`; to remove the current version, delete the document. Like every change, it is
  * audited.
+ *
+ * A version's number is its place in upload order, so deleting by number needs the document's
+ * versions to be numbered already: until they are, a number is refused with 409
+ * `VERSIONS_NOT_NUMBERED`, because deleting would shift every later number. Try again later, or
+ * delete `latest`, which works either way.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript
@@ -64,7 +69,8 @@ export interface DeleteDocumentVersionCommandOutput extends DeleteDocumentVersio
  * document still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an
  * ingestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document
  * an ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry
- * `Retry-After`.
+ * `Retry-After`. A document whose versions are not numbered yet cannot have one deleted by number
+ * (`VERSIONS_NOT_NUMBERED`).
  *
  * @throws {@link NotFoundError} (client fault)
  *  The record does not exist, or the caller may not see it. The two are deliberately the same, so
@@ -120,6 +126,21 @@ export interface DeleteDocumentVersionCommandOutput extends DeleteDocumentVersio
  *   documentId: "doc-3b7f9e21",
  *   knowledgeBaseId: "KB4T7YQ2WL",
  *   version: "current"
+ * };
+ * const command = new DeleteDocumentVersionCommand(input);
+ * const response = await client.send(command);
+ * /* response is
+ * { /* metadata only *\/ }
+ * *\/
+ * ```
+ *
+ * @example A version number before the document's versions are numbered
+ * ```javascript
+ * //
+ * const input = {
+ *   documentId: "doc-3b7f9e21",
+ *   knowledgeBaseId: "KB4T7YQ2WL",
+ *   version: "1"
  * };
  * const command = new DeleteDocumentVersionCommand(input);
  * const response = await client.send(command);

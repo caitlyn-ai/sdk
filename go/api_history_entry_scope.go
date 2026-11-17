@@ -34,8 +34,9 @@ func (s *HistoryEntryScope) ID() string { return s.historyEntryID }
 //
 // The configuration is that of the entry's `version`, which never changes. Reading the entry (who
 // changed live, when, and to which version) needs agent read; its `configuration` needs what
-// reading that version needs, so a caller without the agent's version access grant gets the entry
-// without it unless the version is live now. It is also absent when that version was deleted
+// reading that version needs, so a caller without the permission to read versions, or without the
+// agent's version access grant for a version that is not live now, gets the entry without it. It is
+// also absent when that version was deleted
 // through an older API that does not protect versions named in live history.
 //
 // Since Caitlyn 5.115.0; beta.

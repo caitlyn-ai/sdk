@@ -1,4 +1,4 @@
-// A hand-built ingestion batch's two steps that cost money (PROTOCOL.md 15): batch.upload.estimate prices the items
+// A hand-built ingestion batch's two steps that have a cost (PROTOCOL.md 15): batch.upload.estimate prices the items
 // that need bytes (EstimateIngestion, in parts of 10,000), and batch.upload sends them, as form POSTs under the batch's
 // upload policy (6 at once, renewing the policy, CompleteIngestionBatchUploads at most 100 a call, one more upload
 // after a CHECKSUM_MISMATCH). kb.ingestion.sync is built on the same two functions, priceDocuments and uploadItems.
@@ -65,10 +65,12 @@ export interface BatchUpload<B = Json, I = Json> {
 
 export const NEEDS_BYTES = new Set(['add', 'new_version', 'overwrite']);
 export const FINAL_ITEM = new Set(['indexed', 'skipped', 'moved', 'updated', 'removed', 'failed', 'cancelled']);
-const FINAL_BATCH = new Set(['succeeded', 'completed_with_failures', 'failed', 'cancelled', 'expired']);
+const FINAL_BATCH = new Set(['succeeded', 'completed_with_failures', 'failed', 'cancelled']);
 const ESTIMATE_PER_CALL = 10_000;
 const COMPLETE_PER_CALL = 100;
 const RENEW_BEFORE_MS = 5 * 60_000;
+/** The keep-alive renews at most this often, so a policy that is already short cannot loop. */
+const KEEP_ALIVE_FLOOR_MS = 1_000;
 
 /** Runs `fn` over `items`, at most `limit` at once, stopping new work once `signal` aborts. */
 export async function pool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>, signal?: AbortSignal): Promise<void> {
@@ -230,18 +232,60 @@ export async function uploadItems(
   const accepted: Json[] = [];
   const failed: Json[] = [];
   if (!items.length) return { accepted, failed };
-  let policy: Json | undefined = options.policy ?? (await call('CreateIngestionBatchUploadPolicy', { knowledgeBaseId, ingestionBatchId: batchId }, signal)).uploadPolicy;
+  // A policy the server did not give is UPLOAD_POLICY_MISSING (PROTOCOL.md 6.3), not a failure further on.
+  const newPolicy = async (): Promise<Json> => {
+    const p = (await call('CreateIngestionBatchUploadPolicy', { knowledgeBaseId, ingestionBatchId: batchId }, signal)).uploadPolicy as Json | undefined;
+    if (!p) throw deps.toError({ status: 0, code: 'UPLOAD_POLICY_MISSING', title: 'No upload policy', detail: `CreateIngestionBatchUploadPolicy returned no upload policy for batch ${batchId}.` });
+    return p;
+  };
+  let policy: Json | undefined = options.policy ?? (await newPolicy());
   let generation = 0;
   let renewing: Promise<void> | undefined;
+  /** When the last renewal ended, whoever asked for it: the keep-alive's once-a-second floor counts from it. */
+  let lastRenewal = 0;
   const renew = async (from: number) => {
     if (generation !== from) return;
     renewing ??= (async () => {
-      policy = (await call('CreateIngestionBatchUploadPolicy', { knowledgeBaseId, ingestionBatchId: batchId }, signal)).uploadPolicy;
+      policy = await newPolicy();
       generation++;
-    })().finally(() => (renewing = undefined));
+    })().finally(() => {
+      renewing = undefined;
+      lastRenewal = Date.now();
+    });
     await renewing;
   };
   const expiresIn = () => Date.parse(String(policy!.expiresAt instanceof Date ? policy!.expiresAt.toISOString() : policy!.expiresAt)) - Date.now();
+  // The keep-alive (PROTOCOL.md 15): while any upload is in flight, the policy is renewed on a timer once it has less
+  // than 5 minutes left, at most once a second, as the server judges each file by when its bytes arrive against the
+  // batch's uploadsExpireAt, which a renewal moves on. A renewal that fails leaves the uploads in flight on the policy
+  // they have, and is tried again at the next tick. The timer stops when the last upload in flight settles, and when the
+  // call ends, however it ends.
+  let sending = 0;
+  let keepAlive: ReturnType<typeof setTimeout> | undefined;
+  let ended = false;
+  const arm = () => {
+    clearTimeout(keepAlive);
+    keepAlive = undefined;
+    if (ended || sending === 0 || signal?.aborted) return;
+    const wait = Math.max(expiresIn() - RENEW_BEFORE_MS, lastRenewal + KEEP_ALIVE_FLOOR_MS - Date.now(), 0);
+    keepAlive = setTimeout(async () => {
+      keepAlive = undefined;
+      if (ended || sending === 0 || signal?.aborted) return;
+      // A renewal in flight, or one that ended less than a second ago, whoever asked for it, is this tick's: it re-arms
+      // from the policy as it then stands.
+      if (renewing) {
+        await renewing.catch(() => {});
+        return arm();
+      }
+      if (Date.now() - lastRenewal < KEEP_ALIVE_FLOOR_MS) return arm();
+      try {
+        if (expiresIn() < RENEW_BEFORE_MS) await renew(generation);
+      } catch {
+        // The policy in hand is valid until it expires: the next tick tries again.
+      }
+      arm();
+    }, wait);
+  };
   const totalBytes = items.reduce((n, it) => n + (it.byteSize ?? 0), 0);
   let sentBytes = 0;
   const fail = (item: Json, code: string, detail: string) => {
@@ -269,8 +313,19 @@ export async function uploadItems(
       fail(item, 'FILE_CHANGED', `${item.path}: the file is ${local.byteSize} bytes, but the batch item is ${item.byteSize}; nothing was sent.`);
       return false;
     }
+    sending++;
+    if (sending === 1) arm();
+    try {
+      return await send(item, source, local);
+    } finally {
+      if (--sending === 0) arm();
+    }
+  };
+  /** One file's sends: again once after a 403 that says the policy expired. */
+  const send = async (item: Json, source: UploadSource, local: PreparedFile): Promise<boolean> => {
     for (let expiredOnce = false; ; ) {
-      if (renewing) await renewing;
+      // A renewal the keep-alive started that failed is not this upload's failure: it renews for itself below.
+      if (renewing) await renewing.catch(() => {});
       if (expiresIn() < RENEW_BEFORE_MS) await renew(generation);
       try {
         await local.check();
@@ -374,6 +429,8 @@ export async function uploadItems(
       if (completeFailure !== undefined) throw completeFailure;
     }
   } finally {
+    ended = true;
+    clearTimeout(keepAlive);
     await Promise.all([...opened.values()].map((s) => s.file.dispose()));
   }
   return { accepted, failed };

@@ -5,23 +5,31 @@
  */
 export const ReadersKind = {
   /**
-   * Anyone signed in to the workspace who may read the knowledge base.
+   * Anyone signed in to the workspace who may read the knowledge base, but no guest or anonymous
+   * visitor. For content every colleague may see.
    */
   EVERYONE: "everyone",
   /**
-   * The same as the folder it is in. Never on the root folder, whose readers every folder falls
-   * back to.
+   * Follow the folder it is in, so a change there applies here too. Never on the root folder,
+   * whose readers every folder falls back to. On a document it removes the document's own list,
+   * which also needs the permission to delete readers (`files.permissions.delete`), as v2's revert
+   * does; on a folder it is a change like any other.
    */
   INHERIT: "inherit",
   /**
-   * Only the roles and people listed.
+   * Anyone who can reach the knowledge base, signed in or not: guests and anonymous visitors of a
+   * public agent included. For content meant to be shared openly.
+   */
+  PUBLIC: "public",
+  /**
+   * Only the roles and people listed in `roles` and `people`. For restricted content.
    */
   SPECIFIC: "specific",
 } as const;
 /**
  * @public
  */
-export type ReadersKind = (typeof ReadersKind)[keyof typeof ReadersKind];
+export type ReadersKind = (typeof ReadersKind)[keyof typeof ReadersKind] | (string & {});
 
 /**
  * @public
@@ -48,7 +56,7 @@ export const AccessAction = {
 /**
  * @public
  */
-export type AccessAction = (typeof AccessAction)[keyof typeof AccessAction];
+export type AccessAction = (typeof AccessAction)[keyof typeof AccessAction] | (string & {});
 
 /**
  * @public
@@ -71,7 +79,7 @@ export const AvatarColour = {
 /**
  * @public
  */
-export type AvatarColour = (typeof AvatarColour)[keyof typeof AvatarColour];
+export type AvatarColour = (typeof AvatarColour)[keyof typeof AvatarColour] | (string & {});
 
 /**
  * @public
@@ -106,7 +114,7 @@ export const AgentIconName = {
 /**
  * @public
  */
-export type AgentIconName = (typeof AgentIconName)[keyof typeof AgentIconName];
+export type AgentIconName = (typeof AgentIconName)[keyof typeof AgentIconName] | (string & {});
 
 /**
  * @public
@@ -137,7 +145,7 @@ export const ReasoningEffort = {
 /**
  * @public
  */
-export type ReasoningEffort = (typeof ReasoningEffort)[keyof typeof ReasoningEffort];
+export type ReasoningEffort = (typeof ReasoningEffort)[keyof typeof ReasoningEffort] | (string & {});
 
 /**
  * @public
@@ -156,7 +164,7 @@ export const ResultEvaluationMethod = {
 /**
  * @public
  */
-export type ResultEvaluationMethod = (typeof ResultEvaluationMethod)[keyof typeof ResultEvaluationMethod];
+export type ResultEvaluationMethod = (typeof ResultEvaluationMethod)[keyof typeof ResultEvaluationMethod] | (string & {});
 
 /**
  * @public
@@ -171,7 +179,7 @@ export const LiveAvatarProvider = {
 /**
  * @public
  */
-export type LiveAvatarProvider = (typeof LiveAvatarProvider)[keyof typeof LiveAvatarProvider];
+export type LiveAvatarProvider = (typeof LiveAvatarProvider)[keyof typeof LiveAvatarProvider] | (string & {});
 
 /**
  * @public
@@ -198,7 +206,7 @@ export const SpeechToTextProvider = {
 /**
  * @public
  */
-export type SpeechToTextProvider = (typeof SpeechToTextProvider)[keyof typeof SpeechToTextProvider];
+export type SpeechToTextProvider = (typeof SpeechToTextProvider)[keyof typeof SpeechToTextProvider] | (string & {});
 
 /**
  * @public
@@ -217,7 +225,7 @@ export const VoiceProvider = {
 /**
  * @public
  */
-export type VoiceProvider = (typeof VoiceProvider)[keyof typeof VoiceProvider];
+export type VoiceProvider = (typeof VoiceProvider)[keyof typeof VoiceProvider] | (string & {});
 
 /**
  * @public
@@ -236,7 +244,7 @@ export const VoiceQuality = {
 /**
  * @public
  */
-export type VoiceQuality = (typeof VoiceQuality)[keyof typeof VoiceQuality];
+export type VoiceQuality = (typeof VoiceQuality)[keyof typeof VoiceQuality] | (string & {});
 
 /**
  * @public
@@ -255,7 +263,7 @@ export const ConversationSharing = {
 /**
  * @public
  */
-export type ConversationSharing = (typeof ConversationSharing)[keyof typeof ConversationSharing];
+export type ConversationSharing = (typeof ConversationSharing)[keyof typeof ConversationSharing] | (string & {});
 
 /**
  * @public
@@ -274,7 +282,7 @@ export const AttributionCheckMode = {
 /**
  * @public
  */
-export type AttributionCheckMode = (typeof AttributionCheckMode)[keyof typeof AttributionCheckMode];
+export type AttributionCheckMode = (typeof AttributionCheckMode)[keyof typeof AttributionCheckMode] | (string & {});
 
 /**
  * @public
@@ -293,7 +301,7 @@ export const PhaseFieldKind = {
 /**
  * @public
  */
-export type PhaseFieldKind = (typeof PhaseFieldKind)[keyof typeof PhaseFieldKind];
+export type PhaseFieldKind = (typeof PhaseFieldKind)[keyof typeof PhaseFieldKind] | (string & {});
 
 /**
  * @public
@@ -320,7 +328,7 @@ export const FieldSourceKind = {
 /**
  * @public
  */
-export type FieldSourceKind = (typeof FieldSourceKind)[keyof typeof FieldSourceKind];
+export type FieldSourceKind = (typeof FieldSourceKind)[keyof typeof FieldSourceKind] | (string & {});
 
 /**
  * @public
@@ -339,7 +347,7 @@ export const PhaseFieldType = {
 /**
  * @public
  */
-export type PhaseFieldType = (typeof PhaseFieldType)[keyof typeof PhaseFieldType];
+export type PhaseFieldType = (typeof PhaseFieldType)[keyof typeof PhaseFieldType] | (string & {});
 
 /**
  * @public
@@ -366,7 +374,7 @@ export const PhaseKind = {
 /**
  * @public
  */
-export type PhaseKind = (typeof PhaseKind)[keyof typeof PhaseKind];
+export type PhaseKind = (typeof PhaseKind)[keyof typeof PhaseKind] | (string & {});
 
 /**
  * @public
@@ -385,7 +393,7 @@ export const PhaseEndType = {
 /**
  * @public
  */
-export type PhaseEndType = (typeof PhaseEndType)[keyof typeof PhaseEndType];
+export type PhaseEndType = (typeof PhaseEndType)[keyof typeof PhaseEndType] | (string & {});
 
 /**
  * @public
@@ -404,7 +412,7 @@ export const SearchMode = {
 /**
  * @public
  */
-export type SearchMode = (typeof SearchMode)[keyof typeof SearchMode];
+export type SearchMode = (typeof SearchMode)[keyof typeof SearchMode] | (string & {});
 
 /**
  * @public
@@ -427,7 +435,7 @@ export const ToolUse = {
 /**
  * @public
  */
-export type ToolUse = (typeof ToolUse)[keyof typeof ToolUse];
+export type ToolUse = (typeof ToolUse)[keyof typeof ToolUse] | (string & {});
 
 /**
  * @public
@@ -450,7 +458,7 @@ export const TransitionKind = {
 /**
  * @public
  */
-export type TransitionKind = (typeof TransitionKind)[keyof typeof TransitionKind];
+export type TransitionKind = (typeof TransitionKind)[keyof typeof TransitionKind] | (string & {});
 
 /**
  * @public
@@ -469,7 +477,7 @@ export const TransitionMatchSource = {
 /**
  * @public
  */
-export type TransitionMatchSource = (typeof TransitionMatchSource)[keyof typeof TransitionMatchSource];
+export type TransitionMatchSource = (typeof TransitionMatchSource)[keyof typeof TransitionMatchSource] | (string & {});
 
 /**
  * @public
@@ -496,7 +504,7 @@ export const VersionSource = {
 /**
  * @public
  */
-export type VersionSource = (typeof VersionSource)[keyof typeof VersionSource];
+export type VersionSource = (typeof VersionSource)[keyof typeof VersionSource] | (string & {});
 
 /**
  * @public
@@ -587,7 +595,7 @@ export const ClearableDraftField = {
 /**
  * @public
  */
-export type ClearableDraftField = (typeof ClearableDraftField)[keyof typeof ClearableDraftField];
+export type ClearableDraftField = (typeof ClearableDraftField)[keyof typeof ClearableDraftField] | (string & {});
 
 /**
  * @public
@@ -610,7 +618,7 @@ export const HistoryChangeKind = {
 /**
  * @public
  */
-export type HistoryChangeKind = (typeof HistoryChangeKind)[keyof typeof HistoryChangeKind];
+export type HistoryChangeKind = (typeof HistoryChangeKind)[keyof typeof HistoryChangeKind] | (string & {});
 
 /**
  * @public
@@ -629,7 +637,7 @@ export const ConversationStatus = {
 /**
  * @public
  */
-export type ConversationStatus = (typeof ConversationStatus)[keyof typeof ConversationStatus];
+export type ConversationStatus = (typeof ConversationStatus)[keyof typeof ConversationStatus] | (string & {});
 
 /**
  * @public
@@ -648,7 +656,7 @@ export const ClearableAgentField = {
 /**
  * @public
  */
-export type ClearableAgentField = (typeof ClearableAgentField)[keyof typeof ClearableAgentField];
+export type ClearableAgentField = (typeof ClearableAgentField)[keyof typeof ClearableAgentField] | (string & {});
 
 /**
  * @public
@@ -667,7 +675,7 @@ export const IngestionItemAction = {
 /**
  * @public
  */
-export type IngestionItemAction = (typeof IngestionItemAction)[keyof typeof IngestionItemAction];
+export type IngestionItemAction = (typeof IngestionItemAction)[keyof typeof IngestionItemAction] | (string & {});
 
 /**
  * @public
@@ -712,7 +720,7 @@ export const IngestionItemOutcome = {
 /**
  * @public
  */
-export type IngestionItemOutcome = (typeof IngestionItemOutcome)[keyof typeof IngestionItemOutcome];
+export type IngestionItemOutcome = (typeof IngestionItemOutcome)[keyof typeof IngestionItemOutcome] | (string & {});
 
 /**
  * @public
@@ -775,7 +783,7 @@ export const IngestionItemReason = {
 /**
  * @public
  */
-export type IngestionItemReason = (typeof IngestionItemReason)[keyof typeof IngestionItemReason];
+export type IngestionItemReason = (typeof IngestionItemReason)[keyof typeof IngestionItemReason] | (string & {});
 
 /**
  * @public
@@ -828,7 +836,7 @@ export const IngestionItemResolution = {
 /**
  * @public
  */
-export type IngestionItemResolution = (typeof IngestionItemResolution)[keyof typeof IngestionItemResolution];
+export type IngestionItemResolution = (typeof IngestionItemResolution)[keyof typeof IngestionItemResolution] | (string & {});
 
 /**
  * @public
@@ -879,7 +887,7 @@ export const IngestionItemStatus = {
 /**
  * @public
  */
-export type IngestionItemStatus = (typeof IngestionItemStatus)[keyof typeof IngestionItemStatus];
+export type IngestionItemStatus = (typeof IngestionItemStatus)[keyof typeof IngestionItemStatus] | (string & {});
 
 /**
  * @public
@@ -898,7 +906,7 @@ export const ItemCreateStatus = {
 /**
  * @public
  */
-export type ItemCreateStatus = (typeof ItemCreateStatus)[keyof typeof ItemCreateStatus];
+export type ItemCreateStatus = (typeof ItemCreateStatus)[keyof typeof ItemCreateStatus] | (string & {});
 
 /**
  * @public
@@ -917,7 +925,7 @@ export const DocumentDeleteStatus = {
 /**
  * @public
  */
-export type DocumentDeleteStatus = (typeof DocumentDeleteStatus)[keyof typeof DocumentDeleteStatus];
+export type DocumentDeleteStatus = (typeof DocumentDeleteStatus)[keyof typeof DocumentDeleteStatus] | (string & {});
 
 /**
  * @public
@@ -936,7 +944,7 @@ export const MessageRole = {
 /**
  * @public
  */
-export type MessageRole = (typeof MessageRole)[keyof typeof MessageRole];
+export type MessageRole = (typeof MessageRole)[keyof typeof MessageRole] | (string & {});
 
 /**
  * @public
@@ -964,7 +972,7 @@ export const CredentialKind = {
 /**
  * @public
  */
-export type CredentialKind = (typeof CredentialKind)[keyof typeof CredentialKind];
+export type CredentialKind = (typeof CredentialKind)[keyof typeof CredentialKind] | (string & {});
 
 /**
  * @public
@@ -983,7 +991,7 @@ export const EngineInput = {
 /**
  * @public
  */
-export type EngineInput = (typeof EngineInput)[keyof typeof EngineInput];
+export type EngineInput = (typeof EngineInput)[keyof typeof EngineInput] | (string & {});
 
 /**
  * @public
@@ -1002,7 +1010,7 @@ export const SearchType = {
 /**
  * @public
  */
-export type SearchType = (typeof SearchType)[keyof typeof SearchType];
+export type SearchType = (typeof SearchType)[keyof typeof SearchType] | (string & {});
 
 /**
  * @public
@@ -1033,7 +1041,7 @@ export const KnowledgeBaseStatus = {
 /**
  * @public
  */
-export type KnowledgeBaseStatus = (typeof KnowledgeBaseStatus)[keyof typeof KnowledgeBaseStatus];
+export type KnowledgeBaseStatus = (typeof KnowledgeBaseStatus)[keyof typeof KnowledgeBaseStatus] | (string & {});
 
 /**
  * @public
@@ -1041,7 +1049,7 @@ export type KnowledgeBaseStatus = (typeof KnowledgeBaseStatus)[keyof typeof Know
  */
 export const CostUnit = {
   /**
-   * A percentage of the organisation's monthly plan.
+   * A percentage of the organisation's monthly usage allowance. 100 is the whole month.
    */
   PERCENT_OF_PLAN: "percent_of_plan",
   /**
@@ -1052,7 +1060,7 @@ export const CostUnit = {
 /**
  * @public
  */
-export type CostUnit = (typeof CostUnit)[keyof typeof CostUnit];
+export type CostUnit = (typeof CostUnit)[keyof typeof CostUnit] | (string & {});
 
 /**
  * @public
@@ -1095,7 +1103,7 @@ export const OperationKind = {
 /**
  * @public
  */
-export type OperationKind = (typeof OperationKind)[keyof typeof OperationKind];
+export type OperationKind = (typeof OperationKind)[keyof typeof OperationKind] | (string & {});
 
 /**
  * @public
@@ -1118,7 +1126,7 @@ export const ProgressUnit = {
 /**
  * @public
  */
-export type ProgressUnit = (typeof ProgressUnit)[keyof typeof ProgressUnit];
+export type ProgressUnit = (typeof ProgressUnit)[keyof typeof ProgressUnit] | (string & {});
 
 /**
  * @public
@@ -1154,7 +1162,7 @@ export const OperationStatus = {
 /**
  * @public
  */
-export type OperationStatus = (typeof OperationStatus)[keyof typeof OperationStatus];
+export type OperationStatus = (typeof OperationStatus)[keyof typeof OperationStatus] | (string & {});
 
 /**
  * @public
@@ -1177,7 +1185,7 @@ export const OperationTargetType = {
 /**
  * @public
  */
-export type OperationTargetType = (typeof OperationTargetType)[keyof typeof OperationTargetType];
+export type OperationTargetType = (typeof OperationTargetType)[keyof typeof OperationTargetType] | (string & {});
 
 /**
  * @public
@@ -1207,7 +1215,7 @@ export const DocumentFailureCode = {
 /**
  * @public
  */
-export type DocumentFailureCode = (typeof DocumentFailureCode)[keyof typeof DocumentFailureCode];
+export type DocumentFailureCode = (typeof DocumentFailureCode)[keyof typeof DocumentFailureCode] | (string & {});
 
 /**
  * @public
@@ -1242,7 +1250,7 @@ export const DocumentStatus = {
 /**
  * @public
  */
-export type DocumentStatus = (typeof DocumentStatus)[keyof typeof DocumentStatus];
+export type DocumentStatus = (typeof DocumentStatus)[keyof typeof DocumentStatus] | (string & {});
 
 /**
  * @public
@@ -1269,7 +1277,7 @@ export const ProcessingKind = {
 /**
  * @public
  */
-export type ProcessingKind = (typeof ProcessingKind)[keyof typeof ProcessingKind];
+export type ProcessingKind = (typeof ProcessingKind)[keyof typeof ProcessingKind] | (string & {});
 
 /**
  * @public
@@ -1332,7 +1340,7 @@ export const ProcessingStep = {
 /**
  * @public
  */
-export type ProcessingStep = (typeof ProcessingStep)[keyof typeof ProcessingStep];
+export type ProcessingStep = (typeof ProcessingStep)[keyof typeof ProcessingStep] | (string & {});
 
 /**
  * @public
@@ -1355,7 +1363,7 @@ export const VersionResult = {
 /**
  * @public
  */
-export type VersionResult = (typeof VersionResult)[keyof typeof VersionResult];
+export type VersionResult = (typeof VersionResult)[keyof typeof VersionResult] | (string & {});
 
 /**
  * @public
@@ -1382,7 +1390,7 @@ export const ClearableDocumentField = {
 /**
  * @public
  */
-export type ClearableDocumentField = (typeof ClearableDocumentField)[keyof typeof ClearableDocumentField];
+export type ClearableDocumentField = (typeof ClearableDocumentField)[keyof typeof ClearableDocumentField] | (string & {});
 
 /**
  * @public
@@ -1401,7 +1409,7 @@ export const PartialDates = {
 /**
  * @public
  */
-export type PartialDates = (typeof PartialDates)[keyof typeof PartialDates];
+export type PartialDates = (typeof PartialDates)[keyof typeof PartialDates] | (string & {});
 
 /**
  * @public
@@ -1420,7 +1428,7 @@ export const FieldLevel = {
 /**
  * @public
  */
-export type FieldLevel = (typeof FieldLevel)[keyof typeof FieldLevel];
+export type FieldLevel = (typeof FieldLevel)[keyof typeof FieldLevel] | (string & {});
 
 /**
  * @public
@@ -1451,7 +1459,7 @@ export const FieldType = {
 /**
  * @public
  */
-export type FieldType = (typeof FieldType)[keyof typeof FieldType];
+export type FieldType = (typeof FieldType)[keyof typeof FieldType] | (string & {});
 
 /**
  * @public
@@ -1478,7 +1486,7 @@ export const IngestionBatchFailureCode = {
 /**
  * @public
  */
-export type IngestionBatchFailureCode = (typeof IngestionBatchFailureCode)[keyof typeof IngestionBatchFailureCode];
+export type IngestionBatchFailureCode = (typeof IngestionBatchFailureCode)[keyof typeof IngestionBatchFailureCode] | (string & {});
 
 /**
  * @public
@@ -1514,7 +1522,7 @@ export const ConflictRule = {
 /**
  * @public
  */
-export type ConflictRule = (typeof ConflictRule)[keyof typeof ConflictRule];
+export type ConflictRule = (typeof ConflictRule)[keyof typeof ConflictRule] | (string & {});
 
 /**
  * @public
@@ -1537,7 +1545,7 @@ export const MovedRule = {
 /**
  * @public
  */
-export type MovedRule = (typeof MovedRule)[keyof typeof MovedRule];
+export type MovedRule = (typeof MovedRule)[keyof typeof MovedRule] | (string & {});
 
 /**
  * @public
@@ -1560,7 +1568,7 @@ export const RemoveRule = {
 /**
  * @public
  */
-export type RemoveRule = (typeof RemoveRule)[keyof typeof RemoveRule];
+export type RemoveRule = (typeof RemoveRule)[keyof typeof RemoveRule] | (string & {});
 
 /**
  * @public
@@ -1579,7 +1587,7 @@ export const UnchangedRule = {
 /**
  * @public
  */
-export type UnchangedRule = (typeof UnchangedRule)[keyof typeof UnchangedRule];
+export type UnchangedRule = (typeof UnchangedRule)[keyof typeof UnchangedRule] | (string & {});
 
 /**
  * @public
@@ -1598,7 +1606,7 @@ export const StartMode = {
 /**
  * @public
  */
-export type StartMode = (typeof StartMode)[keyof typeof StartMode];
+export type StartMode = (typeof StartMode)[keyof typeof StartMode] | (string & {});
 
 /**
  * @public
@@ -1617,10 +1625,6 @@ export const IngestionBatchStatus = {
    * Taking items, while `awaitMoreItems` is true.
    */
   DRAFT: "draft",
-  /**
-   * Never started, and cleared after 7 days. Final.
-   */
-  EXPIRED: "expired",
   /**
    * The batch failed, for example because a policy rule said `fail`; `failure` says why. Final.
    */
@@ -1647,7 +1651,7 @@ export const IngestionBatchStatus = {
 /**
  * @public
  */
-export type IngestionBatchStatus = (typeof IngestionBatchStatus)[keyof typeof IngestionBatchStatus];
+export type IngestionBatchStatus = (typeof IngestionBatchStatus)[keyof typeof IngestionBatchStatus] | (string & {});
 
 /**
  * @public
@@ -1666,7 +1670,7 @@ export const UploadCompletionStatus = {
 /**
  * @public
  */
-export type UploadCompletionStatus = (typeof UploadCompletionStatus)[keyof typeof UploadCompletionStatus];
+export type UploadCompletionStatus = (typeof UploadCompletionStatus)[keyof typeof UploadCompletionStatus] | (string & {});
 
 /**
  * @public
@@ -1685,8 +1689,7 @@ export const ClearableKnowledgeBaseField = {
 /**
  * @public
  */
-export type ClearableKnowledgeBaseField =
-  (typeof ClearableKnowledgeBaseField)[keyof typeof ClearableKnowledgeBaseField];
+export type ClearableKnowledgeBaseField = (typeof ClearableKnowledgeBaseField)[keyof typeof ClearableKnowledgeBaseField] | (string & {});
 
 /**
  * @public
@@ -1709,7 +1712,7 @@ export const ModelReasoning = {
 /**
  * @public
  */
-export type ModelReasoning = (typeof ModelReasoning)[keyof typeof ModelReasoning];
+export type ModelReasoning = (typeof ModelReasoning)[keyof typeof ModelReasoning] | (string & {});
 
 /**
  * @public
@@ -1736,4 +1739,4 @@ export const UploadStatus = {
 /**
  * @public
  */
-export type UploadStatus = (typeof UploadStatus)[keyof typeof UploadStatus];
+export type UploadStatus = (typeof UploadStatus)[keyof typeof UploadStatus] | (string & {});

@@ -144,7 +144,10 @@ const report = await kb.ingestion.sync('./policies', {
   // Called once with the plan, before anything is uploaded: false cancels the batch
   confirm: ({ items, estimate }) => {
     console.log(`${items.length} items, ${estimate?.documents ?? 0} to process, up to ${estimate?.durationSeconds.high ?? 0} s`);
-    if (estimate?.cost) console.log(`${estimate.cost.low}–${estimate.cost.high} ${estimate.cost.unit}`);
+    if (estimate?.cost) {
+      const { low, high, unit } = estimate.cost; // in the form the organisation sees its costs
+      console.log(unit === 'usd' ? `US$${low.toFixed(2)}–${high.toFixed(2)}` : `${low.toFixed(1)}–${high.toFixed(1)}% of usage`);
+    }
     return (estimate?.documents ?? 0) < 500;
   },
   // Called once for each item, when its status is final
@@ -161,8 +164,8 @@ def confirm(plan: SyncPlan[IngestionBatch, IngestionBatchItem, EstimateIngestion
     if estimate is None:  # nothing needs its bytes
         return True
     print(len(plan.items), "items,", estimate.documents, "to process, up to", estimate.duration_seconds.high, "s")
-    if estimate.cost:  # only for callers allowed to see cost
-        print(estimate.cost.low, "to", estimate.cost.high, estimate.cost.unit)
+    if cost := estimate.cost:  # only for callers allowed to see cost, in the form the organisation sees it
+        print(f"US${cost.low:.2f}–{cost.high:.2f}" if cost.unit == "usd" else f"{cost.low:.1f}–{cost.high:.1f}% of usage")
     return estimate.documents < 500
 
 report = kb.ingestion.sync(
@@ -191,7 +194,14 @@ report, err := client.KnowledgeBase(knowledgeBaseID).Ingestion.Sync(ctx, caitlyn
 		}
 		fmt.Println(len(plan.Items), "items,", e.Documents, "to process, up to", e.DurationSeconds.High, "s")
 		if e.Cost != nil { // only for callers who may see cost
-			fmt.Println(e.Cost.Low, "to", e.Cost.High, e.Cost.Unit)
+			switch e.Cost.Unit { // the form the organisation sees its costs in
+			case caitlyn.CostUnitUsd:
+				fmt.Printf("US$%.2f–%.2f\n", e.Cost.Low, e.Cost.High)
+			case caitlyn.CostUnitPercentOfPlan:
+				fmt.Printf("%.1f–%.1f%% of usage\n", e.Cost.Low, e.Cost.High)
+			default:
+				fmt.Printf("%.2f–%.2f %s\n", e.Cost.Low, e.Cost.High, e.Cost.Unit)
+			}
 		}
 		return e.Documents < 500, nil
 	},
@@ -229,7 +239,15 @@ let report = kb
                     estimate.duration_seconds.high
                 );
                 if let Some(cost) = &estimate.cost {
-                    println!("{}-{} {}", cost.low, cost.high, cost.unit); // only for callers who may see cost
+                    // only for callers who may see cost
+                    match &cost.unit {
+                        // the form the organisation sees its costs in
+                        CostUnit::Usd => println!("US${:.2}-{:.2}", cost.low, cost.high),
+                        CostUnit::PercentOfPlan => {
+                            println!("{:.1}-{:.1}% of usage", cost.low, cost.high)
+                        }
+                        other => println!("{}-{} {}", cost.low, cost.high, other),
+                    }
                 }
                 estimate.documents < 500
             })
@@ -257,7 +275,7 @@ for item in report
   happen to it, and the estimate. The estimate prices every item that could need its bytes, items still
   `unresolved` whose outcome could take bytes included, so it is the most the batch could cost; `confirm` sees it
   before your resolver runs. It gives the documents to process, how long that takes as a range of seconds and, if you
-  may see costs, what it costs. There is no estimate when no item could need its bytes. Return false to stop: the batch is cancelled and the call raises `CANCELLED`
+  may see costs, its cost, in the form your organisation sees it. There is no estimate when no item could need its bytes. Return false to stop: the batch is cancelled and the call raises `CANCELLED`
   ([Decline the plan](#decline-the-plan)).
 - **`onItem`** is called once for each item, when its status is final: `indexed`, `skipped`, `moved`, `updated`,
   `removed`, `cancelled` or `failed`. An upload being accepted never calls it. An item that needs no bytes (one
@@ -304,7 +322,6 @@ Every batch, whether `sync` made it or you did, goes through the same steps.
 | `completed_with_failures` | Every item finished, and at least one failed. Final. |
 | `failed` | The batch itself stopped, for example because a policy rule said `fail`; its `failure` says why. Final. |
 | `cancelled` | Cancelled. Final. |
-| `expired` | Never started, and cleared after 7 days. Final. |
 
 | Item status | What it means |
 | --- | --- |
@@ -375,7 +392,8 @@ The detail says what to do. Some codes you may see:
 
 - `UPLOAD_FAILED`: the SDK could not send the file after its retries, so its bytes never arrived. Sync it again.
 - `UPLOAD_EXPIRED`: no bytes arrived for the item before its reservation ended.
-- `FILE_CHANGED`: a file on disk changed between being hashed and being sent.
+- `FILE_CHANGED`: a file is not the one its item describes: it changed on disk between being hashed and being sent,
+  or its size or bytes differ from the item's.
 - `VALIDATION_FAILED`: for a new version, bytes of another file type than the document's.
 - `DOCUMENT_INGESTION_IN_PROGRESS`: an earlier version of the document was still being processed.
 
@@ -392,6 +410,18 @@ document's path and its content: either an address Caitlyn fetches the file from
 the file's description (its SHA-256, size and content type) for bytes you upload. `start: 'manual'` keeps the batch
 `planned` until you start it, so you can read the plan first; without it, the batch starts as soon as it is planned
 with nothing unresolved.
+
+For the items whose bytes you upload, the batch has the two steps sync takes for you. Both take the same files, keyed
+by each item's path:
+
+- `batch.upload.estimate(files)` ([Estimate the upload](/reference/helpers/batch-upload-estimate/)) says what
+  uploading them would take and cost, before you start the batch. It waits until the batch is planned, and reads no
+  file: each is described by its name, content type and size, plus any hints you give with it. Without files, each
+  item is priced from its own description.
+- `batch.upload(files)` ([Upload files](/reference/helpers/batch-upload/)) sends them once the batch has started.
+  An item you give no file for is left awaiting upload and listed in `notGiven`, so you can upload in several calls; a
+  path that matches no item awaiting upload is listed in `unmatched`, and nothing is sent for it. A failed upload is
+  that item's alone, with its `failureCode`, and never raised.
 
 <!-- example: examples/typescript/ingestion.ts#build-batch -->
 ```ts tab="TypeScript"
@@ -413,7 +443,11 @@ const batch = await kb.ingestion.batches.create({
 });
 // What the upload would take and cost; waits until the batch is planned, and reads no file
 const estimate = await batch.upload.estimate(files);
-console.log(estimate.documents, estimate.durationSeconds, estimate.cost);
+console.log(`${estimate.documents} documents, up to ${estimate.durationSeconds.high} s`);
+if (estimate.cost) {
+  const { low, high, unit } = estimate.cost; // in the form the organisation sees its costs
+  console.log(unit === 'usd' ? `US$${low.toFixed(2)}–${high.toFixed(2)}` : `${low.toFixed(1)}–${high.toFixed(1)}% of usage`);
+}
 await batch.start();
 const upload = batch.upload(files, { onItem: (item) => console.log(item.path, item.failureCode) }); // a failed upload
 const { notGiven, unmatched } = await upload; // items with no file given, and given paths that matched no item
@@ -531,8 +565,9 @@ println!("{} {:?}", done.status, done.counts);
   files create permission. A batch takes at most 1,000 such items. A file that cannot be fetched gives its item the
   outcome `fetch_failed`, with a `reason` such as `fetch_timeout` or `fetch_too_large`, and the item is skipped.
 - **Uploaded content.** An item described by its checksum waits for its bytes after the batch starts, under the
-  batch's upload policy. `sync` does this for you, so for files you have, sync a list of items rather than building
-  the batch yourself.
+  batch's upload policy, and `batch.upload` sends them. Storage checks each file against the item's checksum, so a
+  file that changed since you described it fails its item with `FILE_CHANGED`. For a folder of files you have, `sync`
+  does all of this in one call.
 - **Metadata.** Each item can carry `metadata` for the knowledge base's fields, an `externalId` that keeps the
   document wherever it moves, and a `sourceUrl` that citations link to (the `fetchUrl` by default).
 - **Starting.** [StartIngestionBatch](/reference/start-ingestion-batch/) starts the batch as it stands; give the
@@ -866,20 +901,19 @@ batch.cancel().stop_running(true).await?;
   again to pick it up.
 - **Gone.** A thing that is gone ends its wait: after you deleted it, as success; otherwise with `NOT_FOUND`. A watch
   whose reconnection finds the thing gone ends at once.
-- **Expired.** A batch never started is cleared after 7 days, and ends `expired`. Its `wait()` and `planned()`
-  raise `EXPIRED`, with status 0.
 - **Failed or cancelled work.** A wait on work that failed raises the typed error for its code; on work that was
   cancelled, `CANCELLED`.
 
 The SDK retries for you: calls that are safe to repeat, on the statuses and with the delays [Retries](/retries/)
 describes; each upload, which is safe to send twice because its bytes are bound to their checksum; a file whose
 checksum did not match once it arrived, which is sent once more; the batch's upload policy, renewed when less than 5
-minutes of it are left, and once more when storage says it has expired; and the watch, reconnected whenever it drops.
+minutes of it are left (on a timer while any upload is in flight, so the batch keeps waiting for a large file still on
+its way), and once more when storage says it has expired; and the watch, reconnected whenever it drops.
 [Errors](/errors/) lists the error types and codes.
 
 ## What it costs
 
-Ingesting documents costs money, so see the cost before you start. `kb.ingestion.sync.estimate` takes the same
+See what an ingestion will cost before you start. `kb.ingestion.sync.estimate` takes the same
 arguments as `sync` and runs it as far as the plan: it hashes the files, plans the batch and prices the items that
 need their bytes, and uploads nothing ([Estimate a sync](/reference/helpers/ingestion-sync-estimate/)). Because it
 plans a real batch, it reads every file through to hash it, as a sync does, so on a large folder it takes about as long
@@ -899,8 +933,8 @@ console.log(`${plan.items.length} items; ${plan.estimate?.documents ?? 0} to upl
 plan = kb.ingestion.sync.estimate("./policies", folder="/policies/", remove_missing=True)
 if plan.estimate is not None:
     print(plan.estimate.documents, "documents,", plan.estimate.duration_seconds.high, "seconds at most")
-    if plan.estimate.cost:  # only for callers allowed to see cost
-        print(plan.estimate.cost.low, "to", plan.estimate.cost.high, plan.estimate.cost.unit)
+    if cost := plan.estimate.cost:  # only for callers allowed to see cost, in the form the organisation sees it
+        print(f"US${cost.low:.2f}–{cost.high:.2f}" if cost.unit == "usd" else f"{cost.low:.1f}–{cost.high:.1f}% of usage")
 ```
 <!-- example: examples/go/documents/documents.go#sync-estimate -->
 ```go tab="Go"
@@ -914,8 +948,15 @@ if err != nil {
 for _, item := range plan.Items {
 	fmt.Println(*item.Path, *item.Outcome) // new, changed, unchanged, moved, to_remove…
 }
-if e := plan.Estimate; e != nil && e.Cost != nil { // cost only for callers who may see it, in the organisation's form
-	fmt.Printf("%d documents, %.2f–%.2f %s\n", e.Documents, e.Cost.Low, e.Cost.High, e.Cost.Unit)
+if e := plan.Estimate; e != nil && e.Cost != nil { // cost only for callers who may see it
+	switch e.Cost.Unit { // the form the organisation sees its costs in
+	case caitlyn.CostUnitUsd:
+		fmt.Printf("%d documents, US$%.2f–%.2f\n", e.Documents, e.Cost.Low, e.Cost.High)
+	case caitlyn.CostUnitPercentOfPlan:
+		fmt.Printf("%d documents, %.1f–%.1f%% of usage\n", e.Documents, e.Cost.Low, e.Cost.High)
+	default:
+		fmt.Printf("%d documents, %.2f–%.2f %s\n", e.Documents, e.Cost.Low, e.Cost.High, e.Cost.Unit)
+	}
 }
 ```
 <!-- example: examples/rust/src/documents.rs#sync-estimate -->
@@ -937,18 +978,24 @@ if let Some(estimate) = &plan.estimate {
         estimate.documents, time.low, time.high
     );
     if let Some(cost) = &estimate.cost {
-        println!("{}-{} {}", cost.low, cost.high, cost.unit); // only for callers who may see cost
+        // only for callers who may see cost
+        match &cost.unit {
+            // the form the organisation sees its costs in
+            CostUnit::Usd => println!("US${:.2}-{:.2}", cost.low, cost.high),
+            CostUnit::PercentOfPlan => println!("{:.1}-{:.1}% of usage", cost.low, cost.high),
+            other => println!("{}-{} {}", cost.low, cost.high, other),
+        }
     }
 }
 ```
 
 An estimate gives the documents to process, their pages and seconds of audio and video where known, how many could
 not be measured (priced as a typical file), and how long the work takes, as a range of seconds. Its `cost` is there
-only for callers who may open the knowledge base's settings, in US dollars (`usd`) or as a share of the
-organisation's monthly plan (`percent_of_plan`). For a single file, `kb.documents.create.estimate(file)` sends the
+only for callers who may open the knowledge base's settings, in the form your organisation sees its costs: US
+dollars (`usd`), or a percentage of its monthly usage allowance (`percent_of_plan`). Its `unit` says which. For a single file, `kb.documents.create.estimate(file)` sends the
 file's description, never its bytes ([EstimateIngestion](/reference/estimate-ingestion/)). While the work runs, a job's
-`costSoFar` says what it has cost so far. Other work on a knowledge base costs money too, and has an estimate of its
-own: [filling in fields](/reference/fill-in-fields/), [reprocessing documents](/reference/reprocess-documents/) and
+`costSoFar` says what it has cost so far, in the same form. Other work on a knowledge base has a cost too, and an
+estimate of its own: [filling in fields](/reference/fill-in-fields/), [reprocessing documents](/reference/reprocess-documents/) and
 [layout-aware search](/reference/enable-layout-aware-search/).
 
 ## Under the hood

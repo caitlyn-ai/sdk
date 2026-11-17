@@ -88,7 +88,21 @@ def build_request(
     http: httpx.Client | httpx.AsyncClient, endpoint: str, spec: OperationSpec, params: Mapping[str, object], headers: Mapping[str, str]
 ) -> httpx.Request:
     """The request for one attempt. The URL is absolute (``endpoint`` plus the operation's path), so the
-    client's endpoint applies whatever ``http``'s own ``base_url`` is."""
+    client's endpoint applies whatever ``http``'s own ``base_url`` is. A value that cannot be serialised is
+    ``SERIALIZATION_FAILED``, and a request the HTTP client cannot make ``HTTP_CLIENT_FAILED`` (PROTOCOL.md 6.3)."""
+    try:
+        return _build_request(http, endpoint, spec, params, headers)
+    except CaitlynError:
+        raise
+    except (httpx.InvalidURL, httpx.UnsupportedProtocol) as e:
+        raise sdk_error("HTTP_CLIENT_FAILED", "The HTTP client could not make the request", f"{spec.name}: {e}") from e
+    except (TypeError, ValueError, OverflowError) as e:
+        raise sdk_error("SERIALIZATION_FAILED", "The request could not be serialised", f"{spec.name}: {e}") from e
+
+
+def _build_request(
+    http: httpx.Client | httpx.AsyncClient, endpoint: str, spec: OperationSpec, params: Mapping[str, object], headers: Mapping[str, str]
+) -> httpx.Request:
     path = spec.uri
     query: list[tuple[str, str | int | float | bool | None]] = []
     out_headers: dict[str, str] = dict(headers)
@@ -120,6 +134,12 @@ def build_request(
                 body[m.wire] = to_wire(value)
             case "payload":
                 payload = value
+    content = _content(payload, body, has_body_members, out_headers, spec)
+    return http.build_request(spec.method, endpoint + path, params=httpx.QueryParams(query) if query else None, headers=out_headers, content=content)
+
+
+def _content(payload: object, body: dict[str, Any], has_body_members: bool, out_headers: dict[str, str], spec: OperationSpec) -> bytes | None:
+    """The request's body, serialised as JSON (or a payload's bytes as they are)."""
     content: bytes | None = None
     if payload is not None:
         if isinstance(payload, bytes):
@@ -131,7 +151,7 @@ def build_request(
     elif has_body_members:
         content = json.dumps(body, separators=(",", ":")).encode()
         out_headers.setdefault("Content-Type", "application/json")
-    return http.build_request(spec.method, endpoint + path, params=httpx.QueryParams(query) if query else None, headers=out_headers, content=content)
+    return content
 
 
 def parse_json_object(content: bytes) -> dict[str, Any]:
@@ -144,8 +164,27 @@ def parse_json_object(content: bytes) -> dict[str, Any]:
     return cast(dict[str, Any], value) if isinstance(value, dict) else {}
 
 
+def sdk_error(code: str, title: str, detail: str) -> CaitlynError:
+    """An error the SDK raises itself (PROTOCOL.md 6.3): status 0. Raise it ``from`` the native error, its cause."""
+    return CaitlynError(f"{code}: {detail}", status=0, code=code, title=title)
+
+
+def _result_body(spec: OperationSpec, content: bytes) -> dict[str, Any]:
+    """A successful response's body: a JSON object, or nothing. Anything else is ``DECODE_FAILED``."""
+    if not content.strip():
+        return {}
+    try:
+        value = json.loads(content)
+    except ValueError as e:
+        raise sdk_error("DECODE_FAILED", "The response could not be decoded", f"{spec.name}: the response is not JSON: {e}") from e
+    if not isinstance(value, dict):
+        e = TypeError(f"a JSON {type(value).__name__}, not an object")
+        raise sdk_error("DECODE_FAILED", "The response could not be decoded", f"{spec.name}: the response is {e}") from e
+    return cast(dict[str, Any], value)
+
+
 def read_result[M: CaitlynModel](spec: OperationSpec, response: httpx.Response, result: type[M]) -> M:
-    body = parse_json_object(response.content)
+    body = _result_body(spec, response.content)
     data: dict[str, Any] = dict(body)
     if spec.thing:
         # The body is the thing: its etag is the ETag header's when the body has none (PROTOCOL.md 4.2).
@@ -157,7 +196,10 @@ def read_result[M: CaitlynModel](spec: OperationSpec, response: httpx.Response, 
             value = response.headers.get(header)
             if value is not None:
                 data[wire] = value
-    model = result.from_wire(data)
+    try:
+        model = result.from_wire(data)
+    except (ValueError, TypeError) as e:  # pydantic's ValidationError is a ValueError
+        raise sdk_error("DECODE_FAILED", "The response could not be decoded", f"{spec.name}: {e}") from e
     model._set_raw(body)  # pyright: ignore[reportPrivateUsage]
     model._set_response_metadata(  # pyright: ignore[reportPrivateUsage]
         ResponseMetadata(response.status_code, response.headers.get(REQUEST_ID_HEADER), response.headers.get("ETag"),

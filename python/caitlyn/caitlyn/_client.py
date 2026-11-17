@@ -1180,8 +1180,8 @@ class HistoryEntryScope:
 
         The configuration is that of the entry's `version`, which never changes. Reading the entry (who
         changed live, when, and to which version) needs agent read; its `configuration` needs what
-        reading that version needs, so a caller without the agent's version access grant gets the entry
-        without it unless the version is live now. It is also absent when that version was deleted
+        reading that version needs, so a caller without the permission to read versions, or without the
+        agent's version access grant for a version that is not live now, gets the entry without it. It is also absent when that version was deleted
         through an older API that does not protect versions named in live history.
 
         Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/history/{historyEntryId}` (GetHistoryEntry).
@@ -1673,7 +1673,10 @@ class ConversationScope:
         and the message is sent once every upload has arrived.
 
         Only a participant may send: whoever started the conversation, or someone it is shared with for
-        writing (the update grant). A caller who may only read it, or may not see it, gets 404.
+        writing (the update grant), who may still see the conversation's agent, and, when it was started
+        on a version other than live, holds that agent's version access grant. A caller without any of
+        these gets 404, so revoking someone's access to the agent stops them chatting in conversations
+        they already started.
 
         Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/conversations/{conversationId}/messages` (SendMessage).
 
@@ -2460,7 +2463,10 @@ class AccessScope:
         412.
 
         Without `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or
-        `document`, send `readers`; `kind: inherit` makes it follow its folder again. The root folder
+        `document`, send `readers`; `kind: inherit` makes it follow its folder again. The knowledge base's
+        role grants are set only without a target, under the knowledge base's own permission, as v2's
+        knowledge base permissions route sets them, so `roles` with `folder` or `document`, `readers`
+        without one, and both `folder` and `document` are refused with 400 `VALIDATION_FAILED`. The root folder
         (`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there
         with 400 `VALIDATION_FAILED`. Applying readers to
         the passages a folder or document holds continues after the response; the returned access says
@@ -2772,7 +2778,8 @@ class DocumentsReprocessMethod:
         Give `outOfDate: true` for every document processed in an older way than the newest, or
         `documentIds` for particular documents. Each document's current version keeps serving until its
         new processing is indexed. Returns 202 with the job, which the knowledge base's watch follows;
-        estimate it first with EstimateReprocessDocuments. Costs money: see the estimate's `cost`.
+        estimate it first with EstimateReprocessDocuments. It is charged for: see the estimate's `cost`, in
+        the form the organisation sees it.
 
         Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents:reprocess` (ReprocessDocuments).
 
@@ -3379,6 +3386,11 @@ class DocumentVersionScope:
         409 `CONFLICT`; to remove the current version, delete the document. Like every change, it is
         audited.
 
+        A version's number is its place in upload order, so deleting by number needs the document's
+        versions to be numbered already: until they are, a number is refused with 409
+        `VERSIONS_NOT_NUMBERED`, because deleting would shift every later number. Try again later, or
+        delete `latest`, which works either way.
+
         Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{version}` (DeleteDocumentVersion).
 
         Raises:
@@ -3452,7 +3464,10 @@ class DocumentAccessNamespace:
         412.
 
         Without `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or
-        `document`, send `readers`; `kind: inherit` makes it follow its folder again. The root folder
+        `document`, send `readers`; `kind: inherit` makes it follow its folder again. The knowledge base's
+        role grants are set only without a target, under the knowledge base's own permission, as v2's
+        knowledge base permissions route sets them, so `roles` with `folder` or `document`, `readers`
+        without one, and both `folder` and `document` are refused with 400 `VALIDATION_FAILED`. The root folder
         (`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there
         with 400 `VALIDATION_FAILED`. Applying readers to
         the passages a folder or document holds continues after the response; the returned access says
@@ -3616,8 +3631,8 @@ class FieldsFillInMethod:
 
         For each field named, every document with no value yet gets one, and the search index and vectors
         are brought up to date. Values someone set by hand are kept. Returns 202 with the job, which the
-        knowledge base's watch follows; estimate it first with EstimateFillInFields. Costs money: see the
-        estimate's `cost`.
+        knowledge base's watch follows; estimate it first with EstimateFillInFields. It is charged for: see
+        the estimate's `cost`, in the form the organisation sees it.
 
         Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/fields:fill-in` (FillInFields).
 
@@ -4183,7 +4198,10 @@ class FolderAccessNamespace:
         412.
 
         Without `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or
-        `document`, send `readers`; `kind: inherit` makes it follow its folder again. The root folder
+        `document`, send `readers`; `kind: inherit` makes it follow its folder again. The knowledge base's
+        role grants are set only without a target, under the knowledge base's own permission, as v2's
+        knowledge base permissions route sets them, so `roles` with `folder` or `document`, `readers`
+        without one, and both `folder` and `document` are refused with 400 `VALIDATION_FAILED`. The root folder
         (`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there
         with 400 `VALIDATION_FAILED`. Applying readers to
         the passages a folder or document holds continues after the response; the returned access says
@@ -4358,7 +4376,7 @@ class BatchesCollection:
         *,
         limit: int | None = None,
         cursor: str | None = None,
-        status: Literal["draft", "planning", "planned", "running", "succeeded", "completed_with_failures", "failed", "cancelled", "expired"] | IngestionBatchStatus | None = None,
+        status: Literal["draft", "planning", "planned", "running", "succeeded", "completed_with_failures", "failed", "cancelled"] | IngestionBatchStatus | None = None,
     ) -> Paginator[ListIngestionBatchesPage, IngestionBatch]:
         """Lists one knowledge base's ingestion batches, newest first.
 
@@ -4405,9 +4423,10 @@ class BatchesCollection:
 
         Takes up to 10,000 items; add more with BatchCreateIngestionBatchItems while `awaitMoreItems` is
         true. Returns 202 with the batch, and `Location` names it; wait for the plan with the SDKs'
-        `batch.planned()`. Needs the files list permission and read access to the knowledge base, so a
-        caller allowed only to look can plan; a batch with a `fetchUrl` item also needs the files create
-        permission.
+        `batch.planned()`. Needs the ingestion create permission and read access to the knowledge base,
+        as v2's ingestion route does; starting the batch, which hands out an upload policy, also needs the
+        files create permission. A `fetchUrl` item needs the files create permission when it is added,
+        which the server checks, because the trait cannot follow an item's member.
 
         Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches` (CreateIngestionBatch).
 
@@ -4699,10 +4718,22 @@ class CreatedBatchScope(BatchScope):
 
     @property
     def plan_expires_at(self) -> datetime | None:
-        """When the plan goes stale, 5 minutes after planning. StartIngestionBatch on a stale plan plans
-        again first.
+        """When the plan goes stale, 5 minutes after planning. A stale plan does not end the batch:
+        StartIngestionBatch on a stale plan plans again first.
         """
         return self.result.plan_expires_at
+
+    @property
+    def uploads_expire_at(self) -> datetime | None:
+        """When uploads must arrive by: at or after the upload policy's `expiresAt`. An item whose bytes
+        have not arrived by then fails with `UPLOAD_EXPIRED`; bytes that arrived in time are accepted
+        when they are reported, however late. A caller watching the batch can read it again after this
+        time to see which items failed. Renewing the upload policy moves it later. Absent when no item
+        is awaiting upload.
+
+        Added in Caitlyn 5.115.0.
+        """
+        return self.result.uploads_expire_at
 
     @property
     def created_by(self) -> Actor | None:
@@ -5275,14 +5306,17 @@ class OperationScope:
         becomes `cancelled` once the work has stopped.
 
         Cancelling needs what starting that kind of work needs, on the same record, which the server
-        reads from the Operation before it acts: for `document_ingestion`, what CancelDocumentProcessing
-        needs (`files.update` and the document's readers); for `document_update`, the same; for
+        reads from the Operation and checks per kind before it acts: for `document_ingestion`, the
+        permission that started it (`files.create` for a new document, `files.update` for a new version
+        or a retry) and the document's readers; for `document_update`, `files.update` and its readers; for
         `fill_in`, `reprocess` and `layout_aware_search`, `knowledge-bases.update` and
         `knowledge-bases.ingestions.update`; for a `folder_change`, the permission of the change
         (`files.create`, `files.update` or `files.delete`) and the folder's readers; for
         `permissions_change`, `files.permissions.update` and the record's readers; for
         `knowledge_base_deletion`, `knowledge-bases.delete`. A caller without it gets 404, as for an
-        Operation it may not see. Its declared permission is the one every cancellable kind needs today.
+        Operation it may not see. No one permission is common to every kind, so the operation declares
+        only what reading an Operation needs (`files.read`, as GetOperation), and the per-kind check does
+        the rest.
 
         Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}/cancel` (CancelOperation).
 
@@ -6466,8 +6500,8 @@ class AsyncHistoryEntryScope:
 
         The configuration is that of the entry's `version`, which never changes. Reading the entry (who
         changed live, when, and to which version) needs agent read; its `configuration` needs what
-        reading that version needs, so a caller without the agent's version access grant gets the entry
-        without it unless the version is live now. It is also absent when that version was deleted
+        reading that version needs, so a caller without the permission to read versions, or without the
+        agent's version access grant for a version that is not live now, gets the entry without it. It is also absent when that version was deleted
         through an older API that does not protect versions named in live history.
 
         Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/history/{historyEntryId}` (GetHistoryEntry).
@@ -6969,7 +7003,10 @@ class AsyncConversationScope:
         and the message is sent once every upload has arrived.
 
         Only a participant may send: whoever started the conversation, or someone it is shared with for
-        writing (the update grant). A caller who may only read it, or may not see it, gets 404.
+        writing (the update grant), who may still see the conversation's agent, and, when it was started
+        on a version other than live, holds that agent's version access grant. A caller without any of
+        these gets 404, so revoking someone's access to the agent stops them chatting in conversations
+        they already started.
 
         Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/conversations/{conversationId}/messages` (SendMessage).
 
@@ -7761,7 +7798,10 @@ class AsyncAccessScope:
         412.
 
         Without `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or
-        `document`, send `readers`; `kind: inherit` makes it follow its folder again. The root folder
+        `document`, send `readers`; `kind: inherit` makes it follow its folder again. The knowledge base's
+        role grants are set only without a target, under the knowledge base's own permission, as v2's
+        knowledge base permissions route sets them, so `roles` with `folder` or `document`, `readers`
+        without one, and both `folder` and `document` are refused with 400 `VALIDATION_FAILED`. The root folder
         (`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there
         with 400 `VALIDATION_FAILED`. Applying readers to
         the passages a folder or document holds continues after the response; the returned access says
@@ -8073,7 +8113,8 @@ class AsyncDocumentsReprocessMethod:
         Give `outOfDate: true` for every document processed in an older way than the newest, or
         `documentIds` for particular documents. Each document's current version keeps serving until its
         new processing is indexed. Returns 202 with the job, which the knowledge base's watch follows;
-        estimate it first with EstimateReprocessDocuments. Costs money: see the estimate's `cost`.
+        estimate it first with EstimateReprocessDocuments. It is charged for: see the estimate's `cost`, in
+        the form the organisation sees it.
 
         Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents:reprocess` (ReprocessDocuments).
 
@@ -8680,6 +8721,11 @@ class AsyncDocumentVersionScope:
         409 `CONFLICT`; to remove the current version, delete the document. Like every change, it is
         audited.
 
+        A version's number is its place in upload order, so deleting by number needs the document's
+        versions to be numbered already: until they are, a number is refused with 409
+        `VERSIONS_NOT_NUMBERED`, because deleting would shift every later number. Try again later, or
+        delete `latest`, which works either way.
+
         Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{version}` (DeleteDocumentVersion).
 
         Raises:
@@ -8753,7 +8799,10 @@ class AsyncDocumentAccessNamespace:
         412.
 
         Without `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or
-        `document`, send `readers`; `kind: inherit` makes it follow its folder again. The root folder
+        `document`, send `readers`; `kind: inherit` makes it follow its folder again. The knowledge base's
+        role grants are set only without a target, under the knowledge base's own permission, as v2's
+        knowledge base permissions route sets them, so `roles` with `folder` or `document`, `readers`
+        without one, and both `folder` and `document` are refused with 400 `VALIDATION_FAILED`. The root folder
         (`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there
         with 400 `VALIDATION_FAILED`. Applying readers to
         the passages a folder or document holds continues after the response; the returned access says
@@ -8917,8 +8966,8 @@ class AsyncFieldsFillInMethod:
 
         For each field named, every document with no value yet gets one, and the search index and vectors
         are brought up to date. Values someone set by hand are kept. Returns 202 with the job, which the
-        knowledge base's watch follows; estimate it first with EstimateFillInFields. Costs money: see the
-        estimate's `cost`.
+        knowledge base's watch follows; estimate it first with EstimateFillInFields. It is charged for: see
+        the estimate's `cost`, in the form the organisation sees it.
 
         Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/fields:fill-in` (FillInFields).
 
@@ -9494,7 +9543,10 @@ class AsyncFolderAccessNamespace:
         412.
 
         Without `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or
-        `document`, send `readers`; `kind: inherit` makes it follow its folder again. The root folder
+        `document`, send `readers`; `kind: inherit` makes it follow its folder again. The knowledge base's
+        role grants are set only without a target, under the knowledge base's own permission, as v2's
+        knowledge base permissions route sets them, so `roles` with `folder` or `document`, `readers`
+        without one, and both `folder` and `document` are refused with 400 `VALIDATION_FAILED`. The root folder
         (`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there
         with 400 `VALIDATION_FAILED`. Applying readers to
         the passages a folder or document holds continues after the response; the returned access says
@@ -9669,7 +9721,7 @@ class AsyncBatchesCollection:
         *,
         limit: int | None = None,
         cursor: str | None = None,
-        status: Literal["draft", "planning", "planned", "running", "succeeded", "completed_with_failures", "failed", "cancelled", "expired"] | IngestionBatchStatus | None = None,
+        status: Literal["draft", "planning", "planned", "running", "succeeded", "completed_with_failures", "failed", "cancelled"] | IngestionBatchStatus | None = None,
     ) -> AsyncPaginator[ListIngestionBatchesPage, IngestionBatch]:
         """Lists one knowledge base's ingestion batches, newest first.
 
@@ -9716,9 +9768,10 @@ class AsyncBatchesCollection:
 
         Takes up to 10,000 items; add more with BatchCreateIngestionBatchItems while `awaitMoreItems` is
         true. Returns 202 with the batch, and `Location` names it; wait for the plan with the SDKs'
-        `batch.planned()`. Needs the files list permission and read access to the knowledge base, so a
-        caller allowed only to look can plan; a batch with a `fetchUrl` item also needs the files create
-        permission.
+        `batch.planned()`. Needs the ingestion create permission and read access to the knowledge base,
+        as v2's ingestion route does; starting the batch, which hands out an upload policy, also needs the
+        files create permission. A `fetchUrl` item needs the files create permission when it is added,
+        which the server checks, because the trait cannot follow an item's member.
 
         Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches` (CreateIngestionBatch).
 
@@ -10014,10 +10067,22 @@ class AsyncCreatedBatchScope(AsyncBatchScope):
 
     @property
     def plan_expires_at(self) -> datetime | None:
-        """When the plan goes stale, 5 minutes after planning. StartIngestionBatch on a stale plan plans
-        again first.
+        """When the plan goes stale, 5 minutes after planning. A stale plan does not end the batch:
+        StartIngestionBatch on a stale plan plans again first.
         """
         return self.result.plan_expires_at
+
+    @property
+    def uploads_expire_at(self) -> datetime | None:
+        """When uploads must arrive by: at or after the upload policy's `expiresAt`. An item whose bytes
+        have not arrived by then fails with `UPLOAD_EXPIRED`; bytes that arrived in time are accepted
+        when they are reported, however late. A caller watching the batch can read it again after this
+        time to see which items failed. Renewing the upload policy moves it later. Absent when no item
+        is awaiting upload.
+
+        Added in Caitlyn 5.115.0.
+        """
+        return self.result.uploads_expire_at
 
     @property
     def created_by(self) -> Actor | None:
@@ -10596,14 +10661,17 @@ class AsyncOperationScope:
         becomes `cancelled` once the work has stopped.
 
         Cancelling needs what starting that kind of work needs, on the same record, which the server
-        reads from the Operation before it acts: for `document_ingestion`, what CancelDocumentProcessing
-        needs (`files.update` and the document's readers); for `document_update`, the same; for
+        reads from the Operation and checks per kind before it acts: for `document_ingestion`, the
+        permission that started it (`files.create` for a new document, `files.update` for a new version
+        or a retry) and the document's readers; for `document_update`, `files.update` and its readers; for
         `fill_in`, `reprocess` and `layout_aware_search`, `knowledge-bases.update` and
         `knowledge-bases.ingestions.update`; for a `folder_change`, the permission of the change
         (`files.create`, `files.update` or `files.delete`) and the folder's readers; for
         `permissions_change`, `files.permissions.update` and the record's readers; for
         `knowledge_base_deletion`, `knowledge-bases.delete`. A caller without it gets 404, as for an
-        Operation it may not see. Its declared permission is the one every cancellable kind needs today.
+        Operation it may not see. No one permission is common to every kind, so the operation declares
+        only what reading an Operation needs (`files.read`, as GetOperation), and the per-kind check does
+        the rest.
 
         Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}/cancel` (CancelOperation).
 

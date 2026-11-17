@@ -29,7 +29,14 @@ func SyncWithConfirm(ctx context.Context, client *caitlyn.Client, knowledgeBaseI
 			}
 			fmt.Println(len(plan.Items), "items,", e.Documents, "to process, up to", e.DurationSeconds.High, "s")
 			if e.Cost != nil { // only for callers who may see cost
-				fmt.Println(e.Cost.Low, "to", e.Cost.High, e.Cost.Unit)
+				switch e.Cost.Unit { // the form the organisation sees its costs in
+				case caitlyn.CostUnitUsd:
+					fmt.Printf("US$%.2f–%.2f\n", e.Cost.Low, e.Cost.High)
+				case caitlyn.CostUnitPercentOfPlan:
+					fmt.Printf("%.1f–%.1f%% of usage\n", e.Cost.Low, e.Cost.High)
+				default:
+					fmt.Printf("%.2f–%.2f %s\n", e.Cost.Low, e.Cost.High, e.Cost.Unit)
+				}
 			}
 			return e.Documents < 500, nil
 		},

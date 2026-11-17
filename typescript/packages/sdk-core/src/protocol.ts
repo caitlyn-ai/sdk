@@ -20,7 +20,7 @@
 import { HttpRequest, type HttpResponse } from '@smithy/core/transport';
 import { decorateServiceException } from '@smithy/core/client';
 import { TypeRegistry } from '@smithy/core/schema';
-import { markNoResponse } from './plugin.js';
+import { markNoResponse, NO_RESPONSE } from './plugin.js';
 import { isJsonObject, rawBodyOf } from './raw-body.js';
 import {
   isBlob,
@@ -237,6 +237,11 @@ async function readBody(body: unknown, context: object): Promise<Uint8Array> {
   }
 }
 
+/** A Caitlyn error: a service exception, which carries its fault and metadata (a typed error, or one the SDK raised). */
+function isCaitlynError(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && '$fault' in err && '$metadata' in err;
+}
+
 function parseJson(bytes: Uint8Array): any {
   const text = new TextDecoder().decode(bytes);
   if (text.length === 0) return {};
@@ -274,6 +279,28 @@ export class CaitlynRestJsonProtocol {
   }
 
   async serializeRequest(op: OperationSchema, rawInput: unknown, context: { endpoint: () => Promise<Endpoint> }): Promise<HttpRequest> {
+    try {
+      return await this.serialize(op, rawInput, context);
+    } catch (cause) {
+      if (isCaitlynError(cause)) throw cause;
+      throw this.sdkError('SERIALIZATION_FAILED', 'The request could not be serialised', `The ${op.name} request could not be serialised: ${(cause as Error)?.message ?? cause}`, cause);
+    }
+  }
+
+  /**
+   * An error the SDK raises itself (PROTOCOL.md 6.3): the generic error, status 0, with the code and the native error
+   * that caused it as its `cause`.
+   */
+  private sdkError(code: string, title: string, detail: string, cause: unknown, metadata: Record<string, unknown> = {}): Error {
+    const registry = this.errors;
+    registry.copyFrom(TypeRegistry.for(this.options.defaultNamespace));
+    const base = registry.getBaseException();
+    const Ctor = (base && registry.getErrorCtor(base)) || Error;
+    const error = Object.assign(new (Ctor as any)({ name: 'CaitlynError', message: detail }), { $metadata: metadata, $fault: 'client' });
+    return Object.assign(decorateServiceException(error, { status: 0, code, title, detail, requestId: metadata.requestId }), { cause });
+  }
+
+  private async serialize(op: OperationSchema, rawInput: unknown, context: { endpoint: () => Promise<Endpoint> }): Promise<HttpRequest> {
     const input = (rawInput && typeof rawInput === 'object' ? rawInput : {}) as Record<string, any>;
     const query: Record<string, string | string[]> = {};
     const headers: Record<string, string> = {};
@@ -362,6 +389,17 @@ export class CaitlynRestJsonProtocol {
   }
 
   async deserializeResponse(op: OperationSchema, context: object, response: HttpResponse): Promise<any> {
+    try {
+      return await this.deserialize(op, context, response);
+    } catch (cause) {
+      // A typed error, a connection failure while the body was read, or a cancellation passes as it is; anything else is
+      // a body this SDK could not read as the operation's output.
+      if (isCaitlynError(cause) || (cause as Record<symbol, unknown>)?.[NO_RESPONSE] || (cause as Error)?.name === 'AbortError') throw cause;
+      throw this.sdkError('DECODE_FAILED', 'The response could not be decoded', `The ${op.name} response could not be decoded: ${(cause as Error)?.message ?? cause}`, cause, this.deserializeMetadata(response));
+    }
+  }
+
+  private async deserialize(op: OperationSchema, context: object, response: HttpResponse): Promise<any> {
     const out = shape(op.output);
     const all = members(out);
     const metadata = this.deserializeMetadata(response);

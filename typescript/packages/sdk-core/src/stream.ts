@@ -180,9 +180,15 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
             this.attempts = 0; // only a new event counts as progress (PROTOCOL.md 5.6)
           }
           if (!this.spec.known.has(msg.event)) continue;
-          const data = JSON.parse(msg.data) as Record<string, any>;
-          const plan = this.spec.read?.[msg.event];
-          if (plan) readEvent(data, plan);
+          let data: Record<string, any>;
+          try {
+            data = JSON.parse(msg.data) as Record<string, any>;
+            const plan = this.spec.read?.[msg.event];
+            if (plan) readEvent(data, plan);
+          } catch (cause) {
+            // PROTOCOL.md 6.3: a failure the SDK meets is its own error, with the native one as its cause.
+            throw Object.assign(this.spec.toError({ status: 0, code: 'DECODE_FAILED', title: 'An event could not be decoded', detail: `The ${msg.event} event could not be decoded: ${(cause as Error)?.message ?? cause}` }), { cause });
+          }
           // PROTOCOL.md 5.5: a failure event ends only a stream with a final event. On a watch it is delivered.
           if (msg.event === this.spec.errorEvent && this.spec.final) throw this.spec.toError(data);
           const event = { ...data, type: msg.event, eventId: msg.id } as unknown as E;

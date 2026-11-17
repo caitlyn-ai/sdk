@@ -34,6 +34,27 @@ for (const [file, list] of Object.entries(edits)) {
 }
 console.log('postgen-ts: removed defaults-mode resolution from runtimeConfig.ts and runtimeConfig.browser.ts');
 
+// Every enum in the model is open: a server may send a value this SDK does not know yet, and the SDK keeps it as the
+// string it is (PROTOCOL.md 4.1). smithy-typescript types an enum as the union of its known values only, which tells a
+// caller that a `switch` over the known values is exhaustive when at runtime it is not. Each enum's type gains
+// `| (string & {})`: any string is accepted, and editors still offer the known values.
+{
+  const url = new URL('models/enums.ts', dir);
+  let s = fs.readFileSync(url, 'utf8');
+  const declared = [...s.matchAll(/^export const (\w+) = \{$/gm)].map((m) => m[1]);
+  let opened = 0;
+  s = s.replace(/^export type (\w+) =\s*\(typeof (\w+)\)\[keyof typeof (\w+)\];$/gm, (line, a, b, c) => {
+    if (a !== b || b !== c) throw new Error(`postgen-ts: unexpected enum type line ${line}`);
+    opened++;
+    return `export type ${a} = (typeof ${a})[keyof typeof ${a}] | (string & {});`;
+  });
+  if (declared.length === 0 || opened !== declared.length) {
+    throw new Error(`postgen-ts: ${declared.length} enums in models/enums.ts but ${opened} enum types opened`);
+  }
+  fs.writeFileSync(url, s);
+  console.log(`postgen-ts: ${opened} enum types accept values this SDK does not know yet`);
+}
+
 // The generated package.json carries smithy-typescript's yarn build scripts and their devDependencies. The
 // repository builds and tests the SDK from typescript/package.json (an npm workspace), so they are dropped, and
 // the package is described for npm: entry points for Node (ESM and CommonJS), for edge runtimes (fetch), for

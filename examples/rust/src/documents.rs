@@ -5,8 +5,8 @@ use std::path::Path;
 
 use caitlyn_sdk::scope;
 use caitlyn_sdk::{
-    Client, CreateUploadResult, Document, Error, KnowledgeBase, KnowledgeBaseEvent, Readers,
-    SyncInput, SyncPlan, SyncReport, Upload, UploadFile,
+    Client, CostUnit, CreateUploadResult, Document, Error, KnowledgeBase, KnowledgeBaseEvent,
+    Readers, SyncInput, SyncPlan, SyncReport, Upload, UploadFile,
 };
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -103,7 +103,13 @@ pub async fn sync_estimate(
             estimate.documents, time.low, time.high
         );
         if let Some(cost) = &estimate.cost {
-            println!("{}-{} {}", cost.low, cost.high, cost.unit); // only for callers who may see cost
+            // only for callers who may see cost
+            match &cost.unit {
+                // the form the organisation sees its costs in
+                CostUnit::Usd => println!("US${:.2}-{:.2}", cost.low, cost.high),
+                CostUnit::PercentOfPlan => println!("{:.1}-{:.1}% of usage", cost.low, cost.high),
+                other => println!("{}-{} {}", cost.low, cost.high, other),
+            }
         }
     }
     // #endregion
@@ -227,10 +233,21 @@ pub async fn fill_in_fields(
     let kb = client.knowledge_base(knowledge_base_id);
     let estimate = kb.fields().estimate_fill_in(["policyOwner"]).await?;
     if let Some(cost) = &estimate.cost {
-        println!(
-            "{} documents, {}-{} {}",
-            estimate.documents, cost.low, cost.high, cost.unit
-        );
+        match &cost.unit {
+            // the form the organisation sees its costs in
+            CostUnit::Usd => println!(
+                "{} documents, US${:.2}-{:.2}",
+                estimate.documents, cost.low, cost.high
+            ),
+            CostUnit::PercentOfPlan => println!(
+                "{} documents, {:.1}-{:.1}% of usage",
+                estimate.documents, cost.low, cost.high
+            ),
+            other => println!(
+                "{} documents, {}-{} {}",
+                estimate.documents, cost.low, cost.high, other
+            ),
+        }
     }
     let kb_after = kb.fields().fill_in(["policyOwner"]).wait().await?;
     // #endregion

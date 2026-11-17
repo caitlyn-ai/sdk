@@ -56,7 +56,7 @@ export interface StartIngestionBatchCommandOutput extends StartIngestionBatchOut
  * //   batch: { // IngestionBatch
  * //     id: "STRING_VALUE", // required
  * //     knowledgeBaseId: "STRING_VALUE", // required
- * //     status: "draft" || "planning" || "planned" || "running" || "succeeded" || "completed_with_failures" || "failed" || "cancelled" || "expired", // required
+ * //     status: "draft" || "planning" || "planned" || "running" || "succeeded" || "completed_with_failures" || "failed" || "cancelled", // required
  * //     start: "when_planned" || "manual", // required
  * //     awaitMoreItems: true || false, // required
  * //     policy: { // IngestionPolicy
@@ -93,6 +93,7 @@ export interface StartIngestionBatchCommandOutput extends StartIngestionBatchOut
  * //       },
  * //     },
  * //     planExpiresAt: new Date("TIMESTAMP"),
+ * //     uploadsExpireAt: new Date("TIMESTAMP"),
  * //     createdBy: { // Actor
  * //       userId: "STRING_VALUE",
  * //       apiClientId: "STRING_VALUE",
@@ -134,7 +135,8 @@ export interface StartIngestionBatchCommandOutput extends StartIngestionBatchOut
  * document still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an
  * ingestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document
  * an ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry
- * `Retry-After`.
+ * `Retry-After`. A document whose versions are not numbered yet cannot have one deleted by number
+ * (`VERSIONS_NOT_NUMBERED`).
  *
  * @throws {@link NotFoundError} (client fault)
  *  The record does not exist, or the caller may not see it. The two are deliberately the same, so
@@ -198,7 +200,8 @@ export interface StartIngestionBatchCommandOutput extends StartIngestionBatchOut
  *     start: "manual",
  *     startedAt: "2026-11-16T01:03:00.000Z",
  *     status: "running",
- *     updatedAt: "2026-11-16T01:03:00.000Z"
+ *     updatedAt: "2026-11-16T01:03:00.000Z",
+ *     uploadsExpireAt: "2026-11-16T01:38:00.000Z"
  *   },
  *   etag: `"5"`,
  *   uploadPolicy: {

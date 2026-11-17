@@ -144,7 +144,10 @@ export async function fillInFields(caitlyn: Caitlyn, kbId: string) {
   const kb = caitlyn.knowledgeBases(kbId);
   // #region fill-in-fields
   const estimate = await kb.fields.fillIn.estimate(['policyOwner']);
-  if (estimate.cost) console.log(`${estimate.documents} documents, ${estimate.cost.low}–${estimate.cost.high} ${estimate.cost.unit}`);
+  if (estimate.cost) {
+    const { low, high, unit } = estimate.cost; // in the form the organisation sees its costs
+    console.log(`${estimate.documents} documents,`, unit === 'usd' ? `US$${low.toFixed(2)}–${high.toFixed(2)}` : `${low.toFixed(1)}–${high.toFixed(1)}% of usage`);
+  }
   await kb.fields.fillIn(['policyOwner']).wait();
   // #endregion
 }
@@ -164,7 +167,10 @@ export async function layoutAwareSearch(caitlyn: Caitlyn, kbId: string) {
   const kb = caitlyn.knowledgeBases(kbId);
   // #region layout-aware-search
   const estimate = await kb.layoutAwareSearch.enable.estimate();
-  if (estimate.cost) console.log(`${estimate.cost.low}–${estimate.cost.high} ${estimate.cost.unit}`);
+  if (estimate.cost) {
+    const { low, high, unit } = estimate.cost; // in the form the organisation sees its costs
+    console.log(unit === 'usd' ? `US$${low.toFixed(2)}–${high.toFixed(2)}` : `${low.toFixed(1)}–${high.toFixed(1)}% of usage`);
+  }
   await kb.layoutAwareSearch.enable().wait();
   // #endregion
 }

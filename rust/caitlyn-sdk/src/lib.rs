@@ -26,7 +26,7 @@ mod operations;
 pub mod scope;
 pub mod types;
 
-pub use error::Error;
+pub use error::{Error, ErrorCode};
 pub use operations::*;
 pub use scope::{
     BatchFiles, BatchUpload, BatchUploadRequest, Client, ClientBuilder, EstimateUploadRequest, IngestionProgress, LocalFile, SyncInput,

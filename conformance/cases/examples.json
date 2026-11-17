@@ -3673,6 +3673,43 @@
       }
     },
     {
+      "id": "DeleteDocumentVersion: A version number before the document's versions are numbered",
+      "operation": "DeleteDocumentVersion",
+      "input": {
+        "knowledgeBaseId": "KB4T7YQ2WL",
+        "documentId": "doc-3b7f9e21",
+        "version": "1"
+      },
+      "request": {
+        "method": "DELETE",
+        "path": "/v3/knowledge-bases/KB4T7YQ2WL/documents/doc-3b7f9e21/versions/1",
+        "query": {},
+        "headers": {}
+      },
+      "response": {
+        "status": 409,
+        "shape": "ConflictError",
+        "code": "VERSIONS_NOT_NUMBERED",
+        "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BD5",
+        "body": {
+          "type": "https://build.caitlyn.ai/errors/VERSIONS_NOT_NUMBERED",
+          "title": "Versions not numbered",
+          "status": 409,
+          "code": "VERSIONS_NOT_NUMBERED",
+          "detail": "Document doc-3b7f9e21's versions are not numbered yet. Try again later, or delete latest.",
+          "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BD5"
+        }
+      },
+      "expected": {
+        "error": {
+          "status": 409,
+          "code": "VERSIONS_NOT_NUMBERED",
+          "shape": "ConflictError",
+          "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BD5"
+        }
+      }
+    },
+    {
       "id": "DeleteDocumentVersion: permission denied (403, synthesised)",
       "operation": "DeleteDocumentVersion",
       "synthesised": true,
@@ -8948,6 +8985,7 @@
                   "skipped": 1
                 }
               },
+              "uploadsExpireAt": "2026-11-16T01:38:00.000Z",
               "createdAt": "2026-11-16T01:02:03.000Z",
               "updatedAt": "2026-11-16T01:03:00.000Z",
               "startedAt": "2026-11-16T01:03:00.000Z"
@@ -8978,6 +9016,7 @@
                   "skipped": 1
                 }
               },
+              "uploadsExpireAt": "2026-11-16T01:38:00.000Z",
               "createdAt": "2026-11-16T01:02:03.000Z",
               "updatedAt": "2026-11-16T01:03:00.000Z",
               "startedAt": "2026-11-16T01:03:00.000Z"
@@ -10341,6 +10380,71 @@
           "inheritedFrom": "/hr/"
         },
         "thing": true
+      }
+    },
+    {
+      "id": "PutAccess: Role grants sent with a folder",
+      "operation": "PutAccess",
+      "input": {
+        "knowledgeBaseId": "KB4T7YQ2WL",
+        "folder": "/hr/",
+        "roles": [
+          {
+            "roleId": "hr-team",
+            "can": [
+              "find",
+              "read"
+            ]
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "path": "/v3/knowledge-bases/KB4T7YQ2WL/access",
+        "query": {
+          "folder": "/hr/"
+        },
+        "headers": {},
+        "body": {
+          "roles": [
+            {
+              "roleId": "hr-team",
+              "can": [
+                "find",
+                "read"
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 400,
+        "shape": "ValidationError",
+        "code": "VALIDATION_FAILED",
+        "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BJ2",
+        "body": {
+          "type": "https://build.caitlyn.ai/errors/VALIDATION_FAILED",
+          "title": "Validation failed",
+          "status": 400,
+          "code": "VALIDATION_FAILED",
+          "detail": "A folder's or document's access is its readers; set the knowledge base's role grants without a folder or document.",
+          "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BJ2",
+          "errors": [
+            {
+              "pointer": "/roles",
+              "code": "VALIDATION_FAILED",
+              "detail": "Not allowed with folder or document."
+            }
+          ]
+        }
+      },
+      "expected": {
+        "error": {
+          "status": 400,
+          "code": "VALIDATION_FAILED",
+          "shape": "ValidationError",
+          "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BJ2"
+        }
       }
     },
     {
@@ -11874,6 +11978,7 @@
               }
             },
             "itemCount": 3,
+            "uploadsExpireAt": "2026-11-16T01:38:00.000Z",
             "createdAt": "2026-11-16T01:02:03.000Z",
             "updatedAt": "2026-11-16T01:03:00.000Z",
             "startedAt": "2026-11-16T01:03:00.000Z"
@@ -11906,6 +12011,7 @@
               }
             },
             "itemCount": 3,
+            "uploadsExpireAt": "2026-11-16T01:38:00.000Z",
             "createdAt": "2026-11-16T01:02:03.000Z",
             "updatedAt": "2026-11-16T01:03:00.000Z",
             "startedAt": "2026-11-16T01:03:00.000Z"

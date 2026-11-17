@@ -1291,7 +1291,16 @@ final class ServiceGenerator {
             OperationInfo.Param fp = watch.param(filter).orElseThrow();
             String last = GoScopes.idVar(n.identifiers.get(n.identifiers.size() - 1).name());
             w.l("\tp." + fp.field() + " = " + (isPointer(fp) ? "Ptr(s." + last + ")" : "s." + last) + "\n");
-            w.l("\treturn s.c.stream" + watch.name + "(ctx, p, opts)\n}\n\n");
+            Optional<Method> batchGet = filter.equals("batch") ? get(n) : Optional.empty();
+            if (batchGet.isPresent()) {
+                // A batch's watch reads the batch again once its deadline has passed (PROTOCOL.md 16, go/deadline.go).
+                w.l("\tctx, cancel := context.WithCancel(ctx)\n");
+                w.l("\tst, err := s.c.stream" + watch.name + "(ctx, p, opts)\n");
+                w.l("\tif err != nil {\n\t\tcancel()\n\t\treturn nil, err\n\t}\n");
+                w.l("\treturn rereadAtDeadline(st, cancel, s." + Names.exported(batchGet.get().name) + "), nil\n}\n\n");
+            } else {
+                w.l("\treturn s.c.stream" + watch.name + "(ctx, p, opts)\n}\n\n");
+            }
         }
         claim(members, n, "Wait");
         String waitType = waitType(n);
@@ -1387,6 +1396,30 @@ final class ServiceGenerator {
             w.l("\tcase " + String.join(", ", quoted) + ":\n\t\treturn " + e.expectTrait(HttpErrorTrait.class).getCode() + "\n");
         }
         w.l("\t}\n\treturn 0\n}\n\n");
+        // ErrorCode and a constant for every code: an alias of string, so err.Code (a string) compares with a constant
+        // or a literal alike, and a code this SDK does not know yet is still a string.
+        java.util.TreeMap<String, StructureShape> byCode = new java.util.TreeMap<>();
+        for (StructureShape e : serviceErrors()) {
+            CaitlynTraits.node(e, CaitlynTraits.ERROR_CODES).ifPresent(n -> n.expectArrayNode().getElements()
+                    .forEach(x -> byCode.putIfAbsent(x.expectStringNode().getValue(), e)));
+        }
+        if (byCode.isEmpty()) {
+            return;
+        }
+        w.l("// ErrorCode is a stable error code the API documents, as an error's Code holds it. It is a string, so\n"
+                + "// err.Code == caitlyn.ErrorCodeNotFound and err.Code == \"NOT_FOUND\" are the same check, and a code this SDK\n"
+                + "// does not know yet is still a string. Each code's page is https://build.caitlyn.ai/errors/{code}.\n");
+        w.l("type ErrorCode = string\n\n");
+        w.l("// The stable error codes the API documents, each with the error type it is raised as.\nconst (\n");
+        byCode.forEach((code, e) -> w.l("\t// ErrorCode" + Names.exported(code) + " is " + code + ", raised as *" + ctx.symbolProvider().toSymbol(e).getName()
+                + " (" + e.expectTrait(HttpErrorTrait.class).getCode() + ").\n\tErrorCode" + Names.exported(code) + " ErrorCode = " + Names.str(code) + "\n"));
+        ai.caitlyn.codegen.model.SdkErrorCodes.CODES.forEach((code, what) -> {
+            if (!byCode.containsKey(code)) {
+                w.l("\t// ErrorCode" + Names.exported(code) + " is " + code + ", raised by the SDK itself with Status 0. " + what + "\n\tErrorCode"
+                        + Names.exported(code) + " ErrorCode = " + Names.str(code) + "\n");
+            }
+        });
+        w.l(")\n\n");
     }
 
     /**

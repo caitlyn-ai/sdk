@@ -56,7 +56,7 @@ export interface ListFoldersCommandOutput extends ListFoldersOutput, __MetadataB
  * //       name: "STRING_VALUE", // required
  * //       etag: "STRING_VALUE", // required
  * //       readers: { // Readers
- * //         kind: "inherit" || "everyone" || "specific", // required
+ * //         kind: "inherit" || "public" || "everyone" || "specific", // required
  * //         roles: [ // RoleIdList
  * //           "STRING_VALUE",
  * //         ],

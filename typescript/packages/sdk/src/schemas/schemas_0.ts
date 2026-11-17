@@ -832,6 +832,7 @@ const _ts = "text/event-stream";
 const _ty = "types";
 const _u = "uri";
 const _uA = "updatedAt";
+const _uEA = "uploadsExpireAt";
 const _uI = "userId";
 const _uIp = "uploadId";
 const _uM = "userMessages";
@@ -1675,8 +1676,8 @@ export var HoldingPhrases$: StaticStructureSchema = [3, n0, _HP,
 ];
 export var IngestionBatch$: StaticStructureSchema = [3, n0, _IB,
   0,
-  [_i, _kBI, _st, _star, _aMI, _po, _iC, _cA, _uA, _et, _sc, _cou, _pe, _eta, _pEA, _cB, _sA, _eAn, _fa],
-  [0, 0, 0, 0, 2, () => IngestionPolicy$, 1, 5, 5, 0, () => IngestionBoundary$, () => IngestionBatchCounts$, 1, () => Eta$, 5, () => Actor$, 5, 5, () => IngestionBatchFailure$], 10
+  [_i, _kBI, _st, _star, _aMI, _po, _iC, _cA, _uA, _et, _sc, _cou, _pe, _eta, _pEA, _uEA, _cB, _sA, _eAn, _fa],
+  [0, 0, 0, 0, 2, () => IngestionPolicy$, 1, 5, 5, 0, () => IngestionBoundary$, () => IngestionBatchCounts$, 1, () => Eta$, 5, 5, () => Actor$, 5, 5, () => IngestionBatchFailure$], 10
 ];
 export var IngestionBatchCounts$: StaticStructureSchema = [3, n0, _IBC,
   0,

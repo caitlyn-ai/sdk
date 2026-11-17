@@ -1693,6 +1693,7 @@ CODE_ERRORS: Final[dict[str, type[CaitlynError]]] = {
     "UNKNOWN_FILTER": ValidationError,
     "UNKNOWN_SORT": ValidationError,
     "VALIDATION_FAILED": ValidationError,
+    "VERSIONS_NOT_NUMBERED": ConflictError,
     "VERSION_IN_HISTORY": ConflictError,
     "VERSION_IN_USE": ConflictError,
     "VERSION_NOT_DELETABLE": ValidationError,

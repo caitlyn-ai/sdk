@@ -8,5 +8,6 @@ export type * from "./results";
 export * from "../models/enums";
 export * from "../models/errors";
 export { CaitlynError } from "./errors";
+export { ErrorCode } from "./errorCodes";
 export { CaitlynConnectionError } from "./connection";
 export { NotSupportedByServer, SseStream, CaitlynAuthError, UploadFile, WorkPromise, contentTypeFor, createAuth, workspaceAudience, isSyncAborted, withHints, type FileInput, type UploadFileOptions, type UploadDescription, type BatchFiles, type BatchUpload, type BatchUploadOptions, type IngestionProgress, type SyncItemInput, type SyncOptions, type SyncPhase, type SyncPlan, type SyncReport, type SyncReportBatch, type SyncReportItem, type LocalFile, type ReadersShorthand, type WaitOptions, type AuthOptions, type AuthSession, type AwsCredentials, type OAuthTokens, type TokenStore, type CaitlynOptions, type CallOptions, type CaitlynErrorFields, type WithRaw } from "@caitlyn-ai/sdk-core";

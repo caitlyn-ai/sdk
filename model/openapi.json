@@ -1549,7 +1549,7 @@
         },
         "/v3/agents/{agentId}/history/{historyEntryId}": {
             "get": {
-                "description": "Gets one live history entry, with the configuration live had after the change.\n\nThe configuration is that of the entry's `version`, which never changes. Reading the entry (who\nchanged live, when, and to which version) needs agent read; its `configuration` needs what\nreading that version needs, so a caller without the agent's version access grant gets the entry\nwithout it unless the version is live now. It is also absent when that version was deleted\nthrough an older API that does not protect versions named in live history.",
+                "description": "Gets one live history entry, with the configuration live had after the change.\n\nThe configuration is that of the entry's `version`, which never changes. Reading the entry (who\nchanged live, when, and to which version) needs agent read; its `configuration` needs what\nreading that version needs, so a caller without the permission to read versions, or without the\nagent's version access grant for a version that is not live now, gets the entry without it. It is also absent when that version was deleted\nthrough an older API that does not protect versions named in live history.",
                 "operationId": "GetHistoryEntry",
                 "parameters": [
                     {
@@ -5105,7 +5105,7 @@
                 }
             },
             "post": {
-                "description": "Sends a message and streams the answer as server-sent events.\n\nThe message is sent when the call is made, whether or not anyone reads the stream. The stream ends\nwith exactly one `message.completed` or `message.failed`. If the connection drops, the SDK\nre-attaches with `WatchConversation` and `Last-Event-ID`, so no event is lost or repeated. Not retried automatically: a send that fails before the stream starts is\nreported to the caller.\n\nA message may carry documents in `attachments`, each named by an upload reserved for this\nconversation. The SDKs also take files there: each file is uploaded for the conversation first,\nand the message is sent once every upload has arrived.\n\nOnly a participant may send: whoever started the conversation, or someone it is shared with for\nwriting (the update grant). A caller who may only read it, or may not see it, gets 404.",
+                "description": "Sends a message and streams the answer as server-sent events.\n\nThe message is sent when the call is made, whether or not anyone reads the stream. The stream ends\nwith exactly one `message.completed` or `message.failed`. If the connection drops, the SDK\nre-attaches with `WatchConversation` and `Last-Event-ID`, so no event is lost or repeated. Not retried automatically: a send that fails before the stream starts is\nreported to the caller.\n\nA message may carry documents in `attachments`, each named by an upload reserved for this\nconversation. The SDKs also take files there: each file is uploaded for the conversation first,\nand the message is sent once every upload has arrived.\n\nOnly a participant may send: whoever started the conversation, or someone it is shared with for\nwriting (the update grant), who may still see the conversation's agent, and, when it was started\non a version other than live, holds that agent's version access grant. A caller without any of\nthese gets 404, so revoking someone's access to the agent stops them chatting in conversations\nthey already started.",
                 "operationId": "SendMessage",
                 "requestBody": {
                     "content": {
@@ -7442,7 +7442,7 @@
                 }
             },
             "put": {
-                "description": "Sets who may use a knowledge base, or who may read a folder or a document in it.\n\n`If-Match` is optional. Without it the write is unconditional and the last writer wins, which is\nsafe because the caller sends the whole list. With it, access that changed since is refused with\n412.\n\nWithout `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or\n`document`, send `readers`; `kind: inherit` makes it follow its folder again. The root folder\n(`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there\nwith 400 `VALIDATION_FAILED`. Applying readers to\nthe passages a folder or document holds continues after the response; the returned access says\nwhat is set, and the knowledge base's watch shows the work.",
+                "description": "Sets who may use a knowledge base, or who may read a folder or a document in it.\n\n`If-Match` is optional. Without it the write is unconditional and the last writer wins, which is\nsafe because the caller sends the whole list. With it, access that changed since is refused with\n412.\n\nWithout `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or\n`document`, send `readers`; `kind: inherit` makes it follow its folder again. The knowledge base's\nrole grants are set only without a target, under the knowledge base's own permission, as v2's\nknowledge base permissions route sets them, so `roles` with `folder` or `document`, `readers`\nwithout one, and both `folder` and `document` are refused with 400 `VALIDATION_FAILED`. The root folder\n(`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there\nwith 400 `VALIDATION_FAILED`. Applying readers to\nthe passages a folder or document holds continues after the response; the returned access says\nwhat is set, and the knowledge base's watch shows the work.",
                 "operationId": "PutAccess",
                 "requestBody": {
                     "content": {
@@ -7473,6 +7473,21 @@
                                     }
                                 },
                                 "PutAccess_example3": {
+                                    "summary": "Role grants sent with a folder",
+                                    "description": "",
+                                    "value": {
+                                        "roles": [
+                                            {
+                                                "roleId": "hr-team",
+                                                "can": [
+                                                    "find",
+                                                    "read"
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                },
+                                "PutAccess_example4": {
                                     "summary": "The access changed since it was read",
                                     "description": "",
                                     "value": {
@@ -7507,6 +7522,11 @@
                                 "value": "KB4T7YQ2WL"
                             },
                             "PutAccess_example3": {
+                                "summary": "Role grants sent with a folder",
+                                "description": "",
+                                "value": "KB4T7YQ2WL"
+                            },
+                            "PutAccess_example4": {
                                 "summary": "The access changed since it was read",
                                 "description": "",
                                 "value": "KB4T7YQ2WL"
@@ -7529,6 +7549,11 @@
                                 "summary": "Only the HR team may read investigations",
                                 "description": "",
                                 "value": "/hr/investigations/"
+                            },
+                            "PutAccess_example3": {
+                                "summary": "Role grants sent with a folder",
+                                "description": "",
+                                "value": "/hr/"
                             }
                         }
                     },
@@ -7566,7 +7591,7 @@
                                 "description": "",
                                 "value": "\"2\""
                             },
-                            "PutAccess_example3": {
+                            "PutAccess_example4": {
                                 "summary": "The access changed since it was read",
                                 "description": "",
                                 "value": "\"3\""
@@ -7660,6 +7685,27 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ValidationErrorResponseContent"
+                                },
+                                "examples": {
+                                    "PutAccess_example3": {
+                                        "summary": "Role grants sent with a folder",
+                                        "description": "",
+                                        "value": {
+                                            "type": "https://build.caitlyn.ai/errors/VALIDATION_FAILED",
+                                            "title": "Validation failed",
+                                            "status": 400,
+                                            "code": "VALIDATION_FAILED",
+                                            "detail": "A folder's or document's access is its readers; set the knowledge base's role grants without a folder or document.",
+                                            "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BJ2",
+                                            "errors": [
+                                                {
+                                                    "pointer": "/roles",
+                                                    "code": "VALIDATION_FAILED",
+                                                    "detail": "Not allowed with folder or document."
+                                                }
+                                            ]
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -7702,7 +7748,7 @@
                                     "$ref": "#/components/schemas/PreconditionFailedErrorResponseContent"
                                 },
                                 "examples": {
-                                    "PutAccess_example3": {
+                                    "PutAccess_example4": {
                                         "summary": "The access changed since it was read",
                                         "description": "",
                                         "value": {
@@ -10867,7 +10913,7 @@
         },
         "/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{version}": {
             "delete": {
-                "description": "Deletes one version of a document that is neither current nor processing.\n\nThe version, its passages and its renders are removed; its bytes are kept while another version\nor document has the same ones. The current version and a version still processing are refused with\n409 `CONFLICT`; to remove the current version, delete the document. Like every change, it is\naudited.",
+                "description": "Deletes one version of a document that is neither current nor processing.\n\nThe version, its passages and its renders are removed; its bytes are kept while another version\nor document has the same ones. The current version and a version still processing are refused with\n409 `CONFLICT`; to remove the current version, delete the document. Like every change, it is\naudited.\n\nA version's number is its place in upload order, so deleting by number needs the document's\nversions to be numbered already: until they are, a number is refused with 409\n`VERSIONS_NOT_NUMBERED`, because deleting would shift every later number. Try again later, or\ndelete `latest`, which works either way.",
                 "operationId": "DeleteDocumentVersion",
                 "parameters": [
                     {
@@ -10889,6 +10935,11 @@
                             },
                             "DeleteDocumentVersion_example2": {
                                 "summary": "The current version",
+                                "description": "",
+                                "value": "KB4T7YQ2WL"
+                            },
+                            "DeleteDocumentVersion_example3": {
+                                "summary": "A version number before the document's versions are numbered",
                                 "description": "",
                                 "value": "KB4T7YQ2WL"
                             }
@@ -10913,6 +10964,11 @@
                             },
                             "DeleteDocumentVersion_example2": {
                                 "summary": "The current version",
+                                "description": "",
+                                "value": "doc-3b7f9e21"
+                            },
+                            "DeleteDocumentVersion_example3": {
+                                "summary": "A version number before the document's versions are numbered",
                                 "description": "",
                                 "value": "doc-3b7f9e21"
                             }
@@ -10940,6 +10996,11 @@
                                 "summary": "The current version",
                                 "description": "",
                                 "value": "current"
+                            },
+                            "DeleteDocumentVersion_example3": {
+                                "summary": "A version number before the document's versions are numbered",
+                                "description": "",
+                                "value": "1"
                             }
                         }
                     }
@@ -11037,6 +11098,18 @@
                                             "code": "CONFLICT",
                                             "detail": "Version 2 is the current version of document doc-3b7f9e21. Delete the document to remove it.",
                                             "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BD3"
+                                        }
+                                    },
+                                    "DeleteDocumentVersion_example3": {
+                                        "summary": "A version number before the document's versions are numbered",
+                                        "description": "",
+                                        "value": {
+                                            "type": "https://build.caitlyn.ai/errors/VERSIONS_NOT_NUMBERED",
+                                            "title": "Versions not numbered",
+                                            "status": 409,
+                                            "code": "VERSIONS_NOT_NUMBERED",
+                                            "detail": "Document doc-3b7f9e21's versions are not numbered yet. Try again later, or delete latest.",
+                                            "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BD5"
                                         }
                                     }
                                 }
@@ -12008,7 +12081,7 @@
         },
         "/v3/knowledge-bases/{knowledgeBaseId}/documents:reprocess": {
             "post": {
-                "description": "Processes documents again the newest way; the work continues after the response.\n\nGive `outOfDate: true` for every document processed in an older way than the newest, or\n`documentIds` for particular documents. Each document's current version keeps serving until its\nnew processing is indexed. Returns 202 with the job, which the knowledge base's watch follows;\nestimate it first with EstimateReprocessDocuments. Costs money: see the estimate's `cost`.",
+                "description": "Processes documents again the newest way; the work continues after the response.\n\nGive `outOfDate: true` for every document processed in an older way than the newest, or\n`documentIds` for particular documents. Each document's current version keeps serving until its\nnew processing is indexed. Returns 202 with the job, which the knowledge base's watch follows;\nestimate it first with EstimateReprocessDocuments. It is charged for: see the estimate's `cost`, in\nthe form the organisation sees it.",
                 "operationId": "ReprocessDocuments",
                 "requestBody": {
                     "content": {
@@ -14138,7 +14211,7 @@
         },
         "/v3/knowledge-bases/{knowledgeBaseId}/fields:fill-in": {
             "post": {
-                "description": "Fills in metadata fields for the documents that still need them; the work continues after the\nresponse.\n\nFor each field named, every document with no value yet gets one, and the search index and vectors\nare brought up to date. Values someone set by hand are kept. Returns 202 with the job, which the\nknowledge base's watch follows; estimate it first with EstimateFillInFields. Costs money: see the\nestimate's `cost`.",
+                "description": "Fills in metadata fields for the documents that still need them; the work continues after the\nresponse.\n\nFor each field named, every document with no value yet gets one, and the search index and vectors\nare brought up to date. Values someone set by hand are kept. Returns 202 with the job, which the\nknowledge base's watch follows; estimate it first with EstimateFillInFields. It is charged for: see\nthe estimate's `cost`, in the form the organisation sees it.",
                 "operationId": "FillInFields",
                 "requestBody": {
                     "content": {
@@ -15612,6 +15685,7 @@
                                                             "skipped": 1
                                                         }
                                                     },
+                                                    "uploadsExpireAt": "2026-11-16T01:38:00.000Z",
                                                     "createdAt": "2026-11-16T01:02:03.000Z",
                                                     "updatedAt": "2026-11-16T01:03:00.000Z",
                                                     "startedAt": "2026-11-16T01:03:00.000Z"
@@ -15729,7 +15803,7 @@
                 }
             },
             "post": {
-                "description": "Makes an ingestion batch for one knowledge base, and plans it unless more items will follow.\n\nTakes up to 10,000 items; add more with BatchCreateIngestionBatchItems while `awaitMoreItems` is\ntrue. Returns 202 with the batch, and `Location` names it; wait for the plan with the SDKs'\n`batch.planned()`. Needs the files list permission and read access to the knowledge base, so a\ncaller allowed only to look can plan; a batch with a `fetchUrl` item also needs the files create\npermission.",
+                "description": "Makes an ingestion batch for one knowledge base, and plans it unless more items will follow.\n\nTakes up to 10,000 items; add more with BatchCreateIngestionBatchItems while `awaitMoreItems` is\ntrue. Returns 202 with the batch, and `Location` names it; wait for the plan with the SDKs'\n`batch.planned()`. Needs the ingestion create permission and read access to the knowledge base,\nas v2's ingestion route does; starting the batch, which hands out an upload policy, also needs the\nfiles create permission. A `fetchUrl` item needs the files create permission when it is added,\nwhich the server checks, because the trait cannot follow an item's member.",
                 "operationId": "CreateIngestionBatch",
                 "requestBody": {
                     "content": {
@@ -18413,6 +18487,7 @@
                                                     }
                                                 },
                                                 "itemCount": 3,
+                                                "uploadsExpireAt": "2026-11-16T01:38:00.000Z",
                                                 "createdAt": "2026-11-16T01:02:03.000Z",
                                                 "updatedAt": "2026-11-16T01:03:00.000Z",
                                                 "startedAt": "2026-11-16T01:03:00.000Z"
@@ -19744,7 +19819,7 @@
         },
         "/v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}/cancel": {
             "post": {
-                "description": "Cancels an Operation's work.\n\nWork not started yet is dropped; work running is stopped where its kind allows. Only\n`document_ingestion` can be cancelled today: a cancelled first version removes the document, and a\ncancelled new version leaves the current one serving. Any other kind is refused with 409\n`OPERATION_NOT_CANCELLABLE`, and a final Operation with 409 `CONFLICT`. Returns the Operation, which\nbecomes `cancelled` once the work has stopped.\n\nCancelling needs what starting that kind of work needs, on the same record, which the server\nreads from the Operation before it acts: for `document_ingestion`, what CancelDocumentProcessing\nneeds (`files.update` and the document's readers); for `document_update`, the same; for\n`fill_in`, `reprocess` and `layout_aware_search`, `knowledge-bases.update` and\n`knowledge-bases.ingestions.update`; for a `folder_change`, the permission of the change\n(`files.create`, `files.update` or `files.delete`) and the folder's readers; for\n`permissions_change`, `files.permissions.update` and the record's readers; for\n`knowledge_base_deletion`, `knowledge-bases.delete`. A caller without it gets 404, as for an\nOperation it may not see. Its declared permission is the one every cancellable kind needs today.",
+                "description": "Cancels an Operation's work.\n\nWork not started yet is dropped; work running is stopped where its kind allows. Only\n`document_ingestion` can be cancelled today: a cancelled first version removes the document, and a\ncancelled new version leaves the current one serving. Any other kind is refused with 409\n`OPERATION_NOT_CANCELLABLE`, and a final Operation with 409 `CONFLICT`. Returns the Operation, which\nbecomes `cancelled` once the work has stopped.\n\nCancelling needs what starting that kind of work needs, on the same record, which the server\nreads from the Operation and checks per kind before it acts: for `document_ingestion`, the\npermission that started it (`files.create` for a new document, `files.update` for a new version\nor a retry) and the document's readers; for `document_update`, `files.update` and its readers; for\n`fill_in`, `reprocess` and `layout_aware_search`, `knowledge-bases.update` and\n`knowledge-bases.ingestions.update`; for a `folder_change`, the permission of the change\n(`files.create`, `files.update` or `files.delete`) and the folder's readers; for\n`permissions_change`, `files.permissions.update` and the record's readers; for\n`knowledge_base_deletion`, `knowledge-bases.delete`. A caller without it gets 404, as for an\nOperation it may not see. No one permission is common to every kind, so the operation declares\nonly what reading an Operation needs (`files.read`, as GetOperation), and the per-kind check does\nthe rest.",
                 "operationId": "CancelOperation",
                 "parameters": [
                     {
@@ -22475,7 +22550,7 @@
             },
             "ConflictErrorResponseContent": {
                 "type": "object",
-                "description": "The resource's state does not allow the request, a unique name is taken, or a request with the\nsame idempotency key is still in progress. An agent version that live points at\n(`VERSION_IN_USE`) or that live history names (`VERSION_IN_HISTORY`) cannot be deleted. A\ndocument still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an\ningestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document\nan ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry\n`Retry-After`.",
+                "description": "The resource's state does not allow the request, a unique name is taken, or a request with the\nsame idempotency key is still in progress. An agent version that live points at\n(`VERSION_IN_USE`) or that live history names (`VERSION_IN_HISTORY`) cannot be deleted. A\ndocument still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an\ningestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document\nan ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry\n`Retry-After`. A document whose versions are not numbered yet cannot have one deleted by number\n(`VERSIONS_NOT_NUMBERED`).",
                 "properties": {
                     "type": {
                         "type": "string",
@@ -22711,7 +22786,7 @@
             },
             "Cost": {
                 "type": "object",
-                "description": "An amount of money, as a range, in the organisation's chosen form.",
+                "description": "What work is expected to cost, as a range, in the form the organisation sees its costs.",
                 "properties": {
                     "low": {
                         "type": "number",
@@ -22737,7 +22812,7 @@
             },
             "CostUnit": {
                 "type": "string",
-                "description": "The form a cost is given in. Open: new values may be added.",
+                "description": "The form a cost is given in, which follows how the organisation sees its costs. Open: new values\nmay be added.",
                 "enum": [
                     "usd",
                     "percent_of_plan"
@@ -24570,7 +24645,12 @@
                     },
                     "planExpiresAt": {
                         "type": "string",
-                        "description": "When the plan goes stale, 5 minutes after planning. StartIngestionBatch on a stale plan plans\nagain first.",
+                        "description": "When the plan goes stale, 5 minutes after planning. A stale plan does not end the batch:\nStartIngestionBatch on a stale plan plans again first.",
+                        "format": "date-time"
+                    },
+                    "uploadsExpireAt": {
+                        "type": "string",
+                        "description": "When uploads must arrive by: at or after the upload policy's `expiresAt`. An item whose bytes\nhave not arrived by then fails with `UPLOAD_EXPIRED`; bytes that arrived in time are accepted\nwhen they are reported, however late. A caller watching the batch can read it again after this\ntime to see which items failed. Renewing the upload policy moves it later. Absent when no item\nis awaiting upload.",
                         "format": "date-time"
                     },
                     "createdBy": {
@@ -24701,7 +24781,7 @@
                         "type": "string",
                         "maxLength": 4096,
                         "minLength": 1,
-                        "description": "For fetched content: the `http` or `https` address the server fetches the bytes from while\nplanning, at most 100 MB. Needs the files create permission."
+                        "description": "For fetched content: the `http` or `https` address the server fetches the bytes from while\nplanning, at most 100 MB. Needs the files create permission, which the server checks when the\nitem is added."
                     },
                     "sourceUrl": {
                         "type": "string",
@@ -24766,7 +24846,7 @@
                     "failureCode": {
                         "type": "string",
                         "pattern": "^[A-Z][A-Z0-9_]{0,62}$",
-                        "description": "Why the item failed, as a stable code: for example `UPLOAD_EXPIRED` (no bytes arrived before\nthe upload policy expired), `CHECKSUM_MISMATCH`, `PERMISSION_DENIED`, for `new_version`\n`VALIDATION_FAILED` (another file type) or `DOCUMENT_INGESTION_IN_PROGRESS`, or a document's\nfailure code. Present only when `status` is `failed`."
+                        "description": "Why the item failed, as a stable code: for example `UPLOAD_EXPIRED` (no bytes arrived by the\nbatch's `uploadsExpireAt`), `CHECKSUM_MISMATCH`, `PERMISSION_DENIED`, for `new_version`\n`VALIDATION_FAILED` (another file type) or `DOCUMENT_INGESTION_IN_PROGRESS`, or a document's\nfailure code. Present only when `status` is `failed`."
                     },
                     "failureDetail": {
                         "type": "string",
@@ -24789,7 +24869,7 @@
             },
             "IngestionBatchStatus": {
                 "type": "string",
-                "description": "Where an ingestion batch is. Open: new values may be added. `succeeded`,\n`completed_with_failures`, `failed`, `cancelled` and `expired` are final.",
+                "description": "Where an ingestion batch is. Open: new values may be added. `succeeded`,\n`completed_with_failures`, `failed` and `cancelled` are final.",
                 "enum": [
                     "draft",
                     "planning",
@@ -24798,8 +24878,7 @@
                     "succeeded",
                     "completed_with_failures",
                     "failed",
-                    "cancelled",
-                    "expired"
+                    "cancelled"
                 ]
             },
             "IngestionBoundary": {
@@ -24916,7 +24995,7 @@
                         "type": "string",
                         "maxLength": 4096,
                         "minLength": 1,
-                        "description": "For fetched content: the `http` or `https` address the server fetches the bytes from while\nplanning, at most 100 MB. Needs the files create permission."
+                        "description": "For fetched content: the `http` or `https` address the server fetches the bytes from while\nplanning, at most 100 MB. Needs the files create permission, which the server checks when the\nitem is added."
                     },
                     "sourceUrl": {
                         "type": "string",
@@ -27588,9 +27667,10 @@
             },
             "ReadersKind": {
                 "type": "string",
-                "description": "How a folder's or document's readers are decided. Open: new values may be added.",
+                "description": "How a folder's or document's readers are decided, which sets how widely its contents can be read.\nFrom widest to narrowest: `public`, `everyone`, `specific`; `inherit` takes the folder's. Each is\nread back as it was stored: a list open to anyone reads as `public`, so a read never widens or\nnarrows what was set. Open: new values may be added.",
                 "enum": [
                     "inherit",
+                    "public",
                     "everyone",
                     "specific"
                 ]

@@ -107,7 +107,8 @@ const DEFAULT_FAULTS = {
   // `conflict` with that reason, resolved by the batch's policy (`ask`, the default, leaves it `unresolved`).
   planConflicts: {},
   // How long the policy StartIngestionBatch returns lasts, in seconds; renewals (CreateIngestionBatchUploadPolicy)
-  // last renewedPolicySeconds. Under 300 makes the SDK renew before its first upload (PROTOCOL.md 15).
+  // last renewedPolicySeconds: a batch's first one only, later renewals 1800. Under 300 makes the SDK renew before
+  // its first upload (PROTOCOL.md 15).
   policySeconds: 1800,
   renewedPolicySeconds: 1800,
   // The form endpoint answers every upload signed with the policy Start returned with 403 "Policy expired", as S3
@@ -119,6 +120,12 @@ const DEFAULT_FAULTS = {
   // Hold each form POST this long before storing it, so uploads overlap (ingest.concurrency) and can be cancelled
   // in flight (ingest.cancel). A client that disconnects meanwhile stores nothing (`upload-aborted` in the log).
   uploadDelayMs: 0,
+  // Upload reservations on a compressed clock (batch-upload.keep-alive): { policySeconds: 302, reservationSeconds: 4 }.
+  // Every upload policy (Start's and each renewal's) expires policySeconds after it is issued, so an SDK's "less than
+  // 5 minutes left" falls due 2 seconds after each issue; the batch's uploadsExpireAt is the latest issue plus
+  // reservationSeconds; and CompleteIngestionBatchUploads fails an item UPLOAD_EXPIRED when its object was stored
+  // after the uploadsExpireAt in force at that moment. false for the usual mock.
+  uploadReservation: false,
   // CompleteIngestionBatchUploads fails an item with CHECKSUM_MISMATCH (deleting its object) this many times, by the
   // item's path (or id): { "/hr/a.pdf": 1 }. The item stays `awaiting_upload`, to be uploaded again.
   checksumMismatch: {},
@@ -159,8 +166,14 @@ const DEFAULT_FAULTS = {
   etagHeaderOnly: false,
   // After a watchDrops cut, the next WatchKnowledgeBase connection is answered 404, as for a thing gone meanwhile.
   watchGoneAfterDrop: false,
-  // Planning ends the batch `expired` (its plan went stale before it was started), not `planned`.
-  planExpires: false,
+  // A batch's upload deadline passes with nothing to end it but a read, as the v3 server works without its background
+  // sweep (PROTOCOL.md 16): 'uploads' starts a batch whose `uploadsExpireAt` is a minute gone. The batch's watch then
+  // sends no snapshot that shows it ending, and neither does anything else but GetIngestionBatch, which ends it: each
+  // item still awaiting upload fails with UPLOAD_EXPIRED and the rest finish. false for the usual mock.
+  deadlinePassed: false,
+  // A path the server adds to every new batch as an item to ingest, beside the caller's: a sync then finds the batch
+  // awaiting a file it has none for (errors.item-has-no-file). '/hr/stray.pdf', or false.
+  strayItem: false,
   // Items, by path (or id), that end `cancelled` instead of indexed: their document was deleted while they were being
   // ingested. { "/hr/a.pdf": true }
   cancelItems: {},
@@ -1392,7 +1405,7 @@ async function updateDraft(req, res, rid, [agentId], url, body) {
 // batch is `succeeded` (or `completed_with_failures`) once every item is final.
 
 const FINAL_ITEM = new Set(['indexed', 'skipped', 'moved', 'updated', 'removed', 'failed', 'cancelled']);
-const FINAL_BATCH = new Set(['succeeded', 'completed_with_failures', 'failed', 'cancelled', 'expired']);
+const FINAL_BATCH = new Set(['succeeded', 'completed_with_failures', 'failed', 'cancelled']);
 const RULE_KEY = { path_taken: 'pathTaken', ambiguous_content: 'ambiguousContent', duplicate_path: 'duplicatePath', duplicate_external_id: 'duplicateExternalKey', duplicate_in_batch: 'duplicateInBatch', changed_since_plan: 'changedSincePlan' };
 // The resolutions each outcome accepts by hand (UpdateIngestionBatchItem).
 const RESOLUTIONS = {
@@ -1436,6 +1449,7 @@ function batchBody(b, withEtag = false) {
     itemCount: b.items.length,
     ...(b.planned ? { counts: counts(b) } : {}),
     ...(b.planExpiresAt ? { planExpiresAt: b.planExpiresAt } : {}),
+    ...(b.uploadsExpireAt && b.items.some((it) => it.status === 'awaiting_upload') ? { uploadsExpireAt: b.uploadsExpireAt } : {}),
     createdBy: { displayName: 'Mock caller' },
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
@@ -1510,8 +1524,7 @@ function plan(b) {
   // not finish (the planFails fault). The messages are the model's fixed ones for each code.
   const failure = faults.planFails ? 'planning_failed' : failed ? 'conflict_policy_fail' : null;
   b.planned = true;
-  b.status = failure ? 'failed' : faults.planExpires ? 'expired' : 'planned';
-  if (faults.planExpires && !failure) b.endedAt = nowIso();
+  b.status = failure ? 'failed' : 'planned';
   if (failure) {
     b.endedAt = nowIso();
     b.failure = { code: failure, message: BATCH_FAILURES[failure] };
@@ -1536,6 +1549,12 @@ function startPlanning(b) {
 
 function newPolicy(b, req, seconds) {
   b.policyGeneration++;
+  const reservation = faults.uploadReservation;
+  if (reservation) {
+    seconds = reservation.policySeconds;
+    b.uploadsExpireAt = new Date(Date.now() + reservation.reservationSeconds * 1000).toISOString();
+    b.reservedByPolicy = true;
+  }
   const expiresAt = new Date(Date.now() + seconds * 1000).toISOString();
   const doc = { expiration: expiresAt, batchId: b.id, generation: b.policyGeneration, conditions: [['starts-with', '$key', b.keyPrefix], ['eq', '$x-amz-checksum-algorithm', 'SHA256'], ['content-length-range', 1, MAX_FILE]] };
   const policy = Buffer.from(JSON.stringify(doc)).toString('base64');
@@ -1565,6 +1584,21 @@ function advance(b) {
     for (const it of rest) Object.assign(it, { status: 'failed', failureCode: 'UPLOAD_EXPIRED', failureDetail: 'No bytes arrived before the upload policy expired.', etagN: it.etagN + 1 });
   }
   if (b.items.every((it) => FINAL_ITEM.has(it.status))) {
+    b.status = b.items.some((it) => it.status === 'failed') ? 'completed_with_failures' : 'succeeded';
+    b.endedAt = nowIso();
+    touch(b);
+  }
+}
+
+/** faults.deadlinePassed: the read that finds a batch past its deadline ends it, as the v3 server's reads do. */
+function endOnRead(b) {
+  delete b.endsOnRead;
+  b.endedOnRead = true;
+  if (b.status === 'running') {
+    for (const it of b.items) {
+      if (it.status === 'awaiting_upload') Object.assign(it, { status: 'failed', failureCode: 'UPLOAD_EXPIRED', failureDetail: 'No bytes arrived before the upload policy expired.', etagN: it.etagN + 1 });
+      else if (it.status === 'ingesting') finishItem(b, it);
+    }
     b.status = b.items.some((it) => it.status === 'failed') ? 'completed_with_failures' : 'succeeded';
     b.endedAt = nowIso();
     touch(b);
@@ -1637,6 +1671,7 @@ async function createIngestionBatch(req, res, rid, [kbId], url, body) {
       updatedAt: now,
     };
     const results = addItems(b, items);
+    if (faults.strayItem) addItems(b, [{ action: 'ingest', path: faults.strayItem, sha256: crypto.createHash('sha256').update('stray').digest('base64'), byteSize: 5, contentType: 'application/pdf' }]);
     const failed = results.find((r) => r.status === 'failed');
     if (failed) return { status: 400, problem: ['VALIDATION_FAILED', `Item ${failed.index}: ${failed.detail}`, { fieldErrors: [{ pointer: `/items/${failed.index}`, code: failed.code }] }] };
     state.batches.set(id, b);
@@ -1673,6 +1708,9 @@ function startBatch(b, req) {
   touch(b);
   const needsBytes = b.items.some((it) => it.status === 'awaiting_upload');
   const uploadPolicy = needsBytes ? newPolicy(b, req, faults.policySeconds ?? 1800) : undefined;
+  // When the items awaiting upload are given up: the policy's expiry plus the server's grace, here 15 minutes.
+  if (!b.reservedByPolicy) b.uploadsExpireAt = new Date(Date.now() + (faults.deadlinePassed === 'uploads' ? -60_000 : ((faults.policySeconds ?? 1800) + 900) * 1000)).toISOString();
+  if (faults.deadlinePassed === 'uploads') b.endsOnRead = 'uploads';
   if (needsBytes && faults.startPolicyExpired) b.expiredGeneration = b.policyGeneration;
   if (!needsBytes) advance(b);
   return uploadPolicy;
@@ -1683,6 +1721,10 @@ async function getIngestionBatch(req, res, rid, [kb, id]) {
   if (statusFault('GetIngestionBatch', res, rid)) return;
   const b = findBatch(id, kb);
   if (!b) return problem(res, rid, 404, 'NOT_FOUND', `No ingestion batch ${id}`);
+  if (b.endsOnRead) {
+    endOnRead(b);
+    return sendJson(res, rid, 200, batchBody(b), { ETag: batchEtag(b) });
+  }
   if (b.status === 'planning') {
     if (b.planningReadsLeft > 0) b.planningReadsLeft--;
     else plan(b);
@@ -1812,7 +1854,10 @@ async function createUploadPolicy(req, res, rid, [kb, id]) {
   if (b.status !== 'running' || !b.items.some((it) => it.status === 'awaiting_upload')) {
     return problem(res, rid, 409, 'CONFLICT', `Ingestion batch ${b.id} has nothing left to upload.`);
   }
-  const uploadPolicy = newPolicy(b, req, faults.renewedPolicySeconds ?? 1800);
+  // Only a batch's first created policy is short, so the renewal it causes lasts and the upload keep-alive (which
+  // renews at most once a second while any policy is short) has nothing more to do: the count stays exact.
+  b.createdPolicies = (b.createdPolicies ?? 0) + 1;
+  const uploadPolicy = newPolicy(b, req, b.createdPolicies === 1 ? (faults.renewedPolicySeconds ?? 1800) : 1800);
   if (faults.firstCreatedPolicyExpired && !b.createdPolicyExpired) {
     b.createdPolicyExpired = true;
     b.expiredGeneration = b.policyGeneration;
@@ -1835,6 +1880,10 @@ async function completeUploads(req, res, rid, [kb, id], url, body) {
     if (!it || it.status !== 'awaiting_upload') return { itemId, status: 'failed', code: 'CONFLICT', detail: `Item ${itemId} is not awaiting upload.` };
     const obj = state.objects.get(it.objectKey);
     if (!obj) return { itemId, status: 'failed', code: 'NOT_FOUND', detail: `Nothing was uploaded to ${it.objectKey}.` };
+    if (obj.late) {
+      Object.assign(it, { status: 'failed', failureCode: 'UPLOAD_EXPIRED', failureDetail: 'The bytes arrived after the batch stopped waiting for them.', etagN: it.etagN + 1 });
+      return { itemId, status: 'failed', code: 'UPLOAD_EXPIRED', detail: `The bytes for ${it.objectKey} arrived after the upload deadline.` };
+    }
     const key = it.path in (faults.checksumMismatch ?? {}) ? it.path : it.id;
     const injected = (faults.checksumMismatch?.[key] ?? 0) > 0;
     if (injected) faults.checksumMismatch[key]--;
@@ -2099,7 +2148,7 @@ async function getAccess(req, res, rid, [kb], url) {
   sendJson(res, rid, 200, body, { ETag: etag });
 }
 
-const READERS_KINDS = new Set(['inherit', 'everyone', 'specific']);
+const READERS_KINDS = new Set(['inherit', 'public', 'everyone', 'specific']);
 
 async function putAccess(req, res, rid, [kb], url, body) {
   if (statusFault('PutAccess', res, rid)) return;
@@ -2114,9 +2163,13 @@ async function putAccess(req, res, rid, [kb], url, body) {
     t.rec.roles = input.roles;
     t.rec.accessEtagN++;
   } else {
+    // A knowledge base's role grants are set only without a target (PutAccess): roles with a folder or document is 400.
+    if (input.roles !== undefined) {
+      return problem(res, rid, 400, 'VALIDATION_FAILED', 'roles are the knowledge base\'s own: send them without folder or document.', { fieldErrors: [{ pointer: '/roles', code: 'VALIDATION_FAILED' }] });
+    }
     const r = input.readers;
-    if (!r || typeof r !== 'object' || !READERS_KINDS.has(r.kind) || input.roles !== undefined) {
-      return problem(res, rid, 400, 'VALIDATION_FAILED', 'readers is {kind: inherit | everyone | specific, roles?, people?}', { fieldErrors: [{ pointer: '/readers', code: 'VALIDATION_FAILED' }] });
+    if (!r || typeof r !== 'object' || !READERS_KINDS.has(r.kind)) {
+      return problem(res, rid, 400, 'VALIDATION_FAILED', 'readers is {kind: inherit | public | everyone | specific, roles?, people?}', { fieldErrors: [{ pointer: '/readers', code: 'VALIDATION_FAILED' }] });
     }
     if (r.kind === 'specific' && !(r.roles?.length || r.people?.length)) {
       return problem(res, rid, 400, 'VALIDATION_FAILED', '`specific` readers name at least one role or person.', { fieldErrors: [{ pointer: '/readers', code: 'VALIDATION_FAILED' }] });
@@ -2543,9 +2596,21 @@ async function deleteDocumentVersion(req, res, rid, [kb, documentId, ref]) {
   const doc = findDoc(kb, documentId);
   if (!doc) return problem(res, rid, 404, 'NOT_FOUND', `No document ${decodeURIComponent(documentId)}`);
   const versions = versionsOf.get(doc);
-  const v = versions.find((x) => String(x.number) === decodeURIComponent(ref));
-  if (!v) return problem(res, rid, 404, 'NOT_FOUND', `Document ${doc.id} has no version ${decodeURIComponent(ref)}`);
-  if (v.number === doc.version) return problem(res, rid, 400, 'VERSION_NOT_DELETABLE', 'The current version cannot be deleted: replace it first.');
+  const name = decodeURIComponent(ref);
+  // As !2062's server does: the version a reference names first (a number, `current` or `latest`), then a number on a
+  // document whose versions are not numbered yet (faults.versionsNotNumbered) is 409 VERSIONS_NOT_NUMBERED, since it is
+  // a place in upload order that the delete would shift; `latest` and `current` work either way. The current version
+  // is 409 CONFLICT, and a version still processing 409 CONFLICT with Retry-After.
+  const number = name === 'current' ? doc.version : name === 'latest' ? Math.max(...versions.map((x) => x.number)) : Number(name);
+  const v = versions.find((x) => x.number === number);
+  if (!v) return problem(res, rid, 404, 'NOT_FOUND', `Document ${doc.id} has no version ${name} you can see.`);
+  if (/^\d+$/.test(name) && faults.versionsNotNumbered?.[doc.id]) {
+    return problem(res, rid, 409, 'VERSIONS_NOT_NUMBERED', `The versions of document ${doc.id} are not numbered yet, so version ${name} cannot be deleted by its number. Try again once they are numbered.`);
+  }
+  if (v.number === doc.version) return problem(res, rid, 409, 'CONFLICT', `Version ${v.number} is the current version of document ${doc.id}. Delete the document to remove it.`);
+  if (v.status === 'pending' || v.status === 'processing') {
+    return problem(res, rid, 409, 'CONFLICT', `Version ${v.number} of document ${doc.id} is still processing. Try again when it has finished.`, { extra: { 'Retry-After': '30' } });
+  }
   versions.splice(versions.indexOf(v), 1);
   doc.versionCount = versions.length;
   res.writeHead(204, baseHeaders(rid));
@@ -2730,6 +2795,7 @@ function look(filter) {
   }
   if (filter.batch) {
     const b = findBatch(filter.batch, filter.kb);
+    if (b?.endsOnRead) return; // only a read ends it
     if (b?.status === 'planning') {
       if (b.planningReadsLeft > 0) b.planningReadsLeft--;
       else plan(b);
@@ -2805,7 +2871,8 @@ async function watchKnowledgeBase(req, res, rid, [kbId], url) {
     if (filter.batch && !closed) {
       const b = findBatch(filter.batch, filter.kb);
       const now = JSON.stringify(b ? batchBody(b, true) : null);
-      if (b && now !== last) {
+      // faults.deadlinePassed: the change a read made is never sent, so only the SDK's own read can show it.
+      if (b && now !== last && !b.endedOnRead) {
         last = now;
         send('snapshot', { batch: batchBody(b, true), jobs: [], progress: [] });
       }
@@ -3187,7 +3254,9 @@ async function postObjectForm(req, res, rid, _m, url, body) {
     if (file.length < 1 || file.length > MAX_FILE) return s3Error(res, 400, 'EntityTooLarge', 'Your proposed upload exceeds the maximum allowed size');
     const sha = sha256b64(file);
     if (sha !== fields['x-amz-checksum-sha256']) return s3Error(res, 400, 'BadDigest', 'The SHA256 you specified did not match the calculated checksum.');
-    state.objects.set(fields.key, { key: fields.key, sha256: sha, byteSize: file.length, contentType: fields['Content-Type'] });
+    // When the bytes arrived, against the reservation in force then (faults.uploadReservation).
+    const late = b.reservedByPolicy && Date.now() > Date.parse(b.uploadsExpireAt);
+    state.objects.set(fields.key, { key: fields.key, sha256: sha, byteSize: file.length, contentType: fields['Content-Type'], arrivedAt: Date.now(), late });
     res.writeHead(204, { ETag: `"${sha}"` });
     res.end();
   } finally {

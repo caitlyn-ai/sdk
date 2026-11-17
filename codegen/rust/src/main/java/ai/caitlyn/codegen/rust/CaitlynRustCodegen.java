@@ -233,7 +233,10 @@ final class CaitlynRustCodegen implements DirectedCodegen<RustContext, RustSetti
         String name = Names.pascal(shape.getId().getName());
         ctx.writerDelegator().useFileWriter("src/types.rs", "", w -> {
             w.l(Names.doc(doc(shape), ""));
-            w.l("///\n/// Open: a value this SDK does not know yet is kept as [`" + name + "::Unknown`], never an error.\n");
+            w.l("///\n/// Open: a value this SDK does not know yet is kept as [`" + name + "::Unknown`], never an error.\n"
+                    + "/// A value that is `Unknown(\"x\")` today becomes its own variant in the SDK version that knows it, so\n"
+                    + "/// an arm matching `Unknown(\"x\")` stops matching after that upgrade: match on [`" + name + "::as_str`]\n"
+                    + "/// for a value this version does not name.\n");
             w.l("#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]\n#[non_exhaustive]\npub enum " + name + " {\n");
             List<String[]> values = new ArrayList<>();
             shape.getEnumValues().forEach((member, value) -> {

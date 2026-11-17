@@ -201,6 +201,23 @@ export async function openFile(input: FileInput, toError: ToError, signal?: Abor
 }
 
 async function prepare(input: FileInput, toError: ToError, signal?: AbortSignal, hash = true): Promise<PreparedFile> {
+  try {
+    return await read(input, toError, signal, hash);
+  } catch (cause) {
+    throw unreadable(cause, toError, UploadFile.from(input).name);
+  }
+}
+
+/**
+ * A file that could not be read (PROTOCOL.md 6.3): FILE_UNREADABLE, with the native error as its cause. A Caitlyn
+ * error (FILE_TOO_LARGE, a typed error) and a cancellation pass as they are.
+ */
+export function unreadable(cause: unknown, toError: ToError, name: string): unknown {
+  if ((cause as { $fault?: unknown })?.$fault || (cause as Error)?.name === 'AbortError' || (cause as { code?: unknown })?.code === 'FILE_TOO_LARGE') return cause;
+  return Object.assign(toError({ status: 0, code: 'FILE_UNREADABLE', title: 'The file could not be read', detail: `${name} could not be read: ${(cause as Error)?.message ?? cause}` }), { cause });
+}
+
+async function read(input: FileInput, toError: ToError, signal?: AbortSignal, hash = true): Promise<PreparedFile> {
   const file = UploadFile.from(input);
   const src = file.source;
   const contentType = file.contentType ?? contentTypeFor(file.name);

@@ -62,7 +62,7 @@ type LocalFile struct {
 }
 
 // SyncPhase names a step of Sync for IngestionProgress: checksum, planning, planned, upload, queued, processing, then the
-// batch's final status (succeeded, completed_with_failures, failed, cancelled, expired).
+// batch's final status (succeeded, completed_with_failures, failed, cancelled).
 type SyncPhase string
 
 // The phases Sync reports, in the order they happen; the last is the batch's final status (an IngestionBatchStatus).
@@ -340,7 +340,11 @@ func (r *syncRun) plan(ctx context.Context) (*SyncPlan, error) {
 		}
 		for _, cr := range res.Results {
 			if cr.Status == ItemCreateStatusFailed {
-				return nil, core.NewError(deref(cr.Code), "An item could not be added to the batch: "+deref(cr.Detail), nil)
+				why := deref(cr.Detail)
+				if c := deref(cr.Code); c != "" {
+					why = c + ": " + why
+				}
+				return nil, core.NewError("INGESTION_ITEM_REFUSED", "An item could not be added to the batch: "+why, nil)
 			}
 		}
 	}
@@ -440,7 +444,12 @@ func (r *syncRun) finish(ctx context.Context, plan *SyncPlan) (*SyncReport, erro
 	}
 
 	// 6. Upload.
-	if started.Result.UploadPolicy != nil {
+	if started.Result.UploadPolicy == nil {
+		// Items awaiting upload with no policy to send them under (PROTOCOL.md 6.3).
+		if err := r.policyMissing(ctx); err != nil {
+			return nil, err
+		}
+	} else {
 		if err := r.upload(ctx, started.Result.UploadPolicy); err != nil {
 			if ctx.Err() != nil {
 				return nil, r.cancelled(ctx)
@@ -579,6 +588,19 @@ func (r *syncRun) report(ctx context.Context) (*SyncReport, error) {
 
 // upload is sync's step 6: batch.Upload's uploader, sending every item awaiting its bytes. Unlike batch.Upload, an
 // item with no file is an error here, since every item came from the caller's own files.
+// policyMissing is UPLOAD_POLICY_MISSING when Start gave no upload policy but items await their bytes (PROTOCOL.md 6.3).
+func (r *syncRun) policyMissing(ctx context.Context) error {
+	status := IngestionItemStatusAwaitingUpload
+	awaiting, err := r.listItems(ctx, &status)
+	if err != nil {
+		return err
+	}
+	if len(awaiting) > 0 {
+		return core.NewError("UPLOAD_POLICY_MISSING", "StartIngestionBatch returned no upload policy, but items are awaiting upload", nil)
+	}
+	return nil
+}
+
 func (r *syncRun) upload(ctx context.Context, policy *UploadPolicy) error {
 	status := IngestionItemStatusAwaitingUpload
 	awaiting, err := r.listItems(ctx, &status)

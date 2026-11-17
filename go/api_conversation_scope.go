@@ -59,7 +59,10 @@ func (s *ConversationScope) Get(ctx context.Context, opts ...CallOption) (*Conve
 // and the message is sent once every upload has arrived.
 //
 // Only a participant may send: whoever started the conversation, or someone it is shared with for
-// writing (the update grant). A caller who may only read it, or may not see it, gets 404.
+// writing (the update grant), who may still see the conversation's agent, and, when it was started
+// on a version other than live, holds that agent's version access grant. A caller without any of
+// these gets 404, so revoking someone's access to the agent stops them chatting in conversations
+// they already started.
 //
 // The request is sent before send returns, whether or not the stream is read. The error for a failed
 // request is returned at once; errors during the stream (an error event, a connection that could not

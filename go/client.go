@@ -165,7 +165,7 @@ func statusForCode(code string) int {
 		return 403
 	case "NOT_FOUND":
 		return 404
-	case "CONFLICT", "ALREADY_EXISTS", "IDEMPOTENCY_KEY_IN_USE", "OPERATION_NOT_CANCELLABLE", "VERSION_IN_USE", "VERSION_IN_HISTORY", "DOCUMENT_INGESTION_IN_PROGRESS", "INGESTION_BATCH_UNRESOLVED", "TARGET_IN_USE":
+	case "CONFLICT", "ALREADY_EXISTS", "IDEMPOTENCY_KEY_IN_USE", "OPERATION_NOT_CANCELLABLE", "VERSION_IN_USE", "VERSION_IN_HISTORY", "DOCUMENT_INGESTION_IN_PROGRESS", "INGESTION_BATCH_UNRESOLVED", "TARGET_IN_USE", "VERSIONS_NOT_NUMBERED":
 		return 409
 	case "PRECONDITION_FAILED":
 		return 412
@@ -184,6 +184,133 @@ func statusForCode(code string) int {
 	}
 	return 0
 }
+
+// ErrorCode is a stable error code the API documents, as an error's Code holds it. It is a string, so
+// err.Code == caitlyn.ErrorCodeNotFound and err.Code == "NOT_FOUND" are the same check, and a code this SDK
+// does not know yet is still a string. Each code's page is https://build.caitlyn.ai/errors/{code}.
+type ErrorCode = string
+
+// The stable error codes the API documents, each with the error type it is raised as.
+const (
+	// ErrorCodeAlreadyExists is ALREADY_EXISTS, raised as *ConflictError (409).
+	ErrorCodeAlreadyExists ErrorCode = "ALREADY_EXISTS"
+	// ErrorCodeAttachmentsNotAccepted is ATTACHMENTS_NOT_ACCEPTED, raised as *ValidationError (400).
+	ErrorCodeAttachmentsNotAccepted ErrorCode = "ATTACHMENTS_NOT_ACCEPTED"
+	// ErrorCodeBatchItemContentAmbiguous is BATCH_ITEM_CONTENT_AMBIGUOUS, raised as *UnprocessableContentError (422).
+	ErrorCodeBatchItemContentAmbiguous ErrorCode = "BATCH_ITEM_CONTENT_AMBIGUOUS"
+	// ErrorCodeConfigurationTooLarge is CONFIGURATION_TOO_LARGE, raised as *ValidationError (400).
+	ErrorCodeConfigurationTooLarge ErrorCode = "CONFIGURATION_TOO_LARGE"
+	// ErrorCodeConflict is CONFLICT, raised as *ConflictError (409).
+	ErrorCodeConflict ErrorCode = "CONFLICT"
+	// ErrorCodeContentRejected is CONTENT_REJECTED, raised as *UnprocessableContentError (422).
+	ErrorCodeContentRejected ErrorCode = "CONTENT_REJECTED"
+	// ErrorCodeDocumentIngestionInProgress is DOCUMENT_INGESTION_IN_PROGRESS, raised as *ConflictError (409).
+	ErrorCodeDocumentIngestionInProgress ErrorCode = "DOCUMENT_INGESTION_IN_PROGRESS"
+	// ErrorCodeIdempotencyKeyInUse is IDEMPOTENCY_KEY_IN_USE, raised as *ConflictError (409).
+	ErrorCodeIdempotencyKeyInUse ErrorCode = "IDEMPOTENCY_KEY_IN_USE"
+	// ErrorCodeIdempotencyKeyReused is IDEMPOTENCY_KEY_REUSED, raised as *UnprocessableContentError (422).
+	ErrorCodeIdempotencyKeyReused ErrorCode = "IDEMPOTENCY_KEY_REUSED"
+	// ErrorCodeIngestionBatchUnresolved is INGESTION_BATCH_UNRESOLVED, raised as *ConflictError (409).
+	ErrorCodeIngestionBatchUnresolved ErrorCode = "INGESTION_BATCH_UNRESOLVED"
+	// ErrorCodeInternal is INTERNAL, raised as *InternalError (500).
+	ErrorCodeInternal ErrorCode = "INTERNAL"
+	// ErrorCodeInvalidCursor is INVALID_CURSOR, raised as *ValidationError (400).
+	ErrorCodeInvalidCursor ErrorCode = "INVALID_CURSOR"
+	// ErrorCodeMetadataFieldPassageScoped is METADATA_FIELD_PASSAGE_SCOPED, raised as *UnprocessableContentError (422).
+	ErrorCodeMetadataFieldPassageScoped ErrorCode = "METADATA_FIELD_PASSAGE_SCOPED"
+	// ErrorCodeMetadataFieldUndefined is METADATA_FIELD_UNDEFINED, raised as *UnprocessableContentError (422).
+	ErrorCodeMetadataFieldUndefined ErrorCode = "METADATA_FIELD_UNDEFINED"
+	// ErrorCodeMetadataLimitExceeded is METADATA_LIMIT_EXCEEDED, raised as *UnprocessableContentError (422).
+	ErrorCodeMetadataLimitExceeded ErrorCode = "METADATA_LIMIT_EXCEEDED"
+	// ErrorCodeMetadataValueInvalid is METADATA_VALUE_INVALID, raised as *UnprocessableContentError (422).
+	ErrorCodeMetadataValueInvalid ErrorCode = "METADATA_VALUE_INVALID"
+	// ErrorCodeNotAvailableToCredentials is NOT_AVAILABLE_TO_CREDENTIALS, raised as *PermissionDeniedError (403).
+	ErrorCodeNotAvailableToCredentials ErrorCode = "NOT_AVAILABLE_TO_CREDENTIALS"
+	// ErrorCodeNotFound is NOT_FOUND, raised as *NotFoundError (404).
+	ErrorCodeNotFound ErrorCode = "NOT_FOUND"
+	// ErrorCodeOperationNotCancellable is OPERATION_NOT_CANCELLABLE, raised as *ConflictError (409).
+	ErrorCodeOperationNotCancellable ErrorCode = "OPERATION_NOT_CANCELLABLE"
+	// ErrorCodePayloadTooLarge is PAYLOAD_TOO_LARGE, raised as *PayloadTooLargeError (413).
+	ErrorCodePayloadTooLarge ErrorCode = "PAYLOAD_TOO_LARGE"
+	// ErrorCodePermissionDenied is PERMISSION_DENIED, raised as *PermissionDeniedError (403).
+	ErrorCodePermissionDenied ErrorCode = "PERMISSION_DENIED"
+	// ErrorCodePreconditionFailed is PRECONDITION_FAILED, raised as *PreconditionFailedError (412).
+	ErrorCodePreconditionFailed ErrorCode = "PRECONDITION_FAILED"
+	// ErrorCodePreconditionRequired is PRECONDITION_REQUIRED, raised as *PreconditionRequiredError (428).
+	ErrorCodePreconditionRequired ErrorCode = "PRECONDITION_REQUIRED"
+	// ErrorCodePrimaryWorkspaceRequired is PRIMARY_WORKSPACE_REQUIRED, raised as *PermissionDeniedError (403).
+	ErrorCodePrimaryWorkspaceRequired ErrorCode = "PRIMARY_WORKSPACE_REQUIRED"
+	// ErrorCodeRateLimited is RATE_LIMITED, raised as *TooManyRequestsError (429).
+	ErrorCodeRateLimited ErrorCode = "RATE_LIMITED"
+	// ErrorCodeServiceUnavailable is SERVICE_UNAVAILABLE, raised as *ServiceUnavailableError (503).
+	ErrorCodeServiceUnavailable ErrorCode = "SERVICE_UNAVAILABLE"
+	// ErrorCodeTargetInUse is TARGET_IN_USE, raised as *ConflictError (409).
+	ErrorCodeTargetInUse ErrorCode = "TARGET_IN_USE"
+	// ErrorCodeUnauthenticated is UNAUTHENTICATED, raised as *UnauthenticatedError (401).
+	ErrorCodeUnauthenticated ErrorCode = "UNAUTHENTICATED"
+	// ErrorCodeUnknownField is UNKNOWN_FIELD, raised as *ValidationError (400).
+	ErrorCodeUnknownField ErrorCode = "UNKNOWN_FIELD"
+	// ErrorCodeUnknownFilter is UNKNOWN_FILTER, raised as *ValidationError (400).
+	ErrorCodeUnknownFilter ErrorCode = "UNKNOWN_FILTER"
+	// ErrorCodeUnknownSort is UNKNOWN_SORT, raised as *ValidationError (400).
+	ErrorCodeUnknownSort ErrorCode = "UNKNOWN_SORT"
+	// ErrorCodeValidationFailed is VALIDATION_FAILED, raised as *ValidationError (400).
+	ErrorCodeValidationFailed ErrorCode = "VALIDATION_FAILED"
+	// ErrorCodeVersionsNotNumbered is VERSIONS_NOT_NUMBERED, raised as *ConflictError (409).
+	ErrorCodeVersionsNotNumbered ErrorCode = "VERSIONS_NOT_NUMBERED"
+	// ErrorCodeVersionInHistory is VERSION_IN_HISTORY, raised as *ConflictError (409).
+	ErrorCodeVersionInHistory ErrorCode = "VERSION_IN_HISTORY"
+	// ErrorCodeVersionInUse is VERSION_IN_USE, raised as *ConflictError (409).
+	ErrorCodeVersionInUse ErrorCode = "VERSION_IN_USE"
+	// ErrorCodeVersionNotDeletable is VERSION_NOT_DELETABLE, raised as *ValidationError (400).
+	ErrorCodeVersionNotDeletable ErrorCode = "VERSION_NOT_DELETABLE"
+	// ErrorCodeBadMethod is BAD_METHOD, raised by the SDK itself with Status 0. An operation's HTTP method could not be used.
+	ErrorCodeBadMethod ErrorCode = "BAD_METHOD"
+	// ErrorCodeCancelled is CANCELLED, raised by the SDK itself with Status 0. The work a wait followed was cancelled, or a sync's plan was declined.
+	ErrorCodeCancelled ErrorCode = "CANCELLED"
+	// ErrorCodeConnectionError is CONNECTION_ERROR, raised by the SDK itself with Status 0. No response arrived from Caitlyn, after the SDK's retries.
+	ErrorCodeConnectionError ErrorCode = "CONNECTION_ERROR"
+	// ErrorCodeDecodeFailed is DECODE_FAILED, raised by the SDK itself with Status 0. A response or event could not be decoded as the operation's output.
+	ErrorCodeDecodeFailed ErrorCode = "DECODE_FAILED"
+	// ErrorCodeFileAlreadyRead is FILE_ALREADY_READ, raised by the SDK itself with Status 0. A stream given as a file was already read by an earlier call.
+	ErrorCodeFileAlreadyRead ErrorCode = "FILE_ALREADY_READ"
+	// ErrorCodeFileChanged is FILE_CHANGED, raised by the SDK itself with Status 0. A file's size or bytes no longer match what was described for it.
+	ErrorCodeFileChanged ErrorCode = "FILE_CHANGED"
+	// ErrorCodeFileTooLarge is FILE_TOO_LARGE, raised by the SDK itself with Status 0. A file is larger than the operation accepts.
+	ErrorCodeFileTooLarge ErrorCode = "FILE_TOO_LARGE"
+	// ErrorCodeFileUnreadable is FILE_UNREADABLE, raised by the SDK itself with Status 0. A file could not be read.
+	ErrorCodeFileUnreadable ErrorCode = "FILE_UNREADABLE"
+	// ErrorCodeHTTPClientFailed is HTTP_CLIENT_FAILED, raised by the SDK itself with Status 0. The HTTP client could not be built, or could not make the request.
+	ErrorCodeHTTPClientFailed ErrorCode = "HTTP_CLIENT_FAILED"
+	// ErrorCodeIngestionBatchFailed is INGESTION_BATCH_FAILED, raised by the SDK itself with Status 0. An ingestion batch ended failed without a failure code of its own.
+	ErrorCodeIngestionBatchFailed ErrorCode = "INGESTION_BATCH_FAILED"
+	// ErrorCodeIngestionBatchNotPlanned is INGESTION_BATCH_NOT_PLANNED, raised by the SDK itself with Status 0. The upload estimate was asked for on a draft batch.
+	ErrorCodeIngestionBatchNotPlanned ErrorCode = "INGESTION_BATCH_NOT_PLANNED"
+	// ErrorCodeIngestionBatchNotStarted is INGESTION_BATCH_NOT_STARTED, raised by the SDK itself with Status 0. Files were uploaded to a batch that has not started.
+	ErrorCodeIngestionBatchNotStarted ErrorCode = "INGESTION_BATCH_NOT_STARTED"
+	// ErrorCodeIngestionItemHasNoFile is INGESTION_ITEM_HAS_NO_FILE, raised by the SDK itself with Status 0. A sync's batch awaits a file this call has none for.
+	ErrorCodeIngestionItemHasNoFile ErrorCode = "INGESTION_ITEM_HAS_NO_FILE"
+	// ErrorCodeIngestionItemRefused is INGESTION_ITEM_REFUSED, raised by the SDK itself with Status 0. An item a sync added to its batch was refused.
+	ErrorCodeIngestionItemRefused ErrorCode = "INGESTION_ITEM_REFUSED"
+	// ErrorCodeJobFailed is JOB_FAILED, raised by the SDK itself with Status 0. A job ended failed without an error code of its own.
+	ErrorCodeJobFailed ErrorCode = "JOB_FAILED"
+	// ErrorCodeNoFinalEvent is NO_FINAL_EVENT, raised by the SDK itself with Status 0. A stream ended without its final event.
+	ErrorCodeNoFinalEvent ErrorCode = "NO_FINAL_EVENT"
+	// ErrorCodeRedirectUnreadable is REDIRECT_UNREADABLE, raised by the SDK itself with Status 0. A browser hid a redirect's address from the page.
+	ErrorCodeRedirectUnreadable ErrorCode = "REDIRECT_UNREADABLE"
+	// ErrorCodeSerializationFailed is SERIALIZATION_FAILED, raised by the SDK itself with Status 0. A request could not be serialised.
+	ErrorCodeSerializationFailed ErrorCode = "SERIALIZATION_FAILED"
+	// ErrorCodeStreamLost is STREAM_LOST, raised by the SDK itself with Status 0. A stream or watch dropped and could not be resumed.
+	ErrorCodeStreamLost ErrorCode = "STREAM_LOST"
+	// ErrorCodeUploadFailed is UPLOAD_FAILED, raised by the SDK itself with Status 0. A file's upload still failed after its retries; only its item fails.
+	ErrorCodeUploadFailed ErrorCode = "UPLOAD_FAILED"
+	// ErrorCodeUploadPolicyMissing is UPLOAD_POLICY_MISSING, raised by the SDK itself with Status 0. A batch gave no upload policy for the files awaiting upload.
+	ErrorCodeUploadPolicyMissing ErrorCode = "UPLOAD_POLICY_MISSING"
+	// ErrorCodeUploadPutFailed is UPLOAD_PUT_FAILED, raised by the SDK itself with Status 0. A file's bytes could not be sent to its upload address.
+	ErrorCodeUploadPutFailed ErrorCode = "UPLOAD_PUT_FAILED"
+	// ErrorCodeWaitTimeout is WAIT_TIMEOUT, raised by the SDK itself with Status 0. A wait's time limit passed.
+	ErrorCodeWaitTimeout ErrorCode = "WAIT_TIMEOUT"
+)
 
 // Send uploads a file (PROTOCOL.md 10, 14): it reads the file once to compute its size and SHA-256 (a
 // stream is copied aside while it is read, to memory up to 8 MiB and past that to a temporary file

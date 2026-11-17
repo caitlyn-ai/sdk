@@ -711,6 +711,23 @@ var protocol = map[string]func(t *testing.T, m mock){
 			t.Fatalf("source %v", v.Source)
 		}
 	},
+	"tolerance.unknown-error-code": func(t *testing.T, m mock) {
+		body := `{"type":"https://build.caitlyn.ai/errors/SOMETHING_NEW","title":"Something new","status":409,"code":"SOMETHING_NEW","requestId":"r-1"}`
+		m.faults(t, map[string]any{"status": map[string]any{"GetAgentVersion": []any{map[string]any{"status": 409, "contentType": "application/problem+json", "body": body}}}})
+		_, err := client(t, m).Agent(agent).Draft().Get(context.Background())
+		var conflict *caitlyn.ConflictError
+		if !errors.As(err, &conflict) || conflict.Status != 409 || conflict.Code != "SOMETHING_NEW" {
+			t.Fatalf("response: got %T %v", err, err)
+		}
+		m.post(t, "/__mock/reset", nil)
+		m.faults(t, map[string]any{"busyDocuments": map[string]any{"doc-0002": true}, "jobOutcomes": map[string]any{"doc-0002": "failed"},
+			"jobError": map[string]any{"code": "SOMETHING_NEW", "detail": "A failure this SDK does not know."}})
+		_, err = client(t, m).KnowledgeBase(kb).Document("doc-0002").Wait(within(t))
+		var generic *caitlyn.Error
+		if errors.As(err, &conflict) || !errors.As(err, &generic) || generic.Status != 0 || generic.Code != "SOMETHING_NEW" {
+			t.Fatalf("job: got %T %v", err, err)
+		}
+	},
 	"tolerance.unknown-field-raw": func(t *testing.T, m mock) {
 		m.faults(t, map[string]any{"unknownField": true})
 		c := client(t, m)
@@ -761,8 +778,23 @@ var protocol = map[string]func(t *testing.T, m mock){
 		}
 		_, err = c.KnowledgeBase(kb).Documents.Create(context.Background(), caitlyn.UploadID(up.ID), &caitlyn.CreateDocumentInput{Folder: "/hr/"})
 		var conflict *caitlyn.ConflictError
-		if !errors.As(err, &conflict) || conflict.Code != "CONFLICT" {
+		if !errors.As(err, &conflict) || conflict.Code != caitlyn.ErrorCodeConflict {
 			t.Fatalf("got %v", err)
+		}
+	},
+	"errors.versions-not-numbered": func(t *testing.T, m mock) {
+		m.faults(t, map[string]any{"versionsNotNumbered": map[string]any{"doc-0001": true}})
+		doc := client(t, m).KnowledgeBase(kb).Document("doc-0001")
+		_, err := doc.Version("1").Delete(context.Background())
+		var conflict *caitlyn.ConflictError
+		if !errors.As(err, &conflict) || conflict.Status != 409 || conflict.Code != caitlyn.ErrorCodeVersionsNotNumbered {
+			t.Fatalf("got %T %v", err, err)
+		}
+		if n := len(m.matching(t, func(r logged) bool { return r.Method == "DELETE" })); n != 1 {
+			t.Fatalf("%d DELETEs, want 1 (not retried)", n)
+		}
+		if d, err := doc.Get(context.Background()); err != nil || d.VersionCount == nil || *d.VersionCount != 1 {
+			t.Fatalf("after: %+v, %v", d, err)
 		}
 	},
 	"errors.412": func(t *testing.T, m mock) {

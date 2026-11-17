@@ -67,7 +67,7 @@ func NewRequest(path string) *Request {
 func (r *Request) JSONBody(v any) error {
 	b, err := json.Marshal(v)
 	if err != nil {
-		return err
+		return sdkError("SERIALIZATION_FAILED", "The request could not be serialised", err)
 	}
 	r.Body, r.ContentType = b, "application/json"
 	return nil
@@ -127,7 +127,7 @@ func (r *Response) DecodeJSON(v any) error {
 		return nil
 	}
 	if err := json.Unmarshal(b, v); err != nil {
-		return fmt.Errorf("caitlyn: decode response: %w", err)
+		return sdkError("DECODE_FAILED", "The "+r.op+" response could not be decoded", err)
 	}
 	return nil
 }
@@ -262,7 +262,7 @@ func (c *Client) attempt(ctx context.Context, op *Operation, req *Request, cs *c
 	}
 	hr, err := http.NewRequestWithContext(ctx, op.Method, u, body)
 	if err != nil {
-		return nil, err
+		return nil, sdkError("HTTP_CLIENT_FAILED", "The HTTP client could not make the "+op.Name+" request", err)
 	}
 	for k, vs := range req.Header {
 		hr.Header[k] = vs
