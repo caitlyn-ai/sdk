@@ -151,7 +151,7 @@ export async function ask(request: Request): Promise<Response> {
   const session = await getSession(request);
   const { conversationId, message } = (await request.json()) as { conversationId: string; message: string };
   try {
-    const answer = await caitlynFor(session.userId).conversations.send(conversationId, { message }).finalMessage();
+    const answer = await caitlynFor(session.userId).conversations(conversationId).send(message).finalMessage();
     return Response.json({ text: answer.text });
   } catch (err) {
     // Not signed in to Caitlyn yet, or the refresh token was refused: ask the browser to sign in again
@@ -256,7 +256,7 @@ A call. The answer streams into the page:
 /** Asks a question in a conversation and streams the answer into the page. */
 export async function ask(conversationId: string, message: string, output: HTMLElement): Promise<void> {
   try {
-    for await (const event of caitlyn.conversations.send(conversationId, { message })) {
+    for await (const event of caitlyn.conversations(conversationId).send(message)) {
       if (event.type === 'text.delta') output.append(event.delta);
     }
   } catch (err) {

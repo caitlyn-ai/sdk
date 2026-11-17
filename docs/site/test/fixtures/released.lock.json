@@ -1,0 +1,5 @@
+{
+  "$comment": "A lock as a model built from the app's main has it: a published version and no stampNext, because nothing is still @since(\"next\"). docs/site/test/not-available.test.mjs reads it with released.model.json.",
+  "package": "caitlyn-v3-model",
+  "version": "5.115.0"
+}

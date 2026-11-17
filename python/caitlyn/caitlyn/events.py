@@ -4,19 +4,27 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Final, Literal, TypeAlias
 
-from caitlyn_core import CaitlynEvent
+from caitlyn_core import CaitlynEvent, event_processing
 from pydantic import JsonValue
 
 from caitlyn.models import (
     Citation,
     ConversationCreated,
+    Document,
+    DocumentProcessing,
+    DocumentProgress,
     EventActor,
     EventSubject,
     FieldError,
+    Folder,
+    IngestionBatch,
     InputRequested,
+    Job,
+    KnowledgeBase,
     Message,
     MessageCompleted,
     MessageFailed,
+    Operation,
     ProgressStatus,
     ToolFinished,
     ToolStatus,
@@ -100,7 +108,7 @@ class ToolStartedEvent(CaitlynEvent):
     """The `tool.started` event. A tool call started."""
 
     tool_call_id: str
-    """The tool call's identifier."""
+    """Matches the tool call's start to its finish."""
     tool_name: str
     """The tool called."""
     arguments: JsonValue | None = None
@@ -116,7 +124,7 @@ class ToolFinishedEvent(CaitlynEvent):
     """The `tool.finished` event. A tool call finished."""
 
     tool_call_id: str
-    """The tool call's identifier."""
+    """Matches the tool call's finish to its start."""
     tool_name: str
     """The tool called."""
     status: ToolStatus
@@ -145,7 +153,9 @@ class InputRequestedEvent(CaitlynEvent):
 
 
 class MessageCompletedEvent(CaitlynEvent):
-    """The `message.completed` event. The answer is complete. Ends the stream."""
+    """The `message.completed` event. The answer is complete. It ends that answer: SendMessage's stream ends with it, and a
+    conversation's watch carries on to the next answer.
+    """
 
     message: Message
     """The complete answer message."""
@@ -157,7 +167,9 @@ class MessageCompletedEvent(CaitlynEvent):
 
 
 class MessageFailedEvent(CaitlynEvent):
-    """The `message.failed` event. The answer failed. Ends the stream; its data is a problem details object."""
+    """The `message.failed` event. The answer failed; its data is a problem details object. It ends that answer: SendMessage's
+    stream ends with it, and a conversation's watch carries on to the next answer.
+    """
 
     type_: str
     """A stable URI for the code: its page in the public error reference,
@@ -181,7 +193,7 @@ class MessageFailedEvent(CaitlynEvent):
     """
     errors: list[FieldError] | None = None
     """Field-level problems, one per member or parameter at fault. Present only on 400
-    `VALIDATION_FAILED`.
+    `VALIDATION_FAILED` and on the 422 `METADATA_*` codes.
     """
 
     @property
@@ -227,6 +239,360 @@ CONVERSATION_EVENT_TYPES: Final[dict[str, type[ConversationEvent]]] = {
 }
 
 
+class KnowledgeBaseSnapshotEvent(CaitlynEvent):
+    """The `snapshot` event. How the thing watched stands now. Always the first event on a connection."""
+
+    knowledge_base: KnowledgeBase | None = None
+    """The knowledge base, when the whole knowledge base is watched."""
+    document: Document | None = None
+    """The document, when one document is watched."""
+    folder: Folder | None = None
+    """The folder, when one folder is watched."""
+    batch: IngestionBatch | None = None
+    """The batch, when one batch is watched."""
+    jobs: list[Job]
+    """The jobs running on what is watched, and those that ended in the last hour."""
+    progress: list[DocumentProgress]
+    """The progress of each document being processed, at most the first 1,000; each entry is what a
+    `document.progress` event carries.
+    """
+
+    @property
+    def type(self) -> Literal["snapshot"]:
+        """The SSE event name."""
+        return "snapshot"
+
+    @property
+    def processing(self) -> DocumentProcessing | Job | None:
+        """The processing of the thing this event's scope watches (`doc.watch()`, `folder.watch()`, `batch.watch()`),
+        the same from a snapshot or a progress event: a document's processing, or the job running on a folder or
+        batch. None when the event carries none, and on the knowledge base's own watch (use `processing_of`).
+        """
+        return event_processing(self)
+
+    def processing_of(self, id: str) -> DocumentProcessing | Job | None:
+        """The processing this event gives the document or job `id` names, on any watch; None when it carries none."""
+        return event_processing(self, id)
+
+
+class DocumentProgressEvent(CaitlynEvent):
+    """The `document.progress` event. A document's processing moved on."""
+
+    document_id: str
+    """The document whose processing moved on."""
+    processing: DocumentProcessing
+    """How far the document's processing has got."""
+
+    @property
+    def type(self) -> Literal["document.progress"]:
+        """The SSE event name."""
+        return "document.progress"
+
+    def processing_of(self, id: str) -> DocumentProcessing | Job | None:
+        """The processing this event gives the document or job `id` names, on any watch; None when it carries none."""
+        return event_processing(self, id)
+
+
+class DocumentCreatedEvent(CaitlynEvent):
+    """The `document.created` event. A document was added."""
+
+    document: Document
+    """The document as it now is."""
+
+    @property
+    def type(self) -> Literal["document.created"]:
+        """The SSE event name."""
+        return "document.created"
+
+    @property
+    def processing(self) -> DocumentProcessing | Job | None:
+        """The processing of the thing this event's scope watches (`doc.watch()`, `folder.watch()`, `batch.watch()`),
+        the same from a snapshot or a progress event: a document's processing, or the job running on a folder or
+        batch. None when the event carries none, and on the knowledge base's own watch (use `processing_of`).
+        """
+        return event_processing(self)
+
+    def processing_of(self, id: str) -> DocumentProcessing | Job | None:
+        """The processing this event gives the document or job `id` names, on any watch; None when it carries none."""
+        return event_processing(self, id)
+
+
+class DocumentUpdatedEvent(CaitlynEvent):
+    """The `document.updated` event. A document's details, status or current version changed."""
+
+    document: Document
+    """The document as it now is."""
+
+    @property
+    def type(self) -> Literal["document.updated"]:
+        """The SSE event name."""
+        return "document.updated"
+
+    @property
+    def processing(self) -> DocumentProcessing | Job | None:
+        """The processing of the thing this event's scope watches (`doc.watch()`, `folder.watch()`, `batch.watch()`),
+        the same from a snapshot or a progress event: a document's processing, or the job running on a folder or
+        batch. None when the event carries none, and on the knowledge base's own watch (use `processing_of`).
+        """
+        return event_processing(self)
+
+    def processing_of(self, id: str) -> DocumentProcessing | Job | None:
+        """The processing this event gives the document or job `id` names, on any watch; None when it carries none."""
+        return event_processing(self, id)
+
+
+class DocumentDeletedEvent(CaitlynEvent):
+    """The `document.deleted` event. A document was deleted."""
+
+    document_id: str
+    """The document that was deleted."""
+
+    @property
+    def type(self) -> Literal["document.deleted"]:
+        """The SSE event name."""
+        return "document.deleted"
+
+    @property
+    def processing(self) -> DocumentProcessing | Job | None:
+        """The processing of the thing this event's scope watches (`doc.watch()`, `folder.watch()`, `batch.watch()`),
+        the same from a snapshot or a progress event: a document's processing, or the job running on a folder or
+        batch. None when the event carries none, and on the knowledge base's own watch (use `processing_of`).
+        """
+        return event_processing(self)
+
+    def processing_of(self, id: str) -> DocumentProcessing | Job | None:
+        """The processing this event gives the document or job `id` names, on any watch; None when it carries none."""
+        return event_processing(self, id)
+
+
+class DocumentVersionIndexedEvent(CaitlynEvent):
+    """The `document_version.indexed` event. A new version of a document became searchable."""
+
+    document_id: str
+    """The document whose new version became searchable."""
+    version: int
+    """The version that became searchable, now the current one."""
+
+    @property
+    def type(self) -> Literal["document_version.indexed"]:
+        """The SSE event name."""
+        return "document_version.indexed"
+
+    @property
+    def processing(self) -> DocumentProcessing | Job | None:
+        """The processing of the thing this event's scope watches (`doc.watch()`, `folder.watch()`, `batch.watch()`),
+        the same from a snapshot or a progress event: a document's processing, or the job running on a folder or
+        batch. None when the event carries none, and on the knowledge base's own watch (use `processing_of`).
+        """
+        return event_processing(self)
+
+    def processing_of(self, id: str) -> DocumentProcessing | Job | None:
+        """The processing this event gives the document or job `id` names, on any watch; None when it carries none."""
+        return event_processing(self, id)
+
+
+class FolderCreatedEvent(CaitlynEvent):
+    """The `folder.created` event. A folder was created."""
+
+    folder: Folder
+    """The folder as it now is."""
+
+    @property
+    def type(self) -> Literal["folder.created"]:
+        """The SSE event name."""
+        return "folder.created"
+
+    @property
+    def processing(self) -> DocumentProcessing | Job | None:
+        """The processing of the thing this event's scope watches (`doc.watch()`, `folder.watch()`, `batch.watch()`),
+        the same from a snapshot or a progress event: a document's processing, or the job running on a folder or
+        batch. None when the event carries none, and on the knowledge base's own watch (use `processing_of`).
+        """
+        return event_processing(self)
+
+    def processing_of(self, id: str) -> DocumentProcessing | Job | None:
+        """The processing this event gives the document or job `id` names, on any watch; None when it carries none."""
+        return event_processing(self, id)
+
+
+class FolderUpdatedEvent(CaitlynEvent):
+    """The `folder.updated` event. A folder was renamed, moved, or had its readers changed."""
+
+    folder: Folder
+    """The folder as it now is."""
+
+    @property
+    def type(self) -> Literal["folder.updated"]:
+        """The SSE event name."""
+        return "folder.updated"
+
+    @property
+    def processing(self) -> DocumentProcessing | Job | None:
+        """The processing of the thing this event's scope watches (`doc.watch()`, `folder.watch()`, `batch.watch()`),
+        the same from a snapshot or a progress event: a document's processing, or the job running on a folder or
+        batch. None when the event carries none, and on the knowledge base's own watch (use `processing_of`).
+        """
+        return event_processing(self)
+
+    def processing_of(self, id: str) -> DocumentProcessing | Job | None:
+        """The processing this event gives the document or job `id` names, on any watch; None when it carries none."""
+        return event_processing(self, id)
+
+
+class FolderDeletedEvent(CaitlynEvent):
+    """The `folder.deleted` event. A folder was deleted."""
+
+    path: str
+    """Where the deleted folder was."""
+
+    @property
+    def type(self) -> Literal["folder.deleted"]:
+        """The SSE event name."""
+        return "folder.deleted"
+
+    @property
+    def processing(self) -> DocumentProcessing | Job | None:
+        """The processing of the thing this event's scope watches (`doc.watch()`, `folder.watch()`, `batch.watch()`),
+        the same from a snapshot or a progress event: a document's processing, or the job running on a folder or
+        batch. None when the event carries none, and on the knowledge base's own watch (use `processing_of`).
+        """
+        return event_processing(self)
+
+    def processing_of(self, id: str) -> DocumentProcessing | Job | None:
+        """The processing this event gives the document or job `id` names, on any watch; None when it carries none."""
+        return event_processing(self, id)
+
+
+class JobProgressEvent(CaitlynEvent):
+    """The `job.progress` event. A job moved on."""
+
+    job: Job
+    """The job as it now is."""
+
+    @property
+    def type(self) -> Literal["job.progress"]:
+        """The SSE event name."""
+        return "job.progress"
+
+    @property
+    def processing(self) -> DocumentProcessing | Job | None:
+        """The processing of the thing this event's scope watches (`doc.watch()`, `folder.watch()`, `batch.watch()`),
+        the same from a snapshot or a progress event: a document's processing, or the job running on a folder or
+        batch. None when the event carries none, and on the knowledge base's own watch (use `processing_of`).
+        """
+        return event_processing(self)
+
+    def processing_of(self, id: str) -> DocumentProcessing | Job | None:
+        """The processing this event gives the document or job `id` names, on any watch; None when it carries none."""
+        return event_processing(self, id)
+
+
+class JobFinishedEvent(CaitlynEvent):
+    """The `job.finished` event. A job ended: succeeded, succeeded with failures, failed or cancelled."""
+
+    job: Job
+    """The job as it now is."""
+
+    @property
+    def type(self) -> Literal["job.finished"]:
+        """The SSE event name."""
+        return "job.finished"
+
+    @property
+    def processing(self) -> DocumentProcessing | Job | None:
+        """The processing of the thing this event's scope watches (`doc.watch()`, `folder.watch()`, `batch.watch()`),
+        the same from a snapshot or a progress event: a document's processing, or the job running on a folder or
+        batch. None when the event carries none, and on the knowledge base's own watch (use `processing_of`).
+        """
+        return event_processing(self)
+
+    def processing_of(self, id: str) -> DocumentProcessing | Job | None:
+        """The processing this event gives the document or job `id` names, on any watch; None when it carries none."""
+        return event_processing(self, id)
+
+
+class KnowledgeBaseChangedEvent(CaitlynEvent):
+    """The `knowledge_base.updated` event. The knowledge base's settings or status changed."""
+
+    knowledge_base: KnowledgeBase
+    """The knowledge base as it now is."""
+
+    @property
+    def type(self) -> Literal["knowledge_base.updated"]:
+        """The SSE event name."""
+        return "knowledge_base.updated"
+
+    @property
+    def processing(self) -> DocumentProcessing | Job | None:
+        """The processing of the thing this event's scope watches (`doc.watch()`, `folder.watch()`, `batch.watch()`),
+        the same from a snapshot or a progress event: a document's processing, or the job running on a folder or
+        batch. None when the event carries none, and on the knowledge base's own watch (use `processing_of`).
+        """
+        return event_processing(self)
+
+    def processing_of(self, id: str) -> DocumentProcessing | Job | None:
+        """The processing this event gives the document or job `id` names, on any watch; None when it carries none."""
+        return event_processing(self, id)
+
+
+KnowledgeBaseEvent: TypeAlias = KnowledgeBaseSnapshotEvent | DocumentProgressEvent | DocumentCreatedEvent | DocumentUpdatedEvent | DocumentDeletedEvent | DocumentVersionIndexedEvent | FolderCreatedEvent | FolderUpdatedEvent | FolderDeletedEvent | JobProgressEvent | JobFinishedEvent | KnowledgeBaseChangedEvent
+"""The events on a knowledge base's watch.
+
+Event types this SDK version does not know are skipped.
+"""
+
+KNOWLEDGE_BASE_EVENT_TYPES: Final[dict[str, type[KnowledgeBaseEvent]]] = {
+    "snapshot": KnowledgeBaseSnapshotEvent,
+    "document.progress": DocumentProgressEvent,
+    "document.created": DocumentCreatedEvent,
+    "document.updated": DocumentUpdatedEvent,
+    "document.deleted": DocumentDeletedEvent,
+    "document_version.indexed": DocumentVersionIndexedEvent,
+    "folder.created": FolderCreatedEvent,
+    "folder.updated": FolderUpdatedEvent,
+    "folder.deleted": FolderDeletedEvent,
+    "job.progress": JobProgressEvent,
+    "job.finished": JobFinishedEvent,
+    "knowledge_base.updated": KnowledgeBaseChangedEvent,
+}
+
+
+class OperationUpdatedEvent(CaitlynEvent):
+    """The `operation.updated` event. The Operation changed."""
+
+    operation: Operation
+    """The Operation as it now is."""
+
+    @property
+    def type(self) -> Literal["operation.updated"]:
+        """The SSE event name."""
+        return "operation.updated"
+
+
+class OperationFinishedEvent(CaitlynEvent):
+    """The `operation.finished` event. The Operation is final. The stream ends after it."""
+
+    operation: Operation
+    """The Operation as it ended."""
+
+    @property
+    def type(self) -> Literal["operation.finished"]:
+        """The SSE event name."""
+        return "operation.finished"
+
+
+OperationEvent: TypeAlias = OperationUpdatedEvent | OperationFinishedEvent
+"""The events on an Operation's stream.
+
+Event types this SDK version does not know are skipped.
+"""
+
+OPERATION_EVENT_TYPES: Final[dict[str, type[OperationEvent]]] = {
+    "operation.updated": OperationUpdatedEvent,
+    "operation.finished": OperationFinishedEvent,
+}
+
+
 class WorkspaceConversationCreatedEvent(CaitlynEvent):
     """The `conversation.created` event. A conversation was started."""
 
@@ -241,7 +607,7 @@ class WorkspaceConversationCreatedEvent(CaitlynEvent):
     actor: EventActor
     """Who caused it. Named only to the owner of the subject; everyone else sees only its type."""
     data: ConversationCreated
-    """The conversation."""
+    """The conversation that was started."""
 
     @property
     def type(self) -> Literal["conversation.created"]:

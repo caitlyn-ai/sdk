@@ -2,6 +2,7 @@
 // how to open and resume the stream; this class does parsing, skipping unknown events, de-duplication by id,
 // resuming with Last-Event-ID, abort handling and finalMessage().
 import { parseSse } from './sse.js';
+import { readEvent, type EventPlan } from './protocol.js';
 
 export interface SseSpec {
   /** SSE `event:` names this SDK knows (the union members' jsonNames). Others are skipped. */
@@ -12,6 +13,15 @@ export interface SseSpec {
   readonly errorEvent?: string;
   /** Builds the typed error for an error event. */
   readonly toError: (problem: Record<string, unknown>) => Error;
+  /**
+   * The watch starts every connection with a snapshot and takes no cursor (WatchKnowledgeBase, PROTOCOL.md 16): a
+   * reconnect sends no Last-Event-ID, and the ids seen before it are forgotten, so the new snapshot is delivered.
+   */
+  readonly fresh?: boolean;
+  /** Adds what the SDK gives every event of this stream beside its data (the knowledge base watch's processingOf()). */
+  readonly decorate?: (event: Record<string, unknown>) => void;
+  /** How each event's data is read as the model's types (watch.event-types), by event name. */
+  readonly read?: Readonly<Record<string, EventPlan>>;
 }
 
 type Body = AsyncIterable<Uint8Array>;
@@ -52,13 +62,36 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
   /** The Caitlyn-Request-Id of the response that opened the stream; set once it has opened. */
   requestId?: string;
 
+  /**
+   * Aborts the stream's own requests: the caller's signal, and close(). The fetch is sent with this signal, so
+   * closing a stream ends its connection in Node and in every browser (watch.break-closes), not only its reader.
+   */
+  private readonly controller = new AbortController();
+  /** The events, read once, however many times they are pulled (iteration, then finalMessage()). */
+  private events?: AsyncGenerator<E>;
+
   constructor(
     private readonly spec: SseSpec,
-    private readonly open: () => Promise<SseOpened>,
-    private readonly resume: ((lastEventId: string | undefined) => Promise<SseOpened>) | undefined,
+    private readonly open: (signal: AbortSignal) => Promise<SseOpened>,
+    private readonly resume: ((lastEventId: string | undefined, signal: AbortSignal) => Promise<SseOpened>) | undefined,
     private readonly signal?: AbortSignal,
     private readonly maxReconnects = 3,
-  ) {}
+  ) {
+    if (signal?.aborted) this.controller.abort(signal.reason);
+    else signal?.addEventListener('abort', () => this.controller.abort(signal.reason), { once: true });
+    // `await using stream = conversation.send(...)`: leaving the block closes the stream as close() does.
+    Object.defineProperty(this, asyncDispose, { value: () => this.close(), configurable: true });
+  }
+
+  /**
+   * Closes the stream: its connection ends and nothing more is read. A watch closes when its loop is left; a stream
+   * with a final event (a send) stays open after a `break`, so finalMessage() can still drain it, until this is
+   * called, its signal aborts, or finalMessage() has read it to the end (send.break-then-final).
+   */
+  async close(): Promise<void> {
+    this.controller.abort(new DOMException('The stream was closed', 'AbortError'));
+    await this.events?.return(undefined).catch(() => undefined);
+  }
 
   /** Waits `ms`, or until the signal aborts, then throws its reason. */
   private pause(ms: number): Promise<void> {
@@ -80,7 +113,7 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
 
   /** Sends the request once, however it is started: by opened() or by iterating. */
   private start(): Promise<SseOpened> {
-    this.opening ??= this.open().then((opened) => {
+    this.opening ??= this.open(this.controller.signal).then((opened) => {
       this.openedAt = streamClock.now();
       this.requestId = opened.$metadata?.requestId;
       return opened;
@@ -101,9 +134,37 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
     return this.signal?.reason ?? new DOMException('Aborted', 'AbortError');
   }
 
-  async *[Symbol.asyncIterator](): AsyncGenerator<E> {
+  /**
+   * Its events. Leaving the loop (break, return, a throw) closes a stream with no final event (a watch: its
+   * connection ends at once); a stream with one stays open for finalMessage() until close() (PROTOCOL.md 5).
+   */
+  [Symbol.asyncIterator](): AsyncIterator<E> {
     if (this.consumed) throw new Error('SseStream can only be iterated once');
     this.consumed = true;
+    const events = this.read();
+    return {
+      next: () => events.next(),
+      return: async (value?: unknown) => {
+        if (!this.spec.final) await this.close();
+        return { done: true, value: value as E };
+      },
+    };
+  }
+
+  private read(): AsyncGenerator<E> {
+    return (this.events ??= this.generate());
+  }
+
+  private async *generate(): AsyncGenerator<E> {
+    try {
+      yield* this.connect();
+    } finally {
+      // Read to the end, failed or closed: the connection is released either way.
+      this.controller.abort(new DOMException('The stream ended', 'AbortError'));
+    }
+  }
+
+  private async *connect(): AsyncGenerator<E> {
     const opened = await this.start();
     let body = opened.events as Body;
     for (;;) {
@@ -119,10 +180,13 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
             this.attempts = 0; // only a new event counts as progress (PROTOCOL.md 5.6)
           }
           if (!this.spec.known.has(msg.event)) continue;
-          const data = JSON.parse(msg.data) as Record<string, unknown>;
+          const data = JSON.parse(msg.data) as Record<string, any>;
+          const plan = this.spec.read?.[msg.event];
+          if (plan) readEvent(data, plan);
           // PROTOCOL.md 5.5: a failure event ends only a stream with a final event. On a watch it is delivered.
           if (msg.event === this.spec.errorEvent && this.spec.final) throw this.spec.toError(data);
           const event = { ...data, type: msg.event, eventId: msg.id } as unknown as E;
+          this.spec.decorate?.(event as unknown as Record<string, unknown>);
           yield event;
           if (msg.event === this.spec.final?.event) {
             this.finalValue = data[this.spec.final.member] as F;
@@ -152,15 +216,46 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
         throw this.spec.toError({ status: 0, code: 'STREAM_LOST', title: 'The stream dropped and could not be resumed' });
       this.reconnects++;
       await this.pause(reconnectDelayMs(this.attempts));
-      body = (await this.resume(this.lastEventId)).events as Body;
+      if (this.spec.fresh) {
+        this.seen.clear();
+        this.lastEventId = undefined;
+      }
+      body = (await this.resume(this.lastEventId, this.controller.signal)).events as Body;
       this.openedAt = streamClock.now();
+    }
+  }
+
+  /**
+   * The answer's text as it is written: the `delta` of each `text.delta` event, for
+   * `for await (const text of conversation.send(message).text())`. Iterates the stream, so use one or the other;
+   * after a `break`, finalMessage() still drains it, or close() ends it.
+   */
+  async *text(): AsyncGenerator<string> {
+    for await (const event of this) {
+      const e = event as { type: string; delta?: unknown };
+      if (e.type === 'text.delta' && typeof e.delta === 'string') yield e.delta;
     }
   }
 
   /** Drains the stream if needed and returns the final event's member. */
   async finalMessage(): Promise<F> {
-    if (!this.consumed) for await (const _ of this) void _;
+    // Whatever is left: after a break the same events carry on from where the loop stopped.
+    this.consumed = true;
+    const events = this.read();
+    while (!(await events.next()).done);
     if (this.finalValue === undefined) throw this.spec.toError({ status: 0, code: 'NO_FINAL_EVENT', title: 'The stream ended without its final event' });
     return this.finalValue;
   }
 }
+
+/**
+ * The key `await using` closes a stream by: Symbol.asyncDispose, or where a runtime has none,
+ * Symbol.for('Symbol.asyncDispose'), the key TypeScript's and esbuild's lowering of `await using` look up then.
+ */
+const asyncDispose: symbol = /* @__PURE__ */ (() => (Symbol as { asyncDispose?: symbol }).asyncDispose ?? Symbol.for('Symbol.asyncDispose'))();
+
+/**
+ * What `await using` needs of a stream, typed only where the caller's lib declares Symbol.asyncDispose (esnext or
+ * es2024 disposable, or @types/node): elsewhere it is `{}`, so the types still compile.
+ */
+export type AsyncDisposableStream = SymbolConstructor extends { readonly asyncDispose: infer K extends symbol } ? { [P in K]: () => Promise<void> } : {};

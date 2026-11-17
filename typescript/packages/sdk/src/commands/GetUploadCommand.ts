@@ -43,9 +43,11 @@ export interface GetUploadCommandOutput extends GetUploadOutput, __MetadataBeare
  * // { // GetUploadOutput
  * //   requestId: "STRING_VALUE",
  * //   apiVersion: "STRING_VALUE",
- * //   id: "STRING_VALUE", // required
- * //   status: "awaiting_bytes" || "received" || "consumed" || "expired", // required
- * //   expiresAt: new Date("TIMESTAMP"), // required
+ * //   upload: { // Upload
+ * //     id: "STRING_VALUE", // required
+ * //     status: "awaiting_bytes" || "received" || "consumed" || "expired", // required
+ * //     expiresAt: new Date("TIMESTAMP"), // required
+ * //   },
  * // };
  *
  * ```
@@ -80,8 +82,9 @@ export interface GetUploadCommandOutput extends GetUploadOutput, __MetadataBeare
  *
  * @throws {@link ValidationError} (client fault)
  *  The request is malformed: a member is missing, the wrong type or out of range; it has a member,
- * filter or sort field the operation does not define; its cursor is not valid for this list; or it
- * asks to delete `draft` or `production`, which every agent keeps.
+ * filter or sort field the operation does not define; its cursor is not valid for this list; it
+ * asks to delete `draft` or `live`, which every agent keeps; an agent configuration would be
+ * larger than 256 KiB; or a file is meant for a conversation whose agent takes no attachments.
  *
  * @throws {@link CaitlynServiceException}
  * <p>Base exception class for all service exceptions from Caitlyn service.</p>
@@ -97,9 +100,11 @@ export interface GetUploadCommandOutput extends GetUploadOutput, __MetadataBeare
  * const response = await client.send(command);
  * /* response is
  * {
- *   expiresAt: "2026-11-10T01:17:03.000Z",
- *   id: "0193a6f2-1111-7a2b-8c3d-4e5f60718293",
- *   status: "received"
+ *   upload: {
+ *     expiresAt: "2026-11-10T01:17:03.000Z",
+ *     id: "0193a6f2-1111-7a2b-8c3d-4e5f60718293",
+ *     status: "received"
+ *   }
  * }
  * *\/
  * ```

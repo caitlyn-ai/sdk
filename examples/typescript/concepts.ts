@@ -10,7 +10,7 @@ const conversationId = '0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47';
 export async function errors(): Promise<void> {
   // #region errors
   try {
-    await caitlyn.agents.versions.get({ agentId, version: 'v99' });
+    await caitlyn.agents(agentId).versions('v99').get();
   } catch (err) {
     if (err instanceof NotFoundError) {
       console.log('No such version');
@@ -54,7 +54,7 @@ export function retryBudget(): Caitlyn {
 
 export async function streaming(): Promise<void> {
   // #region streaming
-  const stream = caitlyn.conversations.send(conversationId, { message: 'How much annual leave do part-time staff get?' });
+  const stream = caitlyn.conversations(conversationId).send('How much annual leave do part-time staff get?');
   for await (const event of stream) {
     switch (event.type) {
       case 'text.delta':
@@ -73,7 +73,7 @@ export async function streaming(): Promise<void> {
 export async function cancelling(): Promise<void> {
   // #region cancelling
   // Give up after 30 seconds: the connection closes and the loop throws the signal's reason
-  const stream = caitlyn.conversations.send(conversationId, { message: 'Summarise the leave policy.' }, { signal: AbortSignal.timeout(30_000) });
+  const stream = caitlyn.conversations(conversationId).send('Summarise the leave policy.', {}, { signal: AbortSignal.timeout(30_000) });
   for await (const event of stream) if (event.type === 'text.delta') process.stdout.write(event.delta);
   // #endregion
 }
@@ -81,7 +81,7 @@ export async function cancelling(): Promise<void> {
 export async function pagination(): Promise<void> {
   // #region pagination
   // Every document in the folder: the next page is fetched as the loop reaches it
-  for await (const document of caitlyn.documents.list({ knowledgeBaseId: 'KB4T7YQ2WL', folder: '/policies/', limit: 100 })) {
+  for await (const document of caitlyn.knowledgeBases('KB4T7YQ2WL').documents.list({ folder: '/policies/', limit: 100 })) {
     console.log(document.name, document.status);
   }
   // #endregion

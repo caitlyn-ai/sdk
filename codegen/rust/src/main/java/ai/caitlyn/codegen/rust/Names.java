@@ -73,6 +73,18 @@ final class Names {
         return KEYWORDS.contains(s) ? "r#" + s : s;
     }
 
+    /**
+     * A namespace segment as a module-name part and an accessor method ({@code client.core().uploads()}): snake case,
+     * escaping only Rust keywords, since a method may share a field's or a local's name.
+     */
+    static String segment(String name) {
+        String s = String.join("_", words(name));
+        if (KEYWORDS.contains(s) || s.equals("self") || s.equals("super") || s.equals("crate") || s.equals("Self")) {
+            throw new IllegalArgumentException("namespace segment " + name + " is a Rust keyword");
+        }
+        return s;
+    }
+
     /** UPPER_SNAKE for constants: GetAgentVersion -> GET_AGENT_VERSION. */
     static String constant(String name) {
         return String.join("_", words(name)).toUpperCase(java.util.Locale.ROOT);

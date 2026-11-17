@@ -4,7 +4,10 @@
 // A code block that follows a marker line
 //   <!-- example: examples/typescript/browser-sign-in-page.ts#sign-in -->
 // must equal that example's region: the lines between `// #region sign-in` and `// #endregion` (`# #region` and
-// `# #endregion` in Python), less the indentation they share. The examples are compiled against their SDK in
+// `# #endregion` in Python), less the indentation they share. A marker can name several regions of one file joined with
+// `+`, and a quoted note to put between them as a comment in the file's language:
+//   <!-- example: examples/typescript/jobs.ts#publish-agent+roll-back "Later: put live back on an earlier version" -->
+// One snippet for a short summary that would otherwise be two tab groups. The examples are compiled against their SDK in
 // CI (scripts/test-typescript.sh, test-python.sh, test-go.sh and test-rust.sh), so a page whose code drifts
 // from them, or a page with front matter ingestion would skip, fails here.
 // Usage: node scripts/docs-guides.mjs           checks every page (scripts/test-typescript.sh and the docs build run it)
@@ -16,7 +19,7 @@ import { metadataProblems, parseFrontMatter } from './docs-metadata.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const docsDir = path.join(root, 'docs');
-export const MARKER = /^<!-- example: (\S+?)#([\w-]+) -->$/;
+export const MARKER = /^<!-- example: (\S+?)#([\w-]+(?:\+[\w-]+)*)(?: "([^"]+)")? -->$/;
 const FENCE = /^(```+)[^`]*$/;
 
 /** The hand-written page files, relative to docs/: README.md and the site project are not pages. */
@@ -32,7 +35,19 @@ function pageFiles(dir = docsDir, prefix = '') {
 }
 
 /** The lines of one region in a file, without the markers and less the indentation they share. */
-function region(file, name) {
+/**
+ * One region, or several joined with `+` (`publish-agent+roll-back`): each in turn, a blank line between them, and the
+ * marker's quoted note, when it has one, as a comment line in the file's language before each region after the first
+ * ("Later: put live back on an earlier version" becomes `// Later: …` in TypeScript, Go and Rust, `# Later: …` in Python)
+ */
+function region(file, names, note) {
+  const parts = names.split('+').map((name) => oneRegion(file, name));
+  if (parts.includes(undefined)) return undefined;
+  const comment = note ? `${file.endsWith('.py') ? '#' : '//'} ${note}\n` : '';
+  return parts.join(`\n\n${comment}`);
+}
+
+function oneRegion(file, name) {
   const lines = fs.readFileSync(path.join(root, file), 'utf8').split('\n');
   const marker = (l, text) => ['//', '#'].some((c) => l.trim() === `${c} ${text}`);
   const start = lines.findIndex((l) => marker(l, `#region ${name}`));
@@ -60,13 +75,13 @@ export function readPages() {
     lines.forEach((line, i) => {
       const m = MARKER.exec(line.trim());
       if (!m) return;
-      const [, file, name] = m;
+      const [, file, name, note] = m;
       const at = `line ${i + 1}, ${file}#${name}`;
       const fence = FENCE.exec(lines[i + 1] ?? '');
       if (!fence) return problems.push(`${at}: the marker is not followed by a code block`);
       const close = lines.findIndex((l, j) => j > i + 1 && l === fence[1]);
       if (close < 0) return problems.push(`${at}: the code block is not closed`);
-      const expected = fs.existsSync(path.join(root, file)) ? region(file, name) : undefined;
+      const expected = fs.existsSync(path.join(root, file)) ? region(file, name, note) : undefined;
       if (expected === undefined) return problems.push(`${at}: no such file or region`);
       if (lines.slice(i + 2, close).join('\n') !== expected) problems.push(`${at}: the code block differs from the example; run node scripts/docs-guides.mjs --write`);
     });
@@ -87,7 +102,7 @@ function writeRegions() {
       const m = MARKER.exec(lines[i].trim());
       const fence = m && FENCE.exec(lines[i + 1] ?? '');
       const close = fence ? lines.findIndex((l, j) => j > i + 1 && l === fence[1]) : -1;
-      const code = close > 0 && fs.existsSync(path.join(root, m[1])) ? region(m[1], m[2]) : undefined;
+      const code = close > 0 && fs.existsSync(path.join(root, m[1])) ? region(m[1], m[2], m[3]) : undefined;
       if (code === undefined) continue;
       out.push(lines[i + 1], code, lines[close]);
       i = close;

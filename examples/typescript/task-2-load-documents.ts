@@ -1,24 +1,21 @@
-// Task 2: load documents into a knowledge base. knowledgeBases.create, documents.waitUntilIndexed (a @waitable
-// waiter), uploadMany, replace and delete are not in the model yet; until they are, this uploads into an existing
-// knowledge base and lists what is there.
-import { openAsBlob } from 'node:fs';
-import { Caitlyn } from '@caitlyn-ai/sdk';
+// Task 2: load documents into a knowledge base: one file, a new version of it, then a whole folder kept in step.
+import { Caitlyn, UploadFile } from '@caitlyn-ai/sdk';
 
 const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! } });
 
 export async function load(knowledgeBaseId: string): Promise<void> {
-  const { document: doc, operation } = await caitlyn.documents.upload(
-    {
-      knowledgeBaseId,
-      folder: '/policies/',
-      file: await openAsBlob('leave-policy.pdf'),
-      fileName: 'leave-policy.pdf',
-    },
-    { idempotencyKey: 'leave-policy-2026-11' },
-  );
-  console.log(doc.id, doc.status, operation.id);
+  const kb = caitlyn.knowledgeBases(knowledgeBaseId);
+  const doc = await kb.documents.create(UploadFile.fromPath('leave-policy.pdf'), { folder: '/policies/' }, { idempotencyKey: 'leave-policy-2026-11' }).wait();
+  console.log(doc.id, doc.status);
 
-  for await (const d of caitlyn.documents.list({ knowledgeBaseId, folder: '/policies/', status: 'partially_indexed' }, { signal: AbortSignal.timeout(60_000) })) {
+  // A new edition: a new version of the same document, which keeps its identifier and history
+  await doc.replace('leave-policy-2027.pdf').wait();
+
+  // A whole folder, kept in step: new and changed files are uploaded, missing ones removed
+  const report = await kb.ingestion.sync('./policies', { folder: '/policies/', removeMissing: true });
+  console.log(report.batch.status, report.batch.counts);
+
+  for await (const d of kb.documents.list({ folder: '/policies/', status: 'partially_indexed' }, { signal: AbortSignal.timeout(60_000) })) {
     console.warn(d.name, d.partialFailures);
   }
 }

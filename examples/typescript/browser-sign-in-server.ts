@@ -97,7 +97,7 @@ export async function ask(request: Request): Promise<Response> {
   const session = await getSession(request);
   const { conversationId, message } = (await request.json()) as { conversationId: string; message: string };
   try {
-    const answer = await caitlynFor(session.userId).conversations.send(conversationId, { message }).finalMessage();
+    const answer = await caitlynFor(session.userId).conversations(conversationId).send(message).finalMessage();
     return Response.json({ text: answer.text });
   } catch (err) {
     // Not signed in to Caitlyn yet, or the refresh token was refused: ask the browser to sign in again

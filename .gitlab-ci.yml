@@ -248,6 +248,18 @@ model:snapshot-only:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
+# A merge request's title is the squash commit's message, and a releasing one (feat, fix, perf, revert, or !) becomes
+# a line of CHANGELOG.md, which build.caitlyn.ai publishes as its Changelog. This runs the docs' public-wording rules
+# over it (scripts/docs-mr-title.mjs), so a title that would publish something internal fails while it can still be
+# edited. GitLab does not start a pipeline when only the title changes: rerun this job after editing it.
+docs:mr-title:
+  extends: .toolchain
+  stage: generate
+  script:
+    - node scripts/docs-mr-title.mjs "$CI_MERGE_REQUEST_TITLE"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
 model:version-check:
   extends: .toolchain
   stage: generate
@@ -294,12 +306,18 @@ docs:build:
   extends: .toolchain
   stage: docs
   needs: []
+  variables:
+    # The whole history, so each page's sitemap lastmod is its source's newest commit (scripts/docs-sitemap.mjs); a
+    # shallow clone would date every older page at the clone's oldest commit
+    GIT_DEPTH: '0'
   script:
     - scripts/docs-build.sh
   artifacts:
     expire_in: 1 week
     paths: [build/docs/]
   rules:
+    # Only the default branch's build is the live one (DOCS_LIVE): it alone publishes sitemap.xml and names it in
+    # robots.txt, and its pages alone are indexed. A preview publishes no sitemap and every page carries noindex.
     # The live build shows "Was this page useful?" and sends answers to /_feedback (production-demo-infrastructure,
     # developer-docs/feedback.tf). Previews show it, so a reviewer sees the page as it ships, but send nothing: they
     # have no endpoint (their hosting has no /_feedback), and the panel says the answer was not sent.
@@ -310,6 +328,15 @@ docs:build:
       variables:
         PUBLIC_DOCS_FEEDBACK: 'on'
         PUBLIC_DOCS_FEEDBACK_ENDPOINT: /_feedback
+        DOCS_LIVE: 'on'
+    # A release's v* tag builds the live site again: the release commit's CHANGELOG.md has the new release, so the
+    # Changelog, its feed and the install instructions show it when it ships, not with the next merge to main (the
+    # release commit's own branch pipeline does not run)
+    - if: $DOCS_ENABLED == "true" && $CI_COMMIT_TAG =~ /^v\d/
+      variables:
+        PUBLIC_DOCS_FEEDBACK: 'on'
+        PUBLIC_DOCS_FEEDBACK_ENDPOINT: /_feedback
+        DOCS_LIVE: 'on'
 
 .docs-aws:
   stage: docs
@@ -371,6 +398,7 @@ docs:publish:
   resource_group: docs-production
   rules:
     - if: $DOCS_ENABLED == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $DOCS_ENABLED == "true" && $CI_COMMIT_TAG =~ /^v\d/
 
 # Publishes the built pages into the ask.caitlyn.ai developer-docs knowledge base. A dry run until the publisher
 # is built on @caitlyn-ai/sdk (scripts/docs-kb-publish.mjs explains what it waits for).

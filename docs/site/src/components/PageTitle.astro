@@ -1,6 +1,6 @@
 ---
 // The page header: a kicker naming where the page sits (Start here, Guide, SDK reference, API reference, Type, Error
-// code), then the title at cover-title. The page's first paragraph follows as its lead, and a strong rule closes the
+// code), then the title at cover-title, with an operation's or SDK helper's name under it (CreateDocument). The page's first paragraph follows as its lead, and a strong rule closes the
 // opening (src/styles/components.css). A guide's sections are steps, so only a guide numbers them (data-steps). The API
 // reference's overview has its Server block under the header, and sends Scalar's old addresses (/api/#tag/...) on to
 // the operation's own page before the page paints.
@@ -8,11 +8,18 @@ import OperationHeader from './OperationHeader.astro';
 import ServerBlock from './ServerBlock.astro';
 const data = Astro.locals.starlightRoute.entry.data as {
   title: string;
+  subtitle?: string;
   section?: string;
   pageType?: string;
   server?: boolean;
   apiAnchors?: Record<string, string>;
   operation?: Parameters<typeof OperationHeader>[0]['operation'];
+};
+// An operation's stability, as a badge beside its name (scripts/docs-reference.mjs STABILITY has the same words)
+const STABILITY: Record<string, { badge: string; text: string }> = {
+  ga: { badge: 'GA', text: 'Generally available' },
+  beta: { badge: 'Beta', text: 'Public, and may still change before it is generally available' },
+  internal: { badge: 'Internal', text: 'For Caitlyn itself; not in the public SDKs' },
 };
 const steps = data.pageType === 'guide';
 // The reference's operation, type and error-code pages: a title at the size of an operation heading
@@ -38,6 +45,18 @@ const reference = data.pageType === 'reference' || data.pageType === 'error' || 
 <header class="caitlyn-page-header" data-steps={steps ? '' : undefined} data-reference={reference ? '' : undefined}>
   {data.section && <p class="caitlyn-kicker caitlyn-page-section">{data.section}</p>}
   <h1 id="_top">{data.title}</h1>
+  {
+    data.subtitle && (
+      <p class="caitlyn-page-subtitle">
+        <code>{data.subtitle}</code>
+        {data.operation?.stability && STABILITY[data.operation.stability] && (
+          <span class="caitlyn-stability" data-stability={data.operation.stability} title={STABILITY[data.operation.stability].text}>
+            {STABILITY[data.operation.stability].badge}
+          </span>
+        )}
+      </p>
+    )
+  }
   {data.operation && <OperationHeader operation={data.operation} />}
 </header>
 {data.server && <div class="caitlyn-page-server"><ServerBlock id="caitlyn-page-server" /></div>}

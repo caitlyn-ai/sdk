@@ -27,10 +27,17 @@ export interface SendMessageCommandOutput extends Omit<SendMessageOutput, "event
 /**
  * Sends a message and streams the answer as server-sent events.
  *
- * The stream ends with exactly one `message.completed` or `message.failed`. If the connection
- * drops, the SDK re-attaches with `WatchConversation` and `Last-Event-ID`, so no event is
- * lost or repeated. Not retried automatically: a send that fails before the stream starts is
+ * The message is sent when the call is made, whether or not anyone reads the stream. The stream ends
+ * with exactly one `message.completed` or `message.failed`. If the connection drops, the SDK
+ * re-attaches with `WatchConversation` and `Last-Event-ID`, so no event is lost or repeated. Not retried automatically: a send that fails before the stream starts is
  * reported to the caller.
+ *
+ * A message may carry documents in `attachments`, each named by an upload reserved for this
+ * conversation. The SDKs also take files there: each file is uploaded for the conversation first,
+ * and the message is sent once every upload has arrived.
+ *
+ * Only a participant may send: whoever started the conversation, or someone it is shared with for
+ * writing (the update grant). A caller who may only read it, or may not see it, gets 404.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript
@@ -48,6 +55,11 @@ export interface SendMessageCommandOutput extends Omit<SendMessageOutput, "event
  *       label: "STRING_VALUE", // required
  *       uri: "STRING_VALUE",
  *       data: "DOCUMENT_VALUE",
+ *     },
+ *   ],
+ *   attachments: [ // AttachmentList
+ *     { // AttachmentReference
+ *       uploadId: "STRING_VALUE", // required
  *     },
  *   ],
  * };
@@ -74,7 +86,12 @@ export interface SendMessageCommandOutput extends Omit<SendMessageOutput, "event
  *
  * @throws {@link ConflictError} (client fault)
  *  The resource's state does not allow the request, a unique name is taken, or a request with the
- * same idempotency key is still in progress.
+ * same idempotency key is still in progress. An agent version that live points at
+ * (`VERSION_IN_USE`) or that live history names (`VERSION_IN_HISTORY`) cannot be deleted. A
+ * document still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an
+ * ingestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document
+ * an ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry
+ * `Retry-After`.
  *
  * @throws {@link NotFoundError} (client fault)
  *  The record does not exist, or the caller may not see it. The two are deliberately the same, so
@@ -103,8 +120,9 @@ export interface SendMessageCommandOutput extends Omit<SendMessageOutput, "event
  *
  * @throws {@link ValidationError} (client fault)
  *  The request is malformed: a member is missing, the wrong type or out of range; it has a member,
- * filter or sort field the operation does not define; its cursor is not valid for this list; or it
- * asks to delete `draft` or `production`, which every agent keeps.
+ * filter or sort field the operation does not define; its cursor is not valid for this list; it
+ * asks to delete `draft` or `live`, which every agent keeps; an agent configuration would be
+ * larger than 256 KiB; or a file is meant for a conversation whose agent takes no attachments.
  *
  * @throws {@link CaitlynServiceException}
  * <p>Base exception class for all service exceptions from Caitlyn service.</p>
@@ -116,6 +134,57 @@ export interface SendMessageCommandOutput extends Omit<SendMessageOutput, "event
  * const input = {
  *   conversationId: "0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47",
  *   message: "How much annual leave do part-time staff get?"
+ * };
+ * const command = new SendMessageCommand(input);
+ * const response = await client.send(command);
+ * // consume or destroy the stream to free the socket.
+ * const bytes = await response.events.transformToByteArray();
+ * // const str = await response.events.transformToString();
+ * // response.events.destroy(); // only applicable to Node.js Readable streams.
+ *
+ * /* response is
+ * { /* metadata only *\/ }
+ * *\/
+ * ```
+ *
+ * @example Ask about an attached document
+ * ```javascript
+ * // The upload was reserved with CreateUpload and `purpose.conversationId` set to this conversation, and its bytes have arrived. The SDKs do both when given a file: `conversation.send(text, { attachments: ['./leave.pdf'] })`.
+ * const input = {
+ *   attachments: [
+ *     {
+ *       uploadId: "0193a6f2-1112-7a2b-8c3d-4e5f60718293"
+ *     }
+ *   ],
+ *   conversationId: "0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47",
+ *   message: "Does this leave form match our policy?"
+ * };
+ * const command = new SendMessageCommand(input);
+ * const response = await client.send(command);
+ * // consume or destroy the stream to free the socket.
+ * const bytes = await response.events.transformToByteArray();
+ * // const str = await response.events.transformToString();
+ * // response.events.destroy(); // only applicable to Node.js Readable streams.
+ *
+ * /* response is
+ * { /* metadata only *\/ }
+ * *\/
+ * ```
+ *
+ * @example An attachment whose upload cannot be used
+ * ```javascript
+ * //
+ * const input = {
+ *   attachments: [
+ *     {
+ *       uploadId: "0193a6f2-1112-7a2b-8c3d-4e5f60718293"
+ *     },
+ *     {
+ *       uploadId: "0193a6f2-1113-7a2b-8c3d-4e5f60718293"
+ *     }
+ *   ],
+ *   conversationId: "0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47",
+ *   message: "Summarise these."
  * };
  * const command = new SendMessageCommand(input);
  * const response = await client.send(command);

@@ -4,24 +4,31 @@
 // the Markdown copies. Operation pages show the call in each SDK, the request and response members, the events of
 // a stream, the permission checked, the errors, and every @examples entry as a runnable program per language
 // (scripts/docs-snippets.mjs, compiled in CI) with the HTTP exchange.
-import { C, T, allErrors, binding, callOption, eventsUnion, kebab, local, names, namespacePath, operations, retrySafe, unreleasedOperations } from './docs-model.mjs';
-import { LANGUAGES, snippets } from './docs-snippets.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import { C, T, allErrors, binding, callOption, eventsUnion, kebab, local, names, namespacePath, nextRelease, notYetNote, notYetWords, operations, retrySafe, root, unreleasedOperations } from './docs-model.mjs';
+import { namespaceTree, operationTitle, walkTree } from './docs-api.mjs';
+import { LANGUAGES, goChain, snippets } from './docs-snippets.mjs';
+import { placement } from './docs-scopes.mjs';
 import { OPTIONS, sinceVersion } from './docs-metadata.mjs';
 import { ERROR_CODES } from '../docs/error-codes.mjs';
 
-const NOT_YET = '> **Not available yet.** The SDKs have this operation, but Caitlyn workspaces do not serve it yet, so a call\n' +
-  '> gets 404. This page describes how it works.';
 
-/** The operations no Caitlyn release serves yet (scripts/docs-model.mjs); every other operation's page is live. */
-const UNRELEASED = unreleasedOperations();
 
-const STABILITY = {
-  ga: 'Generally available',
-  beta: 'Beta: public, and may still change before it is generally available',
+/** Each stability level the model has: the badge's word and what it means (the Stability row shows both) */
+export const STABILITY = {
+  ga: { badge: 'GA', text: 'Generally available' },
+  beta: { badge: 'Beta', text: 'Public, and may still change before it is generally available' },
+  internal: { badge: 'Internal', text: 'For Caitlyn itself; not in the public SDKs' },
 };
+/** A stability level as its badge (src/styles/components.css .caitlyn-stability) */
+export const stabilityBadge = (level) => `<span class="caitlyn-stability" data-stability="${level}">${STABILITY[level].badge}</span>`;
 
 const plural = (n) => (n.endsWith('y') ? `${n.slice(0, -1)}ies` : n.endsWith('s') ? `${n}es` : `${n}s`);
-const singular = (n) => (n.endsWith('ies') ? `${n.slice(0, -3)}y` : n.endsWith('ses') ? n.slice(0, -2) : n.replace(/s$/, ''));
+/** A plural noun's singular: policies -> policy, statuses -> status, aliases -> alias, knowledge-bases ->
+ * knowledge-base (only -sses, -xes, -zes, -ches, -shes and -uses drop -es; every other -es word, bases or
+ * entries, is a plain -s) */
+export const singular = (n) => (/ies$/.test(n) ? `${n.slice(0, -3)}y` : /(ss|x|z|ch|sh|us|ias)es$/.test(n) ? n.slice(0, -2) : n.replace(/s$/, ''));
 const oneLine = (s) => s.replace(/\s*\n\s*/g, ' ').trim();
 const cell = (s) => oneLine(s ?? '').replace(/\|/g, '\\|');
 const firstSentence = (s) => (/^(.+?\.)(\s|$)/s.exec(oneLine(s))?.[1] ?? oneLine(s));
@@ -30,6 +37,9 @@ const firstSentence = (s) => (/^(.+?\.)(\s|$)/s.exec(oneLine(s))?.[1] ?? oneLine
 export const headingId = (text) => text.toLowerCase().replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, '').replace(/ /g, '-');
 
 /** A shape's members, with its mixins' members first (the JSON AST does not copy them into the shape). */
+/** A namespace path and its trailing dot, or nothing for a method on the client itself. */
+const dotted = (p) => (p ? `${p}.` : '');
+
 export function members(ast, id) {
   const s = ast.shapes[id];
   if (!s) return {};
@@ -68,6 +78,28 @@ function typeShapes(ast, ops) {
 }
 
 export const typeSlug = (id) => `reference/types/${kebab(local(id))}`;
+
+/**
+ * Type pages one type per thing replaced, old name to the thing (or renamed type) that took its place. Each old page's
+ * address redirects to the new one (scripts/docs-build.mjs), so links to the old pages keep working.
+ */
+export const RENAMED_TYPES = {
+  AgentSummary: 'Agent',
+  AgentVersionSummary: 'AgentVersion',
+  ConversationSummary: 'Conversation',
+  ConversationScope: 'ConversationSharing',
+  DocumentVersionSummary: 'DocumentVersion',
+  FolderSummary: 'Folder',
+  HistorySummary: 'HistoryEntry',
+  IngestionBatchItemSummary: 'IngestionBatchItem',
+  IngestionBatchSummary: 'IngestionBatch',
+  IngestionScope: 'IngestionBoundary',
+  KnowledgeBaseSummary: 'KnowledgeBase',
+  MetadataField: 'Field',
+  MetadataFieldInstructions: 'FieldInstructions',
+  MetadataFieldScope: 'FieldLevel',
+  MetadataFieldType: 'FieldType',
+};
 
 /** How a member's type reads in a table: a link for named shapes, `list of …`, `map of …`, or the simple type. */
 function typeText(ast, target, typePages) {
@@ -273,13 +305,7 @@ function responseBody(ast, op, example) {
   }
   const status = op.shape.traits?.[T('http')]?.code ?? 200;
   if (eventsUnion(ast, op)) return { status, result: null };
-  const mems = members(ast, op.shape.output.target);
-  const body = {};
-  for (const [name, v] of Object.entries(example.output ?? {})) {
-    const b = mems[name] ? binding(mems[name]) : { in: 'body' };
-    if (b.in === 'body' || b.in === 'payload') body[b.name ?? name] = v;
-  }
-  return { status, result: JSON.stringify(body, null, 2) };
+  return { status, result: JSON.stringify(wireBody(ast, op, example.output ?? {}), null, 2) };
 }
 
 /** A placeholder value for a shape, for sample event bodies: enums take their first value, structures their
@@ -310,11 +336,13 @@ function sampleValue(ast, target, name, depth = 0) {
   return null;
 }
 
-/** A typical sequence of a stream's events, as server-sent events: it starts, writes two pieces of text, cites a
- * source and completes. Built from the event types, so its values are placeholders. */
+/** A typical sequence of a stream's events, as server-sent events: for an answer, it starts, writes two pieces of text,
+ * cites a source and completes; for any other stream (a batch's, an operation's), its first few event types in the
+ * model's order. Built from the event types, so its values are placeholders. */
 function sampleEvents(ast, ev) {
-  const order = ['message.started', 'phase.changed', 'text.delta', 'text.delta', 'citation.added', 'message.completed'];
+  const chat = ['message.started', 'phase.changed', 'text.delta', 'text.delta', 'citation.added', 'message.completed'];
   const byName = new Map(Object.values(ev.shape.members).map((m) => [m.traits?.[T('jsonName')], m]));
+  const order = chat.some((name) => byName.has(name)) ? chat : [...byName.keys()].filter(Boolean).slice(0, 4);
   return order
     .filter((name) => byName.has(name))
     .map((name, i) => `id: ${i + 1}\nevent: ${name}\ndata: ${JSON.stringify(sampleValue(ast, byName.get(name).target, name))}`)
@@ -326,16 +354,29 @@ const CALLERS = { person: 'people (signed in, or a personal access token)', api_
 function permissionText(op) {
   const p = op.shape.traits?.[C('permission')];
   if (!p) return null;
-  const lines = [`- **Permission:** \`${p.action}\`.`];
-  if (p.entity) {
-    const what = singular(p.entity.type).replace(/-/g, ' ');
-    let entity = `- **Checked on:** the ${what} named by \`${p.entity.from}\``;
-    if (p.entity.level) entity += `, which needs the \`${p.entity.level}\` grant`;
+  // The permission, and any it needs as well (alsoActions: a paid job needs the ingestions permission beside the
+  // knowledge base's own); a credential needs every one
+  const actions = (q) => [q.action, ...(q.alsoActions ?? [])].map((x) => `\`${x}\``);
+  const andList = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}` : xs[0]);
+  const lines = [`- **Permission:** ${andList(actions(p))}${p.alsoActions?.length === 1 ? ', both' : p.alsoActions?.length ? ', all of them' : ''}.`];
+  const checkedOn = (e) => {
+    const what = singular(e.type).replace(/-/g, ' ');
+    let entity = `the ${what} named by \`${e.from}\``;
+    if (e.level) entity += `, which needs the \`${e.level}\` grant`;
     entity += '.';
-    if (p.entity.version) entity += ` The version in \`${p.entity.version}\` is checked too: \`production\` needs only access to the agent; the draft and pinned versions also need the agent's version access grant.`;
-    if (p.entity.fixedVersion) entity += ` The ${p.entity.fixedVersion} is checked too, so the caller also needs the agent's version access grant.`;
-    if (p.entity.documentAccess) entity += ` The folder in \`${p.entity.documentAccess}\` must be one the caller can reach.`;
-    lines.push(entity);
+    if (e.version) entity += ` The version in \`${e.version}\` is checked too: \`live\` needs only access to the agent; the draft and pinned versions also need the agent's version access grant.`;
+    if (e.alsoVersion) entity += ` So is the version in \`${e.alsoVersion}\`, the same way.`;
+    if (e.fixedVersion) entity += ` The ${e.fixedVersion} is checked too, so the caller also needs the agent's version access grant.`;
+    const reach = [e.documentAccess, ...(e.alsoDocumentAccess ?? [])].filter(Boolean).map((m) => `\`${m}\``);
+    if (reach.length) entity += ` The folder or document in ${andList(reach).replace(' and ', reach.length > 2 ? ', and ' : ' and ')} must be one the caller can reach, when given.`;
+    return entity;
+  };
+  if (p.entity) lines.push(`- **Checked on:** ${checkedOn(p.entity)}`);
+  // A check that replaces the operation's own when the input names something it does not cover (PutAccess on a folder
+  // or a document changes only that record's readers)
+  for (const v of p.whenPresent ?? []) {
+    const named = andList(v.members.map((m) => `\`${m}\``)).replace(' and ', ' or ');
+    lines.push(`- **With ${named}:** the permission is ${andList(actions(v))} instead${v.entity ? `, checked on ${checkedOn(v.entity)}` : '.'}`);
   }
   if (p.list) lines.push(`- **Listed:** only what the caller's ${singular(p.list.type).replace(/-/g, ' ')} grants allow.`);
   const callers = p.callers ?? ['person'];
@@ -345,14 +386,39 @@ function permissionText(op) {
   return lines.join('\n');
 }
 
-/** How each SDK calls the operation, for the summary table. */
+/**
+ * How each SDK calls the operation, for the summary table: through its place in the scope tree (docs-scopes.mjs), with
+ * the identifiers the scopes take named as variables (`caitlyn.knowledgeBases(knowledgeBaseId).documents.create(file, { … })`).
+ */
 function sdkCalls(ast, op) {
-  const input = local(op.shape.input.target);
-  const pos = op.positional;
-  const ts = `caitlyn.${namespacePath('typescript', op.namespace)}.${op.method}(${pos ? `${pos}, ` : ''}{ … })`;
-  const py = `caitlyn.${namespacePath('python', op.namespace)}.${names.python(op.method)}(${pos ? `${names.python(pos)}, ` : ''}…)`;
-  const go = `client.${namespacePath('go', op.namespace)}.${names.go(op.method)}(ctx, ${pos ? `${names.goParam(pos)}, ` : ''}&caitlyn.${input}{…})`;
-  const rs = `client.${namespacePath('rust', op.namespace)}.${names.rust(op.method)}(${pos ? `${names.rust(pos)}, ` : ''}${input} { … })`;
+  const mems = members(ast, op.shape.input.target);
+  // Every identifier the request path takes, named by itself, so placement() finds the scope that fills it.
+  const ids = Object.fromEntries(Object.entries(mems).filter(([, m]) => binding(m).in === 'path').map(([n]) => [n, `@@${n}@@`]));
+  const p = placement(op.name, ids);
+  const unwrap = (code, spell) => code.replace(/"?@@([A-Za-z]+)@@"?/g, (_, n) => spell(n));
+  const upload = (op.shape.traits ?? {})[C('uploadTarget')]?.member;
+  const jobUpload = p.estimate ? ast.shapes[`ai.caitlyn.v3#${p.method.operation}`]?.traits?.[C('uploadTarget')]?.member : upload;
+  const takesFile = !!jobUpload && !jobUpload.includes('.');
+  // What the call takes besides its scopes: the estimate's own members (never the file's description), less call options.
+  const describes = (m) => /#UploadDescription$/.test(ast.shapes[m.target]?.type === 'list' ? ast.shapes[m.target].member.target : m.target);
+  const rest = Object.entries(mems).filter(([n, m]) => !p.filled.has(n) && !callOption(n, m) && binding(m).in !== 'header' && n !== jobUpload && !describes(m) && !m.traits?.[C('fromScope')]);
+  // A lone required member is taken first when at most two optional ones sit beside it (TypeScript's layout).
+  const required = rest.filter(([, m]) => m.traits?.[T('required')] !== undefined);
+  const first = !takesFile && required.length === 1 && rest.length <= 3 ? required[0][0] : undefined;
+  const others = rest.filter(([n]) => n !== first);
+  const leading = (spell) => (p.method.leading ?? []).map(spell);
+  const argsOf = (spell, more) => [...leading(spell), ...(takesFile ? ['file'] : []), ...(first ? [spell(first)] : []), ...(others.length ? [more] : [])].join(', ');
+  const rustWord = (n) => n.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+  const tsPath = p.steps.map((s) => `${s.name}${s.args ? `(${s.args.map((a) => unwrap(String(a), (n) => n)).join(', ')})` : ''}`).join('.');
+  const ts = `caitlyn.${tsPath ? `${tsPath}.` : ''}${p.method.name}${p.estimate ? '.estimate' : ''}(${argsOf((n) => n, '{ … }')})`;
+  const pyPath = p.steps.map((s) => `${names.python(s.name)}${s.args ? `(${s.args.map((a) => unwrap(String(a), (n) => names.python(n))).join(', ')})` : ''}`).join('.');
+  const py = `caitlyn.${pyPath ? `${pyPath}.` : ''}${names.python(p.method.name)}${p.estimate ? '.estimate' : ''}(${argsOf((n) => names.python(n), '…')})`;
+  const goName = p.estimate ? `Estimate${names.go(p.method.name)}` : names.go(p.method.name);
+  const go = `client${unwrap(goChain(p.steps), (n) => names.goParam(n))}.${goName}(${['ctx', argsOf((n) => names.goParam(n), '…')].filter(Boolean).join(', ')})`;
+  // A Rust accessor escapes only keywords: `client.core().uploads()`.
+  const rsPath = p.steps.map((s) => (s.args ? `${rustWord(s.singular)}(${s.args.map((a) => unwrap(String(a), (n) => names.rust(n))).join(', ')})` : `${rustWord(s.name)}()`)).join('.');
+  const rsName = p.estimate ? `estimate_${rustWord(p.method.name)}` : rustWord(p.method.name);
+  const rs = `client.${rsPath ? `${rsPath}.` : ''}${rsName}(${argsOf((n) => names.rust(n), '…')})`;
   return { TypeScript: ts, Python: py, Go: go, Rust: rs };
 }
 
@@ -360,11 +426,14 @@ function sdkCalls(ast, op) {
 function helpers(ast, op) {
   const t = op.shape.traits ?? {};
   if (t[C('presignedUpload')]) {
-    return 'The SDKs also have `uploads.create(file)` (Python `uploads.create(file=…)`, Go `Uploads.Create`, Rust `uploads().create`), which computes the checksum, reserves the upload and sends the bytes to `uploadUrl` with `requiredHeaders`, returning the reserved upload.';
+    return 'The SDKs also have `core.uploads.send(file)` (Python `core.uploads.send(file)`, Go `Core.Uploads.Send`, Rust `core().uploads().send`), which computes the checksum, reserves the upload and sends the bytes to `uploadUrl` with `requiredHeaders`, returning the reserved upload. The calls that take a file use it for you.';
   }
   if (t[C('uploadTarget')]) {
     const member = t[C('uploadTarget')].member;
-    return `The SDKs also have \`${namespacePath('typescript', op.namespace)}.upload(file, …)\` (Python \`${namespacePath('python', op.namespace)}.upload(file=…, …)\`, Go \`${namespacePath('go', op.namespace)}.Upload\`, Rust \`${namespacePath('rust', op.namespace)}.upload\`), which uploads the file first and then calls this operation with \`${member}\` set to the upload's ID.`;
+    const where = member.includes('.')
+      ? `at \`${member}\` the SDKs take the file itself in place of the upload's ID`
+      : `the SDKs take \`file\` in place of \`${member}\``;
+    return `Give a file instead of an upload: ${where}. The SDK hashes and uploads the file first (as \`core.uploads.send\` does), then calls this operation with \`${member}\` set to the upload's ID. An upload's ID is still accepted.`;
   }
   return null;
 }
@@ -396,6 +465,22 @@ function httpRequest(ast, op, input) {
   return lines.join('\n');
 }
 
+/**
+ * An example's output as the wire carries its body: the payload member's value itself (an operation whose output is a
+ * thing sends the thing, `{"etag": …, "key": …}`, never `{"field": {…}}`), otherwise the body-bound members under
+ * their JSON names. Header- and status-bound members are never in it.
+ */
+function wireBody(ast, op, output) {
+  const mems = members(ast, op.shape.output.target);
+  const body = {};
+  for (const [name, v] of Object.entries(output)) {
+    const b = mems[name] ? binding(mems[name]) : { in: 'body' };
+    if (b.in === 'payload') return v;
+    if (b.in === 'body') body[b.name ?? name] = v;
+  }
+  return body;
+}
+
 function httpResponse(ast, op, example) {
   if (example.error) {
     const err = ast.shapes[example.error.shapeId];
@@ -405,36 +490,43 @@ function httpResponse(ast, op, example) {
   const out = example.output ?? {};
   const mems = members(ast, op.shape.output.target);
   const headers = [];
-  const body = {};
   let status = op.shape.traits?.[T('http')]?.code ?? 200;
   for (const [name, v] of Object.entries(out)) {
     const m = mems[name];
     const b = m ? binding(m) : { in: 'body' };
     if (b.in === 'header') headers.push(`${b.name}: ${v}`);
     else if (b.in === 'status') status = v;
-    else body[b.name ?? name] = v;
   }
+  const body = wireBody(ast, op, out);
   if (eventsUnion(ast, op)) return `HTTP/1.1 200\nContent-Type: text/event-stream\n${headers.join('\n')}`.trim();
   return `HTTP/1.1 ${status}\n${headers.length ? `${headers.join('\n')}\n` : ''}Content-Type: application/json\n\n${JSON.stringify(body, null, 2)}`;
 }
 
 function operationPage(ast, op, typePages, examples, opsUsingError) {
   const t = op.shape.traits ?? {};
-  const released = !UNRELEASED.has(op.name);
+  // An operation no release serves yet (scripts/docs-model.mjs: the pre-release case) says so, with the release it
+  // arrives in; every other operation shows the release it arrived in
+  const released = !opsUsingError.unreleased.has(op.name);
   const resourceName = op.resource ? local(op.resource).replace(/Resource$/, '') : null;
-  const resources = [...new Set([resourceName && kebab(resourceName), kebab(singular(op.namespace.split('.').pop()))].filter(Boolean))].filter((k) => OPTIONS.resources.includes(k));
+  const resources = [...new Set([resourceName && kebab(resourceName), op.namespace && kebab(singular(op.namespace.split('.').pop()))].filter(Boolean))].filter((k) => OPTIONS.resources.includes(k));
   const metadata = { pageType: 'reference', sinceVersion: sinceVersion(op.since), resources, integrations: [], operations: [op.name] };
   const out = [];
   // The site's page swaps some Markdown blocks for richer ones (memberTree); the Markdown copy keeps them as written
   const siteParts = new Map();
   out.push(op.doc, '');
-  if (!released) out.push(NOT_YET, '');
+  if (!released) out.push(notYetNote(opsUsingError.next), '');
   const calls = sdkCalls(ast, op);
   out.push('| | |', '| --- | --- |');
   out.push(`| HTTP | \`${op.http.method} /api${op.http.uri}\` |`);
   for (const [lang, call] of Object.entries(calls)) out.push(`| ${lang} | \`${call}\` |`);
   // An operation no workspace serves cannot be generally available, whatever the model says.
-  out.push(`| Stability | ${released ? (STABILITY[op.stability] ?? STABILITY.beta) : STABILITY.beta} |`);
+  const stability = released && STABILITY[op.stability] ? op.stability : 'beta';
+  // An operation no release serves yet says so here too, with the release it arrives in
+  const meaning = `${STABILITY[stability].text}${released ? '' : `. ${notYetWords(opsUsingError.next)}`}`;
+  const stabilityRow = `| Stability | ${STABILITY[stability].badge}: ${meaning} |`;
+  out.push(stabilityRow);
+  // The site's row shows the level as its badge, its meaning beside it
+  siteParts.set(stabilityRow, `| Stability | ${stabilityBadge(stability)} ${meaning} |`);
   if (released) out.push(`| Since | Caitlyn ${op.since} |`);
   out.push(`| Retried by the SDKs | ${retrySafe(op, ast) ? 'Yes, on 429, 503 and connection failures ([Retries](/retries/))' : 'No: it is not safe to repeat ([Retries](/retries/))'} |`);
   if (t[C('audit')]) out.push(`| Audited | As a write: ${cell(t[C('audit')].reason ?? '')} The call is refused with 503 when its audit event cannot be recorded. |`);
@@ -472,6 +564,16 @@ function operationPage(ast, op, typePages, examples, opsUsingError) {
   const responseAt = out.length;
   let siteResponse = '';
   out.push('## Response', '');
+  // An operation whose output is a thing (its @httpPayload member, under one type per thing) returns that thing
+  const payload = Object.values(members(ast, op.shape.output.target)).find((m) => m.traits?.[T('httpPayload')] !== undefined);
+  // and a list returns those things, a page at a time
+  const listOf = t[T('paginated')] && ast.shapes[members(ast, op.shape.output.target).items?.target]?.member?.target;
+  const returnsLine = payload && typePages.has(payload.target)
+    ? `Returns: [${local(payload.target)}](/${typeSlug(payload.target)}/), with its \`etag\` and the response metadata on it.`
+    : listOf && typePages.has(listOf)
+      ? `Returns: [${local(listOf)}](/${typeSlug(listOf)}/) items, a page at a time.`
+      : null;
+  if (returnsLine) out.push(returnsLine, '');
   if (ev) {
     out.push(`A \`text/event-stream\` of [ConversationEvent](/${typeSlug(ev.id)}/) events. The stream ends after \`${ev.shape.members[ev.final]?.traits?.[T('jsonName')] ?? ev.final}\`, which the SDKs' \`finalMessage()\` (Python \`final_message()\`, Go \`FinalMessage()\`, Rust \`final_message()\`) returns; a failure ends it with \`message.failed\`, which the SDKs raise as the typed error. ${ev.resumeWith ? `A dropped connection is resumed with [${local(ev.resumeWith)}](/reference/${kebab(local(ev.resumeWith))}/) and \`Last-Event-ID\`, so no event is lost or repeated.` : ''} See [Streaming](/streaming/).`, '');
     const rows = Object.entries(ev.shape.members).map(([, m]) => `| \`${m.traits?.[T('jsonName')]}\` | [${local(m.target)}](/${typeSlug(m.target)}/) | ${cell(m.traits?.[T('documentation')])} |`);
@@ -562,6 +664,7 @@ function operationPage(ast, op, typePages, examples, opsUsingError) {
     ...out.slice(requestAt, responseAt),
     '## Response',
     '',
+    ...(returnsLine ? [returnsLine, ''] : []),
     `<div class="caitlyn-statuses">\n\n${siteResponse}\n</div>`,
     '',
     ...out.slice(permissionsAt < 0 ? errorsAt : permissionsAt, errorsAt),
@@ -607,13 +710,15 @@ function operationPage(ast, op, typePages, examples, opsUsingError) {
   });
   const operation = {
     name: op.name,
+    stability,
     responses,
-    method: `${op.namespace}.${op.method}`,
+    method: opsUsingError.tree.callOf.get(op.name),
     calls: Object.fromEntries(Object.entries(calls).map(([lang, call]) => [lang.toLowerCase(), call])),
     http: { method: op.http.method, path: `/api${op.http.uri}` },
     panel,
   };
-  return { slug: `reference/${kebab(op.name)}`, title: op.name, metadata, body, siteBody, operation, group: op.namespace, label: op.name };
+  // Titled by the job (@title), with the operation's name under it; in the sidebars' group (scripts/docs-api.mjs)
+  return { slug: `reference/${kebab(op.name)}`, title: operationTitle(op), subtitle: op.name, metadata, body, siteBody, operation, group: opsUsingError.tree.groupOf.get(op.name), label: operationTitle(op) };
 }
 
 function typePage(ast, id, typePages, usedBy) {
@@ -659,7 +764,7 @@ function typePage(ast, id, typePages, usedBy) {
     out.push(line, '');
     site.push(line, '');
   }
-  const resources = [...new Set(ops.flatMap((o) => [o.resource && kebab(local(o.resource).replace(/Resource$/, '')), kebab(singular(o.namespace.split('.').pop()))]).filter(Boolean))].filter((k) => OPTIONS.resources.includes(k));
+  const resources = [...new Set(ops.flatMap((o) => [o.resource && kebab(local(o.resource).replace(/Resource$/, '')), o.namespace && kebab(singular(o.namespace.split('.').pop()))]).filter(Boolean))].filter((k) => OPTIONS.resources.includes(k));
   const since = ops.map((o) => sinceVersion(o.since)).sort((a, b) => a - b)[0] ?? 0;
   return {
     slug: typeSlug(id),
@@ -696,8 +801,11 @@ function errorPage(ast, code, err, ops) {
   };
 }
 
-/** Every generated page: { slug, title, metadata, body, group, label }. */
-export function referencePages(ast) {
+/**
+ * Every generated page: { slug, title, metadata, body, group, label }. `unreleased` (the operations no release serves
+ * yet) and `next` (the release they arrive in) default to the snapshot's and the lock's; a test passes its own.
+ */
+export function referencePages(ast, { unreleased = unreleasedOperations(), next = nextRelease() } = {}) {
   const ops = operations(ast);
   const types = typeShapes(ast, ops);
   const typePages = new Set(types);
@@ -731,8 +839,11 @@ export function referencePages(ast) {
     return errors.filter((e) => own.has(e.id) || serviceErrors.has(e.id));
   };
   const examples = snippets(ast);
+  const helpers = loadHelpers();
+  const tree = namespaceTree(ops, { ast, helpers });
   const pages = [];
-  for (const op of ops) pages.push(operationPage(ast, op, typePages, examples, { errorsOf }));
+  for (const op of ops) pages.push(operationPage(ast, op, typePages, examples, { errorsOf, tree, unreleased, next }));
+  for (const h of helpers) pages.push(helperPage(h, ops, tree));
   for (const id of types) pages.push(typePage(ast, id, typePages, usedBy));
   for (const err of errors) {
     for (const code of err.codes) {
@@ -740,16 +851,108 @@ export function referencePages(ast) {
       pages.push(errorPage(ast, code, err, listing));
     }
   }
-  return { pages, ops, examples, typePages };
+  return { pages, ops, examples, typePages, tree, helpers, unreleased, next };
+}
+
+// ------------------------------------------------------------------------------------------------ the helpers
+
+/** The SDK helpers the reference has a page for (docs/helpers.json): written in each SDK's runtime core, not generated
+ * from an operation */
+export function loadHelpers() {
+  return JSON.parse(fs.readFileSync(path.join(root, 'docs/helpers.json'), 'utf8')).helpers;
+}
+
+/** The lines of an example's region (`// #region name` to `// #endregion`, `#` in Python), less their shared indent,
+ * as scripts/docs-guides.mjs reads them */
+function exampleRegion(ref) {
+  const [file, name] = ref.split('#');
+  const lines = fs.readFileSync(path.join(root, file), 'utf8').split('\n');
+  const marker = (l, text) => ['//', '#'].some((c) => l.trim() === `${c} ${text}`);
+  const start = lines.findIndex((l) => marker(l, `#region ${name}`));
+  const end = lines.findIndex((l, i) => i > start && marker(l, '#endregion'));
+  if (start < 0 || end < 0) throw new Error(`docs/helpers.json: ${ref} is no example region`);
+  const body = lines.slice(start + 1, end);
+  const shared = Math.min(...body.filter((l) => l.trim()).map((l) => /^[\t ]*/.exec(l)[0].length));
+  return body.map((l) => l.slice(shared)).join('\n');
+}
+
+export const helperSlug = (h) => `reference/helpers/${kebab(h.id.replace(/\./g, '-'))}`;
+
+/** A helper's page: what it does, its call in each SDK, its options, the operations it makes and an example in each
+ * language, from the tested examples */
+/**
+ * A scope method's call in each language, through the scope tree (docs-scopes.mjs placement), as sdkCalls spells an
+ * operation's: `kb.ingestion.batches(ingestionBatchId).watch()`. `call` is { operation (one the scope's watch or
+ * method reaches), input (the identifiers, each named by the variable it shows), method (watch or wait) }.
+ */
+export function scopeCalls({ operation, input, method }) {
+  const p = placement(operation, Object.fromEntries(Object.entries(input).map(([k, v]) => [k, `@@${v}@@`])));
+  const unwrap = (code, spell) => String(code).replace(/"?@@([A-Za-z]+)@@"?/g, (_, n) => spell(n));
+  const rustWord = (n) => n.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+  const tsPath = p.steps.map((s) => `${s.name}${s.args ? `(${s.args.map((a) => unwrap(a, (n) => n)).join(', ')})` : ''}`).join('.');
+  const pyPath = p.steps.map((s) => `${names.python(s.name)}${s.args ? `(${s.args.map((a) => unwrap(a, (n) => names.python(n))).join(', ')})` : ''}`).join('.');
+  const rsPath = p.steps.map((s) => (s.args ? `${rustWord(s.singular)}(${s.args.map((a) => unwrap(a, (n) => names.rust(n))).join(', ')})` : `${rustWord(s.name)}()`)).join('.');
+  return {
+    typescript: `caitlyn.${tsPath}.${method}()`,
+    python: `caitlyn.${pyPath}.${names.python(method)}()`,
+    go: `client${unwrap(goChain(p.steps), (n) => names.goParam(n))}.${names.go(method)}(ctx)`,
+    rust: `client.${rsPath}.${rustWord(method)}()`,
+  };
+}
+
+function helperPage(h, ops, tree) {
+  const byName = new Map(ops.map((o) => [o.name, o]));
+  for (const name of h.calls) if (!byName.has(name)) throw new Error(`docs/helpers.json: ${h.id} calls ${name}, which is no public operation`);
+  const out = [...h.description.flatMap((p) => [p, ''])];
+  out.push('| | |', '| --- | --- |');
+  // A scope's watch() and wait() are spelled from the scope tree; the other helpers' calls are their runtime cores'
+  const spellings = h.call ? scopeCalls(h.call) : h.spellings;
+  for (const l of LANGUAGES) out.push(`| ${l.label} | \`${spellings[l.key].replace(/\|/g, '\\|')}\` |`);
+  out.push('');
+  if (h.options?.length) {
+    out.push('## Options', '');
+    // Options spelled in each language (a wait's) are a row per option with each language's spelling; the others are
+    // named as in TypeScript
+    if (h.options[0].spellings) {
+      // What each option does, then how each language spells them: a row per language
+      for (const o of h.options) out.push(`- **${o.option}.** ${o.doc}`);
+      out.push('', `| Language | ${h.options.map((o) => o.option).join(' | ')} |`, `| --- | ${h.options.map(() => '---').join(' | ')} |`);
+      for (const l of LANGUAGES) out.push(`| ${l.label} | ${h.options.map((o) => `\`${o.spellings[l.key].replace(/\|/g, '\\|')}\``).join(' | ')} |`);
+    } else {
+      out.push('Named as in TypeScript; each SDK spells them its own way (Python `remove_missing`, Go `RemoveMissing`, Rust `.remove_missing(…)`).', '');
+      out.push('| Option | What it does |', '| --- | --- |');
+      for (const [name, doc] of h.options) out.push(`| ${name.split(', ').map((n) => `\`${n}\``).join(', ')} | ${cell(doc)} |`);
+    }
+    out.push('');
+  }
+  for (const section of h.sections ?? []) out.push(`## ${section.heading}`, '', ...section.body.flatMap((p) => [p, '']));
+  if (h.example) {
+    out.push('## Example', '');
+    for (const l of LANGUAGES) out.push(`\`\`\`${l.fence} tab="${l.label}"`, exampleRegion(h.example[l.key]).trimEnd(), '```');
+    out.push('');
+  }
+  out.push('## The operations it makes', '', h.calls.map((n) => `[${operationTitle(byName.get(n))}](/reference/${kebab(n)}/) (${n})`).join(', ') + '.', '');
+  const since = Math.min(...h.calls.map((n) => sinceVersion(byName.get(n).since)));
+  return {
+    slug: helperSlug(h),
+    title: h.title,
+    subtitle: h.call ? scopeCalls(h.call).typescript.replace(/^caitlyn\.knowledgeBases\(knowledgeBaseId\)/, 'kb') : h.name,
+    calls: h.call ? scopeCalls(h.call) : h.spellings,
+    metadata: { pageType: 'sdk', sinceVersion: since, resources: h.resources, integrations: [], operations: h.calls },
+    body: out.join('\n'),
+    group: tree.groupOf.get(h.id),
+    label: h.title,
+    helper: h.id,
+  };
 }
 
 /**
  * The SDK reference's overview at /sdk/: installing each SDK and creating a client (both from Getting started, as its
  * readers already know them), the server and workspace (the page's Server block), the sign-in modes (Authentication's
- * table), every namespace with its operations by SDK method, the waiters, and how errors and retries behave. The site's
+ * table), every group of the client with its operations and helpers by their call, the waiters, and how errors and retries behave. The site's
  * page lists the operations as rows; the Markdown copy as a list. `pages` are the SDK reference's operation pages.
  * ctx: { install, firstCall, modes } (Markdown taken from the hand-written pages), tree (scripts/docs-api.mjs
- * namespaceTree: the namespaces as the sidebars nest them)
+ * namespaceTree: the groups as the sidebars nest them)
  */
 export function sdkOverview(ast, ops, pages, { install, firstCall, modes, tree }) {
   const head = [
@@ -775,37 +978,32 @@ export function sdkOverview(ast, ops, pages, { install, firstCall, modes, tree }
     '',
     modes.trim(),
     '',
-    '## Namespaces and operations',
+    '## Groups and operations',
     '',
   ];
   const md = [...head];
   const site = [...head];
   const W = 'smithy.waiters#waitable';
   const waiters = [];
-  const group = (label, ns, level) => {
-    const list = ops.filter((o) => o.namespace === ns);
-    const path = `caitlyn.${namespacePath('typescript', ns)}`;
-    md.push(`${level} ${label}`, '', `\`${path}\`:`, '');
-    site.push(`${level} ${label}`, '', `<div class="caitlyn-api-ops">`, '');
-    for (const op of list) {
-      const page = pages.find((p) => p.title === op.name);
-      const summary = firstSentence(op.doc ?? '');
-      md.push(`- [\`${path}.${op.method}\`](/${page.slug}/) (${op.name}): ${summary}`);
-      site.push('<div class="caitlyn-api-op">', '', `[\`${path}.${op.method}\`](/${page.slug}/) <code class="caitlyn-api-op-path">${op.name}</code>`, '', `<span class="caitlyn-param-doc">${summary}</span>`, '', '</div>', '');
-      for (const [name, w] of Object.entries(op.shape.traits?.[W] ?? {})) waiters.push({ ns, op, page, name, doc: oneLine(w.documentation ?? '') });
+  // Each group under a heading a level below its parent's, its operations and helpers as rows by their call
+  const pageOf = (e) => (e.op ? pages.find((p) => p.operation?.name === e.op.name) : pages.find((p) => p.helper === e.helper.id));
+  walkTree(tree, (n, depth) => {
+    const level = '#'.repeat(Math.min(3 + depth, 6));
+    md.push(`${level} ${n.label}`, '');
+    site.push(`${level} ${n.label}`, '');
+    if (!n.entries.length) return;
+    site.push(`<div class="caitlyn-api-ops">`, '');
+    for (const e of n.entries) {
+      const page = pageOf(e);
+      const call = e.op ? `${tree.callOf.get(e.op.name)}()` : e.helper.call ? page.calls.typescript : page.calls.typescript.replace(/\(.*$/s, '()');
+      const summary = e.op ? firstSentence(e.op.doc ?? '') : e.helper.summary;
+      md.push(`- [\`${call}\`](/${page.slug}/) (${page.title}): ${summary}`);
+      site.push('<div class="caitlyn-api-op">', '', `[${page.title}](/${page.slug}/) <code class="caitlyn-api-op-path">${call}</code>`, '', `<span class="caitlyn-param-doc">${summary}</span>`, '', '</div>', '');
+      if (e.op) for (const [wname, w] of Object.entries(e.op.shape.traits?.[W] ?? {})) waiters.push({ ns: e.op.namespace, op: e.op, page, name: wname, doc: oneLine(w.documentation ?? '') });
     }
     md.push('');
     site.push('</div>', '');
-  };
-  for (const node of tree) {
-    if (!node.children) {
-      group(node.label, node.ns, '###');
-      continue;
-    }
-    md.push(`### ${node.label}`, '');
-    site.push(`### ${node.label}`, '');
-    for (const child of node.children) group(child.label, child.ns, '####');
-  }
+  });
   const tail = [];
   if (waiters.length) {
     tail.push('## Waiters', '', 'A waiter reads a resource until it reaches the state you are waiting for, backing off between reads, and returns it; it raises a `WaiterError` when the resource reaches a state it can never leave, or the wait runs out of time.', '');

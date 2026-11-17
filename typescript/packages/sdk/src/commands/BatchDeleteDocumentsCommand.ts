@@ -28,11 +28,12 @@ export interface BatchDeleteDocumentsCommandOutput extends BatchDeleteDocumentsO
  * Each document is deleted as DeleteDocument deletes one. The call returns 200 even when every
  * item fails: `results` has one entry per identifier, always in request order, each either
  * `accepted` (the document is now `deleting`, or already was) or `failed` with a code: `NOT_FOUND`
- * for a document that is gone or that the caller may not see, and `CONFLICT` for a document still
- * being processed (`pending` or `processing`), which cannot be deleted until it is `indexed`,
- * `partially_indexed` or `failed`. One failed item never stops the others. More than 100 identifiers, none, or the same identifier twice is refused with 400
- * `VALIDATION_FAILED` for the whole call. Safe to repeat: a repeat gives the same results, apart
- * from `NOT_FOUND` for documents that finished deleting in between.
+ * for a document that is gone or that the caller may not see, or `SERVICE_UNAVAILABLE` when it could
+ * not be marked for deletion; try that one again. A document still being processed is deleted like
+ * any other. One failed item never stops the others. More than 100
+ * identifiers, none, or the same identifier twice is refused with 400 `VALIDATION_FAILED` for the
+ * whole call. Safe to repeat: a repeat gives the same results, apart from `NOT_FOUND` for documents
+ * that finished deleting in between.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript
@@ -94,8 +95,9 @@ export interface BatchDeleteDocumentsCommandOutput extends BatchDeleteDocumentsO
  *
  * @throws {@link ValidationError} (client fault)
  *  The request is malformed: a member is missing, the wrong type or out of range; it has a member,
- * filter or sort field the operation does not define; its cursor is not valid for this list; or it
- * asks to delete `draft` or `production`, which every agent keeps.
+ * filter or sort field the operation does not define; its cursor is not valid for this list; it
+ * asks to delete `draft` or `live`, which every agent keeps; an agent configuration would be
+ * larger than 256 KiB; or a file is meant for a conversation whose agent takes no attachments.
  *
  * @throws {@link CaitlynServiceException}
  * <p>Base exception class for all service exceptions from Caitlyn service.</p>
@@ -124,36 +126,6 @@ export interface BatchDeleteDocumentsCommandOutput extends BatchDeleteDocumentsO
  *       code: "NOT_FOUND",
  *       detail: "No document doc-00000000 in knowledge base KB4T7YQ2WL.",
  *       documentId: "doc-00000000",
- *       status: "failed"
- *     }
- *   ]
- * }
- * *\/
- * ```
- *
- * @example Delete two documents, one of which is still being processed
- * ```javascript
- * //
- * const input = {
- *   documentIds: [
- *     "doc-3b7f9e21",
- *     "doc-7c2d4e18"
- *   ],
- *   knowledgeBaseId: "KB4T7YQ2WL"
- * };
- * const command = new BatchDeleteDocumentsCommand(input);
- * const response = await client.send(command);
- * /* response is
- * {
- *   results: [
- *     {
- *       documentId: "doc-3b7f9e21",
- *       status: "accepted"
- *     },
- *     {
- *       code: "CONFLICT",
- *       detail: "Document doc-7c2d4e18 is still being processed and cannot be deleted yet. Wait until it is indexed, partially_indexed or failed, then delete it.",
- *       documentId: "doc-7c2d4e18",
  *       status: "failed"
  *     }
  *   ]

@@ -47,6 +47,56 @@ export { RAW_BODY_LIMIT, rawBodyOf } from './raw-body.js';
 /** An output with the parsed response body, including fields this SDK version does not model. */
 export type WithRaw<T> = T & { readonly raw?: Record<string, unknown> };
 
+/**
+ * How a watch's events are read (watch.event-types): by JSON key, a member to read as a model schema (a structure,
+ * or a list of them), or a plan for an event's own structure (`$fields`) or a list of them (`$each`).
+ */
+export type EventPlan = { [key: string]: unknown };
+
+/** Reads an event's data in place as the model's types, as a call's output is read: dates, nested structures, raw. */
+export function readEvent(data: Record<string, any>, plan: EventPlan): void {
+  for (const key in plan) {
+    const value = data[key];
+    if (value == null) continue;
+    const p = plan[key] as { $fields?: EventPlan; $each?: EventPlan };
+    if (p && typeof p === 'object' && !Array.isArray(p) && ('$fields' in p || '$each' in p)) {
+      if (p.$fields) readEvent(value, p.$fields);
+      else if (Array.isArray(value)) for (const v of value) readEvent(v, p.$each!);
+      continue;
+    }
+    const s = shape(p);
+    data[key] = fromJson(s, value);
+    attachRaw(s, data[key], value);
+  }
+}
+
+/** A response's metadata (PROTOCOL.md 4.2): its HTTP status, request id and the API version that answered. */
+export interface ResponseMetadata {
+  httpStatusCode?: number;
+  requestId?: string;
+  /** Caitlyn-Api-Version. */
+  apiVersion?: string;
+  attempts?: number;
+  totalRetryDelay?: number;
+}
+
+/** What every call's result carries, not enumerable on a thing: the response's metadata. */
+export interface MetadataBearer {
+  $metadata: ResponseMetadata;
+}
+
+/**
+ * The thing a call returns (PROTOCOL.md 4.2, one type per thing): the output's payload member, with the response's
+ * ETag header as its `etag` when its body has none, and the response's metadata as a non-enumerable `$metadata`, so
+ * spreading it or JSON.stringify gives the thing's data alone.
+ */
+export function thingOf<T>(out: Record<string, any>, member: string): T {
+  const thing = out[member];
+  if (thing.etag == null && out.etag != null) thing.etag = out.etag;
+  Object.defineProperty(thing, '$metadata', { value: out.$metadata, enumerable: false, configurable: true });
+  return thing;
+}
+
 interface OperationSchema {
   name: string;
   namespace: string;
@@ -315,7 +365,18 @@ export class CaitlynRestJsonProtocol {
     const out = shape(op.output);
     const all = members(out);
     const metadata = this.deserializeMetadata(response);
-    if (response.statusCode >= 300) {
+    // A 3xx the operation models as its answer (GetDocumentContent's 302) is its output; any other is an error.
+    // A redirect a browser hid from the page (the fetch handler's opaque redirect): REDIRECT_UNREADABLE, status 0,
+    // an error the SDK raises itself and never retries (PROTOCOL.md 6.3 and 16).
+    if (response.statusCode === 0 && response.headers['x-caitlyn-opaque-redirect'] !== undefined) {
+      return this.handleError(response, {
+        code: 'REDIRECT_UNREADABLE',
+        title: 'A redirect a browser page cannot read',
+        detail: "The server answered with a redirect, whose address a browser does not let a page read: in a page, get a document's address with kb.documents(id).download()",
+      }, metadata);
+    }
+    const modelled = (traitsOf(op.traits).http as [string, string, number?] | undefined)?.[2];
+    if (response.statusCode >= 300 && response.statusCode !== modelled) {
       // A body that is not a JSON object (a proxy's or a web framework's own error page, or no body) is still the
       // typed error for its status, never a parse error (PROTOCOL.md 6.1).
       const bytes = await readBody(response.body, context);
@@ -339,7 +400,15 @@ export class CaitlynRestJsonProtocol {
         } else {
           const bytes = await readBody(response.body, context);
           response.body = bytes;
-          if (bytes.byteLength > 0) output[name] = isString(m) ? new TextDecoder().decode(bytes) : fromJson(m, parseJson(bytes));
+          if (bytes.byteLength > 0) {
+            if (isString(m)) output[name] = new TextDecoder().decode(bytes);
+            else {
+              const json = parseJson(bytes);
+              output[name] = fromJson(m, json);
+              // A thing as the payload (one type per thing): the thing keeps its JSON as raw, as any structure does.
+              attachRaw(m, output[name], json);
+            }
+          }
         }
       } else if (t.httpHeader) {
         const value = response.headers[String(t.httpHeader).toLowerCase()];
@@ -376,7 +445,8 @@ export class CaitlynRestJsonProtocol {
   }
 
   deserializeMetadata(response: HttpResponse) {
-    return { httpStatusCode: response.statusCode, requestId: response.headers['caitlyn-request-id'] as string | undefined };
+    const header = (name: string) => (response.headers[name] ?? response.headers[name.replace(/(^|-)\w/g, (c) => c.toUpperCase())]) as string | undefined;
+    return { httpStatusCode: response.statusCode, requestId: header('caitlyn-request-id'), apiVersion: header('caitlyn-api-version') };
   }
 
   private handleError(response: HttpResponse, data: Record<string, any>, metadata: { httpStatusCode: number; requestId?: string }): never {

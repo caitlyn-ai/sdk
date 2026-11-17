@@ -2,21 +2,14 @@
 //! region each. scripts/test-rust.sh runs clippy over it.
 use std::time::Duration;
 
-use caitlyn_sdk::{
-    Auth, Client, ConversationEvent, Error, GetAgentVersionInput, ListDocumentsInput,
-    SendMessageInput,
-};
+use caitlyn_sdk::{Auth, Client, ConversationEvent, Error};
 
 const CONVERSATION_ID: &str = "0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47";
 
 /// Telling the errors apart.
 pub async fn errors(client: &Client) -> Result<(), Error> {
     // #region errors
-    let input = GetAgentVersionInput {
-        agent_id: "GHT7YRWXPL".into(),
-        version: "v99".into(),
-    };
-    match client.agents().versions().get(input).await {
+    match client.agent("GHT7YRWXPL").version("v99").get().await {
         Ok(version) => println!("{}", version.name),
         Err(Error::NotFound(_)) => println!("No such version"),
         Err(Error::Validation(err)) => {
@@ -65,11 +58,10 @@ pub fn retry_budget() -> Result<Client, Box<dyn std::error::Error>> {
 /// Streaming an answer.
 pub async fn streaming(client: &Client) -> Result<(), Error> {
     // #region streaming
-    let input = SendMessageInput {
-        message: "How much annual leave do part-time staff get?".into(),
-        ..Default::default()
-    };
-    let mut stream = client.conversations().send(CONVERSATION_ID, input).await?;
+    let conversation = client.conversation(CONVERSATION_ID);
+    let mut stream = conversation
+        .send("How much annual leave do part-time staff get?")
+        .await?;
     while let Some(event) = stream.next().await {
         match event? {
             ConversationEvent::TextDelta(delta) => print!("{}", delta.delta),
@@ -92,20 +84,20 @@ pub async fn streaming(client: &Client) -> Result<(), Error> {
 pub async fn pagination(client: &Client) -> Result<(), Error> {
     // #region pagination
     // Every document in the folder: the next page is fetched as the loop reaches it
-    let input = ListDocumentsInput {
-        knowledge_base_id: "KB4T7YQ2WL".into(),
-        folder: Some("/hr/".into()),
-        limit: Some(100),
-        ..Default::default()
-    };
-    let mut documents = client.documents().list(input.clone());
+    let list = client
+        .knowledge_base("KB4T7YQ2WL")
+        .documents()
+        .list()
+        .folder("/hr/")
+        .limit(100);
+    let mut documents = list.clone().items();
     while let Some(document) = documents.next().await {
         let document = document?;
         println!("{} {:?}", document.name, document.status);
     }
 
     // Or page by page
-    let mut pages = client.documents().list_pages(input);
+    let mut pages = list.pages();
     while let Some(page) = pages.next().await {
         let page = page?;
         println!("{} {:?}", page.items.len(), page.next_cursor);

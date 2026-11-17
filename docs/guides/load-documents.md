@@ -2,147 +2,230 @@
 pageType: guide
 sinceVersion: 5000115000000
 resources:
-  - upload
   - document
   - knowledge-base
+  - upload
 integrations: []
 operations:
-  - CreateUpload
-  - GetUpload
   - CreateDocument
+  - CreateDocumentVersion
   - GetDocument
+  - GetDocumentVersion
   - ListDocuments
   - DeleteDocument
   - BatchDeleteDocuments
+  - CreateIngestionBatch
+  - StartIngestionBatch
+  - CompleteIngestionBatchUploads
+  - CreateIngestionBatchUploadPolicy
+  - BatchCreateIngestionBatchItems
+  - GetIngestionBatch
+  - CreateUpload
+  - GetUpload
 ---
 
 # Load documents
 
-Add a file to a knowledge base: upload its bytes, create a document from the upload, wait until the document is
-indexed, then list what the knowledge base holds. An agent that uses the knowledge base can cite the document
-once it is indexed. When a document is no longer needed, delete it.
+Put files into a knowledge base, keep them up to date, and remove them. Give the SDK a file and it does the rest:
+it hashes the file, uploads it straight to storage, creates the document and, if you ask, waits until the document
+is indexed. An agent that uses the knowledge base can cite a document once it is indexed. For a whole folder, one
+call keeps the knowledge base in step with it.
 
-> **Not available yet.** The SDKs have the document operations, but Caitlyn workspaces do not serve them yet.
-> This page describes how the SDKs call them.
+In short: add a document and wait until it can be searched, or keep a folder of the knowledge base in step with a
+folder on disk.
 
-## Upload the file
-
-[CreateUpload](/reference/create-upload/) reserves an upload for one file and returns where to send its bytes.
-The SDK works out the file's size and SHA-256, reserves the upload, and sends the bytes for you, so one call
-leaves you with an upload ready to use.
-
-<!-- example: examples/typescript/documents.ts#create-upload -->
+<!-- example: examples/typescript/jobs.ts#add-document+sync-folder "Or keep a whole folder in step with a folder on disk" -->
 ```ts tab="TypeScript"
-// Works out the size and SHA-256, reserves the upload, then sends the bytes to the address it gives
-const upload = await caitlyn.uploads.create({ file, fileName });
-console.log(upload.id, upload.status);
+const doc = await kb.documents.create('./leave-policy.pdf', { folder: '/hr/' }).wait();
+
+// Or keep a whole folder in step with a folder on disk
+const report = await kb.ingestion.sync('./policies', { folder: '/policies/', removeMissing: true });
+for (const item of report.items) console.log(item.path, item.outcome, item.status, item.failureCode ?? '');
 ```
-<!-- example: examples/python/documents.py#create-upload -->
+<!-- example: examples/python/jobs.py#add-document+sync-folder "Or keep a whole folder in step with a folder on disk" -->
 ```python tab="Python"
-# Reserves an upload, then sends the file's bytes to the presigned URL the reservation names.
-upload = caitlyn.uploads.create(file=path)
-print(upload.id, upload.status)
+# The SDK hashes the file, uploads it and creates the document; .wait() returns it once it can be searched.
+doc = kb.documents.create("leave-policy.pdf", folder="/hr/").wait()
+print(doc.id, doc.status)
+
+# Or keep a whole folder in step with a folder on disk
+# Keeps /policies/ in step with a local folder: new files are added, changed ones get a new version and, with
+# remove_missing, documents whose file is gone are removed. Files are keyed by their path in the folder.
+report = kb.ingestion.sync("./policies", folder="/policies/", remove_missing=True)
+for item in report.items:
+    print(item.path, item.outcome, item.status, item.failure_code or "")
 ```
-<!-- example: examples/go/documents/documents.go#create-upload -->
+<!-- example: examples/go/documents/documents.go#add-document+sync-folder "Or keep a whole folder in step with a folder on disk" -->
 ```go tab="Go"
-// PDF, Word (.docx), Markdown, images, audio or video; the content type comes from the extension
-file, err := caitlyn.FileFromPath(path)
+kb := client.KnowledgeBase(knowledgeBaseID)
+// PDF, Word (.docx), Markdown, images, audio or video; the content type comes from the extension. The SDK hashes
+// the file and uploads it straight to storage: no Caitlyn credentials go with the bytes.
+doc, err := kb.Documents.Create(ctx, caitlyn.Path(path), &caitlyn.CreateDocumentInput{Folder: "/hr/"})
 if err != nil {
 	return nil, err
 }
-// Reserves an upload, then sends the bytes straight to storage: no Caitlyn credentials go with them
-upload, err := client.Uploads.Create(ctx, file)
+// doc is the new document's scope; Wait follows its ingestion until it can be searched
+indexed, err := doc.Wait(ctx)
 if err != nil {
-	return nil, err
+	return nil, err // a failed ingestion is its typed error, such as *caitlyn.UnprocessableContentError
 }
-fmt.Println(upload.ID, upload.ExpiresAt) // create a document from it before it expires
-```
-<!-- example: examples/rust/src/documents.rs#create-upload -->
-```rust tab="Rust"
-// The content type comes from the extension (application/pdf). A knowledge base ingests PDF, Word (.docx),
-// Markdown, images, audio and video.
-let file = UploadFile::from_path(path)?;
-// The SDK computes the SHA-256, reserves the upload, then sends the bytes to its presigned URL.
-let upload = client.uploads().create(file).await?;
-println!("{} {:?}, until {}", upload.id, upload.status, upload.expires_at);
-```
+fmt.Println(indexed.ID, indexed.Status)
 
-[GetUpload](/reference/get-upload/) reads an upload again: its status, and when its upload address expires.
-Use it to check that the bytes arrived before you create the document. Only the person or client that reserved
-the upload can read it.
-
-<!-- example: examples/typescript/documents.ts#get-upload -->
-```ts tab="TypeScript"
-const upload = await caitlyn.uploads.get({ uploadId });
-console.log(`${upload.id} is ${upload.status}, until ${upload.expiresAt.toISOString()}`);
-```
-<!-- example: examples/python/documents.py#get-upload -->
-```python tab="Python"
-upload = caitlyn.uploads.get(upload_id=upload_id)
-print(upload.status, "until", upload.expires_at)
-```
-<!-- example: examples/go/documents/documents.go#get-upload -->
-```go tab="Go"
-upload, err := client.Uploads.Get(ctx, &caitlyn.GetUploadInput{UploadID: uploadID})
-if err != nil {
-	return nil, err
-}
-fmt.Println(upload.Status, upload.ExpiresAt)
-```
-<!-- example: examples/rust/src/documents.rs#get-upload -->
-```rust tab="Rust"
-let upload = client
-    .uploads()
-    .get(GetUploadInput {
-        upload_id: upload_id.into(),
-    })
-    .await?;
-println!("{} {:?}", upload.id, upload.status); // received once the bytes are in
-```
-
-## Create a document
-
-[CreateDocument](/reference/create-document/) adds the uploaded file to a knowledge base, in the folder you
-name, and starts indexing it. It returns the new document and the operation that indexes it. The SDK sends an
-idempotency key, so a retried request does not add the file twice.
-
-<!-- example: examples/typescript/documents.ts#create-document -->
-```ts tab="TypeScript"
-// A folder is a path from the root that starts and ends in /, such as '/policies/'; the root is '/'
-const { document, operation } = await caitlyn.documents.create({ knowledgeBaseId, uploadId, folder: '/policies/' });
-console.log(`${document.name} is ${document.status}; operation ${operation.id}`);
-```
-<!-- example: examples/python/documents.py#create-document -->
-```python tab="Python"
-# A folder path starts and ends in /: "/policies/", or "/" for the knowledge base's top level.
-created = caitlyn.documents.create(knowledge_base_id=knowledge_base_id, upload_id=upload_id, folder="/policies/")
-print(created.document.id, created.document.status)  # ingestion carries on after the response
-```
-<!-- example: examples/go/documents/documents.go#create-document -->
-```go tab="Go"
-created, err := client.Documents.Create(ctx, &caitlyn.CreateDocumentInput{
-	KnowledgeBaseID: knowledgeBaseID,
-	UploadID:        uploadID,
-	Folder:          "/policies/", // from the root, starting and ending in /
-	// Name defaults to the uploaded file's name
+// Or keep a whole folder in step with a folder on disk
+report, err := client.KnowledgeBase(knowledgeBaseID).Ingestion.Sync(ctx, caitlyn.Dir(dir), &caitlyn.SyncOptions{
+	Folder:        "/policies/", // where the files go; files are keyed by their path in dir
+	RemoveMissing: true,         // documents under /policies/ with no file are removed
 })
 if err != nil {
 	return nil, err
 }
-// Indexing carries on after the call returns: the document starts out pending
-fmt.Println(created.Document.ID, created.Document.Status, created.Operation.ID)
+fmt.Println(report.Batch.Status)
+for _, item := range report.Items {
+	fmt.Println(*item.Path, item.Status, item.FailureCode)
+}
 ```
-<!-- example: examples/rust/src/documents.rs#create-document -->
+<!-- example: examples/rust/src/documents.rs#add-document+sync-folder "Or keep a whole folder in step with a folder on disk" -->
 ```rust tab="Rust"
-let input = CreateDocumentInput {
-    knowledge_base_id: knowledge_base_id.into(),
-    upload_id: upload_id.into(),
-    folder: "/policies/".into(), // a path from the knowledge base's root, starting and ending in /
-    name: None,                  // the upload's file name
-};
-let created = client.documents().create(input).await?;
-// Indexing starts in the background: wait_until_indexed waits for it.
-println!("{} {:?}", created.document.id, created.document.status);
+let kb = client.knowledge_base(knowledge_base_id);
+// The SDK hashes the file, uploads it, adds the document, then follows its processing until it is searchable.
+// (`.send().await?` instead gives the response at once, with `wait()` and `watch()` for later.)
+let doc = kb.documents().create(path).folder("/hr/").wait().await?;
+// indexed, or partially_indexed with doc.partial_failures
+println!("{} {}", doc.id, doc.status);
+
+// Or keep a whole folder in step with a folder on disk
+let kb = client.knowledge_base(knowledge_base_id);
+// Each file is keyed by its path under the folder; files gone from the folder are removed from /policies/.
+let report = kb
+    .ingestion()
+    .sync(
+        SyncInput::dir(dir)
+            .folder("/policies/")
+            .remove_missing(true),
+    )
+    .await?;
+for item in &report.items {
+    println!("{:?} {:?} {}", item.path, item.outcome, item.status);
+}
+```
+
+
+<!-- not-available -->
+
+## Add a document from a file
+
+[CreateDocument](/reference/create-document/) adds a file to a knowledge base, in the folder you name, and starts
+indexing it. Pass the file itself: a path, bytes, a stream or, in a browser, a `File` or `Blob`. The SDK works
+out its SHA-256 before anything is sent, uploads the bytes to storage (no Caitlyn credentials go with them), then
+creates the document. It returns the new document and the operation that indexes it. A folder is a path from the
+knowledge base's root that starts and ends in `/`, such as `/policies/`.
+
+<!-- example: examples/typescript/documents.ts#add-document-from-file -->
+```ts tab="TypeScript"
+// `file` is a path, a File or Blob, or an UploadFile (fromPath, fromBytes, fromStream). The SDK hashes it,
+// uploads it and then creates the document. A folder is a path from the root that starts and ends in /.
+const document = await caitlyn.knowledgeBases(knowledgeBaseId).documents.create(file, { folder: '/policies/' });
+console.log(`${document.name} is ${document.status}; operation ${document.operation.id}`);
+```
+<!-- example: examples/python/documents.py#add-document-from-file -->
+```python tab="Python"
+# The SDK hashes the file, uploads it, then creates the document. A folder path starts and ends in /:
+# "/policies/", or "/" for the knowledge base's top level. Ingestion carries on after the response: the result is
+# the new document's scope, with the response's fields, and .wait() waits for it.
+created = kb.documents.create(path, folder="/policies/")
+print(created.id, created.document.status, created.operation.id)
+```
+<!-- example: examples/go/documents/documents.go#add-document-from-file -->
+```go tab="Go"
+// PDF, Word (.docx), Markdown, images, audio or video; the content type comes from the extension. The SDK hashes
+// the file and uploads it straight to storage (no Caitlyn credentials go with the bytes), then creates the
+// document from the upload.
+created, err := client.KnowledgeBase(knowledgeBaseID).Documents.Create(ctx, caitlyn.Path(path), &caitlyn.CreateDocumentInput{
+	Folder: "/policies/", // from the root, starting and ending in /
+	// Name defaults to the file's name
+})
+if err != nil {
+	return nil, err
+}
+// Indexing carries on after the call returns: created.Wait(ctx) waits for it
+fmt.Println(created.ID(), created.Result.Document.Status, created.Result.Operation.ID)
+```
+<!-- example: examples/rust/src/documents.rs#add-document-from-file -->
+```rust tab="Rust"
+// The file is uploaded first: a path, UploadFile or a name with bytes. A file over 2 GB fails with FILE_TOO_LARGE.
+let created = kb
+    .documents()
+    .create(path)
+    .folder("/policies/")
+    .send()
+    .await?;
+// The new document's scope, with the response as `output`; its processing runs in the background.
+println!("{} {}", created.id(), created.result().document.status);
+```
+
+A file can be at most 2 GB; a larger one fails with `FILE_TOO_LARGE` before anything is sent. If a file on disk
+changes between being hashed and being sent, the call fails with `FILE_CHANGED`. The content type comes from the
+file name's extension unless you give one.
+
+### From a stream
+
+A stream that can only be read once, such as a download, works too. The SDK copies it while it hashes it, in
+memory up to 8 MiB and past that into a temporary file only you can read, which it deletes when the call ends.
+
+<!-- example: examples/typescript/documents.ts#add-document-from-stream -->
+```ts tab="TypeScript"
+const res = await fetch(url);
+// A stream is read once: the SDK copies it as it hashes it (to memory up to 8 MiB, then to a temporary file
+// only you can read, removed when the call ends)
+const file = UploadFile.fromStream(res.body!, { name: 'q3-report.pdf' });
+const document = await caitlyn.knowledgeBases(knowledgeBaseId).documents.create(file, { folder: '/finance/' });
+```
+<!-- example: examples/python/documents.py#add-document-from-stream -->
+```python tab="Python"
+# A stream is read once: the SDK copies it while hashing (in memory up to 8 MiB, then a temporary file only you
+# can read, deleted when the call ends). Give it a name, which sets the content type (.pdf: application/pdf).
+with httpx.stream("GET", url) as response:
+    file = UploadFile.from_stream(response.iter_bytes(), name="q3-report.pdf")
+    created = kb.documents.create(file, folder="/finance/")
+```
+<!-- example: examples/go/documents/documents.go#add-document-from-stream -->
+```go tab="Go"
+req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+if err != nil {
+	return nil, err
+}
+res, err := http.DefaultClient.Do(req)
+if err != nil {
+	return nil, err
+}
+defer res.Body.Close()
+// The stream is read once: kept in memory up to 8 MiB and past that in a temporary file only you can read,
+// removed when the call returns
+file := caitlyn.FileFromReader("q3-report.pdf", res.Body, caitlyn.WithSize(res.ContentLength))
+created, err := client.KnowledgeBase(knowledgeBaseID).Documents.Create(ctx, file, &caitlyn.CreateDocumentInput{Folder: "/finance/"})
+if err != nil {
+	return nil, err
+}
+fmt.Println(created.ID(), created.Result.Document.Status)
+```
+<!-- example: examples/rust/src/documents.rs#add-document-from-stream -->
+```rust tab="Rust"
+use futures_util::TryStreamExt;
+let body = caitlyn_sdk_core::reqwest::get(url)
+    .await?
+    .error_for_status()?
+    .bytes_stream()
+    .map_err(std::io::Error::other);
+// The SDK copies the stream while it hashes it: in memory up to 8 MiB, then in a temporary file only you can read,
+// deleted when the call ends.
+let file = UploadFile::from_reader("q3-report.pdf", tokio_util::io::StreamReader::new(body));
+let created = client
+    .knowledge_base(knowledge_base_id)
+    .documents()
+    .create(file)
+    .folder("/finance/")
+    .await?;
+println!("{} {}", created.id(), created.result().document.status);
 ```
 
 ## Wait until it is indexed
@@ -155,21 +238,21 @@ says what to do.
 
 <!-- example: examples/typescript/documents.ts#get-document -->
 ```ts tab="TypeScript"
-const document = await caitlyn.documents.get({ knowledgeBaseId, documentId });
-console.log(document.name, document.status, document.partialFailures?.length ?? 0);
+const document = await caitlyn.knowledgeBases(knowledgeBaseId).documents(documentId).get();
+console.log(document.name, document.status, document.version, document.partialFailures?.length ?? 0);
 // A failed document says why: a code such as file_unreadable, and a message saying what to do
 if (document.failure) console.log(document.failure.code, document.failure.message);
 ```
 <!-- example: examples/python/documents.py#get-document -->
 ```python tab="Python"
-doc = caitlyn.documents.get(knowledge_base_id=knowledge_base_id, document_id=document_id)
-print(doc.name, doc.status, doc.stage)
+doc = kb.documents(document_id).get()
+print(doc.name, doc.status, doc.processing.percent if doc.processing else 100)
 if doc.failure:  # only on a failed document: a code such as file_unreadable, and what to do about it
     print(doc.failure.code, doc.failure.message)
 ```
 <!-- example: examples/go/documents/documents.go#get-document -->
 ```go tab="Go"
-document, err := client.Documents.Get(ctx, &caitlyn.GetDocumentInput{KnowledgeBaseID: knowledgeBaseID, DocumentID: documentID})
+document, err := client.KnowledgeBase(knowledgeBaseID).Document(documentID).Get(ctx)
 if err != nil {
 	return nil, err
 }
@@ -183,74 +266,211 @@ if document.Failure != nil { // only when it is failed: a code such as file_unre
 ```
 <!-- example: examples/rust/src/documents.rs#get-document -->
 ```rust tab="Rust"
-let input = GetDocumentInput {
-    knowledge_base_id: knowledge_base_id.into(),
-    document_id: document_id.into(),
-};
-let document = client.documents().get(input).await?;
-println!("{} {:?}", document.name, document.status);
-if let Some(failure) = &document.failure {
-    // Only on a failed document: a code such as file_unreadable, and what to do about it.
-    println!("{}: {}", failure.code.as_str(), failure.message);
-}
+let document = kb.document(&document_id).get().await?;
+println!(
+    "{} {} in {}",
+    document.name, document.status, document.folder
+);
 ```
 
-Rather than reading the document in a loop, wait for it. The waiter reads the document until it is indexed or
-partially indexed, backing off between reads, for up to 60 minutes unless you set a shorter limit. A document
-that fails to index, or that is removed while you wait, ends the wait with an error.
+Rather than reading the document in a loop, wait for it. `wait()` follows the document's watch until nothing is
+running on it, then returns the document as `get()` does. A document that fails to index ends the wait with its
+error, and one deleted while you wait ends it with `NOT_FOUND`; one indexed with partial failures returns them on
+the document. There is no time limit unless you set one, and a wait that runs out of time raises `WAIT_TIMEOUT`.
 
-<!-- example: examples/typescript/documents.ts#wait-until-indexed -->
+<!-- example: examples/typescript/documents.ts#wait-for-processing -->
 ```ts tab="TypeScript"
-// Polls until the document is indexed (or partially indexed), for up to 60 minutes by default; a failed
-// document, or one that is gone, throws WaiterError
-const document = await caitlyn.documents.waitUntilIndexed({ knowledgeBaseId, documentId });
+// Follows the document through the knowledge base's watch until no job on it is running: a failed job throws its
+// error, and one with partial failures returns them on the document. `timeoutMs` sets a limit; there is none by default
+const document = await caitlyn.knowledgeBases(knowledgeBaseId).documents(documentId).wait();
 console.log(`${document.name} is ${document.status}`);
 ```
-<!-- example: examples/python/documents.py#wait-until-indexed -->
+<!-- example: examples/python/documents.py#wait-for-processing -->
 ```python tab="Python"
-# Reads the document until it can be searched, then returns it. Raises WaiterError if ingestion fails, the
-# document goes, or the wait passes its limit (an hour by default; pass max_wait=… in seconds to change it).
-doc = caitlyn.documents.wait_until_indexed(knowledge_base_id=knowledge_base_id, document_id=document_id)
+# Returns the document once nothing runs on it, from its identifier alone (after a page reload, say). A
+# failed ingestion raises its error; some enrichments not completing does not.
+doc = kb.documents(document_id).wait(timeout=3600)
 for failure in doc.partial_failures or []:  # partially_indexed: some enrichments did not complete
-    print("skipped:", failure)
+    print("skipped:", failure.code, failure.detail)
 ```
-<!-- example: examples/go/documents/documents.go#wait-until-indexed -->
+<!-- example: examples/go/documents/documents.go#wait-for-processing -->
 ```go tab="Go"
-// Polls GetDocument until the document is indexed or partially_indexed. A failed or deleted document
-// returns a *caitlyn.WaiterError; so does the time limit, an hour unless you pass WithMaxWait.
-document, err := client.Documents.WaitUntilIndexed(ctx, &caitlyn.GetDocumentInput{
-	KnowledgeBaseID: knowledgeBaseID,
-	DocumentID:      documentID,
-}, caitlyn.WithMaxWait(20*time.Minute))
+// Follows the document's watch until nothing is running on it, then reads it. A failed ingestion is its typed
+// error; WithTimeLimit bounds the wait (an *Error with the code WAIT_TIMEOUT), and there is no default.
+document, err := client.KnowledgeBase(knowledgeBaseID).Document(documentID).Wait(ctx, caitlyn.WithTimeLimit(20*time.Minute))
 if err != nil {
 	return nil, err
 }
 fmt.Println(document.Name, document.Status)
 ```
-<!-- example: examples/rust/src/documents.rs#wait-until-indexed -->
+<!-- example: examples/rust/src/documents.rs#wait-for-processing -->
 ```rust tab="Rust"
-let input = GetDocumentInput {
-    knowledge_base_id: knowledge_base_id.into(),
-    document_id: document_id.into(),
-};
-match client
-    .documents()
-    .wait_until_indexed(input)
-    .max_wait(Duration::from_secs(15 * 60))
-    .await
-{
-    Ok(document) => {
-        println!("{} is {:?}", document.name, document.status); // indexed, or partially_indexed
-        Ok(document)
-    }
-    Err(Error::Waiter(w)) => {
-        // w.reason is Failure (failed, being deleted or gone) or Timeout; w.last_error or w.last_output says more
-        println!("{}: {} after {} reads", w.waiter, w.reason.as_str(), w.attempts);
-        Err(Error::Waiter(w))
-    }
-    Err(e) => Err(e),
+// Follows the document through the knowledge base's watch until nothing runs on it, then reads it as get does.
+let indexed = kb.document(&document_id).wait().await?;
+println!("{} {:?}", indexed.status, indexed.partial_failures);
+```
+
+## Replace a document with a new version
+
+[CreateDocumentVersion](/reference/create-document-version/) adds a new version of a document: the document keeps
+its ID, its history and its place, and its current version keeps answering questions until the new one is
+indexed. In the SDKs it is the document's `replace` with a file (`Replace` in Go), and its `wait()` returns
+once the new version is indexed. The document's ETag (`ifMatch`) is optional; with it, a document changed since you
+read it is refused ([conditional writes](/errors/#conditional-writes-etags-and-if-match)). Bytes the same as the current version's make no new version: the result says `unchanged`.
+
+<!-- example: examples/typescript/documents.ts#replace-document -->
+```ts tab="TypeScript"
+// The new bytes become the document's next version; the current one keeps serving search until it is indexed.
+// The same bytes as the current version make no new version (result: 'unchanged'); another file type is refused,
+// because that is a new document. wait() returns the document once the new version is searchable.
+const doc = caitlyn.knowledgeBases(knowledgeBaseId).documents(documentId);
+const replaced = doc.replace(file, { note: 'The 2027 edition' });
+const { result, version } = await replaced;
+const indexed = await replaced.wait();
+console.log(`${result}: version ${version.number}; the document is ${indexed.status} at version ${indexed.version}`);
+```
+<!-- example: examples/python/documents.py#replace-document -->
+```python tab="Python"
+# A new version of the same document: it keeps its id and history, and the current version keeps answering until
+# the new one is indexed. .wait() returns the document once it is.
+replaced = kb.documents(document_id).replace(path, note="The 2027 edition")
+print(replaced.result.result)  # created, unchanged (the same bytes as now) or restored (an earlier version's bytes)
+doc = replaced.wait()
+print(doc.version, doc.status)
+```
+<!-- example: examples/go/documents/documents.go#replace-document -->
+```go tab="Go"
+replaced, err := client.KnowledgeBase(knowledgeBaseID).Document(documentID).Replace(ctx, caitlyn.Path(path), nil)
+if err != nil {
+	return nil, err // a *caitlyn.ConflictError while an earlier version is still processing
+}
+// The current version keeps answering until the new one is indexed
+indexed, err := replaced.Wait(ctx)
+if err != nil {
+	return nil, err
+}
+fmt.Println(replaced.Result.Result, indexed.Status) // created, unchanged or restored
+```
+<!-- example: examples/rust/src/documents.rs#replace-document -->
+```rust tab="Rust"
+let doc = client
+    .knowledge_base(knowledge_base_id)
+    .document(document_id);
+// The current version keeps answering until the new one is indexed.
+let replaced = doc.replace(path).note("The 2027 policy").send().await?;
+println!("{:?} version {}", replaced.result, replaced.version.number);
+let doc = replaced.wait().await?;
+println!("{} version {:?}", doc.status, doc.version);
+```
+
+A document's name, folder and metadata change with the document's `update`
+([UpdateDocument](/reference/update-document/)). While an earlier version is still being processed, a new one is
+refused with 409 `DOCUMENT_INGESTION_IN_PROGRESS` and a `Retry-After`: wait for it first.
+
+## Keep a folder in step
+
+`kb.ingestion.sync` keeps a knowledge base in step with a folder of files, or with a list of items, through
+one [ingestion batch](/reference/create-ingestion-batch/). It hashes every file, asks Caitlyn what each one
+means for the knowledge base (new, changed, unchanged or moved), uploads only the files that need their bytes, and
+waits until they are indexed. Files that have not changed are not sent again.
+
+<!-- example: examples/typescript/documents.ts#sync-folder-with-policy -->
+```ts tab="TypeScript"
+// Hashes every file, plans the batch (what is new, changed, unchanged or to remove), uploads only what needs
+// bytes, six at a time, and waits until every item has finished. Each file's relative path is its external ID,
+// so a renamed file keeps its document
+const report = await caitlyn.knowledgeBases(knowledgeBaseId).ingestion.sync(dir, {
+  folder: '/policies/',
+  externalId: (f) => f.relativePath,
+  removeMissing: true,
+  policy: { onConflict: { default: 'skip' } },
+  onProgress: (p) => console.log(p.phase, `${p.done}/${p.total}`),
+});
+for (const item of report.items) console.log(item.path, item.outcome, item.status, item.failureCode ?? '');
+```
+<!-- example: examples/python/documents.py#sync-folder-with-policy -->
+```python tab="Python"
+# Keeps the knowledge base's /policies/ folder in step with a local folder, through one ingestion batch: new
+# files are added, changed ones get a new version, and with remove_missing documents whose file is gone are
+# removed. .caitlynignore files and exclude= leave files out; at most 6 upload at once. A file keeps its document
+# by its path in the folder; key= gives another key.
+def progress(p: IngestionProgress[IngestionBatchItem]) -> None:
+    print(p.phase, f"{p.done}/{p.total}")
+
+report = kb.ingestion.sync(
+    folder,
+    folder="/policies/",
+    exclude=["*.tmp"],
+    remove_missing=True,
+    policy=IngestionPolicy.model_validate({"onConflict": {"default": "new_version"}, "onRemove": "remove"}),
+    confirm=lambda plan: plan.estimate is None or plan.estimate.documents < 1000,  # before anything is uploaded
+    on_progress=progress,
+)
+print(report.batch.status, report.batch.counts)
+for item in report.items:
+    print(item.path, item.outcome, item.resolution, item.status, item.document_id, item.failure_code or "")
+```
+<!-- example: examples/go/documents/documents.go#sync-folder-with-policy -->
+```go tab="Go"
+report, err := client.KnowledgeBase(knowledgeBaseID).Ingestion.Sync(ctx, caitlyn.Dir(dir), &caitlyn.SyncOptions{
+	Folder:        "/policies/", // where the files go; symbolic links are not followed, a .caitlynignore leaves files out
+	Exclude:       []string{"drafts/"},
+	RemoveMissing: true, // documents under /policies/ with no file are removed
+	Policy: &caitlyn.IngestionPolicy{
+		OnConflict: &caitlyn.ConflictRules{Default: caitlyn.Ptr(caitlyn.ConflictRuleNewVersion)},
+	},
+	// Anything the policy leaves unresolved is asked about here; without Resolve, Sync stops with
+	// INGESTION_BATCH_UNRESOLVED and leaves the batch planned
+	Resolve: func(_ context.Context, item caitlyn.IngestionBatchItem) (caitlyn.IngestionItemResolution, error) {
+		return caitlyn.IngestionItemResolutionSkip, nil
+	},
+	OnProgress: func(p caitlyn.IngestionProgress) { fmt.Println(p.Phase, p.Done, "of", p.Total) },
+})
+if err != nil {
+	return nil, err
+}
+fmt.Println(report.Batch.Status)
+for _, item := range report.Items {
+	fmt.Println(*item.Path, item.Status, item.FailureCode)
 }
 ```
+<!-- example: examples/rust/src/documents.rs#sync-folder-with-policy -->
+```rust tab="Rust"
+let kb = client.knowledge_base(knowledge_base_id);
+let report = kb
+    .ingestion()
+    .sync(
+        SyncInput::dir(dir)
+            .folder("/policies/")
+            .remove_missing(true),
+    )
+    .await?;
+println!(
+    "{} items, the batch {}",
+    report.items.len(),
+    report.batch.status
+);
+```
+
+- **What it sends.** Each file the plan needs goes straight to storage, six at a time unless you set another
+  number ([Under the hood](#under-the-hood) says how). Symbolic links are not followed, and `include`, `exclude`
+  and a `.caitlynignore` file choose the files.
+- **Clashes.** A file can clash with what is there, such as one whose bytes match a document in another
+  folder. The policy you give settles each kind of clash (`add`, `new_version`, `overwrite` and the others the
+  reference lists). Anything the policy leaves open goes to your resolver; with none, the call fails with
+  `INGESTION_BATCH_UNRESOLVED` and leaves the batch planned, for you to finish.
+- **Removing.** With `removeMissing`, documents under the folder that have no file any more are deleted.
+- **Progress.** `onProgress` reports each phase in order: `checksum`, `planning`, `planned`, `upload` (with
+  the bytes sent), `queued`, `processing`, then the final state. `onItem` is called with each item as it
+  finishes.
+- **The report.** It lists every item with its outcome, how it was resolved, its status, its document and
+  version, and its failure, if any, with the batch's counts. A file whose upload still fails after retries fails
+  on its own, with `UPLOAD_FAILED`, and the others carry on. The call itself fails only for something that
+  stops the whole batch: the batch could not be created, planned or started, or its uploads could no longer be
+  sent.
+- **Cancelling.** Cancelling the call stops new uploads, aborts those in flight and raises your language's
+  cancellation error; every item that finished before then has already reached `onItem`. Ingestion already
+  running carries on, unless you ask for it to stop too (`cancelIngestion`).
 
 ## List the documents
 
@@ -259,7 +479,7 @@ fetches the next page as you iterate; see [Pagination](/pagination/).
 
 <!-- example: examples/typescript/documents.ts#list-documents -->
 ```ts tab="TypeScript"
-for await (const document of caitlyn.documents.list({ knowledgeBaseId })) {
+for await (const document of caitlyn.knowledgeBases(knowledgeBaseId).documents.list()) {
   console.log(document.folder, document.name, document.status);
   ids.push(document.id);
 }
@@ -267,15 +487,15 @@ for await (const document of caitlyn.documents.list({ knowledgeBaseId })) {
 <!-- example: examples/python/documents.py#list-documents -->
 ```python tab="Python"
 # Iterating fetches each page as it is needed.
-for doc in caitlyn.documents.list(knowledge_base_id=knowledge_base_id, folder="/policies/", status="indexed"):
+for doc in kb.documents.list(folder="/policies/", status="indexed"):
     names.append(doc.name)
 ```
 <!-- example: examples/go/documents/documents.go#list-documents -->
 ```go tab="Go"
 // Every document in the folder, newest first: the next page is fetched as the loop reaches it
 var documents []caitlyn.Document
-input := &caitlyn.ListDocumentsInput{KnowledgeBaseID: knowledgeBaseID, Folder: caitlyn.Ptr("/policies/"), Sort: caitlyn.Ptr("-updatedAt")}
-for document, err := range client.Documents.List(ctx, input) {
+input := &caitlyn.ListDocumentsInput{Folder: caitlyn.Ptr("/policies/"), Sort: caitlyn.Ptr("-updatedAt")}
+for document, err := range client.KnowledgeBase(knowledgeBaseID).Documents.List(ctx, input) {
 	if err != nil {
 		return nil, err
 	}
@@ -285,17 +505,13 @@ for document, err := range client.Documents.List(ctx, input) {
 ```
 <!-- example: examples/rust/src/documents.rs#list-documents -->
 ```rust tab="Rust"
-let input = ListDocumentsInput {
-    knowledge_base_id: knowledge_base_id.into(),
-    folder: Some("/policies/".into()),
-    ..Default::default()
-};
-let mut documents = client.documents().list(input); // the next page is fetched as the loop reaches it
-let mut found = Vec::new();
+let kb = client.knowledge_base(knowledge_base_id);
+let mut documents = kb.documents().list().folder("/hr/").deep(true).items();
+let mut n = 0;
 while let Some(document) = documents.next().await {
     let document = document?;
-    println!("{} {:?}", document.name, document.status);
-    found.push(document);
+    println!("{} {}", document.name, document.status);
+    n += 1;
 }
 ```
 
@@ -304,53 +520,47 @@ while let Some(document) = documents.next().await {
 [DeleteDocument](/reference/delete-document/) deletes one document. The delete is accepted at once: the
 document reads as `deleting` while it is removed from search, and once it is gone, reading it returns 404.
 Deleting it again while it is still `deleting` is accepted again. A document that is still being processed
-(`pending` or `processing`) cannot be deleted yet: the call is refused with 409 `CONFLICT`. Wait until it is
-indexed, partially indexed or failed, then delete it.
+(`pending` or `processing`) can be deleted too: its processing stops, and it never comes back.
 
 <!-- example: examples/typescript/documents.ts#delete-document -->
 ```ts tab="TypeScript"
-// Accepted at once (202): the document reads as deleting until it is gone, then 404s. One still pending or
-// processing throws ConflictError (409 CONFLICT): wait until it is indexed first
-const document = await caitlyn.documents.delete({ knowledgeBaseId, documentId });
-console.log(`${document.name} is ${document.status}`);
+// Accepted at once (202), even while the document is still being processed, whose processing stops: it reads as
+// deleting until it is gone, then 404s. delete().wait() waits until it is gone
+const deleted = await caitlyn.knowledgeBases(knowledgeBaseId).documents(documentId).delete();
+console.log(`deleting; its ETag is ${deleted.etag}`);
 ```
 <!-- example: examples/python/documents.py#delete-document -->
 ```python tab="Python"
-# The delete is accepted at once (`deleting`); the document and its search entries go shortly after. A document
-# still pending or processing raises ConflictError (409 CONFLICT): wait until it is indexed first.
-doc = caitlyn.documents.delete(knowledge_base_id=knowledge_base_id, document_id=document_id)
-print(doc.id, doc.status)
+# The delete is accepted at once, even while the document is still being processed (its processing stops); the
+# document and its search entries go shortly after.
+kb.documents(document_id).delete()
 ```
 <!-- example: examples/go/documents/documents.go#delete-document -->
 ```go tab="Go"
-// A document still pending or processing returns a *caitlyn.ConflictError (409 CONFLICT): wait until it is indexed
-deleted, err := client.Documents.Delete(ctx, &caitlyn.DeleteDocumentInput{KnowledgeBaseID: knowledgeBaseID, DocumentID: documentID})
+deleted, err := client.KnowledgeBase(knowledgeBaseID).Document(documentID).Delete(ctx)
 if err != nil {
 	return nil, err
 }
-fmt.Println(deleted.Name, deleted.Status) // deleting, until it is gone
+fmt.Println(deleted.Result.Name, deleted.Result.Status) // deleting, until it is gone
 ```
 <!-- example: examples/rust/src/documents.rs#delete-document -->
 ```rust tab="Rust"
-// A document still pending or processing is refused with Error::Conflict (409 CONFLICT): wait until it is indexed.
-let input = DeleteDocumentInput {
-    knowledge_base_id: knowledge_base_id.into(),
-    document_id: document_id.into(),
-};
-let document = client.documents().delete(input).await?;
-println!("{} is {:?}", document.id, document.status); // deleting; wait_until_deleted waits for it to be gone
+// Accepted at once, also while the document is still being processed: its processing stops. It reads as
+// deleting until it is gone, then 404s.
+let deleting = kb.document(&document_id).delete().send().await?;
+println!("{} is {}", deleting.id, deleting.status);
 ```
 
 [BatchDeleteDocuments](/reference/batch-delete-documents/) deletes up to 100 documents in one call. It returns
 one result per identifier, in the order you sent them: `accepted`, or `failed` with a code, such as
-`NOT_FOUND` for a document that is already gone, or `CONFLICT` for one still being processed. One document that cannot be deleted does not stop the others,
+`NOT_FOUND` for a document that is already gone. One document that cannot be deleted does not stop the others,
 so check each result. Sending no identifiers, more than 100, or the same one twice is refused as a whole.
 
 <!-- example: examples/typescript/documents.ts#batch-delete-documents -->
 ```ts tab="TypeScript"
-// 1 to 100 distinct IDs; one that cannot be deleted (NOT_FOUND, or CONFLICT while it is still being processed)
+// 1 to 100 distinct IDs; one that cannot be deleted (NOT_FOUND)
 // fails on its own, and the rest still go
-const { results } = await caitlyn.documents.batchDelete({ knowledgeBaseId, documentIds });
+const { results } = await caitlyn.knowledgeBases(knowledgeBaseId).documents.deleteMany(documentIds);
 for (const result of results) {
   if (result.status === 'accepted') console.log(`${result.documentId} is being deleted`);
   else console.log(`${result.documentId} was not deleted: ${result.code}`);
@@ -358,9 +568,9 @@ for (const result of results) {
 ```
 <!-- example: examples/python/documents.py#batch-delete-documents -->
 ```python tab="Python"
-# Up to 100 documents in one call. One that cannot be deleted (NOT_FOUND, or CONFLICT while it is still being
-# processed) does not stop the others: each identifier gets its own result, in the order you sent them.
-batch = caitlyn.documents.batch_delete(knowledge_base_id=knowledge_base_id, document_ids=document_ids)
+# Up to 100 documents in one call, whether or not they are still being processed. One that cannot be deleted
+# (NOT_FOUND) does not stop the others: each identifier gets its own result, in the order you sent them.
+batch = kb.documents.delete_many(document_ids)
 for result in batch.results:
     if result.status == "accepted":
         print(result.document_id, "is being deleted")
@@ -369,12 +579,9 @@ for result in batch.results:
 ```
 <!-- example: examples/go/documents/documents.go#batch-delete-documents -->
 ```go tab="Go"
-// From 1 to 100 identifiers, each at most once. One that cannot be deleted (NOT_FOUND, or CONFLICT while it is
-// still being processed) does not stop the others.
-batch, err := client.Documents.BatchDelete(ctx, &caitlyn.BatchDeleteDocumentsInput{
-	KnowledgeBaseID: knowledgeBaseID,
-	DocumentIDs:     documentIDs,
-})
+// From 1 to 100 identifiers, each at most once. One that cannot be deleted (NOT_FOUND, say) does not stop the
+// others; one still being processed is deleted too, its processing stopped.
+batch, err := client.KnowledgeBase(knowledgeBaseID).Documents.DeleteMany(ctx, &caitlyn.BatchDeleteDocumentsInput{DocumentIDs: documentIDs})
 if err != nil {
 	return nil, err
 }
@@ -389,50 +596,128 @@ for _, r := range batch.Results { // in the order you sent them
 ```
 <!-- example: examples/rust/src/documents.rs#batch-delete-documents -->
 ```rust tab="Rust"
-let input = BatchDeleteDocumentsInput {
-    knowledge_base_id: knowledge_base_id.into(),
-    document_ids: document_ids.to_vec(),
-};
-let deleted = client.documents().batch_delete(input).await?;
-for r in &deleted.results {
-    match r.status {
-        DocumentDeleteStatus::Accepted => println!("{}: deleting", r.document_id),
-        _ => println!("{}: not deleted, {:?} {:?}", r.document_id, r.code, r.detail), // NOT_FOUND, for example
-    }
+// 1 to 100 distinct IDs; one that cannot be deleted (NOT_FOUND, say) fails on its own, and the rest still go.
+let deleted = client
+    .knowledge_base(knowledge_base_id)
+    .documents()
+    .delete_many(document_ids)
+    .await?;
+for result in &deleted.results {
+    println!(
+        "{} {:?} {:?}",
+        result.document_id, result.status, result.code
+    );
 }
 ```
 
-To know when a document is gone, wait for it. The waiter reads the document until reading it returns 404, for
-up to 15 minutes unless you set a shorter limit, and returns nothing.
+To know when a document is gone, wait for it. `wait()` on the delete follows the document's watch until the
+document is gone, and returns nothing. If the document was still being processed, its processing stopping is part
+of the delete, not a failure. As with any wait, there is no time limit unless you set one.
 
-<!-- example: examples/typescript/documents.ts#wait-until-deleted -->
+<!-- example: examples/typescript/documents.ts#wait-for-delete -->
 ```ts tab="TypeScript"
-// Polls until reading the document returns 404, for up to 15 minutes by default; it returns nothing
-await caitlyn.documents.waitUntilDeleted({ knowledgeBaseId, documentId });
+// delete() returns something to wait on: it ends when the document is gone, and returns nothing
+await caitlyn.knowledgeBases(knowledgeBaseId).documents(documentId).delete().wait();
 console.log(`${documentId} is gone`);
 ```
-<!-- example: examples/python/documents.py#wait-until-deleted -->
+<!-- example: examples/python/documents.py#wait-for-delete -->
 ```python tab="Python"
-# Returns once the document is gone (reading it is a 404). Raises WaiterError if that takes longer than the
-# limit, 15 minutes by default.
-caitlyn.documents.wait_until_deleted(knowledge_base_id=knowledge_base_id, document_id=document_id)
+# Returns once the document is gone (reading it is a 404). timeout= (seconds) raises TimeoutError if it takes longer.
+kb.documents(document_id).delete().wait(timeout=900)
 ```
-<!-- example: examples/go/documents/documents.go#wait-until-deleted -->
+<!-- example: examples/go/documents/documents.go#wait-for-delete -->
 ```go tab="Go"
-// Polls GetDocument until it answers 404. There is no output, so nil means the document is gone; a
-// *caitlyn.WaiterError means it was not gone within the limit, 15 minutes unless you pass WithMaxWait.
-err := client.Documents.WaitUntilDeleted(ctx, &caitlyn.GetDocumentInput{KnowledgeBaseID: knowledgeBaseID, DocumentID: documentID})
-if err != nil {
+// nil once the document is gone; a document still being processed when it was deleted has its processing
+// stopped, which is part of the delete
+if err := deleted.Wait(ctx); err != nil {
 	return err
 }
-fmt.Println(documentID, "is gone")
 ```
-<!-- example: examples/rust/src/documents.rs#wait-until-deleted -->
+<!-- example: examples/rust/src/documents.rs#wait-for-delete -->
 ```rust tab="Rust"
-let input = GetDocumentInput {
-    knowledge_base_id: knowledge_base_id.into(),
-    document_id: document_id.into(),
-};
-client.documents().wait_until_deleted(input).await?; // Ok(()) once reading it returns 404; up to 15 minutes by default
-println!("{document_id} is gone");
+// Waits until the document is gone; `kb.document(id).delete().wait()` does both in one call.
+deleting.wait().await?;
 ```
+
+## Under the hood
+
+The calls above upload files for you, and most code never needs more. The pieces they are built from are there to
+call yourself, under `core`.
+
+### Uploads
+
+A single file goes up as an upload, which is also there to call yourself:
+`core.uploads.send` hashes a file, reserves an upload with [CreateUpload](/reference/create-upload/) and sends
+the bytes to the address it returns. Pass the upload's ID wherever an operation takes one.
+
+<!-- example: examples/typescript/documents.ts#send-upload -->
+```ts tab="TypeScript"
+// Works out the size and SHA-256, reserves the upload, then sends the bytes to the address it gives
+const upload = await caitlyn.core.uploads.send(file);
+console.log(upload.id, upload.status);
+```
+<!-- example: examples/python/documents.py#send-upload -->
+```python tab="Python"
+# The building block under the file calls: hashes the file, reserves an upload, and sends the bytes to its
+# presigned URL. Most code never needs it; pass the upload's id where a call takes one (upload_id=…).
+upload = caitlyn.core.uploads.send(path)
+print(upload.id, upload.status)
+```
+<!-- example: examples/go/documents/documents.go#send-upload -->
+```go tab="Go"
+// Reserves an upload, then sends the bytes straight to storage: no Caitlyn credentials go with them.
+// nil is the purpose: an upload for a document
+upload, err := client.Core.Uploads.Send(ctx, caitlyn.Path(path), nil)
+if err != nil {
+	return nil, err
+}
+fmt.Println(upload.ID, upload.ExpiresAt) // use it in place of a file (caitlyn.UploadID) before it expires
+```
+<!-- example: examples/rust/src/documents.rs#send-upload -->
+```rust tab="Rust"
+// The content type comes from the extension (application/pdf); UploadFile::content_type sets another.
+// The SDK hashes the file as it reads it, reserves the upload, then sends the bytes to its presigned URL.
+let upload = client.core().uploads().send(path).await?;
+println!(
+    "{} {}, until {}",
+    upload.id, upload.status, upload.expires_at
+);
+```
+
+[GetUpload](/reference/get-upload/) reads an upload again: its status, and when its upload address expires. Only
+the person or client that reserved the upload can read it.
+
+<!-- example: examples/typescript/documents.ts#get-upload -->
+```ts tab="TypeScript"
+const upload = await caitlyn.core.uploads(uploadId).get();
+console.log(`${upload.id} is ${upload.status}, until ${upload.expiresAt.toISOString()}`);
+```
+<!-- example: examples/python/documents.py#get-upload -->
+```python tab="Python"
+upload = caitlyn.core.uploads(upload_id).get()
+print(upload.status, "until", upload.expires_at)
+```
+<!-- example: examples/go/documents/documents.go#get-upload -->
+```go tab="Go"
+upload, err := client.Core.Upload(uploadID).Get(ctx)
+if err != nil {
+	return nil, err
+}
+fmt.Println(upload.Status, upload.ExpiresAt)
+```
+<!-- example: examples/rust/src/documents.rs#get-upload -->
+```rust tab="Rust"
+let upload = client.core().upload(upload_id).get().await?;
+// received once the bytes are in
+println!("{} {}", upload.id, upload.status);
+```
+
+### How a sync uploads
+
+`kb.ingestion.sync` sends a batch's files under one upload policy for the whole batch
+([CreateIngestionBatchUploadPolicy](/reference/create-ingestion-batch-upload-policy/), `core.ingestion.uploadPolicy`),
+which it renews when less than five minutes of it are left. It adds items past the first 10,000 with
+`core.ingestion.addItems` ([BatchCreateIngestionBatchItems](/reference/batch-create-ingestion-batch-items/)), and
+reports the files it has sent with `core.ingestion.completeUploads`
+([CompleteIngestionBatchUploads](/reference/complete-ingestion-batch-uploads/)), at most 100 a call. A file whose
+checksum does not match is sent once more. Call these yourself only to build a sync of your own.

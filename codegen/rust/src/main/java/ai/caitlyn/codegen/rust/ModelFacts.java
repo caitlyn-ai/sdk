@@ -31,6 +31,10 @@ import software.amazon.smithy.model.traits.MixinTrait;
 final class ModelFacts {
     /** Output structure -> Rust result type name (AgentVersion, Upload, CreateDocumentResult, ListDocumentsPage). */
     final Map<ShapeId, String> resultNames;
+    /** Outputs that return a thing (PROTOCOL.md 4.2): output -> its @httpPayload member. They have no type of their own. */
+    final Map<ShapeId, MemberShape> payloads = new HashMap<>();
+    /** The things: structures some output returns as its payload. They carry the response metadata. */
+    final Set<ShapeId> things = new HashSet<>();
     /** Results another operation's result already generates. */
     final Set<ShapeId> duplicateResults;
     final Set<ShapeId> inputs = new HashSet<>();
@@ -45,6 +49,8 @@ final class ModelFacts {
     final Set<String> problemFields = new HashSet<>();
     /** Highest @since in the service: the Caitlyn release the SDK is generated against. */
     final String apiVersion;
+    /** The {@code @uploadTarget} members, and the file fields beside them (PROTOCOL.md 10). */
+    final UploadTargets uploads;
 
     ModelFacts(Model model, ShapeId serviceId) {
         ServiceShape service = model.expectShape(serviceId, ServiceShape.class);
@@ -52,6 +58,12 @@ final class ModelFacts {
         ResultNames results = new ResultNames(model, service, Names::pascal);
         resultNames = results.names();
         duplicateResults = results.duplicates();
+        for (OperationShape op : TopDownIndex.of(model).getContainedOperations(service)) {
+            ops.getOutputShape(op).ifPresent(out -> results.payloadOf(out.getId()).ifPresent(m -> {
+                payloads.put(out.getId(), m);
+                things.add(m.getTarget());
+            }));
+        }
         sse = new SseEvents(model, service);
         sseUnions = sse.unions().keySet();
         // A failure event (PROTOCOL.md 5.5) is raised as an error on a stream with a final event, and delivered as an
@@ -75,6 +87,7 @@ final class ModelFacts {
                 sseMemberOf.computeIfAbsent(m.getTarget(), k -> new ArrayList<>()).add(union.shape().getId());
             }
         }
+        uploads = new UploadTargets(model, service);
         Bindings.checkSupported(model, service);
     }
 
@@ -89,7 +102,7 @@ final class ModelFacts {
     /** Structures written to types.rs (inputs live with their operation; streaming outputs become streams). */
     boolean isGenerated(StructureShape s) {
         return !inputs.contains(s.getId()) && !streamingOutputs.contains(s.getId())
-                && !duplicateResults.contains(s.getId())
+                && !duplicateResults.contains(s.getId()) && !payloads.containsKey(s.getId())
                 && !s.hasTrait(MixinTrait.class) && !s.hasTrait(ErrorTrait.class);
     }
 }

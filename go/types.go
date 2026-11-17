@@ -9,21 +9,42 @@ import (
 	"github.com/caitlyn-ai/sdk/go/core"
 )
 
-// Actor is a person or an API client that made a change.
-type Actor struct {
-	// The person, when a person made the change.
-	UserID *string `json:"userId,omitempty"`
-	// The API client, when one made the change or a person made it through one.
-	APIClientID *string `json:"apiClientId,omitempty"`
-	// The person's or API client's name, as people saw it when the change was made.
-	DisplayName string `json:"displayName"`
+// ReadersKind: How a folder's or document's readers are decided. Open: new values may be added.
+//
+// ReadersKind is open: a value this SDK does not know yet is kept as it is.
+type ReadersKind string
+
+// ReadersKind values known to this SDK.
+const (
+	ReadersKindInherit  ReadersKind = "inherit"
+	ReadersKindEveryone ReadersKind = "everyone"
+	ReadersKindSpecific ReadersKind = "specific"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v ReadersKind) Known() bool {
+	switch v {
+	case ReadersKindInherit, ReadersKindEveryone, ReadersKindSpecific:
+		return true
+	}
+	return false
+}
+
+// Readers: Who may read a folder's or a document's contents.
+type Readers struct {
+	// How the readers are decided. With `specific`, `roles` and `people` say who.
+	Kind ReadersKind `json:"kind"`
+	// For `specific`: the roles that may read it.
+	Roles []string `json:"roles,omitzero"`
+	// For `specific`: the people who may read it.
+	People []string `json:"people,omitzero"`
 
 	raw core.Raw
 }
 
 // UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
-func (v *Actor) UnmarshalJSON(b []byte) error {
-	type plain Actor
+func (v *Readers) UnmarshalJSON(b []byte) error {
+	type plain Readers
 	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
 		return err
 	}
@@ -32,10 +53,100 @@ func (v *Actor) UnmarshalJSON(b []byte) error {
 }
 
 // Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
-func (v *Actor) Raw() map[string]any { return v.raw.Map() }
+func (v *Readers) Raw() map[string]any { return v.raw.Map() }
 
 // RawJSON returns that object's bytes as received.
-func (v *Actor) RawJSON() json.RawMessage { return v.raw.JSON() }
+func (v *Readers) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// AccessAction: One thing a role may do with a knowledge base. Open: new values may be added.
+//
+// AccessAction is open: a value this SDK does not know yet is kept as it is.
+type AccessAction string
+
+// AccessAction values known to this SDK.
+const (
+	AccessActionFind   AccessAction = "find"
+	AccessActionRead   AccessAction = "read"
+	AccessActionEdit   AccessAction = "edit"
+	AccessActionDelete AccessAction = "delete"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v AccessAction) Known() bool {
+	switch v {
+	case AccessActionFind, AccessActionRead, AccessActionEdit, AccessActionDelete:
+		return true
+	}
+	return false
+}
+
+// RoleAccess: What one role may do with a knowledge base.
+type RoleAccess struct {
+	// The role this grant is for.
+	RoleID string `json:"roleId"`
+	// The role's name, as people see it. Returned; ignored when sent.
+	Name *string `json:"name,omitempty"`
+	// What the role may do with the knowledge base.
+	Can []AccessAction `json:"can"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *RoleAccess) UnmarshalJSON(b []byte) error {
+	type plain RoleAccess
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *RoleAccess) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *RoleAccess) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// Access: Who may use a knowledge base, or who may read a folder or a document in it.
+//
+// Every call that gives a Access returns this type, as do lists and watch snapshots. One read from a
+// single response (a get, an update, a create, a Wait) carries that response's ResponseMetadata, and its ETag
+// filled from the ETag header when the body has none; a list item or a snapshot entry carries no metadata.
+type Access struct {
+	// For the knowledge base: each role's grants. A role left out has none.
+	Roles []RoleAccess `json:"roles,omitzero"`
+	// For a folder or a document: who may read it.
+	Readers *Readers `json:"readers,omitempty"`
+	// The access's ETag; send it as `If-Match` to set it.
+	ETag string `json:"etag"`
+	// For a folder or a document whose readers are inherited: the folder they come from.
+	InheritedFrom *string `json:"inheritedFrom,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *Access) UnmarshalJSON(b []byte) error {
+	type plain Access
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *Access) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *Access) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this Access was read from:
+// the zero value for a list item, a snapshot entry or one built in code. It is never marshalled.
+func (v *Access) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
 // FieldError: One problem with one request member or query parameter.
 type FieldError struct {
@@ -69,12 +180,329 @@ func (v *FieldError) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *FieldError) RawJSON() json.RawMessage { return v.raw.JSON() }
 
+// Actor is a person or an API client that made a change.
+type Actor struct {
+	// The person, when a person made the change.
+	UserID *string `json:"userId,omitempty"`
+	// The API client, when one made the change or a person made it through one.
+	APIClientID *string `json:"apiClientId,omitempty"`
+	// The person's or API client's name, as people saw it when the change was made.
+	DisplayName string `json:"displayName"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *Actor) UnmarshalJSON(b []byte) error {
+	type plain Actor
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *Actor) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *Actor) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// AvatarColour is an agent avatar's colour. Open: new values may be added.
+//
+// AvatarColour is open: a value this SDK does not know yet is kept as it is.
+type AvatarColour string
+
+// AvatarColour values known to this SDK.
+const (
+	AvatarColourAmber AvatarColour = "amber"
+	AvatarColourSage  AvatarColour = "sage"
+	AvatarColourBlue  AvatarColour = "blue"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v AvatarColour) Known() bool {
+	switch v {
+	case AvatarColourAmber, AvatarColourSage, AvatarColourBlue:
+		return true
+	}
+	return false
+}
+
+// AgentIconName is a named icon for an agent's avatar. Open: new values may be added.
+//
+// AgentIconName is open: a value this SDK does not know yet is kept as it is.
+type AgentIconName string
+
+// AgentIconName values known to this SDK.
+const (
+	AgentIconNameLeaf     AgentIconName = "leaf"
+	AgentIconNamePackage  AgentIconName = "package"
+	AgentIconNameDocument AgentIconName = "document"
+	AgentIconNameChat     AgentIconName = "chat"
+	AgentIconNameBook     AgentIconName = "book"
+	AgentIconNamePeople   AgentIconName = "people"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v AgentIconName) Known() bool {
+	switch v {
+	case AgentIconNameLeaf, AgentIconNamePackage, AgentIconNameDocument, AgentIconNameChat, AgentIconNameBook, AgentIconNamePeople:
+		return true
+	}
+	return false
+}
+
+// AgentMark: What an agent's avatar shows. Exactly one member is present.
+type AgentMark struct {
+	// A named icon from the platform's set.
+	Icon *AgentIconName `json:"icon,omitempty"`
+	// The uploaded picture's address, to show as an image. It may stop working after a time; read the
+	// agent again for a fresh one.
+	PictureURL *string `json:"pictureUrl,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *AgentMark) UnmarshalJSON(b []byte) error {
+	type plain AgentMark
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *AgentMark) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *AgentMark) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// AgentAvatar: How an agent looks.
+type AgentAvatar struct {
+	// The colour behind the avatar's icon, picture or initials.
+	Colour *AvatarColour `json:"colour,omitempty"`
+	// What the avatar shows: a named icon, or a picture. Absent shows the agent's initials.
+	Mark *AgentMark `json:"mark,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *AgentAvatar) UnmarshalJSON(b []byte) error {
+	type plain AgentAvatar
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *AgentAvatar) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *AgentAvatar) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// Agent is an agent: its name, description, avatar and which version is live.
+//
+// Every call that gives a Agent returns this type, as do lists and watch snapshots. One read from a
+// single response (a get, an update, a create, a Wait) carries that response's ResponseMetadata, and its ETag
+// filled from the ETag header when the body has none; a list item or a snapshot entry carries no metadata.
+type Agent struct {
+	// The identifier every call about this agent takes; it never changes.
+	ID string `json:"id"`
+	// What people see the agent called, in the app and in chat. Not versioned.
+	Name string `json:"name"`
+	// What the agent is for. Not versioned. Where a version's handover readers find no description of
+	// their own, they use this one.
+	Description *string `json:"description,omitempty"`
+	// How the agent looks in lists and in the chat. Not versioned.
+	Avatar *AgentAvatar `json:"avatar,omitempty"`
+	// The version live points at. Absent until the agent's first publish.
+	LiveVersion *string `json:"liveVersion,omitempty"`
+	// When the agent was created.
+	CreatedAt time.Time `json:"createdAt"`
+	// When the agent's name, description or avatar last changed.
+	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
+	// The agent's ETag; send it as `If-Match` to change it.
+	ETag string `json:"etag"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *Agent) UnmarshalJSON(b []byte) error {
+	type plain Agent
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *Agent) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *Agent) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this Agent was read from:
+// the zero value for a list item, a snapshot entry or one built in code. It is never marshalled.
+func (v *Agent) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// AgentMarkInput: What an agent's avatar should show. Exactly one of `icon` and `pictureUploadId`;
+// both or neither
+// is refused with 400 `VALIDATION_FAILED`.
+type AgentMarkInput struct {
+	// A named icon from the platform's set.
+	Icon *AgentIconName `json:"icon,omitempty"`
+	// An upload holding the picture, reserved with CreateUpload and `purpose: {agentAvatar: true}`.
+	// Each upload can be used once.
+	PictureUploadID *string `json:"pictureUploadId,omitempty"`
+	// A file to upload in place of PictureUploadID (a Path, an *UploadFile or an UploadID): the operation
+	// that takes this structure uploads it and sends the upload's id as PictureUploadID. Set one of the
+	// two.
+	PictureFile File `json:"-"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *AgentMarkInput) UnmarshalJSON(b []byte) error {
+	type plain AgentMarkInput
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *AgentMarkInput) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *AgentMarkInput) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// AgentAvatarInput: How an agent should look, as a caller sets it.
+type AgentAvatarInput struct {
+	// The colour behind the avatar's icon, picture or initials.
+	Colour *AvatarColour `json:"colour,omitempty"`
+	// What the avatar shows: a named icon, or a picture.
+	Mark *AgentMarkInput `json:"mark,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *AgentAvatarInput) UnmarshalJSON(b []byte) error {
+	type plain AgentAvatarInput
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *AgentAvatarInput) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *AgentAvatarInput) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// CitationSettings: How an agent cites its sources.
+type CitationSettings struct {
+	// Whether the agent may cite the person's own earlier messages. Defaults to false.
+	UserMessages *bool `json:"userMessages,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *CitationSettings) UnmarshalJSON(b []byte) error {
+	type plain CitationSettings
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *CitationSettings) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *CitationSettings) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// MediaEmbedSettings: Images and media in answers.
+type MediaEmbedSettings struct {
+	// Whether answers show images and media from the passages they cite. Defaults to false.
+	Enabled *bool `json:"enabled,omitempty"`
+	// How many search results are kept for media, from 0 to 10. Defaults to 2.
+	ReservedResults *int32 `json:"reservedResults,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *MediaEmbedSettings) UnmarshalJSON(b []byte) error {
+	type plain MediaEmbedSettings
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *MediaEmbedSettings) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *MediaEmbedSettings) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// AnswerSettings: How answers are shaped.
+type AnswerSettings struct {
+	// Whether the agent ends an answer by offering follow-up questions. Defaults to true.
+	FollowUpQuestions *bool `json:"followUpQuestions,omitempty"`
+	// How the agent cites its sources.
+	Citations *CitationSettings `json:"citations,omitempty"`
+	// Whether the agent shows images and media from the passages it cites.
+	MediaEmbeds *MediaEmbedSettings `json:"mediaEmbeds,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *AnswerSettings) UnmarshalJSON(b []byte) error {
+	type plain AnswerSettings
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *AnswerSettings) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *AnswerSettings) RawJSON() json.RawMessage { return v.raw.JSON() }
+
 // AttachmentSettings: Chat attachment settings.
 type AttachmentSettings struct {
-	// Whether people may attach files in chat. Defaults to false.
+	// Whether people may attach documents in chat. Defaults to false.
 	Enabled *bool `json:"enabled,omitempty"`
-	// The most files one message may carry, from 1 to 20.
+	// The most documents one conversation may hold, from 1 to 10. Defaults to 5.
 	MaxFiles *int32 `json:"maxFiles,omitempty"`
+	// The largest document accepted, in bytes, from 102,400 (100 KB) to 10,485,760 (10 MB).
+	// Defaults to 4,718,592 (4.5 MB).
+	MaxByteSize *int64 `json:"maxByteSize,omitempty"`
+	// The file extensions accepted. Defaults to `pdf`, `docx`, `txt`, `csv` and `md`.
+	AcceptedTypes []string `json:"acceptedTypes,omitzero"`
 
 	raw core.Raw
 }
@@ -95,10 +523,35 @@ func (v *AttachmentSettings) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *AttachmentSettings) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// ContentSafety is the content safety setting on a version.
+// ConnectorBinding: One of the workspace's connectors an agent version may use.
+type ConnectorBinding struct {
+	// Which of the workspace's connectors the version may use.
+	ConnectorID string `json:"connectorId"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ConnectorBinding) UnmarshalJSON(b []byte) error {
+	type plain ConnectorBinding
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ConnectorBinding) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ConnectorBinding) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ContentSafety is the guardrail that screens documents attached in chat.
 type ContentSafety struct {
-	// The guardrail applied, from the guardrails list. Absent means none.
-	GuardrailID *string `json:"guardrailId,omitempty"`
+	// The ID of an entry in `GET /v3/guardrails`, `default` (the platform default, also used when
+	// absent) or `none`.
+	Guardrail *string `json:"guardrail,omitempty"`
 
 	raw core.Raw
 }
@@ -119,15 +572,328 @@ func (v *ContentSafety) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *ContentSafety) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// KnowledgeBaseBinding: One knowledge base an agent searches, and how.
+// ConversationSettings: How the chat looks and behaves.
+type ConversationSettings struct {
+	// The hint in the empty chat box, at most 200 characters. Absent or empty uses the workspace
+	// theme's.
+	InputPlaceholder *string `json:"inputPlaceholder,omitempty"`
+	// The time zone dates and "today" are read in, as an IANA name. Defaults to `Pacific/Auckland`.
+	TimeZone *string `json:"timeZone,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ConversationSettings) UnmarshalJSON(b []byte) error {
+	type plain ConversationSettings
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ConversationSettings) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ConversationSettings) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// AgentGuidance: Who the agent is and how it behaves, and the text it follows at particular points in
+// an answer.
+type AgentGuidance struct {
+	// Who the agent is and whom it serves, at the top of every prompt, at most 4,000 characters.
+	// Absent uses the platform's.
+	Identity *string `json:"identity,omitempty"`
+	// How the agent behaves, at most 100,000 characters. Always present when read; an empty string
+	// means none.
+	Instructions *string `json:"instructions,omitempty"`
+	// What makes an answer relevant to the people this agent serves, and what it should decline.
+	Relevance *string `json:"relevance,omitempty"`
+	// A glossary of terms the agent reads the same way every time.
+	Definitions *string `json:"definitions,omitempty"`
+	// How to turn a question into the topics it searches for.
+	SearchTopics *string `json:"searchTopics,omitempty"`
+	// How to judge the passages a search finds, for example "prefer the most recent". Not used with
+	// the `reranker` evaluation method.
+	ResultEvaluation *string `json:"resultEvaluation,omitempty"`
+	// What to say when the knowledge bases hold too little to answer. When set, it replaces
+	// `instructions` in the reply to a question with no evidence.
+	LimitedEvidence *string `json:"limitedEvidence,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *AgentGuidance) UnmarshalJSON(b []byte) error {
+	type plain AgentGuidance
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *AgentGuidance) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *AgentGuidance) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// JourneyPoster is the poster on a journey page.
+type JourneyPoster struct {
+	// The words on the poster, such as "Onboarding".
+	Label string `json:"label"`
+	// Short lines at the foot of the poster, one per line, at most 6.
+	Footer []string `json:"footer,omitzero"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *JourneyPoster) UnmarshalJSON(b []byte) error {
+	type plain JourneyPoster
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *JourneyPoster) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *JourneyPoster) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// JourneyIntroduction is the introduction on a journey page.
+type JourneyIntroduction struct {
+	// The small label above the title, such as "Getting started". Used on `start` only.
+	Eyebrow *string `json:"eyebrow,omitempty"`
+	// The title, such as "Welcome. Let's set up Caitlyn for your organisation."
+	Title string `json:"title"`
+	// The paragraph under the title. Required on `start`.
+	Lead *string `json:"lead,omitempty"`
+	// The button, such as "Begin set-up" or "Continue in your set-up chat".
+	ButtonLabel string `json:"buttonLabel"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *JourneyIntroduction) UnmarshalJSON(b []byte) error {
+	type plain JourneyIntroduction
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *JourneyIntroduction) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *JourneyIntroduction) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// JourneySettings: The page shown for a stepped workflow: a poster on one side, and an introduction
+// that changes once
+// some steps are done. Its steps are the phases' `step` settings, numbered in the order their phases
+// are declared; a step is done when its phases complete, or when its `doneWhen` signal says so.
+type JourneySettings struct {
+	// The poster beside the introduction. Always present when read.
+	Poster *JourneyPoster `json:"poster,omitempty"`
+	// What a person sees before they start. Always present when read.
+	Start *JourneyIntroduction `json:"start,omitempty"`
+	// What a person sees once some steps are done or skipped. Always present when read.
+	Resume *JourneyIntroduction `json:"resume,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *JourneySettings) UnmarshalJSON(b []byte) error {
+	type plain JourneySettings
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *JourneySettings) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *JourneySettings) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ReasoningEffort: How much effort a model spends reasoning. Open: new values may be added.
+//
+// ReasoningEffort is open: a value this SDK does not know yet is kept as it is.
+type ReasoningEffort string
+
+// ReasoningEffort values known to this SDK.
+const (
+	ReasoningEffortLow    ReasoningEffort = "low"
+	ReasoningEffortMedium ReasoningEffort = "medium"
+	ReasoningEffortHigh   ReasoningEffort = "high"
+	ReasoningEffortXhigh  ReasoningEffort = "xhigh"
+	ReasoningEffortMax    ReasoningEffort = "max"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v ReasoningEffort) Known() bool {
+	switch v {
+	case ReasoningEffortLow, ReasoningEffortMedium, ReasoningEffortHigh, ReasoningEffortXhigh, ReasoningEffortMax:
+		return true
+	}
+	return false
+}
+
+// ReasoningSettings: Native reasoning ("extended thinking") for a model that supports it.
+type ReasoningSettings struct {
+	// Whether the model reasons before it answers. Defaults to false; a model whose `reasoning` is
+	// `always` reasons whatever this says.
+	Enabled *bool `json:"enabled,omitempty"`
+	// How much effort the model spends reasoning. Absent uses the model's default. Refused with 400
+	// for a level the model does not list in `effortLevels`.
+	Effort *ReasoningEffort `json:"effort,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ReasoningSettings) UnmarshalJSON(b []byte) error {
+	type plain ReasoningSettings
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ReasoningSettings) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ReasoningSettings) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ModelSettings: One job's model and its settings.
+type ModelSettings struct {
+	// The model, from `GET /v3/models`. Absent uses the job's default.
+	Model *string `json:"model,omitempty"`
+	// Sampling temperature, from 0 to 1. Absent uses the model's default. Refused with 400 for a
+	// model that does not accept it (see `acceptsTemperature` in `GET /v3/models`).
+	Temperature *float32 `json:"temperature,omitempty"`
+	// Nucleus sampling, from 0 to 1. Absent uses the model's default.
+	TopP *float32 `json:"topP,omitempty"`
+	// Top-K sampling, from 0 to 250. Absent uses the model's default.
+	TopK *int32 `json:"topK,omitempty"`
+	// The most tokens the job may write, from 1 to 16,384. Defaults to 2,048.
+	MaxOutputTokens *int32 `json:"maxOutputTokens,omitempty"`
+	// How many times a failed call to the model is tried, from 1 to 10. Defaults to 3.
+	MaxAttempts *int32 `json:"maxAttempts,omitempty"`
+	// Native reasoning, for a model that supports it; refused with 400 for one that does not.
+	Reasoning *ReasoningSettings `json:"reasoning,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ModelSettings) UnmarshalJSON(b []byte) error {
+	type plain ModelSettings
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ModelSettings) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ModelSettings) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResultEvaluationMethod: How search results are judged. Open: new values may be added.
+//
+// ResultEvaluationMethod is open: a value this SDK does not know yet is kept as it is.
+type ResultEvaluationMethod string
+
+// ResultEvaluationMethod values known to this SDK.
+const (
+	ResultEvaluationMethodReranker ResultEvaluationMethod = "reranker"
+	ResultEvaluationMethodModel    ResultEvaluationMethod = "model"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v ResultEvaluationMethod) Known() bool {
+	switch v {
+	case ResultEvaluationMethodReranker, ResultEvaluationMethodModel:
+		return true
+	}
+	return false
+}
+
+// ResultEvaluation: How the passages a search finds are judged.
+type ResultEvaluation struct {
+	// What judges the search results. Defaults to `reranker`.
+	Method *ResultEvaluationMethod `json:"method,omitempty"`
+	// The most passages each search keeps for evaluation, from 1 to 100. Defaults to 10.
+	MaxSearchResults *int32 `json:"maxSearchResults,omitempty"`
+	// The most passages kept after evaluation, from 1 to 100, and at most `maxQueries` ×
+	// `maxSearchResults`. Defaults to 10.
+	MaxResults *int32 `json:"maxResults,omitempty"`
+	// For `model`: the model that judges each passage. Unset members fall back to
+	// `models.planning`.
+	Judge *ModelSettings `json:"judge,omitempty"`
+	// For `reranker`: the reranking model, from `GET /v3/models`. Absent uses the platform's
+	// preference.
+	Reranker *string `json:"reranker,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ResultEvaluation) UnmarshalJSON(b []byte) error {
+	type plain ResultEvaluation
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ResultEvaluation) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ResultEvaluation) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// KnowledgeBaseBinding: One knowledge base an agent searches, and how hard.
 type KnowledgeBaseBinding struct {
-	// The knowledge base searched.
+	// The knowledge base searched. The caller must be able to read it.
 	KnowledgeBaseID string `json:"knowledgeBaseId"`
-	// How many passages to retrieve per search, from 1 to 100. Absent means the server default.
+	// What it holds, so the agent knows when to search it, at most 2,000 characters. Absent uses
+	// the knowledge base's own `agentDescription`.
+	Description *string `json:"description,omitempty"`
+	// The most searches the agent may write for this knowledge base per question, from 1 to 20.
+	// Defaults to 3.
+	MaxQueries *int32 `json:"maxQueries,omitempty"`
+	// How many passages each search retrieves, from 1 to 50. Defaults to 6.
 	NumberOfResults *int32 `json:"numberOfResults,omitempty"`
-	// The lowest relevance score a passage needs to be used, from 0 to 1. Absent means the server
-	// default.
+	// The lowest similarity score a passage needs before it is evaluated, from 0 to 1. Defaults to
+	// 0.3.
 	MinimumScore *float32 `json:"minimumScore,omitempty"`
+	// The lowest relevance an evaluated passage needs to reach the answer, from 0 to 1. Defaults to
+	// 0.5.
+	MinimumRelevance *float32 `json:"minimumRelevance,omitempty"`
+	// Whether an audio or video citation shows its transcript beside the player. Absent follows the
+	// knowledge base.
+	TranscriptPanel *bool `json:"transcriptPanel,omitempty"`
+	// How the passages a search finds are judged before they reach the answer. One method per
+	// search.
+	Evaluation *ResultEvaluation `json:"evaluation,omitempty"`
 
 	raw core.Raw
 }
@@ -148,23 +914,1327 @@ func (v *KnowledgeBaseBinding) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *KnowledgeBaseBinding) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// AgentConfiguration is an agent version's configuration.
-type AgentConfiguration struct {
-	// The agent's identity statement. Absent when it was never set or was cleared.
-	Identity *string `json:"identity,omitempty"`
-	// The agent's instructions. Empty when none are set.
-	Instructions string `json:"instructions"`
-	// The model the agent answers with.
+// HoldingPhrases: What a live avatar says while an answer is being written.
+type HoldingPhrases struct {
+	// Phrases that acknowledge the person has finished speaking.
+	Openers []string `json:"openers,omitzero"`
+	// Groups of phrases, said one group after another while the answer is written.
+	Groups [][]string `json:"groups,omitzero"`
+	// What the avatar says when the answer is taking longer than usual.
+	StillProcessing *string `json:"stillProcessing,omitempty"`
+	// What the avatar says to invite the person to clarify when no answer arrived.
+	FollowUp *string `json:"followUp,omitempty"`
+	// Milliseconds between holding phrases, from 1,000 to 60,000.
+	IntervalMs *int32 `json:"intervalMs,omitempty"`
+	// The chance, from 0 to 1, that any one holding phrase is skipped, so the rhythm sounds less
+	// mechanical.
+	SkipChance *float32 `json:"skipChance,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *HoldingPhrases) UnmarshalJSON(b []byte) error {
+	type plain HoldingPhrases
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *HoldingPhrases) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *HoldingPhrases) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// PauseAndResume: Pausing a live avatar conversation and carrying on later.
+type PauseAndResume struct {
+	// What the avatar says when a conversation starts fresh, at most 1,000 characters.
+	OpeningIntro string `json:"openingIntro"`
+	// What the avatar says in place of the intro when a paused conversation resumes, at most 500
+	// characters.
+	ResumeIntro string `json:"resumeIntro"`
+	// Milliseconds a paused conversation stays resumable, from 60,000 to 3,600,000. Defaults to ten
+	// minutes.
+	PausedTimeoutMs *int32 `json:"pausedTimeoutMs,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *PauseAndResume) UnmarshalJSON(b []byte) error {
+	type plain PauseAndResume
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *PauseAndResume) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *PauseAndResume) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// LiveAvatarProvider is a live avatar provider. Open: new values may be added.
+//
+// LiveAvatarProvider is open: a value this SDK does not know yet is kept as it is.
+type LiveAvatarProvider string
+
+// LiveAvatarProvider values known to this SDK.
+const (
+	LiveAvatarProviderHeygen LiveAvatarProvider = "heygen"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v LiveAvatarProvider) Known() bool {
+	switch v {
+	case LiveAvatarProviderHeygen:
+		return true
+	}
+	return false
+}
+
+// SpeechToTextProvider is a speech-to-text provider for a live avatar. Open: new values may be added.
+//
+// SpeechToTextProvider is open: a value this SDK does not know yet is kept as it is.
+type SpeechToTextProvider string
+
+// SpeechToTextProvider values known to this SDK.
+const (
+	SpeechToTextProviderDeepgram   SpeechToTextProvider = "deepgram"
+	SpeechToTextProviderAssemblyAi SpeechToTextProvider = "assembly_ai"
+	SpeechToTextProviderGladia     SpeechToTextProvider = "gladia"
+	SpeechToTextProviderElevenlabs SpeechToTextProvider = "elevenlabs"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v SpeechToTextProvider) Known() bool {
+	switch v {
+	case SpeechToTextProviderDeepgram, SpeechToTextProviderAssemblyAi, SpeechToTextProviderGladia, SpeechToTextProviderElevenlabs:
+		return true
+	}
+	return false
+}
+
+// AvatarVoiceTuning: Adjustments to a live avatar's voice.
+type AvatarVoiceTuning struct {
+	// How fast the avatar speaks, from 0.8 to 1.2. Defaults to 1.
+	Speed *float32 `json:"speed,omitempty"`
+	// Which of the provider's voice models speaks. Absent uses the provider's default.
 	Model *string `json:"model,omitempty"`
-	// The knowledge bases the agent searches, in no particular order.
-	KnowledgeBases []KnowledgeBaseBinding `json:"knowledgeBases,omitempty"`
-	// Whether people may attach files in chat, and how many.
+	// How steady the voice is, from 0 to 1. Absent uses the provider's default.
+	Stability *float32 `json:"stability,omitempty"`
+	// How much the voice exaggerates its style, from 0 to 1. Absent uses the provider's default.
+	Style *float32 `json:"style,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *AvatarVoiceTuning) UnmarshalJSON(b []byte) error {
+	type plain AvatarVoiceTuning
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *AvatarVoiceTuning) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *AvatarVoiceTuning) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// LiveAvatarSettings: A live video avatar that speaks for the agent. Its provider's key is referenced
+// by `secretId`,
+// never copied, so publishing or resetting from an old version cannot bring back an old key.
+type LiveAvatarSettings struct {
+	// Which company's service runs the avatar. Defaults to `heygen`, the only one.
+	Provider *LiveAvatarProvider `json:"provider,omitempty"`
+	// The stored secret holding the provider's key. Exported as a template variable.
+	SecretID string `json:"secretId"`
+	// The version of this agent that answers for the avatar. Absent means this version. `draft` and
+	// `live` follow their moving target: edits to the draft, and each publish, take effect without
+	// this setting changing. A saved version's name never moves.
+	AnswerVersion *string `json:"answerVersion,omitempty"`
+	// Phrases that hand the conversation to the answering version when the avatar says one, at
+	// least one.
+	TriggerPhrases []string `json:"triggerPhrases"`
+	// Which of the provider's avatars appears.
+	AvatarID string `json:"avatarId"`
+	// Which of the provider's voices the avatar speaks with.
+	VoiceID string `json:"voiceId"`
+	// The provider's conversation context.
+	ContextID string `json:"contextId"`
+	// The language the avatar speaks, as a BCP 47 tag, for example `en-NZ`.
+	Language string `json:"language"`
+	// What the avatar says while an answer is being written.
+	HoldingPhrases *HoldingPhrases `json:"holdingPhrases,omitempty"`
+	// When true (the default), the microphone is muted whenever the avatar speaks; when false, only
+	// while an answer is being written, so the person can interrupt.
+	MuteWhileSpeaking *bool `json:"muteWhileSpeaking,omitempty"`
+	// Which service turns what people say into text. Absent uses the platform's.
+	SpeechToText *SpeechToTextProvider `json:"speechToText,omitempty"`
+	// Milliseconds of silence before the avatar ends the conversation. 0 never ends it.
+	InactivityTimeoutMs *int64 `json:"inactivityTimeoutMs,omitempty"`
+	// Which part of the video stays in view on a narrow screen: `left`, `centre`, `right`, or a whole
+	// percentage from the left edge, such as `40`.
+	VideoAlignment *string `json:"videoAlignment,omitempty"`
+	// Adjustments to the provider's voice.
+	VoiceTuning *AvatarVoiceTuning `json:"voiceTuning,omitempty"`
+	// When set, people can pause the conversation and carry on later.
+	PauseAndResume *PauseAndResume `json:"pauseAndResume,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *LiveAvatarSettings) UnmarshalJSON(b []byte) error {
+	type plain LiveAvatarSettings
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *LiveAvatarSettings) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *LiveAvatarSettings) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// MemorySettings: Whether, and how, the agent remembers people between conversations.
+type MemorySettings struct {
+	// Whether the agent remembers. Defaults to false.
+	Enabled *bool `json:"enabled,omitempty"`
+	// The memory store, from `GET /v3/memory-stores`. Required when `enabled`.
+	MemoryStoreID *string `json:"memoryStoreId,omitempty"`
+	// The lowest relevance a memory needs to be recalled, from 0 to 1. Defaults to 0.4.
+	MinimumRelevance *float32 `json:"minimumRelevance,omitempty"`
+	// The most memories recalled for one answer, from 1 to 100. Defaults to 10.
+	MaxResults *int32 `json:"maxResults,omitempty"`
+	// Whether the agent remembers what people prefer. Defaults to false.
+	Preferences *bool `json:"preferences,omitempty"`
+	// Whether the agent remembers summaries of earlier conversations. Defaults to false.
+	Summaries *bool `json:"summaries,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *MemorySettings) UnmarshalJSON(b []byte) error {
+	type plain MemorySettings
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *MemorySettings) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *MemorySettings) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// AnswerModelSettings is the answer job's model and its settings.
+type AnswerModelSettings struct {
+	// The model, from `GET /v3/models`. Absent uses the job's default.
+	Model *string `json:"model,omitempty"`
+	// Sampling temperature, from 0 to 1. Absent uses the model's default. Refused with 400 for a
+	// model that does not accept it (see `acceptsTemperature` in `GET /v3/models`).
+	Temperature *float32 `json:"temperature,omitempty"`
+	// Nucleus sampling, from 0 to 1. Absent uses the model's default.
+	TopP *float32 `json:"topP,omitempty"`
+	// Top-K sampling, from 0 to 250. Absent uses the model's default.
+	TopK *int32 `json:"topK,omitempty"`
+	// The most tokens the job may write, from 1 to 16,384. Defaults to 2,048.
+	MaxOutputTokens *int32 `json:"maxOutputTokens,omitempty"`
+	// How many times a failed call to the model is tried, from 1 to 10. Defaults to 3.
+	MaxAttempts *int32 `json:"maxAttempts,omitempty"`
+	// Native reasoning, for a model that supports it; refused with 400 for one that does not.
+	Reasoning *ReasoningSettings `json:"reasoning,omitempty"`
+	// How many times an answer that ran out of output may be continued, from 0 to 5. Defaults to
+	// 0, which is off.
+	MaxContinuations *int32 `json:"maxContinuations,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *AnswerModelSettings) UnmarshalJSON(b []byte) error {
+	type plain AnswerModelSettings
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *AnswerModelSettings) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *AnswerModelSettings) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// TitleModelSettings is the model that names conversations.
+type TitleModelSettings struct {
+	// The model, from `GET /v3/models`. Absent uses a small, fast model.
+	Model *string `json:"model,omitempty"`
+	// The most tokens a title may take, from 1 to 512. Defaults to 32.
+	MaxOutputTokens *int32 `json:"maxOutputTokens,omitempty"`
+	// How many times a failed call to the model is tried, from 1 to 10. Defaults to 2.
+	MaxAttempts *int32 `json:"maxAttempts,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *TitleModelSettings) UnmarshalJSON(b []byte) error {
+	type plain TitleModelSettings
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *TitleModelSettings) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *TitleModelSettings) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// AgentModels is the model for each job in an answer. A job left unset uses its default.
+type AgentModels struct {
+	// Writes the answer. The other jobs fall back to this one's model when their own is unset.
+	Answer *AnswerModelSettings `json:"answer,omitempty"`
+	// Plans the answer: reads the question, plans the searches and reads attached documents.
+	Planning *ModelSettings `json:"planning,omitempty"`
+	// Summarises a long conversation so the answer stays within the model's limits.
+	Summary *ModelSettings `json:"summary,omitempty"`
+	// Decides what kind of message arrived, and whether the question is in scope.
+	Classification *ModelSettings `json:"classification,omitempty"`
+	// Writes the search topics for a question. Falls back to `planning`, then `answer`.
+	SearchTopics *ModelSettings `json:"searchTopics,omitempty"`
+	// Names a conversation, once. Defaults to a small, fast model, not the answer model.
+	Title *TitleModelSettings `json:"title,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *AgentModels) UnmarshalJSON(b []byte) error {
+	type plain AgentModels
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *AgentModels) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *AgentModels) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// PolicyBinding: One policy an agent version uses.
+type PolicyBinding struct {
+	// Which policy the version may review documents against.
+	PolicyID string `json:"policyId"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *PolicyBinding) UnmarshalJSON(b []byte) error {
+	type plain PolicyBinding
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *PolicyBinding) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *PolicyBinding) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// RunAs: Whose permissions an unattended run of this version uses.
+type RunAs struct {
+	// The role whose permissions unattended runs use. The caller may name only a role it could
+	// assign.
+	RoleID string `json:"roleId"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *RunAs) UnmarshalJSON(b []byte) error {
+	type plain RunAs
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *RunAs) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *RunAs) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// VoiceProvider: Where an agent's voice comes from. Open: new values may be added.
+//
+// VoiceProvider is open: a value this SDK does not know yet is kept as it is.
+type VoiceProvider string
+
+// VoiceProvider values known to this SDK.
+const (
+	VoiceProviderBrowser VoiceProvider = "browser"
+	VoiceProviderCloud   VoiceProvider = "cloud"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v VoiceProvider) Known() bool {
+	switch v {
+	case VoiceProviderBrowser, VoiceProviderCloud:
+		return true
+	}
+	return false
+}
+
+// VoiceQuality: How natural a cloud voice sounds. Open: new values may be added.
+//
+// VoiceQuality is open: a value this SDK does not know yet is kept as it is.
+type VoiceQuality string
+
+// VoiceQuality values known to this SDK.
+const (
+	VoiceQualityNatural  VoiceQuality = "natural"
+	VoiceQualityStandard VoiceQuality = "standard"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v VoiceQuality) Known() bool {
+	switch v {
+	case VoiceQualityNatural, VoiceQualityStandard:
+		return true
+	}
+	return false
+}
+
+// VoiceSettings: Whether, and how, the agent speaks its answers.
+type VoiceSettings struct {
+	// What speaks the agent's answers. Defaults to `browser`. The voices on offer are listed by
+	// `GET /v3/voices`.
+	Provider *VoiceProvider `json:"provider,omitempty"`
+	// For `cloud`: the voice, from `GET /v3/voices`, for example `Aria`.
+	VoiceID *string `json:"voiceId,omitempty"`
+	// For a cloud voice: how natural it sounds. Defaults to `natural`.
+	Quality *VoiceQuality `json:"quality,omitempty"`
+	// The language and accent, as a BCP 47 tag, for example `en-NZ`. Defaults to `en-NZ`.
+	Language *string `json:"language,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *VoiceSettings) UnmarshalJSON(b []byte) error {
+	type plain VoiceSettings
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *VoiceSettings) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *VoiceSettings) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ConversationSharing: How widely a conversation is shared, which decides the workspaces whose people
+// can open it.
+// Open: new values may be added.
+//
+// ConversationSharing is open: a value this SDK does not know yet is kept as it is.
+type ConversationSharing string
+
+// ConversationSharing values known to this SDK.
+const (
+	ConversationSharingOrganisation ConversationSharing = "organisation"
+	ConversationSharingWorkspace    ConversationSharing = "workspace"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v ConversationSharing) Known() bool {
+	switch v {
+	case ConversationSharingOrganisation, ConversationSharingWorkspace:
+		return true
+	}
+	return false
+}
+
+// Capability: A group of phases the agent handles as one area of work. While a conversation is in one
+// of its
+// phases, the model sees only the capability's instructions and its phases' tools. Moving into a
+// phase of another capability hands the conversation over, with a summary for the next one.
+type Capability struct {
+	// The capability's identifier, unique within the workflow.
+	ID string `json:"id"`
+	// What this capability does, in one sentence. The capability that receives a handover reads it.
+	Description string `json:"description"`
+	// Added after the agent's instructions while the capability is active.
+	Instructions *string `json:"instructions,omitempty"`
+	// The phases it owns, at least one. When capabilities are declared, every phase belongs to
+	// exactly one.
+	Phases []string `json:"phases"`
+	// Who a conversation in this capability is shared with. Absent decides nothing: the
+	// conversation keeps its sharing until it enters a capability that sets one.
+	ConversationScope *ConversationSharing `json:"conversationScope,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *Capability) UnmarshalJSON(b []byte) error {
+	type plain Capability
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *Capability) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *Capability) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// PhaseAction is the action a `take_action` phase takes.
+type PhaseAction struct {
+	// What the action is, in plain words.
+	Description string `json:"description"`
+	// Tools the agent must call, at least one of them, before the action counts as done. Empty means
+	// the agent's own account of what it did is enough.
+	RequiredTools []string `json:"requiredTools,omitzero"`
+	// When true, the phase completes as soon as one of `requiredTools` succeeds. Defaults to false.
+	CompletesOnRequiredTool *bool `json:"completesOnRequiredTool,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *PhaseAction) UnmarshalJSON(b []byte) error {
+	type plain PhaseAction
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *PhaseAction) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *PhaseAction) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// AttributionCheckMode: What an attribution check does with a failure. Open: new values may be added.
+//
+// AttributionCheckMode is open: a value this SDK does not know yet is kept as it is.
+type AttributionCheckMode string
+
+// AttributionCheckMode values known to this SDK.
+const (
+	AttributionCheckModeRecord  AttributionCheckMode = "record"
+	AttributionCheckModeEnforce AttributionCheckMode = "enforce"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v AttributionCheckMode) Known() bool {
+	switch v {
+	case AttributionCheckModeRecord, AttributionCheckModeEnforce:
+		return true
+	}
+	return false
+}
+
+// AttributionChecks: Checks that an answer's claims are supported by what it cites.
+type AttributionChecks struct {
+	// The model that checks. Absent uses `models.planning`.
+	Model *string `json:"model,omitempty"`
+	// How many times an answer that fails the check may be rewritten, from 0 to 10. Defaults to 2.
+	MaxRetries *int32 `json:"maxRetries,omitempty"`
+	// What happens when an answer fails a check. Defaults to `record`.
+	Mode *AttributionCheckMode `json:"mode,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *AttributionChecks) UnmarshalJSON(b []byte) error {
+	type plain AttributionChecks
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *AttributionChecks) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *AttributionChecks) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// PhaseFieldKind: What a phase field is. Open: new values may be added.
+//
+// PhaseFieldKind is open: a value this SDK does not know yet is kept as it is.
+type PhaseFieldKind string
+
+// PhaseFieldKind values known to this SDK.
+const (
+	PhaseFieldKindField        PhaseFieldKind = "field"
+	PhaseFieldKindPrerequisite PhaseFieldKind = "prerequisite"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v PhaseFieldKind) Known() bool {
+	switch v {
+	case PhaseFieldKindField, PhaseFieldKindPrerequisite:
+		return true
+	}
+	return false
+}
+
+// FieldSourceKind: Where a phase field's value comes from. Open: new values may be added.
+//
+// FieldSourceKind is open: a value this SDK does not know yet is kept as it is.
+type FieldSourceKind string
+
+// FieldSourceKind values known to this SDK.
+const (
+	FieldSourceKindToolResult    FieldSourceKind = "tool_result"
+	FieldSourceKindAllowedValues FieldSourceKind = "allowed_values"
+	FieldSourceKindEarlierPhase  FieldSourceKind = "earlier_phase"
+	FieldSourceKindPerson        FieldSourceKind = "person"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v FieldSourceKind) Known() bool {
+	switch v {
+	case FieldSourceKindToolResult, FieldSourceKindAllowedValues, FieldSourceKindEarlierPhase, FieldSourceKindPerson:
+		return true
+	}
+	return false
+}
+
+// FieldSource: One place a phase field's value may come from.
+type FieldSource struct {
+	// Which place the value comes from. The other members name the tool, the fixed values or the
+	// earlier phase.
+	Kind FieldSourceKind `json:"kind"`
+	// For `tool_result`: the tool whose result holds the value.
+	ToolName *string `json:"toolName,omitempty"`
+	// For `tool_result`: a path into the tool's output, for example `results[0].id`. Empty means the
+	// whole output.
+	Path *string `json:"path,omitempty"`
+	// For `allowed_values`: the values the field may take, at least one.
+	Values []string `json:"values,omitzero"`
+	// For `earlier_phase`: the phase that gathered the value.
+	Phase *string `json:"phase,omitempty"`
+	// For `earlier_phase`: the field it was gathered as.
+	Field *string `json:"field,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *FieldSource) UnmarshalJSON(b []byte) error {
+	type plain FieldSource
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *FieldSource) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *FieldSource) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// PhaseFieldType: What kind of value a phase field holds. Open: new values may be added.
+//
+// PhaseFieldType is open: a value this SDK does not know yet is kept as it is.
+type PhaseFieldType string
+
+// PhaseFieldType values known to this SDK.
+const (
+	PhaseFieldTypeText     PhaseFieldType = "text"
+	PhaseFieldTypeDocument PhaseFieldType = "document"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v PhaseFieldType) Known() bool {
+	switch v {
+	case PhaseFieldTypeText, PhaseFieldTypeDocument:
+		return true
+	}
+	return false
+}
+
+// PhaseField: One thing a phase asks for or needs: a field to gather, or an earlier phase that must be
+// done.
+type PhaseField struct {
+	// The field's identifier, unique within the phase.
+	ID string `json:"id"`
+	// Whether the entry is a value the phase gathers or an earlier phase that must be done first.
+	// Defaults to `field`.
+	Kind *PhaseFieldKind `json:"kind,omitempty"`
+	// For `field`: what the value is. Required on a field.
+	Description *string `json:"description,omitempty"`
+	// For `field`: how the agent asks for it. Required on a field.
+	Request *string `json:"request,omitempty"`
+	// For `field`: when true, the phase may finish without it. Defaults to false.
+	Optional *bool `json:"optional,omitempty"`
+	// For a `field`: what kind of value it holds. Defaults to `text`.
+	Type *PhaseFieldType `json:"type,omitempty"`
+	// For a `document` field: the file extensions accepted, for example `pdf`.
+	AcceptedTypes []string `json:"acceptedTypes,omitzero"`
+	// For a `document` field: the largest file accepted, in bytes.
+	MaxByteSize *int64 `json:"maxByteSize,omitempty"`
+	// For a `document` field: the document metadata field the value fills.
+	DocumentField *string `json:"documentField,omitempty"`
+	// For `field`: where the value may come from, in order. Absent means the person.
+	Sources []FieldSource `json:"sources,omitzero"`
+	// For `prerequisite`: the phase that must be done first. Required on a prerequisite.
+	Prerequisite *string `json:"prerequisite,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *PhaseField) UnmarshalJSON(b []byte) error {
+	type plain PhaseField
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *PhaseField) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *PhaseField) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// PhaseKind: What kind of phase it is. Open: new values may be added.
+//
+// PhaseKind is open: a value this SDK does not know yet is kept as it is.
+type PhaseKind string
+
+// PhaseKind values known to this SDK.
+const (
+	PhaseKindConversational PhaseKind = "conversational"
+	PhaseKindGatherInfo     PhaseKind = "gather_info"
+	PhaseKindTakeAction     PhaseKind = "take_action"
+	PhaseKindPolicyReview   PhaseKind = "policy_review"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v PhaseKind) Known() bool {
+	switch v {
+	case PhaseKindConversational, PhaseKindGatherInfo, PhaseKindTakeAction, PhaseKindPolicyReview:
+		return true
+	}
+	return false
+}
+
+// PhaseEndType: What a phase does when it ends the conversation. Open: new values may be added.
+//
+// PhaseEndType is open: a value this SDK does not know yet is kept as it is.
+type PhaseEndType string
+
+// PhaseEndType values known to this SDK.
+const (
+	PhaseEndTypeRestart PhaseEndType = "restart"
+	PhaseEndTypeClose   PhaseEndType = "close"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v PhaseEndType) Known() bool {
+	switch v {
+	case PhaseEndTypeRestart, PhaseEndTypeClose:
+		return true
+	}
+	return false
+}
+
+// PhaseEnd: What happens when a phase ends the conversation.
+type PhaseEnd struct {
+	// What happens to the conversation when the phase ends it.
+	Type PhaseEndType `json:"type"`
+	// For `restart`: the phase the next message starts in. Defaults to the conversation's entry
+	// phase.
+	RestartIn *string `json:"restartIn,omitempty"`
+	// For `close`: what the person is told.
+	ClosingMessage *string `json:"closingMessage,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *PhaseEnd) UnmarshalJSON(b []byte) error {
+	type plain PhaseEnd
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *PhaseEnd) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *PhaseEnd) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// PhaseOpening: What the person sees when a conversation starts in, or enters, a phase.
+type PhaseOpening struct {
+	// A message shown before the person types anything. `@user:firstName`, `@user:lastName` and
+	// `@user:email` are replaced with the person's details.
+	Message *string `json:"message,omitempty"`
+	// A form, buttons or choices shown with the message, as `input.requested` carries one.
+	Input any `json:"input,omitempty"`
+	// When true, the opening is shown whenever the conversation enters the phase, not only when a
+	// conversation starts in it. Defaults to false.
+	OnEveryEntry *bool `json:"onEveryEntry,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *PhaseOpening) UnmarshalJSON(b []byte) error {
+	type plain PhaseOpening
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *PhaseOpening) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *PhaseOpening) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// PhaseResponse is a set reply a phase may give, chosen by its description.
+type PhaseResponse struct {
+	// The reply's identifier, unique within the phase.
+	ID string `json:"id"`
+	// When the agent gives this reply.
+	Description string `json:"description"`
+	// What the agent says.
+	Request string `json:"request"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *PhaseResponse) UnmarshalJSON(b []byte) error {
+	type plain PhaseResponse
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *PhaseResponse) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *PhaseResponse) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// PolicyReviewSettings is the policy a `policy_review` phase reviews against.
+type PolicyReviewSettings struct {
+	// Which policy the phase reviews against. It must be in `policies`.
+	PolicyID string `json:"policyId"`
+	// The rules to check. Absent means every rule in the policy, read again each time a review
+	// starts.
+	RuleIDs []string `json:"ruleIds,omitzero"`
+	// The policy's review stage this phase reviews at. Absent for a policy with no review stages.
+	ReviewStageID *string `json:"reviewStageId,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *PolicyReviewSettings) UnmarshalJSON(b []byte) error {
+	type plain PolicyReviewSettings
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *PolicyReviewSettings) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *PolicyReviewSettings) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// JourneyStep is a phase's step on the journey page.
+type JourneyStep struct {
+	// Groups phases into steps on the journey page. Phases that share one form one step.
+	ID string `json:"id"`
+	// What the journey page calls the step, such as "Knowledge base".
+	Label string `json:"label"`
+	// A named signal that shows the step done outside the chat, such as `workspaceHasCustomTheme`.
+	// Absent: the step is done when its phases complete.
+	DoneWhen *string `json:"doneWhen,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *JourneyStep) UnmarshalJSON(b []byte) error {
+	type plain JourneyStep
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *JourneyStep) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *JourneyStep) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ToolCallChecks: Checks each tool call against a rule before it runs.
+type ToolCallChecks struct {
+	// The rule, in plain words, every tool call is checked against.
+	Policy string `json:"policy"`
+	// The model that checks. Absent uses `models.planning`.
+	Model *string `json:"model,omitempty"`
+	// How many times a refused call may be corrected, from 0 to 10. Defaults to 2.
+	MaxRetries *int32 `json:"maxRetries,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ToolCallChecks) UnmarshalJSON(b []byte) error {
+	type plain ToolCallChecks
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ToolCallChecks) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ToolCallChecks) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// SearchMode: How a search treats its results. Open: new values may be added.
+//
+// SearchMode is open: a value this SDK does not know yet is kept as it is.
+type SearchMode string
+
+// SearchMode values known to this SDK.
+const (
+	SearchModeEvaluated   SearchMode = "evaluated"
+	SearchModeUnevaluated SearchMode = "unevaluated"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v SearchMode) Known() bool {
+	switch v {
+	case SearchModeEvaluated, SearchModeUnevaluated:
+		return true
+	}
+	return false
+}
+
+// ToolSearchSettings: How Caitlyn's knowledge base search tool searches.
+type ToolSearchSettings struct {
+	// The search modes the agent may choose from, at least one.
+	Modes []SearchMode `json:"modes"`
+	// The version of this agent whose knowledge bases and search settings the tool uses. `draft` and
+	// `live` follow their moving target: edits to the draft, and each publish, take effect without
+	// this setting changing. A saved version's name never moves.
+	Version string `json:"version"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ToolSearchSettings) UnmarshalJSON(b []byte) error {
+	type plain ToolSearchSettings
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ToolSearchSettings) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ToolSearchSettings) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ToolUse: How the agent uses what a tool returns. Open: new values may be added.
+//
+// ToolUse is open: a value this SDK does not know yet is kept as it is.
+type ToolUse string
+
+// ToolUse values known to this SDK.
+const (
+	ToolUseAnswer  ToolUse = "answer"
+	ToolUseContext ToolUse = "context"
+	ToolUseDefault ToolUse = "default"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v ToolUse) Known() bool {
+	switch v {
+	case ToolUseAnswer, ToolUseContext, ToolUseDefault:
+		return true
+	}
+	return false
+}
+
+// PhaseTool is a tool a phase may use: one of Caitlyn's own, or the tools on an MCP server.
+type PhaseTool struct {
+	// One of Caitlyn's own tools, from `GET /v3/tools`. Exactly one of `name` and `mcpServerId`.
+	Name *string `json:"name,omitempty"`
+	// An MCP server whose tools the phase may use. Exactly one of `name` and `mcpServerId`. With no
+	// `tools`, every tool on the server, including tools it adds later; otherwise only those
+	// listed. Exported as a template variable.
+	McpServerID *string `json:"mcpServerId,omitempty"`
+	// With `mcpServerId`: only these of the server's tools.
+	Tools []string `json:"tools,omitzero"`
+	// With `mcpServerId` and no `tools`: the server's tools the phase may not use.
+	ExcludedTools []string `json:"excludedTools,omitzero"`
+	// What the tool is for, in the agent's words. Absent uses the tool's own description.
+	Description *string `json:"description,omitempty"`
+	// Whether the phase may use the tool. Defaults to true.
+	Enabled *bool `json:"enabled,omitempty"`
+	// How the agent uses what the tool returns. Defaults to `default`.
+	Use *ToolUse `json:"use,omitempty"`
+	// What a citation of this tool's results is called, for example "Policy register".
+	CitationLabel *string `json:"citationLabel,omitempty"`
+	// For Caitlyn's knowledge base search tool: how it searches.
+	Search *ToolSearchSettings `json:"search,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *PhaseTool) UnmarshalJSON(b []byte) error {
+	type plain PhaseTool
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *PhaseTool) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *PhaseTool) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// TransitionKind: How a way out of a phase is gated. Open: new values may be added.
+//
+// TransitionKind is open: a value this SDK does not know yet is kept as it is.
+type TransitionKind string
+
+// TransitionKind values known to this SDK.
+const (
+	TransitionKindCompletion  TransitionKind = "completion"
+	TransitionKindAlternative TransitionKind = "alternative"
+	TransitionKindSkip        TransitionKind = "skip"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v TransitionKind) Known() bool {
+	switch v {
+	case TransitionKindCompletion, TransitionKindAlternative, TransitionKindSkip:
+		return true
+	}
+	return false
+}
+
+// TransitionMatchSource: Where a transition reads its value. Open: new values may be added.
+//
+// TransitionMatchSource is open: a value this SDK does not know yet is kept as it is.
+type TransitionMatchSource string
+
+// TransitionMatchSource values known to this SDK.
+const (
+	TransitionMatchSourceToolResult TransitionMatchSource = "tool_result"
+	TransitionMatchSourceSavedField TransitionMatchSource = "saved_field"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v TransitionMatchSource) Known() bool {
+	switch v {
+	case TransitionMatchSourceToolResult, TransitionMatchSourceSavedField:
+		return true
+	}
+	return false
+}
+
+// TransitionMatch is a value that takes a way out of a phase automatically.
+type TransitionMatch struct {
+	// Where the value is read from. Defaults to `tool_result`.
+	Source *TransitionMatchSource `json:"source,omitempty"`
+	// For `tool_result`, a dotted path into the tool's output, for example `isCovered`; for
+	// `saved_field`, a field of this phase.
+	Field string `json:"field"`
+	// The value the field must hold: a string, number or boolean. A saved field is compared as a
+	// string.
+	Equals any `json:"equals"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *TransitionMatch) UnmarshalJSON(b []byte) error {
+	type plain TransitionMatch
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *TransitionMatch) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *TransitionMatch) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// PhaseTransition is a way out of a phase.
+type PhaseTransition struct {
+	// The phase it leads to.
+	To string `json:"to"`
+	// The condition, in plain words, that makes this the way out. The agent decides by it.
+	Condition string `json:"condition"`
+	// How the way out is gated. Defaults to `alternative`.
+	Kind *TransitionKind `json:"kind,omitempty"`
+	// For `skip`: the words on the chat's skip button, such as "Skip theme configuration". Required
+	// on a skip.
+	SkipLabel *string `json:"skipLabel,omitempty"`
+	// When true, the agent may take this way out only on the person's express choice. Defaults to
+	// false.
+	RequiresUserChoice *bool `json:"requiresUserChoice,omitempty"`
+	// Takes this way out automatically when a value matches, without the agent deciding.
+	When *TransitionMatch `json:"when,omitempty"`
+	// How this phase wraps up before it hands over through this way out.
+	Handover *string `json:"handover,omitempty"`
+	// Only when the conversation started in one of these phases.
+	StartedIn []string `json:"startedIn,omitzero"`
+	// Never when the conversation started in one of these phases.
+	NotStartedIn []string `json:"notStartedIn,omitzero"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *PhaseTransition) UnmarshalJSON(b []byte) error {
+	type plain PhaseTransition
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *PhaseTransition) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *PhaseTransition) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// Phase: One phase of a workflow. `kind` decides which kind-specific members apply; a member that does
+// not
+// apply to the kind is refused with 400, never ignored.
+type Phase struct {
+	// The phase's identifier, unique within the workflow.
+	ID string `json:"id"`
+	// What the phase does, which decides which of its other members apply.
+	Kind PhaseKind `json:"kind"`
+	// The phase's own instructions, added to the agent's while it runs.
+	Instructions *string `json:"instructions,omitempty"`
+	// The tools the phase may use, at most 30.
+	Tools []PhaseTool `json:"tools,omitzero"`
+	// Where the conversation may go from this phase.
+	Transitions []PhaseTransition `json:"transitions,omitzero"`
+	// The most model calls the phase may make in one answer, from 1 to 50. Defaults to 10, or 30
+	// for `policy_review`.
+	MaxSteps *int32 `json:"maxSteps,omitempty"`
+	// Native reasoning while the phase runs.
+	Reasoning *ReasoningSettings `json:"reasoning,omitempty"`
+	// What the person sees when a conversation starts in, or enters, this phase.
+	Opening *PhaseOpening `json:"opening,omitempty"`
+	// This phase's step on the journey page, when it is part of one.
+	Step *JourneyStep `json:"step,omitempty"`
+	// What happens when the phase ends the conversation. Absent means the conversation carries on.
+	OnEnd *PhaseEnd `json:"onEnd,omitempty"`
+	// When true, the phase runs with no person: it asks the person nothing, and must finish with its
+	// own tools. Defaults to false. For `gather_info`, `take_action` and `policy_review`.
+	Unattended *bool `json:"unattended,omitempty"`
+	// For `conversational`: when true, the phase replies as soon as an earlier phase hands over,
+	// rather than waiting for the person. Defaults to false.
+	RepliesOnEntry *bool `json:"repliesOnEntry,omitempty"`
+	// Checks each tool call against a rule before it runs.
+	ToolCallChecks *ToolCallChecks `json:"toolCallChecks,omitempty"`
+	// Checks that each answer's claims are supported by what it cites.
+	AttributionChecks *AttributionChecks `json:"attributionChecks,omitempty"`
+	// For `gather_info` and `take_action`: what the phase asks for or needs.
+	Fields []PhaseField `json:"fields,omitzero"`
+	// For `gather_info`, `take_action` and `policy_review`: the phase to move to when this one is
+	// done.
+	Next *string `json:"next,omitempty"`
+	// For `gather_info`, `take_action` and `policy_review`: how this phase wraps up before it hands
+	// over to `next`.
+	Handover *string `json:"handover,omitempty"`
+	// For `gather_info`, `take_action` and `policy_review`: what the phase's outcome is, and how
+	// later phases should use it.
+	OutcomeDescription *string `json:"outcomeDescription,omitempty"`
+	// Set replies the phase may give, each chosen by its description.
+	Responses []PhaseResponse `json:"responses,omitzero"`
+	// For `take_action`: the action the phase takes.
+	Action *PhaseAction `json:"action,omitempty"`
+	// For `take_action`: the policy rules this phase checks, as `<policyId>/<ruleId>`. Each policy
+	// must be in `policies`.
+	PolicyRules []string `json:"policyRules,omitzero"`
+	// For `policy_review`: the policy the phase reviews against, and which of its rules.
+	Review *PolicyReviewSettings `json:"review,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *Phase) UnmarshalJSON(b []byte) error {
+	type plain Phase
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *Phase) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *Phase) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// AgentWorkflow is the agent's workflow: the phases a conversation moves through.
+type AgentWorkflow struct {
+	// The phase a new conversation starts in. Defaults to `answer`, the phase every agent has.
+	EntryPhase *string `json:"entryPhase,omitempty"`
+	// The phases, in the order their journey steps are numbered. Always present when read. Lists
+	// are replaced whole: to change one phase, send them all back.
+	Phases []Phase `json:"phases,omitzero"`
+	// Groups of phases that each run with their own instructions and only their own tools. Absent:
+	// every phase shares one set of instructions and one set of tools.
+	Capabilities []Capability `json:"capabilities,omitzero"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *AgentWorkflow) UnmarshalJSON(b []byte) error {
+	type plain AgentWorkflow
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *AgentWorkflow) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *AgentWorkflow) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// AgentConfiguration: An agent version's configuration: everything about how the agent behaves that a
+// version holds.
+//
+// The agent's name, description and avatar belong to the agent and are not versioned; who may use
+// the draft and saved versions belongs to the versions' access grant. A configuration is at most
+// 256 KiB as UTF-8 JSON; anything larger is refused with 400 `CONFIGURATION_TOO_LARGE`.
+type AgentConfiguration struct {
+	// Who the agent is and how it behaves, and the text it follows at particular points in an
+	// answer. Always present when read.
+	Guidance *AgentGuidance `json:"guidance,omitempty"`
+	// The model for each job in an answer. A job left unset uses its default.
+	Models *AgentModels `json:"models,omitempty"`
+	// The knowledge bases the agent searches, and how hard, at most 50, each at most once.
+	KnowledgeBases []KnowledgeBaseBinding `json:"knowledgeBases,omitzero"`
+	// The policies the agent's policy reviews and checked phases use, at most 20. Exported as a
+	// template variable.
+	Policies []PolicyBinding `json:"policies,omitzero"`
+	// The workspace's connectors the agent may use, at most 20. Exported as a template variable.
+	Connectors []ConnectorBinding `json:"connectors,omitzero"`
+	// The phases a conversation moves through, and how they are grouped. Absent means one
+	// conversational phase, `answer`.
+	Workflow *AgentWorkflow `json:"workflow,omitempty"`
+	// How answers are shaped: follow-up questions, citations and media embeds.
+	Answers *AnswerSettings `json:"answers,omitempty"`
+	// How the chat looks and behaves: the input placeholder and the time zone.
+	Conversation *ConversationSettings `json:"conversation,omitempty"`
+	// Whether people may attach documents in chat, how many and which kinds.
 	Attachments *AttachmentSettings `json:"attachments,omitempty"`
-	// The content safety setting applied to uploads and answers.
+	// The guardrail that screens documents attached in chat. Exported as a template variable.
 	ContentSafety *ContentSafety `json:"contentSafety,omitempty"`
 	// When true, the answer stream tells the caller which documents were withheld from them.
 	// Defaults to false.
 	DeniedDocuments *bool `json:"deniedDocuments,omitempty"`
+	// Whether the agent remembers people between conversations. Absent means it does not.
+	Memory *MemorySettings `json:"memory,omitempty"`
+	// Whether the agent speaks its answers, and in which voice. Absent means the browser's own
+	// voice.
+	Voice *VoiceSettings `json:"voice,omitempty"`
+	// A live video avatar that speaks for the agent. Absent means none.
+	LiveAvatar *LiveAvatarSettings `json:"liveAvatar,omitempty"`
+	// The page people see before and while they work through a stepped workflow, such as
+	// onboarding. Absent means the agent has no such page.
+	Journey *JourneySettings `json:"journey,omitempty"`
+	// Whose permissions the agent's unattended runs use. Exported as a template variable. Absent
+	// means the agent cannot run unattended.
+	RunAs *RunAs `json:"runAs,omitempty"`
 
 	raw core.Raw
 }
@@ -185,6 +2255,44 @@ func (v *AgentConfiguration) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *AgentConfiguration) RawJSON() json.RawMessage { return v.raw.JSON() }
 
+// DeleteAgentResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type DeleteAgentResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *DeleteAgentResult) UnmarshalJSON(b []byte) error {
+	type plain DeleteAgentResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *DeleteAgentResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *DeleteAgentResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *DeleteAgentResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
 // VersionSource: How a version was made. Open: new values may be added.
 //
 // VersionSource is open: a value this SDK does not know yet is kept as it is.
@@ -192,7 +2300,7 @@ type VersionSource string
 
 // VersionSource values known to this SDK.
 const (
-	VersionSourcePin       VersionSource = "pin"
+	VersionSourceSave      VersionSource = "save"
 	VersionSourcePublish   VersionSource = "publish"
 	VersionSourceMigration VersionSource = "migration"
 	VersionSourceImport    VersionSource = "import"
@@ -201,50 +2309,51 @@ const (
 // Known reports whether v is one of the values known to this SDK.
 func (v VersionSource) Known() bool {
 	switch v {
-	case VersionSourcePin, VersionSourcePublish, VersionSourceMigration, VersionSourceImport:
+	case VersionSourceSave, VersionSourcePublish, VersionSourceMigration, VersionSourceImport:
 		return true
 	}
 	return false
 }
 
-// PinDraftVersionResult is generated from the Caitlyn model.
+// AgentVersion: A named version of an agent: `draft`, `live` or a saved version. A list leaves
+// `configuration`
+// out; read one version to get it.
 //
-// Header-bound members are filled from the response headers; Raw holds the body as received.
-type PinDraftVersionResult struct {
-	// The request's identifier. The same value is in every error body; quote it to support.
-	// From the Caitlyn-Request-Id response header.
-	RequestID *string `json:"-"`
-	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
-	// seen and refuse to call operations or send members newer than it.
-	// From the Caitlyn-Api-Version response header.
-	APIVersion *string `json:"-"`
-	// The version's current ETag; send it as `If-Match` to change it.
-	// From the ETag response header.
-	ETag string `json:"-"`
+// Every call that gives a AgentVersion returns this type, as do lists and watch snapshots. One read from a
+// single response (a get, an update, a create, a Wait) carries that response's ResponseMetadata, and its ETag
+// filled from the ETag header when the body has none; a list item or a snapshot entry carries no metadata.
+type AgentVersion struct {
 	// The agent the version belongs to.
 	AgentID string `json:"agentId"`
-	// `draft`, `production` or the version's name.
+	// `draft`, `live` or the version's name.
 	Name string `json:"name"`
-	// How a pinned or published version was made. Absent on the draft.
+	// On `live`: the name of the version live points at.
+	LiveVersion *string `json:"liveVersion,omitempty"`
+	// How a named version was made. Absent on the draft.
 	Source *VersionSource `json:"source,omitempty"`
 	// The version this one was made from, where there is one.
 	BasedOn *string `json:"basedOn,omitempty"`
-	// True when this version's configuration is the one production currently answers with.
-	// Defaults to false.
-	MatchesProduction *bool `json:"matchesProduction,omitempty"`
+	// True on the version live points at, and on `live` itself. Defaults to false.
+	MatchesLive *bool `json:"matchesLive,omitempty"`
 	// When the version was made; for the draft, when it was first created.
 	CreatedAt time.Time `json:"createdAt"`
-	// When this configuration became production. Present only on `production`.
+	// Who made the version. Absent on the draft and on versions carried over from before v3.
+	CreatedBy *Actor `json:"createdBy,omitempty"`
+	// On `live`: when live was pointed at this version.
 	PublishedAt *time.Time `json:"publishedAt,omitempty"`
-	// Who made this configuration production. Present only on `production`.
+	// On `live`: who pointed live at this version.
 	PublishedBy *Actor `json:"publishedBy,omitempty"`
-	// The note written when the version was pinned or published.
+	// The note written when the version was saved or published.
 	Note *string `json:"note,omitempty"`
-	// The version's configuration.
-	Configuration AgentConfiguration `json:"configuration"`
-	// The new version, as `/api/v3/agents/{agentId}/versions/{name}`.
-	// From the Location response header.
-	Location *string `json:"-"`
+	// The members that differ from the version this one was made from (`basedOn`); for the draft,
+	// from live. Lists are compared by their items' keys.
+	ChangedMembers []string `json:"changedMembers,omitzero"`
+	// The version's configuration. Present on a single read and on the draft operations; absent in
+	// ListAgentVersions rows and in PublishAgentVersion's `version`.
+	Configuration *AgentConfiguration `json:"configuration,omitempty"`
+	// The version's current ETag; send it as `If-Match` to change it. On `live`, it changes whenever
+	// live moves to another version.
+	ETag string `json:"etag"`
 
 	metadata core.ResponseMetadata
 
@@ -252,8 +2361,8 @@ type PinDraftVersionResult struct {
 }
 
 // UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
-func (v *PinDraftVersionResult) UnmarshalJSON(b []byte) error {
-	type plain PinDraftVersionResult
+func (v *AgentVersion) UnmarshalJSON(b []byte) error {
+	type plain AgentVersion
 	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
 		return err
 	}
@@ -262,45 +2371,105 @@ func (v *PinDraftVersionResult) UnmarshalJSON(b []byte) error {
 }
 
 // Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
-func (v *PinDraftVersionResult) Raw() map[string]any { return v.raw.Map() }
+func (v *AgentVersion) Raw() map[string]any { return v.raw.Map() }
 
 // RawJSON returns that object's bytes as received.
-func (v *PinDraftVersionResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+func (v *AgentVersion) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
-// (the zero value for a result built in code).
-func (v *PinDraftVersionResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+// ResponseMetadata returns the HTTP status, request id and API version of the response this AgentVersion was read from:
+// the zero value for a list item, a snapshot entry or one built in code. It is never marshalled.
+func (v *AgentVersion) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
-// ProductionHistoryEntry is generated from the Caitlyn model.
+// ClearableDraftField: The draft members that can be cleared, as paths. Open: an older SDK may send a
+// newer value as a
+// string.
 //
-// Header-bound members are filled from the response headers; Raw holds the body as received.
-type ProductionHistoryEntry struct {
-	// The request's identifier. The same value is in every error body; quote it to support.
-	// From the Caitlyn-Request-Id response header.
-	RequestID *string `json:"-"`
-	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
-	// seen and refuse to call operations or send members newer than it.
-	// From the Caitlyn-Api-Version response header.
-	APIVersion *string `json:"-"`
-	// The entry's identifier.
+// ClearableDraftField is open: a value this SDK does not know yet is kept as it is.
+type ClearableDraftField string
+
+// ClearableDraftField values known to this SDK.
+const (
+	ClearableDraftFieldGuidanceIdentity             ClearableDraftField = "guidance.identity"
+	ClearableDraftFieldGuidanceInstructions         ClearableDraftField = "guidance.instructions"
+	ClearableDraftFieldGuidanceRelevance            ClearableDraftField = "guidance.relevance"
+	ClearableDraftFieldGuidanceDefinitions          ClearableDraftField = "guidance.definitions"
+	ClearableDraftFieldGuidanceSearchTopics         ClearableDraftField = "guidance.searchTopics"
+	ClearableDraftFieldGuidanceResultEvaluation     ClearableDraftField = "guidance.resultEvaluation"
+	ClearableDraftFieldGuidanceLimitedEvidence      ClearableDraftField = "guidance.limitedEvidence"
+	ClearableDraftFieldModelsAnswer                 ClearableDraftField = "models.answer"
+	ClearableDraftFieldModelsPlanning               ClearableDraftField = "models.planning"
+	ClearableDraftFieldModelsSummary                ClearableDraftField = "models.summary"
+	ClearableDraftFieldModelsClassification         ClearableDraftField = "models.classification"
+	ClearableDraftFieldModelsSearchTopics           ClearableDraftField = "models.searchTopics"
+	ClearableDraftFieldModelsTitle                  ClearableDraftField = "models.title"
+	ClearableDraftFieldConversationInputPlaceholder ClearableDraftField = "conversation.inputPlaceholder"
+	ClearableDraftFieldWorkflowCapabilities         ClearableDraftField = "workflow.capabilities"
+	ClearableDraftFieldMemory                       ClearableDraftField = "memory"
+	ClearableDraftFieldVoice                        ClearableDraftField = "voice"
+	ClearableDraftFieldLiveAvatar                   ClearableDraftField = "liveAvatar"
+	ClearableDraftFieldJourney                      ClearableDraftField = "journey"
+	ClearableDraftFieldRunAs                        ClearableDraftField = "runAs"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v ClearableDraftField) Known() bool {
+	switch v {
+	case ClearableDraftFieldGuidanceIdentity, ClearableDraftFieldGuidanceInstructions, ClearableDraftFieldGuidanceRelevance, ClearableDraftFieldGuidanceDefinitions, ClearableDraftFieldGuidanceSearchTopics, ClearableDraftFieldGuidanceResultEvaluation, ClearableDraftFieldGuidanceLimitedEvidence, ClearableDraftFieldModelsAnswer, ClearableDraftFieldModelsPlanning, ClearableDraftFieldModelsSummary, ClearableDraftFieldModelsClassification, ClearableDraftFieldModelsSearchTopics, ClearableDraftFieldModelsTitle, ClearableDraftFieldConversationInputPlaceholder, ClearableDraftFieldWorkflowCapabilities, ClearableDraftFieldMemory, ClearableDraftFieldVoice, ClearableDraftFieldLiveAvatar, ClearableDraftFieldJourney, ClearableDraftFieldRunAs:
+		return true
+	}
+	return false
+}
+
+// HistoryChangeKind: What kind of change moved live. Open: new values may be added.
+//
+// HistoryChangeKind is open: a value this SDK does not know yet is kept as it is.
+type HistoryChangeKind string
+
+// HistoryChangeKind values known to this SDK.
+const (
+	HistoryChangeKindPublish   HistoryChangeKind = "publish"
+	HistoryChangeKindRollback  HistoryChangeKind = "rollback"
+	HistoryChangeKindMigration HistoryChangeKind = "migration"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v HistoryChangeKind) Known() bool {
+	switch v {
+	case HistoryChangeKindPublish, HistoryChangeKindRollback, HistoryChangeKindMigration:
+		return true
+	}
+	return false
+}
+
+// HistoryEntry is a live history entry. A list leaves `configuration` out; read one entry to get it.
+//
+// Every call that gives a HistoryEntry returns this type, as do lists and watch snapshots. One read from a
+// single response (a get, an update, a create, a Wait) carries that response's ResponseMetadata, and its ETag
+// filled from the ETag header when the body has none; a list item or a snapshot entry carries no metadata.
+type HistoryEntry struct {
+	// The identifier GetHistoryEntry takes to read this entry with its configuration.
 	ID string `json:"id"`
-	// The agent whose production this was.
+	// The agent whose live version changed.
 	AgentID string `json:"agentId"`
-	// The name of the version production was published from, kept even if that version has since
-	// been deleted. Absent when production did not come from a named version.
-	VersionName *string `json:"versionName,omitempty"`
-	// When this configuration became production.
-	PublishedAt time.Time `json:"publishedAt"`
-	// Who made it production.
-	PublishedBy Actor `json:"publishedBy"`
-	// When a publish replaced it.
-	UnpublishedAt time.Time `json:"unpublishedAt"`
-	// Who published the version that replaced it.
-	UnpublishedBy Actor `json:"unpublishedBy"`
-	// The note written when it was published.
+	// The version live pointed at after the change.
+	Version string `json:"version"`
+	// The version live pointed at before the change. Absent for an agent's first publish.
+	PreviousVersion *string `json:"previousVersion,omitempty"`
+	// What kind of change it was.
+	Kind HistoryChangeKind `json:"kind"`
+	// When live changed.
+	ChangedAt time.Time `json:"changedAt"`
+	// Who changed it.
+	ChangedBy Actor `json:"changedBy"`
+	// The note written with the change.
 	Note *string `json:"note,omitempty"`
-	// The configuration production had.
-	Configuration AgentConfiguration `json:"configuration"`
+	// The members that differ between `previousVersion` and `version`, computed when the entry was
+	// written. Lists are compared by their items' keys.
+	ChangedMembers []string `json:"changedMembers,omitzero"`
+	// The configuration of `version`. Present only when the caller may read that version: the agent
+	// grant if it is live now, and the agent's version access grant if it is not, as GetAgentVersion
+	// checks. Absent otherwise, in a list, and when that version no longer exists.
+	Configuration *AgentConfiguration `json:"configuration,omitempty"`
 
 	metadata core.ResponseMetadata
 
@@ -308,8 +2477,8 @@ type ProductionHistoryEntry struct {
 }
 
 // UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
-func (v *ProductionHistoryEntry) UnmarshalJSON(b []byte) error {
-	type plain ProductionHistoryEntry
+func (v *HistoryEntry) UnmarshalJSON(b []byte) error {
+	type plain HistoryEntry
 	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
 		return err
 	}
@@ -318,60 +2487,21 @@ func (v *ProductionHistoryEntry) UnmarshalJSON(b []byte) error {
 }
 
 // Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
-func (v *ProductionHistoryEntry) Raw() map[string]any { return v.raw.Map() }
+func (v *HistoryEntry) Raw() map[string]any { return v.raw.Map() }
 
 // RawJSON returns that object's bytes as received.
-func (v *ProductionHistoryEntry) RawJSON() json.RawMessage { return v.raw.JSON() }
+func (v *HistoryEntry) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
-// (the zero value for a result built in code).
-func (v *ProductionHistoryEntry) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+// ResponseMetadata returns the HTTP status, request id and API version of the response this HistoryEntry was read from:
+// the zero value for a list item, a snapshot entry or one built in code. It is never marshalled.
+func (v *HistoryEntry) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
-// ProductionHistorySummary is a production history entry, without its configuration (read that with
-// GetProductionHistoryEntry).
-type ProductionHistorySummary struct {
-	// The entry's identifier.
-	ID string `json:"id"`
-	// The agent whose production this was.
-	AgentID string `json:"agentId"`
-	// The name of the version production was published from, kept even if that version has since
-	// been deleted. Absent when production did not come from a named version.
-	VersionName *string `json:"versionName,omitempty"`
-	// When this configuration became production.
-	PublishedAt time.Time `json:"publishedAt"`
-	// Who made it production.
-	PublishedBy Actor `json:"publishedBy"`
-	// When a publish replaced it.
-	UnpublishedAt time.Time `json:"unpublishedAt"`
-	// Who published the version that replaced it.
-	UnpublishedBy Actor `json:"unpublishedBy"`
-	// The note written when it was published.
-	Note *string `json:"note,omitempty"`
-
-	raw core.Raw
-}
-
-// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
-func (v *ProductionHistorySummary) UnmarshalJSON(b []byte) error {
-	type plain ProductionHistorySummary
-	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
-		return err
-	}
-	v.raw = core.NewRaw(b)
-	return nil
-}
-
-// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
-func (v *ProductionHistorySummary) Raw() map[string]any { return v.raw.Map() }
-
-// RawJSON returns that object's bytes as received.
-func (v *ProductionHistorySummary) RawJSON() json.RawMessage { return v.raw.JSON() }
-
-// ListProductionHistoryEntriesPage is generated from the Caitlyn model.
+// ListHistoryEntriesPage is generated from the Caitlyn model.
 //
 // Header-bound members are filled from the response headers; Raw holds the body as received.
-type ListProductionHistoryEntriesPage struct {
-	// The request's identifier. The same value is in every error body; quote it to support.
+type ListHistoryEntriesPage struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
 	// From the Caitlyn-Request-Id response header.
 	RequestID *string `json:"-"`
 	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
@@ -379,7 +2509,7 @@ type ListProductionHistoryEntriesPage struct {
 	// From the Caitlyn-Api-Version response header.
 	APIVersion *string `json:"-"`
 	// This page of entries, newest first.
-	Items []ProductionHistorySummary `json:"items"`
+	Items []HistoryEntry `json:"items"`
 	// The cursor for the next page. Absent on the last page.
 	NextCursor *string `json:"nextCursor,omitempty"`
 
@@ -389,8 +2519,8 @@ type ListProductionHistoryEntriesPage struct {
 }
 
 // UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
-func (v *ListProductionHistoryEntriesPage) UnmarshalJSON(b []byte) error {
-	type plain ListProductionHistoryEntriesPage
+func (v *ListHistoryEntriesPage) UnmarshalJSON(b []byte) error {
+	type plain ListHistoryEntriesPage
 	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
 		return err
 	}
@@ -399,42 +2529,260 @@ func (v *ListProductionHistoryEntriesPage) UnmarshalJSON(b []byte) error {
 }
 
 // Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
-func (v *ListProductionHistoryEntriesPage) Raw() map[string]any { return v.raw.Map() }
+func (v *ListHistoryEntriesPage) Raw() map[string]any { return v.raw.Map() }
 
 // RawJSON returns that object's bytes as received.
-func (v *ListProductionHistoryEntriesPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+func (v *ListHistoryEntriesPage) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
-func (v *ListProductionHistoryEntriesPage) ResponseMetadata() core.ResponseMetadata {
-	return v.metadata
+func (v *ListHistoryEntriesPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ListAgentsPage is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ListAgentsPage struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// This page of agents.
+	Items []Agent `json:"items"`
+	// The cursor for the next page. Absent on the last page.
+	NextCursor *string `json:"nextCursor,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
 }
 
-// ClearableDraftField is the draft members that can be cleared. Open: an older SDK may send a newer
-// value as a string.
-//
-// ClearableDraftField is open: a value this SDK does not know yet is kept as it is.
-type ClearableDraftField string
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ListAgentsPage) UnmarshalJSON(b []byte) error {
+	type plain ListAgentsPage
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
 
-// ClearableDraftField values known to this SDK.
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ListAgentsPage) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ListAgentsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ListAgentsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ConversationStatus: Whether a conversation is answering. Open: new values may be added.
+//
+// ConversationStatus is open: a value this SDK does not know yet is kept as it is.
+type ConversationStatus string
+
+// ConversationStatus values known to this SDK.
 const (
-	ClearableDraftFieldIdentity ClearableDraftField = "identity"
+	ConversationStatusIdle       ConversationStatus = "idle"
+	ConversationStatusResponding ConversationStatus = "responding"
 )
 
 // Known reports whether v is one of the values known to this SDK.
-func (v ClearableDraftField) Known() bool {
+func (v ConversationStatus) Known() bool {
 	switch v {
-	case ClearableDraftFieldIdentity:
+	case ConversationStatusIdle, ConversationStatusResponding:
 		return true
 	}
 	return false
 }
 
+// Conversation is a conversation between a caller and an agent version.
+//
+// Every call that gives a Conversation returns this type, as do lists and watch snapshots. One read from a
+// single response (a get, an update, a create, a Wait) carries that response's ResponseMetadata, and its ETag
+// filled from the ETag header when the body has none; a list item or a snapshot entry carries no metadata.
+type Conversation struct {
+	// The identifier every call about this conversation takes; it never changes.
+	ID string `json:"id"`
+	// The agent the conversation is with.
+	AgentID string `json:"agentId"`
+	// The version of the agent that answers, as it was asked for: `live`, `draft` or a version name.
+	Version string `json:"version"`
+	// The conversation's title, when it has one yet.
+	Title *string `json:"title,omitempty"`
+	// Whether an answer is being written now.
+	Status ConversationStatus `json:"status"`
+	// When the conversation was created.
+	CreatedAt time.Time `json:"createdAt"`
+	// When the last message was written.
+	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *Conversation) UnmarshalJSON(b []byte) error {
+	type plain Conversation
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *Conversation) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *Conversation) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this Conversation was read from:
+// the zero value for a list item, a snapshot entry or one built in code. It is never marshalled.
+func (v *Conversation) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ListConversationsPage is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ListConversationsPage struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// This page of conversations, newest first.
+	Items []Conversation `json:"items"`
+	// The cursor for the next page. Absent on the last page.
+	NextCursor *string `json:"nextCursor,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ListConversationsPage) UnmarshalJSON(b []byte) error {
+	type plain ListConversationsPage
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ListConversationsPage) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ListConversationsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ListConversationsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ClearableAgentField is the agent members that can be cleared. Open: an older SDK may send a newer
+// value as a string.
+//
+// ClearableAgentField is open: a value this SDK does not know yet is kept as it is.
+type ClearableAgentField string
+
+// ClearableAgentField values known to this SDK.
+const (
+	ClearableAgentFieldDescription ClearableAgentField = "description"
+	ClearableAgentFieldAvatar      ClearableAgentField = "avatar"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v ClearableAgentField) Known() bool {
+	switch v {
+	case ClearableAgentFieldDescription, ClearableAgentFieldAvatar:
+		return true
+	}
+	return false
+}
+
+// AgentVersionChange: One member that differs between two versions.
+type AgentVersionChange struct {
+	// The member, as a path.
+	Path string `json:"path"`
+	// Its value in the version compared from. Absent when the other version added it.
+	Before any `json:"before,omitempty"`
+	// Its value in the version compared to. Absent when the other version removed it.
+	After any `json:"after,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *AgentVersionChange) UnmarshalJSON(b []byte) error {
+	type plain AgentVersionChange
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *AgentVersionChange) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *AgentVersionChange) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// CompareAgentVersionsResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type CompareAgentVersionsResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// One change per member that differs, in path order.
+	Changes []AgentVersionChange `json:"changes"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *CompareAgentVersionsResult) UnmarshalJSON(b []byte) error {
+	type plain CompareAgentVersionsResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *CompareAgentVersionsResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *CompareAgentVersionsResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *CompareAgentVersionsResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
 // DeleteAgentVersionResult is generated from the Caitlyn model.
 //
 // Header-bound members are filled from the response headers; Raw holds the body as received.
 type DeleteAgentVersionResult struct {
-	// The request's identifier. The same value is in every error body; quote it to support.
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
 	// From the Caitlyn-Request-Id response header.
 	RequestID *string `json:"-"`
 	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
@@ -463,110 +2811,16 @@ func (v *DeleteAgentVersionResult) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *DeleteAgentVersionResult) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *DeleteAgentVersionResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
-
-// AgentVersion is generated from the Caitlyn model.
-//
-// Header-bound members are filled from the response headers; Raw holds the body as received.
-type AgentVersion struct {
-	// The request's identifier. The same value is in every error body; quote it to support.
-	// From the Caitlyn-Request-Id response header.
-	RequestID *string `json:"-"`
-	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
-	// seen and refuse to call operations or send members newer than it.
-	// From the Caitlyn-Api-Version response header.
-	APIVersion *string `json:"-"`
-	// The version's current ETag; send it as `If-Match` to change it.
-	// From the ETag response header.
-	ETag string `json:"-"`
-	// The agent the version belongs to.
-	AgentID string `json:"agentId"`
-	// `draft`, `production` or the version's name.
-	Name string `json:"name"`
-	// How a pinned or published version was made. Absent on the draft.
-	Source *VersionSource `json:"source,omitempty"`
-	// The version this one was made from, where there is one.
-	BasedOn *string `json:"basedOn,omitempty"`
-	// True when this version's configuration is the one production currently answers with.
-	// Defaults to false.
-	MatchesProduction *bool `json:"matchesProduction,omitempty"`
-	// When the version was made; for the draft, when it was first created.
-	CreatedAt time.Time `json:"createdAt"`
-	// When this configuration became production. Present only on `production`.
-	PublishedAt *time.Time `json:"publishedAt,omitempty"`
-	// Who made this configuration production. Present only on `production`.
-	PublishedBy *Actor `json:"publishedBy,omitempty"`
-	// The note written when the version was pinned or published.
-	Note *string `json:"note,omitempty"`
-	// The version's configuration.
-	Configuration AgentConfiguration `json:"configuration"`
-
-	metadata core.ResponseMetadata
-
-	raw core.Raw
-}
-
-// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
-func (v *AgentVersion) UnmarshalJSON(b []byte) error {
-	type plain AgentVersion
-	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
-		return err
-	}
-	v.raw = core.NewRaw(b)
-	return nil
-}
-
-// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
-func (v *AgentVersion) Raw() map[string]any { return v.raw.Map() }
-
-// RawJSON returns that object's bytes as received.
-func (v *AgentVersion) RawJSON() json.RawMessage { return v.raw.JSON() }
-
-// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
-// (the zero value for a result built in code).
-func (v *AgentVersion) ResponseMetadata() core.ResponseMetadata { return v.metadata }
-
-// AgentVersionSummary is a named version, without its configuration (read that with GetAgentVersion).
-type AgentVersionSummary struct {
-	// The version's name.
-	Name string `json:"name"`
-	// How the version was made.
-	Source *VersionSource `json:"source,omitempty"`
-	// The version this one was made from, where there is one.
-	BasedOn *string `json:"basedOn,omitempty"`
-	// True when production's configuration is this version's. Defaults to false.
-	MatchesProduction *bool `json:"matchesProduction,omitempty"`
-	// When the version was made.
-	CreatedAt time.Time `json:"createdAt"`
-	// The note written when the version was pinned or published.
-	Note *string `json:"note,omitempty"`
-
-	raw core.Raw
-}
-
-// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
-func (v *AgentVersionSummary) UnmarshalJSON(b []byte) error {
-	type plain AgentVersionSummary
-	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
-		return err
-	}
-	v.raw = core.NewRaw(b)
-	return nil
-}
-
-// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
-func (v *AgentVersionSummary) Raw() map[string]any { return v.raw.Map() }
-
-// RawJSON returns that object's bytes as received.
-func (v *AgentVersionSummary) RawJSON() json.RawMessage { return v.raw.JSON() }
 
 // ListAgentVersionsPage is generated from the Caitlyn model.
 //
 // Header-bound members are filled from the response headers; Raw holds the body as received.
 type ListAgentVersionsPage struct {
-	// The request's identifier. The same value is in every error body; quote it to support.
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
 	// From the Caitlyn-Request-Id response header.
 	RequestID *string `json:"-"`
 	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
@@ -574,7 +2828,7 @@ type ListAgentVersionsPage struct {
 	// From the Caitlyn-Api-Version response header.
 	APIVersion *string `json:"-"`
 	// This page of versions, oldest first.
-	Items []AgentVersionSummary `json:"items"`
+	Items []AgentVersion `json:"items"`
 	// The cursor for the next page. Absent on the last page.
 	NextCursor *string `json:"nextCursor,omitempty"`
 
@@ -599,9 +2853,498 @@ func (v *ListAgentVersionsPage) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *ListAgentVersionsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *ListAgentVersionsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// LiveState: Which version live points at, and since when.
+type LiveState struct {
+	// The version live points at.
+	Version string `json:"version"`
+	// When live was pointed at it.
+	PublishedAt time.Time `json:"publishedAt"`
+	// Who pointed live at it.
+	PublishedBy Actor `json:"publishedBy"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *LiveState) UnmarshalJSON(b []byte) error {
+	type plain LiveState
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *LiveState) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *LiveState) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// PublishAgentVersionResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type PublishAgentVersionResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// Live's new ETag.
+	// From the ETag response header.
+	ETag string `json:"-"`
+	// Live after the publish.
+	Live LiveState `json:"live"`
+	// The version live now points at.
+	Version AgentVersion `json:"version"`
+	// The history entry the publish wrote.
+	HistoryEntry HistoryEntry `json:"historyEntry"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *PublishAgentVersionResult) UnmarshalJSON(b []byte) error {
+	type plain PublishAgentVersionResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *PublishAgentVersionResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *PublishAgentVersionResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *PublishAgentVersionResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// AttachmentReference is an upload attached to a message.
+type AttachmentReference struct {
+	// The upload holding the document.
+	UploadID string `json:"uploadId"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *AttachmentReference) UnmarshalJSON(b []byte) error {
+	type plain AttachmentReference
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *AttachmentReference) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *AttachmentReference) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// IngestionItemAction: What an item does. Open: new values may be added.
+//
+// IngestionItemAction is open: a value this SDK does not know yet is kept as it is.
+type IngestionItemAction string
+
+// IngestionItemAction values known to this SDK.
+const (
+	IngestionItemActionIngest IngestionItemAction = "ingest"
+	IngestionItemActionRemove IngestionItemAction = "remove"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v IngestionItemAction) Known() bool {
+	switch v {
+	case IngestionItemActionIngest, IngestionItemActionRemove:
+		return true
+	}
+	return false
+}
+
+// IngestionItemInput: One item a caller adds to a batch.
+type IngestionItemInput struct {
+	// What the item does to its document. Defaults to `ingest`.
+	Action *IngestionItemAction `json:"action,omitempty"`
+	// The document's path: its folder and name, for example `/hr/leave-policy.pdf`. A re-upload at a
+	// path is a new version of the document there.
+	Path *string `json:"path,omitempty"`
+	// The caller's own key for the document. When given, it identifies the document wherever it is,
+	// so a renamed file keeps its document.
+	ExternalID *string `json:"externalId,omitempty"`
+	// For described content: the base64-encoded SHA-256 of the bytes.
+	SHA256 *string `json:"sha256,omitempty"`
+	// For described content: the size of the bytes, at most 2 GB.
+	ByteSize *int64 `json:"byteSize,omitempty"`
+	// For described content: the media type of the bytes.
+	ContentType *string `json:"contentType,omitempty"`
+	// For fetched content: the `http` or `https` address the server fetches the bytes from while
+	// planning, at most 100 MB. Needs the files create permission.
+	FetchURL *string `json:"fetchUrl,omitempty"`
+	// The address a citation of the document links to. Defaults to `fetchUrl`.
+	SourceURL *string `json:"sourceUrl,omitempty"`
+	// Values for the metadata fields the knowledge base defines, checked as CreateDocument checks
+	// them, and kept as sent.
+	Metadata map[string]any `json:"metadata,omitzero"`
+	// Keys the knowledge base does not define, within the limits on ExtraMetadata.
+	ExtraMetadata map[string]any `json:"extraMetadata,omitzero"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *IngestionItemInput) UnmarshalJSON(b []byte) error {
+	type plain IngestionItemInput
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *IngestionItemInput) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *IngestionItemInput) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// DocumentMatch is an existing document a planned item refers to.
+type DocumentMatch struct {
+	// The existing document the item would act on.
+	DocumentID string `json:"documentId"`
+	// Where that document is now, which may differ from the item's path.
+	Path string `json:"path"`
+	// The document's current version number.
+	Version *int32 `json:"version,omitempty"`
+	// The base64-encoded SHA-256 of the document's current bytes.
+	SHA256 *string `json:"sha256,omitempty"`
+	// For `changed`: the earlier version whose bytes the item's equal.
+	RestoresVersion *int32 `json:"restoresVersion,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *DocumentMatch) UnmarshalJSON(b []byte) error {
+	type plain DocumentMatch
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *DocumentMatch) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *DocumentMatch) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// IngestionItemOutcome: What the plan found for an item. Open: new values may be added.
+//
+// IngestionItemOutcome is open: a value this SDK does not know yet is kept as it is.
+type IngestionItemOutcome string
+
+// IngestionItemOutcome values known to this SDK.
+const (
+	IngestionItemOutcomeNew         IngestionItemOutcome = "new"
+	IngestionItemOutcomeUnchanged   IngestionItemOutcome = "unchanged"
+	IngestionItemOutcomeChanged     IngestionItemOutcome = "changed"
+	IngestionItemOutcomeMoved       IngestionItemOutcome = "moved"
+	IngestionItemOutcomeInProgress  IngestionItemOutcome = "in_progress"
+	IngestionItemOutcomeToRemove    IngestionItemOutcome = "to_remove"
+	IngestionItemOutcomeFetchFailed IngestionItemOutcome = "fetch_failed"
+	IngestionItemOutcomeConflict    IngestionItemOutcome = "conflict"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v IngestionItemOutcome) Known() bool {
+	switch v {
+	case IngestionItemOutcomeNew, IngestionItemOutcomeUnchanged, IngestionItemOutcomeChanged, IngestionItemOutcomeMoved, IngestionItemOutcomeInProgress, IngestionItemOutcomeToRemove, IngestionItemOutcomeFetchFailed, IngestionItemOutcomeConflict:
+		return true
+	}
+	return false
+}
+
+// IngestionItemReason: Why an item is a conflict, or why its fetch failed. Open: new values may be
+// added.
+//
+// IngestionItemReason is open: a value this SDK does not know yet is kept as it is.
+type IngestionItemReason string
+
+// IngestionItemReason values known to this SDK.
+const (
+	IngestionItemReasonPathTaken             IngestionItemReason = "path_taken"
+	IngestionItemReasonAmbiguousContent      IngestionItemReason = "ambiguous_content"
+	IngestionItemReasonDuplicatePath         IngestionItemReason = "duplicate_path"
+	IngestionItemReasonDuplicateExternalID   IngestionItemReason = "duplicate_external_id"
+	IngestionItemReasonDuplicateInBatch      IngestionItemReason = "duplicate_in_batch"
+	IngestionItemReasonChangedSincePlan      IngestionItemReason = "changed_since_plan"
+	IngestionItemReasonFetchBlocked          IngestionItemReason = "fetch_blocked"
+	IngestionItemReasonFetchHTTPError        IngestionItemReason = "fetch_http_error"
+	IngestionItemReasonFetchTimeout          IngestionItemReason = "fetch_timeout"
+	IngestionItemReasonFetchTooLarge         IngestionItemReason = "fetch_too_large"
+	IngestionItemReasonFetchUnsupportedType  IngestionItemReason = "fetch_unsupported_type"
+	IngestionItemReasonFetchTooManyRedirects IngestionItemReason = "fetch_too_many_redirects"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v IngestionItemReason) Known() bool {
+	switch v {
+	case IngestionItemReasonPathTaken, IngestionItemReasonAmbiguousContent, IngestionItemReasonDuplicatePath, IngestionItemReasonDuplicateExternalID, IngestionItemReasonDuplicateInBatch, IngestionItemReasonChangedSincePlan, IngestionItemReasonFetchBlocked, IngestionItemReasonFetchHTTPError, IngestionItemReasonFetchTimeout, IngestionItemReasonFetchTooLarge, IngestionItemReasonFetchUnsupportedType, IngestionItemReasonFetchTooManyRedirects:
+		return true
+	}
+	return false
+}
+
+// IngestionItemResolution: What will be done with an item. Open: new values may be added.
+//
+// IngestionItemResolution is open: a value this SDK does not know yet is kept as it is.
+type IngestionItemResolution string
+
+// IngestionItemResolution values known to this SDK.
+const (
+	IngestionItemResolutionAdd            IngestionItemResolution = "add"
+	IngestionItemResolutionNewVersion     IngestionItemResolution = "new_version"
+	IngestionItemResolutionSkip           IngestionItemResolution = "skip"
+	IngestionItemResolutionMove           IngestionItemResolution = "move"
+	IngestionItemResolutionUpdateMetadata IngestionItemResolution = "update_metadata"
+	IngestionItemResolutionRemove         IngestionItemResolution = "remove"
+	IngestionItemResolutionOverwrite      IngestionItemResolution = "overwrite"
+	IngestionItemResolutionUnresolved     IngestionItemResolution = "unresolved"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v IngestionItemResolution) Known() bool {
+	switch v {
+	case IngestionItemResolutionAdd, IngestionItemResolutionNewVersion, IngestionItemResolutionSkip, IngestionItemResolutionMove, IngestionItemResolutionUpdateMetadata, IngestionItemResolutionRemove, IngestionItemResolutionOverwrite, IngestionItemResolutionUnresolved:
+		return true
+	}
+	return false
+}
+
+// IngestionItemStatus: Where an item is. Open: new values may be added. Every value after `ingesting`
+// is final.
+//
+// IngestionItemStatus is open: a value this SDK does not know yet is kept as it is.
+type IngestionItemStatus string
+
+// IngestionItemStatus values known to this SDK.
+const (
+	IngestionItemStatusDraft          IngestionItemStatus = "draft"
+	IngestionItemStatusAwaitingUpload IngestionItemStatus = "awaiting_upload"
+	IngestionItemStatusIngesting      IngestionItemStatus = "ingesting"
+	IngestionItemStatusIndexed        IngestionItemStatus = "indexed"
+	IngestionItemStatusSkipped        IngestionItemStatus = "skipped"
+	IngestionItemStatusMoved          IngestionItemStatus = "moved"
+	IngestionItemStatusUpdated        IngestionItemStatus = "updated"
+	IngestionItemStatusRemoved        IngestionItemStatus = "removed"
+	IngestionItemStatusCancelled      IngestionItemStatus = "cancelled"
+	IngestionItemStatusFailed         IngestionItemStatus = "failed"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v IngestionItemStatus) Known() bool {
+	switch v {
+	case IngestionItemStatusDraft, IngestionItemStatusAwaitingUpload, IngestionItemStatusIngesting, IngestionItemStatusIndexed, IngestionItemStatusSkipped, IngestionItemStatusMoved, IngestionItemStatusUpdated, IngestionItemStatusRemoved, IngestionItemStatusCancelled, IngestionItemStatusFailed:
+		return true
+	}
+	return false
+}
+
+// IngestionBatchItem is an ingestion batch item.
+//
+// Every call that gives a IngestionBatchItem returns this type, as do lists and watch snapshots. One read from a
+// single response (a get, an update, a create, a Wait) carries that response's ResponseMetadata, and its ETag
+// filled from the ETag header when the body has none; a list item or a snapshot entry carries no metadata.
+type IngestionBatchItem struct {
+	// What the item does to its document. Defaults to `ingest`.
+	Action *IngestionItemAction `json:"action,omitempty"`
+	// The document's path: its folder and name, for example `/hr/leave-policy.pdf`. A re-upload at a
+	// path is a new version of the document there.
+	Path *string `json:"path,omitempty"`
+	// The caller's own key for the document. When given, it identifies the document wherever it is,
+	// so a renamed file keeps its document.
+	ExternalID *string `json:"externalId,omitempty"`
+	// For described content: the base64-encoded SHA-256 of the bytes.
+	SHA256 *string `json:"sha256,omitempty"`
+	// For described content: the size of the bytes, at most 2 GB.
+	ByteSize *int64 `json:"byteSize,omitempty"`
+	// For described content: the media type of the bytes.
+	ContentType *string `json:"contentType,omitempty"`
+	// For fetched content: the `http` or `https` address the server fetches the bytes from while
+	// planning, at most 100 MB. Needs the files create permission.
+	FetchURL *string `json:"fetchUrl,omitempty"`
+	// The address a citation of the document links to. Defaults to `fetchUrl`.
+	SourceURL *string `json:"sourceUrl,omitempty"`
+	// Values for the metadata fields the knowledge base defines, checked as CreateDocument checks
+	// them, and kept as sent.
+	Metadata map[string]any `json:"metadata,omitzero"`
+	// Keys the knowledge base does not define, within the limits on ExtraMetadata.
+	ExtraMetadata map[string]any `json:"extraMetadata,omitzero"`
+	// The identifier every call about this item takes, within its batch.
+	ID string `json:"id"`
+	// What the plan found. Absent until the batch is planned.
+	Outcome *IngestionItemOutcome `json:"outcome,omitempty"`
+	// For `conflict`: why the plan could not decide. For `fetch_failed`: why the fetch failed.
+	Reason *IngestionItemReason `json:"reason,omitempty"`
+	// For `unchanged`: true when the supplied metadata or `sourceUrl` differ from the document's.
+	MetadataChanged *bool `json:"metadataChanged,omitempty"`
+	// The existing documents the outcome refers to. Never a document the caller may not read.
+	Matches []DocumentMatch `json:"matches,omitzero"`
+	// What will be done: set by the policy, or by hand with UpdateIngestionBatchItem.
+	Resolution *IngestionItemResolution `json:"resolution,omitempty"`
+	// Where the item is. `draft` before Start.
+	Status IngestionItemStatus `json:"status"`
+	// After Start, for an item awaiting upload: the key to upload its bytes to, under the batch's
+	// upload policy.
+	ObjectKey *string `json:"objectKey,omitempty"`
+	// The document the item made or changed.
+	DocumentID *string `json:"documentId,omitempty"`
+	// The document version the item made or changed.
+	Version *int32 `json:"version,omitempty"`
+	// Why the item failed, as a stable code: for example `UPLOAD_EXPIRED` (no bytes arrived before
+	// the upload policy expired), `CHECKSUM_MISMATCH`, `PERMISSION_DENIED`, for `new_version`
+	// `VALIDATION_FAILED` (another file type) or `DOCUMENT_INGESTION_IN_PROGRESS`, or a document's
+	// failure code. Present only when `status` is `failed`.
+	FailureCode *string `json:"failureCode,omitempty"`
+	// What went wrong, written for the integrator. Present only when `status` is `failed`.
+	FailureDetail *string `json:"failureDetail,omitempty"`
+	// The item's ETag; send it as `If-Match` to resolve it.
+	ETag string `json:"etag"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *IngestionBatchItem) UnmarshalJSON(b []byte) error {
+	type plain IngestionBatchItem
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *IngestionBatchItem) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *IngestionBatchItem) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this IngestionBatchItem was read from:
+// the zero value for a list item, a snapshot entry or one built in code. It is never marshalled.
+func (v *IngestionBatchItem) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ItemCreateStatus: Whether an item was added. Open: new values may be added.
+//
+// ItemCreateStatus is open: a value this SDK does not know yet is kept as it is.
+type ItemCreateStatus string
+
+// ItemCreateStatus values known to this SDK.
+const (
+	ItemCreateStatusCreated ItemCreateStatus = "created"
+	ItemCreateStatusFailed  ItemCreateStatus = "failed"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v ItemCreateStatus) Known() bool {
+	switch v {
+	case ItemCreateStatusCreated, ItemCreateStatusFailed:
+		return true
+	}
+	return false
+}
+
+// ItemCreateResult is the result of adding one item.
+type ItemCreateResult struct {
+	// The item's position in the request, from 0.
+	Index int32 `json:"index"`
+	// Whether the item was added.
+	Status ItemCreateStatus `json:"status"`
+	// The item, when `created`.
+	Item *IngestionBatchItem `json:"item,omitempty"`
+	// Why it failed, as a stable code. Present only when `failed`.
+	Code *string `json:"code,omitempty"`
+	// What went wrong, written for the integrator. Present only when `failed`.
+	Detail *string `json:"detail,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ItemCreateResult) UnmarshalJSON(b []byte) error {
+	type plain ItemCreateResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ItemCreateResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ItemCreateResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// BatchCreateIngestionBatchItemsResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type BatchCreateIngestionBatchItemsResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// One result per item, in request order.
+	Results []ItemCreateResult `json:"results"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *BatchCreateIngestionBatchItemsResult) UnmarshalJSON(b []byte) error {
+	type plain BatchCreateIngestionBatchItemsResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *BatchCreateIngestionBatchItemsResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *BatchCreateIngestionBatchItemsResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *BatchCreateIngestionBatchItemsResult) ResponseMetadata() core.ResponseMetadata {
+	return v.metadata
+}
 
 // DocumentDeleteStatus: Whether a document's delete was accepted. Open: new values may be added.
 //
@@ -629,7 +3372,7 @@ type DocumentDeleteResult struct {
 	DocumentID string `json:"documentId"`
 	// Whether the delete was accepted.
 	Status DocumentDeleteStatus `json:"status"`
-	// Why it failed, as a stable code, for example `NOT_FOUND` or `CONFLICT`. Present only when
+	// Why it failed, as a stable code, for example `NOT_FOUND` or `SERVICE_UNAVAILABLE`. Present only when
 	// `failed`.
 	Code *string `json:"code,omitempty"`
 	// What went wrong, written for the integrator. Present only when `failed`.
@@ -658,7 +3401,8 @@ func (v *DocumentDeleteResult) RawJSON() json.RawMessage { return v.raw.JSON() }
 //
 // Header-bound members are filled from the response headers; Raw holds the body as received.
 type BatchDeleteDocumentsResult struct {
-	// The request's identifier. The same value is in every error body; quote it to support.
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
 	// From the Caitlyn-Request-Id response header.
 	RequestID *string `json:"-"`
 	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
@@ -689,9 +3433,198 @@ func (v *BatchDeleteDocumentsResult) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *BatchDeleteDocumentsResult) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *BatchDeleteDocumentsResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// MessageAttachment is a document a message carries.
+type MessageAttachment struct {
+	// The document's name, as it was on the sender's machine.
+	Name string `json:"name"`
+	// The document's media type.
+	ContentType string `json:"contentType"`
+	// The document's size in bytes.
+	ByteSize int64 `json:"byteSize"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *MessageAttachment) UnmarshalJSON(b []byte) error {
+	type plain MessageAttachment
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *MessageAttachment) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *MessageAttachment) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// Citation is a passage the answer cites.
+type Citation struct {
+	// The citation's number in the answer text, starting at 1.
+	Number int32 `json:"number"`
+	// The cited document.
+	DocumentID *string `json:"documentId,omitempty"`
+	// The knowledge base the document is in.
+	KnowledgeBaseID *string `json:"knowledgeBaseId,omitempty"`
+	// The cited document's name.
+	DocumentName *string `json:"documentName,omitempty"`
+	// The page the passage is on, starting at 1, for paged documents.
+	PageNumber *int32 `json:"pageNumber,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *Citation) UnmarshalJSON(b []byte) error {
+	type plain Citation
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *Citation) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *Citation) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// MessageRole: Who wrote a message. Open: new values may be added.
+//
+// MessageRole is open: a value this SDK does not know yet is kept as it is.
+type MessageRole string
+
+// MessageRole values known to this SDK.
+const (
+	MessageRoleUser      MessageRole = "user"
+	MessageRoleAssistant MessageRole = "assistant"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v MessageRole) Known() bool {
+	switch v {
+	case MessageRoleUser, MessageRoleAssistant:
+		return true
+	}
+	return false
+}
+
+// Message is a message in a conversation.
+type Message struct {
+	// The identifier that matches the message across its events and ListMessages.
+	ID string `json:"id"`
+	// Who wrote the message.
+	Role MessageRole `json:"role"`
+	// What the message says. For an answer, the whole text the deltas built up.
+	Text string `json:"text"`
+	// The agent version that wrote an answer.
+	AgentVersion *string `json:"agentVersion,omitempty"`
+	// The passages an answer cites, in citation number order.
+	Citations []Citation `json:"citations,omitzero"`
+	// The documents the message carries, in the order they were sent.
+	Attachments []MessageAttachment `json:"attachments,omitzero"`
+	// When the message was written.
+	CreatedAt time.Time `json:"createdAt"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *Message) UnmarshalJSON(b []byte) error {
+	type plain Message
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *Message) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *Message) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ListMessagesPage is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ListMessagesPage struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// This page of messages, oldest first.
+	Items []Message `json:"items"`
+	// The cursor for the next page. Absent on the last page.
+	NextCursor *string `json:"nextCursor,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ListMessagesPage) UnmarshalJSON(b []byte) error {
+	type plain ListMessagesPage
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ListMessagesPage) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ListMessagesPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ListMessagesPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ContextItem: One item of structured context, for example the page or record the person is looking
+// at.
+type ContextItem struct {
+	// What kind of thing the item describes, for example `page`.
+	Type string `json:"type"`
+	// A short label the agent can refer to.
+	Label string `json:"label"`
+	// Where the item lives, when it has an address.
+	URI *string `json:"uri,omitempty"`
+	// The item's data, as JSON. Counts towards the 16 KB limit.
+	Data any `json:"data,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ContextItem) UnmarshalJSON(b []byte) error {
+	type plain ContextItem
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ContextItem) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ContextItem) RawJSON() json.RawMessage { return v.raw.JSON() }
 
 // CredentialKind: What kind of credential made a request. Open: new values may be added.
 //
@@ -717,9 +3650,9 @@ func (v CredentialKind) Known() bool {
 
 // OrganisationSummary is the identifier and name of an organisation.
 type OrganisationSummary struct {
-	// The organisation's identifier.
+	// The identifier calls about the organisation take.
 	ID string `json:"id"`
-	// The organisation's name.
+	// What people see the organisation called.
 	Name string `json:"name"`
 
 	raw core.Raw
@@ -745,7 +3678,8 @@ func (v *OrganisationSummary) RawJSON() json.RawMessage { return v.raw.JSON() }
 //
 // Header-bound members are filled from the response headers; Raw holds the body as received.
 type Caller struct {
-	// The request's identifier. The same value is in every error body; quote it to support.
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
 	// From the Caitlyn-Request-Id response header.
 	RequestID *string `json:"-"`
 	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
@@ -789,34 +3723,271 @@ func (v *Caller) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *Caller) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *Caller) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
-// Conversation is generated from the Caitlyn model.
+// NearbyPassages is the passages next to each one a search finds.
+type NearbyPassages struct {
+	// Whether they are returned. Defaults to false.
+	Enabled bool `json:"enabled"`
+	// How many on each side, from 0 to 2. Defaults to 1.
+	Count *int32 `json:"count,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *NearbyPassages) UnmarshalJSON(b []byte) error {
+	type plain NearbyPassages
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *NearbyPassages) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *NearbyPassages) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// TranscriptSettings: Transcripts of audio and video documents.
+type TranscriptSettings struct {
+	// Whether a citation shows the transcript beside the player. Defaults to true.
+	Enabled bool `json:"enabled"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *TranscriptSettings) UnmarshalJSON(b []byte) error {
+	type plain TranscriptSettings
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *TranscriptSettings) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *TranscriptSettings) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// KnowledgeBaseFeatures is a knowledge base's optional features.
+type KnowledgeBaseFeatures struct {
+	// Whether a search also returns the passages next to each one it finds.
+	NearbyPassages *NearbyPassages `json:"nearbyPassages,omitempty"`
+	// Whether audio and video citations show their transcripts.
+	Transcripts *TranscriptSettings `json:"transcripts,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *KnowledgeBaseFeatures) UnmarshalJSON(b []byte) error {
+	type plain KnowledgeBaseFeatures
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *KnowledgeBaseFeatures) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *KnowledgeBaseFeatures) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// RetrievalDefaults is a knowledge base's default search settings.
+type RetrievalDefaults struct {
+	// How many passages each search retrieves, from 1 to 50.
+	ResultsPerSearch *int32 `json:"resultsPerSearch,omitempty"`
+	// The lowest similarity score a passage needs, from 0 to 1.
+	MinimumMatch *float32 `json:"minimumMatch,omitempty"`
+	// The lowest relevance an evaluated passage needs, from 0 to 1.
+	MinimumRelevance *float32 `json:"minimumRelevance,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *RetrievalDefaults) UnmarshalJSON(b []byte) error {
+	type plain RetrievalDefaults
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *RetrievalDefaults) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *RetrievalDefaults) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// DocumentCounts: How many of a knowledge base's documents need attention.
+type DocumentCounts struct {
+	// Documents being processed.
+	Processing int64 `json:"processing"`
+	// Documents whose latest attempt failed.
+	Failed int64 `json:"failed"`
+	// Documents processed in an older way than the newest, which `ReprocessDocuments` would update.
+	OutOfDate *int64 `json:"outOfDate,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *DocumentCounts) UnmarshalJSON(b []byte) error {
+	type plain DocumentCounts
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *DocumentCounts) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *DocumentCounts) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EngineInput: What an embedding model reads. Open: new values may be added.
 //
-// Header-bound members are filled from the response headers; Raw holds the body as received.
-type Conversation struct {
-	// The request's identifier. The same value is in every error body; quote it to support.
-	// From the Caitlyn-Request-Id response header.
-	RequestID *string `json:"-"`
-	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
-	// seen and refuse to call operations or send members newer than it.
-	// From the Caitlyn-Api-Version response header.
-	APIVersion *string `json:"-"`
-	// The conversation, as `/api/v3/conversations/{conversationId}`.
-	// From the Location response header.
-	Location *string `json:"-"`
-	// The conversation's identifier.
+// EngineInput is open: a value this SDK does not know yet is kept as it is.
+type EngineInput string
+
+// EngineInput values known to this SDK.
+const (
+	EngineInputText          EngineInput = "text"
+	EngineInputTextAndImages EngineInput = "text_and_images"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v EngineInput) Known() bool {
+	switch v {
+	case EngineInputText, EngineInputTextAndImages:
+		return true
+	}
+	return false
+}
+
+// SearchType: How a knowledge base searches. Open: new values may be added.
+//
+// SearchType is open: a value this SDK does not know yet is kept as it is.
+type SearchType string
+
+// SearchType values known to this SDK.
+const (
+	SearchTypeStandard    SearchType = "standard"
+	SearchTypeLayoutAware SearchType = "layout_aware"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v SearchType) Known() bool {
+	switch v {
+	case SearchTypeStandard, SearchTypeLayoutAware:
+		return true
+	}
+	return false
+}
+
+// KnowledgeBaseEngine: How a knowledge base reads and searches its documents.
+type KnowledgeBaseEngine struct {
+	// The model that turns passages into search vectors.
+	EmbeddingModel string `json:"embeddingModel"`
+	// What the embedding model reads from each passage.
+	Reads EngineInput `json:"reads"`
+	// The size of each search vector.
+	Dimensions int32 `json:"dimensions"`
+	// The AWS Region the model runs in, for example `ap-southeast-2`.
+	Region string `json:"region"`
+	// How passages are matched to a search. Layout-aware search is turned on with
+	// EnableLayoutAwareSearch.
+	SearchType SearchType `json:"searchType"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *KnowledgeBaseEngine) UnmarshalJSON(b []byte) error {
+	type plain KnowledgeBaseEngine
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *KnowledgeBaseEngine) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *KnowledgeBaseEngine) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// KnowledgeBaseStatus: Where a knowledge base is in its lifecycle. Open: new values may be added.
+//
+// KnowledgeBaseStatus is open: a value this SDK does not know yet is kept as it is.
+type KnowledgeBaseStatus string
+
+// KnowledgeBaseStatus values known to this SDK.
+const (
+	KnowledgeBaseStatusCreating KnowledgeBaseStatus = "creating"
+	KnowledgeBaseStatusReady    KnowledgeBaseStatus = "ready"
+	KnowledgeBaseStatusMoving   KnowledgeBaseStatus = "moving"
+	KnowledgeBaseStatusFailed   KnowledgeBaseStatus = "failed"
+	KnowledgeBaseStatusDeleting KnowledgeBaseStatus = "deleting"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v KnowledgeBaseStatus) Known() bool {
+	switch v {
+	case KnowledgeBaseStatusCreating, KnowledgeBaseStatusReady, KnowledgeBaseStatusMoving, KnowledgeBaseStatusFailed, KnowledgeBaseStatusDeleting:
+		return true
+	}
+	return false
+}
+
+// KnowledgeBase is a knowledge base: documents an agent can search, with their settings.
+//
+// Every call that gives a KnowledgeBase returns this type, as do lists and watch snapshots. One read from a
+// single response (a get, an update, a create, a Wait) carries that response's ResponseMetadata, and its ETag
+// filled from the ETag header when the body has none; a list item or a snapshot entry carries no metadata.
+type KnowledgeBase struct {
+	// The identifier every call about this knowledge base takes.
 	ID string `json:"id"`
-	// The agent the conversation is with.
-	AgentID string `json:"agentId"`
-	// The version of the agent that answers.
-	Version string `json:"version"`
-	// The conversation's title, when it has one yet.
-	Title *string `json:"title,omitempty"`
-	// When the conversation was created.
+	// What people see the knowledge base called in the app.
+	Name string `json:"name"`
+	// What the knowledge base holds, in words for the people who use it.
+	Description *string `json:"description,omitempty"`
+	// What the knowledge base holds, in the words an agent reads to decide when to search it. Shown
+	// only to callers who may change the knowledge base.
+	AgentDescription *string `json:"agentDescription,omitempty"`
+	// Where the knowledge base is in its lifecycle.
+	Status KnowledgeBaseStatus `json:"status"`
+	// How many documents are processing, and how many failed, counting each document's latest
+	// attempt.
+	DocumentCounts *DocumentCounts `json:"documentCounts,omitempty"`
+	// The search settings an agent uses unless its binding says otherwise.
+	Retrieval *RetrievalDefaults `json:"retrieval,omitempty"`
+	// Optional search and viewing features.
+	Features *KnowledgeBaseFeatures `json:"features,omitempty"`
+	// How the knowledge base reads and searches its documents. Read-only, and shown only to callers
+	// who may change the knowledge base.
+	Engine *KnowledgeBaseEngine `json:"engine,omitempty"`
+	// When the knowledge base was created.
 	CreatedAt time.Time `json:"createdAt"`
+	// When the knowledge base's settings last changed.
+	UpdatedAt time.Time `json:"updatedAt"`
+	// The knowledge base's ETag; send it as `If-Match` to change it.
+	ETag string `json:"etag"`
 
 	metadata core.ResponseMetadata
 
@@ -824,8 +3995,8 @@ type Conversation struct {
 }
 
 // UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
-func (v *Conversation) UnmarshalJSON(b []byte) error {
-	type plain Conversation
+func (v *KnowledgeBase) UnmarshalJSON(b []byte) error {
+	type plain KnowledgeBase
 	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
 		return err
 	}
@@ -834,33 +4005,51 @@ func (v *Conversation) UnmarshalJSON(b []byte) error {
 }
 
 // Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
-func (v *Conversation) Raw() map[string]any { return v.raw.Map() }
+func (v *KnowledgeBase) Raw() map[string]any { return v.raw.Map() }
 
 // RawJSON returns that object's bytes as received.
-func (v *Conversation) RawJSON() json.RawMessage { return v.raw.JSON() }
+func (v *KnowledgeBase) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
-// (the zero value for a result built in code).
-func (v *Conversation) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+// ResponseMetadata returns the HTTP status, request id and API version of the response this KnowledgeBase was read from:
+// the zero value for a list item, a snapshot entry or one built in code. It is never marshalled.
+func (v *KnowledgeBase) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
-// ContextItem: One item of structured context, for example the page or record the person is looking
-// at.
-type ContextItem struct {
-	// What kind of thing the item describes, for example `page`.
-	Type string `json:"type"`
-	// A short label the agent can refer to.
-	Label string `json:"label"`
-	// Where the item lives, when it has an address.
-	URI *string `json:"uri,omitempty"`
-	// The item's data, as JSON. Counts towards the 16 KB limit.
-	Data any `json:"data,omitempty"`
+// CostUnit is the form a cost is given in. Open: new values may be added.
+//
+// CostUnit is open: a value this SDK does not know yet is kept as it is.
+type CostUnit string
+
+// CostUnit values known to this SDK.
+const (
+	CostUnitUsd           CostUnit = "usd"
+	CostUnitPercentOfPlan CostUnit = "percent_of_plan"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v CostUnit) Known() bool {
+	switch v {
+	case CostUnitUsd, CostUnitPercentOfPlan:
+		return true
+	}
+	return false
+}
+
+// Cost is an amount of money, as a range, in the organisation's chosen form.
+type Cost struct {
+	// The lowest the cost is likely to be.
+	Low float64 `json:"low"`
+	// The highest the cost is likely to be.
+	High float64 `json:"high"`
+	// The form `low` and `high` are in: money, or a share of the plan for an organisation that
+	// sees usage rather than dollars.
+	Unit CostUnit `json:"unit"`
 
 	raw core.Raw
 }
 
 // UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
-func (v *ContextItem) UnmarshalJSON(b []byte) error {
-	type plain ContextItem
+func (v *Cost) UnmarshalJSON(b []byte) error {
+	type plain Cost
 	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
 		return err
 	}
@@ -869,10 +4058,377 @@ func (v *ContextItem) UnmarshalJSON(b []byte) error {
 }
 
 // Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
-func (v *ContextItem) Raw() map[string]any { return v.raw.Map() }
+func (v *Cost) Raw() map[string]any { return v.raw.Map() }
 
 // RawJSON returns that object's bytes as received.
-func (v *ContextItem) RawJSON() json.RawMessage { return v.raw.JSON() }
+func (v *Cost) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// OperationError: Why an Operation failed: a problem with a stable code.
+type OperationError struct {
+	// What went wrong, as a stable code.
+	Code string `json:"code"`
+	// What went wrong and what to do, written for the integrator.
+	Detail *string `json:"detail,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *OperationError) UnmarshalJSON(b []byte) error {
+	type plain OperationError
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *OperationError) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *OperationError) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// NumberRange is a range of numbers, low to high.
+type NumberRange struct {
+	// The low end.
+	Low float64 `json:"low"`
+	// The high end.
+	High float64 `json:"high"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *NumberRange) UnmarshalJSON(b []byte) error {
+	type plain NumberRange
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *NumberRange) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *NumberRange) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// Eta: How long is left.
+type Eta struct {
+	// Seconds left, as a range.
+	Seconds NumberRange `json:"seconds"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *Eta) UnmarshalJSON(b []byte) error {
+	type plain Eta
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *Eta) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *Eta) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// OperationKind: What kind of work an Operation is. Open: one value per kind of work, added as kinds
+// are
+// modelled.
+//
+// OperationKind is open: a value this SDK does not know yet is kept as it is.
+type OperationKind string
+
+// OperationKind values known to this SDK.
+const (
+	OperationKindDocumentIngestion     OperationKind = "document_ingestion"
+	OperationKindDocumentUpdate        OperationKind = "document_update"
+	OperationKindFolderChange          OperationKind = "folder_change"
+	OperationKindPermissionsChange     OperationKind = "permissions_change"
+	OperationKindKnowledgeBaseDeletion OperationKind = "knowledge_base_deletion"
+	OperationKindLayoutAwareSearch     OperationKind = "layout_aware_search"
+	OperationKindFillIn                OperationKind = "fill_in"
+	OperationKindReprocess             OperationKind = "reprocess"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v OperationKind) Known() bool {
+	switch v {
+	case OperationKindDocumentIngestion, OperationKindDocumentUpdate, OperationKindFolderChange, OperationKindPermissionsChange, OperationKindKnowledgeBaseDeletion, OperationKindLayoutAwareSearch, OperationKindFillIn, OperationKindReprocess:
+		return true
+	}
+	return false
+}
+
+// PartialFailure is an enrichment that did not complete. It never fails the document.
+type PartialFailure struct {
+	// The part of the document the enrichment was for, where there is one.
+	TargetID *string `json:"targetId,omitempty"`
+	// What went wrong, as a stable code.
+	Code string `json:"code"`
+	// What went wrong, written for the integrator.
+	Detail *string `json:"detail,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *PartialFailure) UnmarshalJSON(b []byte) error {
+	type plain PartialFailure
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *PartialFailure) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *PartialFailure) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ProgressUnit: What a unit of an Operation's work is. Open: new values may be added.
+//
+// ProgressUnit is open: a value this SDK does not know yet is kept as it is.
+type ProgressUnit string
+
+// ProgressUnit values known to this SDK.
+const (
+	ProgressUnitDocuments ProgressUnit = "documents"
+	ProgressUnitPassages  ProgressUnit = "passages"
+	ProgressUnitStages    ProgressUnit = "stages"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v ProgressUnit) Known() bool {
+	switch v {
+	case ProgressUnitDocuments, ProgressUnitPassages, ProgressUnitStages:
+		return true
+	}
+	return false
+}
+
+// OperationProgress: How far an Operation's work has got.
+type OperationProgress struct {
+	// Units of work done.
+	Completed int64 `json:"completed"`
+	// Units of work in all, when known.
+	Total *int64 `json:"total,omitempty"`
+	// Units of work that failed.
+	Failed *int64 `json:"failed,omitempty"`
+	// What `completed`, `failed` and `total` count.
+	Unit ProgressUnit `json:"unit"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *OperationProgress) UnmarshalJSON(b []byte) error {
+	type plain OperationProgress
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *OperationProgress) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *OperationProgress) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// OperationStatus: Where an Operation is. Open: new values may be added. `succeeded`,
+// `completed_with_failures`,
+// `failed` and `cancelled` are final.
+//
+// OperationStatus is open: a value this SDK does not know yet is kept as it is.
+type OperationStatus string
+
+// OperationStatus values known to this SDK.
+const (
+	OperationStatusQueued                OperationStatus = "queued"
+	OperationStatusRunning               OperationStatus = "running"
+	OperationStatusSucceeded             OperationStatus = "succeeded"
+	OperationStatusCompletedWithFailures OperationStatus = "completed_with_failures"
+	OperationStatusFailed                OperationStatus = "failed"
+	OperationStatusCancelled             OperationStatus = "cancelled"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v OperationStatus) Known() bool {
+	switch v {
+	case OperationStatusQueued, OperationStatusRunning, OperationStatusSucceeded, OperationStatusCompletedWithFailures, OperationStatusFailed, OperationStatusCancelled:
+		return true
+	}
+	return false
+}
+
+// OperationTargetType is the kind of thing an Operation's work is on. Open: new values may be added.
+//
+// OperationTargetType is open: a value this SDK does not know yet is kept as it is.
+type OperationTargetType string
+
+// OperationTargetType values known to this SDK.
+const (
+	OperationTargetTypeKnowledgeBase OperationTargetType = "knowledge_base"
+	OperationTargetTypeFolder        OperationTargetType = "folder"
+	OperationTargetTypeDocument      OperationTargetType = "document"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v OperationTargetType) Known() bool {
+	switch v {
+	case OperationTargetTypeKnowledgeBase, OperationTargetTypeFolder, OperationTargetTypeDocument:
+		return true
+	}
+	return false
+}
+
+// OperationTarget: What an Operation's work is on.
+type OperationTarget struct {
+	// What kind of thing `id` names.
+	Type OperationTargetType `json:"type"`
+	// The thing's identifier.
+	ID string `json:"id"`
+	// The knowledge base it is in, for a document or folder.
+	KnowledgeBaseID *string `json:"knowledgeBaseId,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *OperationTarget) UnmarshalJSON(b []byte) error {
+	type plain OperationTarget
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *OperationTarget) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *OperationTarget) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// Operation: Background work that continues after the request that started it: a job, as the building
+// blocks
+// see it. Read it, wait on it or watch it; never start the work again to find out how it went. An
+// Operation is kept for at least 7 days after it ends.
+//
+// Every call that gives a Operation returns this type, as do lists and watch snapshots. One read from a
+// single response (a get, an update, a create, a Wait) carries that response's ResponseMetadata, and its ETag
+// filled from the ETag header when the body has none; a list item or a snapshot entry carries no metadata.
+type Operation struct {
+	// The identifier GetOperation, WatchOperation and CancelOperation take.
+	ID string `json:"id"`
+	// What kind of work it is.
+	Kind OperationKind `json:"kind"`
+	// Where the work is.
+	Status OperationStatus `json:"status"`
+	// What the work is on.
+	Target *OperationTarget `json:"target,omitempty"`
+	// How far the work has got, where it can say.
+	Progress *OperationProgress `json:"progress,omitempty"`
+	// How far the work has got, from 0 to 100, weighted by how long each part takes; never moves
+	// back.
+	Percent *int32 `json:"percent,omitempty"`
+	// How long is left, once the work has run long enough to say.
+	Eta *Eta `json:"eta,omitempty"`
+	// What the work has cost so far. Present only for callers who may see cost.
+	CostSoFar *Cost `json:"costSoFar,omitempty"`
+	// When the work was requested.
+	CreatedAt time.Time `json:"createdAt"`
+	// When the work started.
+	StartedAt *time.Time `json:"startedAt,omitempty"`
+	// When the Operation last changed.
+	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
+	// When the work ended. Present once `status` is final.
+	EndedAt *time.Time `json:"endedAt,omitempty"`
+	// Who asked for the work.
+	CreatedBy *Actor `json:"createdBy,omitempty"`
+	// Why the work failed. Present only when `status` is `failed`.
+	Error *OperationError `json:"error,omitempty"`
+	// Parts of the work that did not complete, at most the first 100. They never fail the whole.
+	PartialFailures []PartialFailure `json:"partialFailures,omitzero"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *Operation) UnmarshalJSON(b []byte) error {
+	type plain Operation
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *Operation) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *Operation) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this Operation was read from:
+// the zero value for a list item, a snapshot entry or one built in code. It is never marshalled.
+func (v *Operation) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// DeleteKnowledgeBaseResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type DeleteKnowledgeBaseResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The Operation, as `/api/v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}`.
+	// From the Location response header.
+	Location *string `json:"-"`
+	// The Operation that tracks the deletion.
+	Operation Operation `json:"operation"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *DeleteKnowledgeBaseResult) UnmarshalJSON(b []byte) error {
+	type plain DeleteKnowledgeBaseResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *DeleteKnowledgeBaseResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *DeleteKnowledgeBaseResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *DeleteKnowledgeBaseResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
 // DocumentFailureCode: Why a document failed. Open: new values may be added.
 //
@@ -884,12 +4440,13 @@ const (
 	DocumentFailureCodeFileUnreadable        DocumentFailureCode = "file_unreadable"
 	DocumentFailureCodeProcessingInterrupted DocumentFailureCode = "processing_interrupted"
 	DocumentFailureCodeProcessingFailed      DocumentFailureCode = "processing_failed"
+	DocumentFailureCodeCancelled             DocumentFailureCode = "cancelled"
 )
 
 // Known reports whether v is one of the values known to this SDK.
 func (v DocumentFailureCode) Known() bool {
 	switch v {
-	case DocumentFailureCodeFileUnreadable, DocumentFailureCodeProcessingInterrupted, DocumentFailureCodeProcessingFailed:
+	case DocumentFailureCodeFileUnreadable, DocumentFailureCodeProcessingInterrupted, DocumentFailureCodeProcessingFailed, DocumentFailureCodeCancelled:
 		return true
 	}
 	return false
@@ -923,36 +4480,8 @@ func (v *DocumentFailure) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *DocumentFailure) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// PartialFailure is an enrichment that did not complete. It never fails the document.
-type PartialFailure struct {
-	// The part of the document the enrichment was for, where there is one.
-	TargetID *string `json:"targetId,omitempty"`
-	// What went wrong, as a stable code.
-	Code string `json:"code"`
-	// What went wrong, written for the integrator.
-	Detail *string `json:"detail,omitempty"`
-
-	raw core.Raw
-}
-
-// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
-func (v *PartialFailure) UnmarshalJSON(b []byte) error {
-	type plain PartialFailure
-	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
-		return err
-	}
-	v.raw = core.NewRaw(b)
-	return nil
-}
-
-// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
-func (v *PartialFailure) Raw() map[string]any { return v.raw.Map() }
-
-// RawJSON returns that object's bytes as received.
-func (v *PartialFailure) RawJSON() json.RawMessage { return v.raw.JSON() }
-
-// DocumentStatus: Where a document is in its lifecycle. Open: new values may be added. `indexed`,
-// `partially_indexed` and `failed` are final.
+// DocumentStatus: Where a document is in its lifecycle. Open: new values may be added. `indexed` and
+// `partially_indexed` are final. `failed` is final too, until RetryDocument starts it again.
 //
 // DocumentStatus is open: a value this SDK does not know yet is kept as it is.
 type DocumentStatus string
@@ -976,9 +4505,165 @@ func (v DocumentStatus) Known() bool {
 	return false
 }
 
+// LatestVersion is the newest version of a document, when it is not the current one.
+type LatestVersion struct {
+	// The version's number.
+	Number int32 `json:"number"`
+	// Where it is in its lifecycle.
+	Status DocumentStatus `json:"status"`
+	// While `processing`, what the server is doing, for display only.
+	Stage *string `json:"stage,omitempty"`
+	// Why it failed. Present only when `status` is `failed`.
+	Failure *DocumentFailure `json:"failure,omitempty"`
+	// When it was added.
+	CreatedAt time.Time `json:"createdAt"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *LatestVersion) UnmarshalJSON(b []byte) error {
+	type plain LatestVersion
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *LatestVersion) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *LatestVersion) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ProcessingEstimate: What the work on a document was expected to take and cost.
+type ProcessingEstimate struct {
+	// How long it was expected to take, in seconds.
+	DurationSeconds NumberRange `json:"durationSeconds"`
+	// What it was expected to cost. Absent for callers who may not see cost.
+	Cost *Cost `json:"cost,omitempty"`
+	// True once refined from what ingestion measured of this document.
+	Refined bool `json:"refined"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ProcessingEstimate) UnmarshalJSON(b []byte) error {
+	type plain ProcessingEstimate
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ProcessingEstimate) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ProcessingEstimate) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ProcessingKind: What kind of work runs on a document. Open: new values may be added.
+//
+// ProcessingKind is open: a value this SDK does not know yet is kept as it is.
+type ProcessingKind string
+
+// ProcessingKind values known to this SDK.
+const (
+	ProcessingKindIngest    ProcessingKind = "ingest"
+	ProcessingKindFillIn    ProcessingKind = "fill_in"
+	ProcessingKindReprocess ProcessingKind = "reprocess"
+	ProcessingKindReembed   ProcessingKind = "reembed"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v ProcessingKind) Known() bool {
+	switch v {
+	case ProcessingKindIngest, ProcessingKindFillIn, ProcessingKindReprocess, ProcessingKindReembed:
+		return true
+	}
+	return false
+}
+
+// ProcessingStep is a stage of the work on a document. Open: new values may be added.
+//
+// ProcessingStep is open: a value this SDK does not know yet is kept as it is.
+type ProcessingStep string
+
+// ProcessingStep values known to this SDK.
+const (
+	ProcessingStepPages      ProcessingStep = "pages"
+	ProcessingStepContent    ProcessingStep = "content"
+	ProcessingStepPictures   ProcessingStep = "pictures"
+	ProcessingStepTranscript ProcessingStep = "transcript"
+	ProcessingStepFrames     ProcessingStep = "frames"
+	ProcessingStepMetadata   ProcessingStep = "metadata"
+	ProcessingStepSeams      ProcessingStep = "seams"
+	ProcessingStepSegments   ProcessingStep = "segments"
+	ProcessingStepPassages   ProcessingStep = "passages"
+	ProcessingStepChunks     ProcessingStep = "chunks"
+	ProcessingStepIndex      ProcessingStep = "index"
+	ProcessingStepDocument   ProcessingStep = "document"
+	ProcessingStepReembed    ProcessingStep = "reembed"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v ProcessingStep) Known() bool {
+	switch v {
+	case ProcessingStepPages, ProcessingStepContent, ProcessingStepPictures, ProcessingStepTranscript, ProcessingStepFrames, ProcessingStepMetadata, ProcessingStepSeams, ProcessingStepSegments, ProcessingStepPassages, ProcessingStepChunks, ProcessingStepIndex, ProcessingStepDocument, ProcessingStepReembed:
+		return true
+	}
+	return false
+}
+
+// DocumentProcessing is the work running on one document.
+type DocumentProcessing struct {
+	// What the work running on the document is doing.
+	Kind ProcessingKind `json:"kind"`
+	// The stage the work is at, for display. Open: stages are added as ingestion changes.
+	Stage *ProcessingStep `json:"stage,omitempty"`
+	// How far the work has got, from 0 to 100, as the server weights it by how long each stage takes:
+	// never moving back, and 100 only once the document can be searched. Clients show this figure,
+	// easing between reports, and never compute their own.
+	Percent int32 `json:"percent"`
+	// How long is left, once the work has run long enough to say.
+	Eta *Eta `json:"eta,omitempty"`
+	// What the work was expected to take and cost: first from the file, then refined from what
+	// ingestion measured.
+	Estimate *ProcessingEstimate `json:"estimate,omitempty"`
+	// When the work started.
+	StartedAt time.Time `json:"startedAt"`
+	// When the progress last changed.
+	UpdatedAt time.Time `json:"updatedAt"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *DocumentProcessing) UnmarshalJSON(b []byte) error {
+	type plain DocumentProcessing
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *DocumentProcessing) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *DocumentProcessing) RawJSON() json.RawMessage { return v.raw.JSON() }
+
 // Document: One document in a knowledge base, stable across new uploads of new bytes.
+//
+// Every call that gives a Document returns this type, as do lists and watch snapshots. One read from a
+// single response (a get, an update, a create, a Wait) carries that response's ResponseMetadata, and its ETag
+// filled from the ETag header when the body has none; a list item or a snapshot entry carries no metadata.
 type Document struct {
-	// The document's identifier.
+	// The identifier every call about this document takes; it stays the same across new versions.
 	ID string `json:"id"`
 	// The knowledge base the document is in.
 	KnowledgeBaseID string `json:"knowledgeBaseId"`
@@ -986,7 +4671,7 @@ type Document struct {
 	Name string `json:"name"`
 	// The folder the document is in.
 	Folder string `json:"folder"`
-	// Where the document is in its lifecycle.
+	// Where the current version is in its lifecycle.
 	Status DocumentStatus `json:"status"`
 	// While `processing`, what the server is doing, for display only.
 	Stage *string `json:"stage,omitempty"`
@@ -996,16 +4681,54 @@ type Document struct {
 	ByteSize *int64 `json:"byteSize,omitempty"`
 	// The base64-encoded SHA-256 of the current bytes.
 	SHA256 *string `json:"sha256,omitempty"`
+	// The current version's number. Absent until the first version is indexed.
+	Version *int32 `json:"version,omitempty"`
+	// How many versions the document has.
+	VersionCount *int32 `json:"versionCount,omitempty"`
+	// The newest version, when it is not the current one: uploading, processing or failed. Shown only
+	// to callers who may add versions.
+	LatestVersion *LatestVersion `json:"latestVersion,omitempty"`
+	// True when a newer version than the current one exists. Shown only to callers who may add
+	// versions.
+	Superseded *bool `json:"superseded,omitempty"`
+	// The address a citation of this document links to.
+	SourceURL *string `json:"sourceUrl,omitempty"`
+	// The caller's own key for the document, unique within the knowledge base.
+	ExternalID *string `json:"externalId,omitempty"`
+	// Values for the metadata fields the knowledge base defines, including `title`, `summary`,
+	// `keywords`, `author` and `publishedDate`.
+	Metadata map[string]any `json:"metadata,omitzero"`
+	// Keys the knowledge base does not define. Stored and returned, but never searched on or given to
+	// an agent.
+	ExtraMetadata map[string]any `json:"extraMetadata,omitzero"`
+	// Who may read the document.
+	Readers *Readers `json:"readers,omitempty"`
+	// When `readers` is `inherit`: the folder whose readers apply.
+	InheritedFrom *string `json:"inheritedFrom,omitempty"`
+	// True when a newer way of processing documents is available, and processing the document again
+	// would use it.
+	OutOfDate *bool `json:"outOfDate,omitempty"`
+	// The number of pages, for a paged document.
+	PageCount *int32 `json:"pageCount,omitempty"`
+	// How long it plays, in seconds, for audio and video.
+	DurationSeconds *float64 `json:"durationSeconds,omitempty"`
+	// The work running on the document, while there is some: what kind, which stage, how far it has
+	// got and how long is left. Absent when nothing is running.
+	Processing *DocumentProcessing `json:"processing,omitempty"`
 	// When the document was created.
 	CreatedAt time.Time `json:"createdAt"`
 	// When the document or its bytes last changed.
 	UpdatedAt time.Time `json:"updatedAt"`
 	// Enrichments that did not complete (a picture description, metadata extraction, a table).
 	// They never fail the document. At most the first 100.
-	PartialFailures []PartialFailure `json:"partialFailures,omitempty"`
+	PartialFailures []PartialFailure `json:"partialFailures,omitzero"`
 	// Why the document could not be made searchable. Present only when `status` is `failed`; a
 	// document that is searchable with gaps lists them in `partialFailures` instead.
 	Failure *DocumentFailure `json:"failure,omitempty"`
+	// The document's ETag; send it as `If-Match` to change it.
+	ETag string `json:"etag"`
+
+	metadata core.ResponseMetadata
 
 	raw core.Raw
 }
@@ -1026,90 +4749,16 @@ func (v *Document) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *Document) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// OperationKind: What kind of work an Operation is. Open: one value per kind of work, added as kinds
-// are
-// modelled.
-//
-// OperationKind is open: a value this SDK does not know yet is kept as it is.
-type OperationKind string
-
-// OperationKind values known to this SDK.
-const (
-	OperationKindDocumentIngestion OperationKind = "document_ingestion"
-)
-
-// Known reports whether v is one of the values known to this SDK.
-func (v OperationKind) Known() bool {
-	switch v {
-	case OperationKindDocumentIngestion:
-		return true
-	}
-	return false
-}
-
-// OperationStatus: Where an Operation is. Open: new values may be added. `succeeded`,
-// `succeeded_with_failures`,
-// `failed` and `cancelled` are final.
-//
-// OperationStatus is open: a value this SDK does not know yet is kept as it is.
-type OperationStatus string
-
-// OperationStatus values known to this SDK.
-const (
-	OperationStatusQueued                OperationStatus = "queued"
-	OperationStatusRunning               OperationStatus = "running"
-	OperationStatusSucceeded             OperationStatus = "succeeded"
-	OperationStatusSucceededWithFailures OperationStatus = "succeeded_with_failures"
-	OperationStatusFailed                OperationStatus = "failed"
-	OperationStatusCancelled             OperationStatus = "cancelled"
-)
-
-// Known reports whether v is one of the values known to this SDK.
-func (v OperationStatus) Known() bool {
-	switch v {
-	case OperationStatusQueued, OperationStatusRunning, OperationStatusSucceeded, OperationStatusSucceededWithFailures, OperationStatusFailed, OperationStatusCancelled:
-		return true
-	}
-	return false
-}
-
-// Operation: Background work that continues after the request that started it. Read it, wait on it or
-// watch
-// it; never start the work again to find out how it went.
-type Operation struct {
-	// The Operation's identifier.
-	ID string `json:"id"`
-	// What kind of work it is.
-	Kind OperationKind `json:"kind"`
-	// Where the work is.
-	Status OperationStatus `json:"status"`
-	// When the work was requested.
-	CreatedAt time.Time `json:"createdAt"`
-
-	raw core.Raw
-}
-
-// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
-func (v *Operation) UnmarshalJSON(b []byte) error {
-	type plain Operation
-	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
-		return err
-	}
-	v.raw = core.NewRaw(b)
-	return nil
-}
-
-// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
-func (v *Operation) Raw() map[string]any { return v.raw.Map() }
-
-// RawJSON returns that object's bytes as received.
-func (v *Operation) RawJSON() json.RawMessage { return v.raw.JSON() }
+// ResponseMetadata returns the HTTP status, request id and API version of the response this Document was read from:
+// the zero value for a list item, a snapshot entry or one built in code. It is never marshalled.
+func (v *Document) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
 // CreateDocumentResult is generated from the Caitlyn model.
 //
 // Header-bound members are filled from the response headers; Raw holds the body as received.
 type CreateDocumentResult struct {
-	// The request's identifier. The same value is in every error body; quote it to support.
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
 	// From the Caitlyn-Request-Id response header.
 	RequestID *string `json:"-"`
 	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
@@ -1119,6 +4768,9 @@ type CreateDocumentResult struct {
 	// The document, as `/api/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}`.
 	// From the Location response header.
 	Location *string `json:"-"`
+	// The document's ETag; send it as `If-Match` to change it.
+	// From the ETag response header.
+	ETag string `json:"-"`
 	// The document in its initial state.
 	Document Document `json:"document"`
 	// The Operation that tracks ingestion.
@@ -1145,49 +4797,61 @@ func (v *CreateDocumentResult) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *CreateDocumentResult) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *CreateDocumentResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
-// DeleteDocumentResult is generated from the Caitlyn model.
+// VersionResult: What adding a version did. Open: new values may be added.
 //
-// Header-bound members are filled from the response headers; Raw holds the body as received.
-type DeleteDocumentResult struct {
-	// The request's identifier. The same value is in every error body; quote it to support.
-	// From the Caitlyn-Request-Id response header.
-	RequestID *string `json:"-"`
-	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
-	// seen and refuse to call operations or send members newer than it.
-	// From the Caitlyn-Api-Version response header.
-	APIVersion *string `json:"-"`
-	// The document's identifier.
-	ID string `json:"id"`
-	// The knowledge base the document is in.
-	KnowledgeBaseID string `json:"knowledgeBaseId"`
-	// The document's name, as people see it.
-	Name string `json:"name"`
-	// The folder the document is in.
-	Folder string `json:"folder"`
-	// Where the document is in its lifecycle.
+// VersionResult is open: a value this SDK does not know yet is kept as it is.
+type VersionResult string
+
+// VersionResult values known to this SDK.
+const (
+	VersionResultCreated   VersionResult = "created"
+	VersionResultUnchanged VersionResult = "unchanged"
+	VersionResultRestored  VersionResult = "restored"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v VersionResult) Known() bool {
+	switch v {
+	case VersionResultCreated, VersionResultUnchanged, VersionResultRestored:
+		return true
+	}
+	return false
+}
+
+// DocumentVersion: One version of a document's bytes.
+//
+// Every call that gives a DocumentVersion returns this type, as do lists and watch snapshots. One read from a
+// single response (a get, an update, a create, a Wait) carries that response's ResponseMetadata, and its ETag
+// filled from the ETag header when the body has none; a list item or a snapshot entry carries no metadata.
+type DocumentVersion struct {
+	// The version's number: `1` is the first.
+	Number int32 `json:"number"`
+	// The document the version belongs to.
+	DocumentID string `json:"documentId"`
+	// Where the version is in its lifecycle.
 	Status DocumentStatus `json:"status"`
 	// While `processing`, what the server is doing, for display only.
 	Stage *string `json:"stage,omitempty"`
-	// The media type of the current bytes.
+	// The media type of the version's bytes.
 	ContentType *string `json:"contentType,omitempty"`
-	// The size of the current bytes, in bytes.
+	// The size of the version's bytes, in bytes.
 	ByteSize *int64 `json:"byteSize,omitempty"`
-	// The base64-encoded SHA-256 of the current bytes.
+	// The base64-encoded SHA-256 of the version's bytes.
 	SHA256 *string `json:"sha256,omitempty"`
-	// When the document was created.
-	CreatedAt time.Time `json:"createdAt"`
-	// When the document or its bytes last changed.
-	UpdatedAt time.Time `json:"updatedAt"`
-	// Enrichments that did not complete (a picture description, metadata extraction, a table).
-	// They never fail the document. At most the first 100.
-	PartialFailures []PartialFailure `json:"partialFailures,omitempty"`
-	// Why the document could not be made searchable. Present only when `status` is `failed`; a
-	// document that is searchable with gaps lists them in `partialFailures` instead.
+	// True when this is the version search uses.
+	Current bool `json:"current"`
+	// True when this is the newest version.
+	Latest bool `json:"latest"`
+	// The note written when the version was added.
+	Note *string `json:"note,omitempty"`
+	// Why the version failed. Present only when `status` is `failed`.
 	Failure *DocumentFailure `json:"failure,omitempty"`
+	// When the version was added.
+	CreatedAt time.Time `json:"createdAt"`
 
 	metadata core.ResponseMetadata
 
@@ -1195,8 +4859,8 @@ type DeleteDocumentResult struct {
 }
 
 // UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
-func (v *DeleteDocumentResult) UnmarshalJSON(b []byte) error {
-	type plain DeleteDocumentResult
+func (v *DocumentVersion) UnmarshalJSON(b []byte) error {
+	type plain DocumentVersion
 	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
 		return err
 	}
@@ -1205,54 +4869,37 @@ func (v *DeleteDocumentResult) UnmarshalJSON(b []byte) error {
 }
 
 // Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
-func (v *DeleteDocumentResult) Raw() map[string]any { return v.raw.Map() }
+func (v *DocumentVersion) Raw() map[string]any { return v.raw.Map() }
 
 // RawJSON returns that object's bytes as received.
-func (v *DeleteDocumentResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+func (v *DocumentVersion) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
-// (the zero value for a result built in code).
-func (v *DeleteDocumentResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+// ResponseMetadata returns the HTTP status, request id and API version of the response this DocumentVersion was read from:
+// the zero value for a list item, a snapshot entry or one built in code. It is never marshalled.
+func (v *DocumentVersion) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
-// GetDocumentResult is generated from the Caitlyn model.
+// CreateDocumentVersionResult is generated from the Caitlyn model.
 //
 // Header-bound members are filled from the response headers; Raw holds the body as received.
-type GetDocumentResult struct {
-	// The request's identifier. The same value is in every error body; quote it to support.
+type CreateDocumentVersionResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
 	// From the Caitlyn-Request-Id response header.
 	RequestID *string `json:"-"`
 	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
 	// seen and refuse to call operations or send members newer than it.
 	// From the Caitlyn-Api-Version response header.
 	APIVersion *string `json:"-"`
-	// The document's identifier.
-	ID string `json:"id"`
-	// The knowledge base the document is in.
-	KnowledgeBaseID string `json:"knowledgeBaseId"`
-	// The document's name, as people see it.
-	Name string `json:"name"`
-	// The folder the document is in.
-	Folder string `json:"folder"`
-	// Where the document is in its lifecycle.
-	Status DocumentStatus `json:"status"`
-	// While `processing`, what the server is doing, for display only.
-	Stage *string `json:"stage,omitempty"`
-	// The media type of the current bytes.
-	ContentType *string `json:"contentType,omitempty"`
-	// The size of the current bytes, in bytes.
-	ByteSize *int64 `json:"byteSize,omitempty"`
-	// The base64-encoded SHA-256 of the current bytes.
-	SHA256 *string `json:"sha256,omitempty"`
-	// When the document was created.
-	CreatedAt time.Time `json:"createdAt"`
-	// When the document or its bytes last changed.
-	UpdatedAt time.Time `json:"updatedAt"`
-	// Enrichments that did not complete (a picture description, metadata extraction, a table).
-	// They never fail the document. At most the first 100.
-	PartialFailures []PartialFailure `json:"partialFailures,omitempty"`
-	// Why the document could not be made searchable. Present only when `status` is `failed`; a
-	// document that is searchable with gaps lists them in `partialFailures` instead.
-	Failure *DocumentFailure `json:"failure,omitempty"`
+	// The version, as
+	// `/api/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{number}`.
+	// From the Location response header.
+	Location *string `json:"-"`
+	// What adding the version did, given how its bytes compare with the document's versions.
+	Result VersionResult `json:"result"`
+	// The version that was made, matched or restored.
+	Version DocumentVersion `json:"version"`
+	// The Operation that tracks ingestion. Absent when `result` is `unchanged`.
+	Operation *Operation `json:"operation,omitempty"`
 
 	metadata core.ResponseMetadata
 
@@ -1260,8 +4907,8 @@ type GetDocumentResult struct {
 }
 
 // UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
-func (v *GetDocumentResult) UnmarshalJSON(b []byte) error {
-	type plain GetDocumentResult
+func (v *CreateDocumentVersionResult) UnmarshalJSON(b []byte) error {
+	type plain CreateDocumentVersionResult
 	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
 		return err
 	}
@@ -1270,20 +4917,364 @@ func (v *GetDocumentResult) UnmarshalJSON(b []byte) error {
 }
 
 // Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
-func (v *GetDocumentResult) Raw() map[string]any { return v.raw.Map() }
+func (v *CreateDocumentVersionResult) Raw() map[string]any { return v.raw.Map() }
 
 // RawJSON returns that object's bytes as received.
-func (v *GetDocumentResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+func (v *CreateDocumentVersionResult) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
-func (v *GetDocumentResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+func (v *CreateDocumentVersionResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// DeleteDocumentVersionResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type DeleteDocumentVersionResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *DeleteDocumentVersionResult) UnmarshalJSON(b []byte) error {
+	type plain DeleteDocumentVersionResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *DeleteDocumentVersionResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *DeleteDocumentVersionResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *DeleteDocumentVersionResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ListDocumentVersionsPage is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ListDocumentVersionsPage struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// This page of versions, newest first.
+	Items []DocumentVersion `json:"items"`
+	// The cursor for the next page. Absent on the last page.
+	NextCursor *string `json:"nextCursor,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ListDocumentVersionsPage) UnmarshalJSON(b []byte) error {
+	type plain ListDocumentVersionsPage
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ListDocumentVersionsPage) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ListDocumentVersionsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ListDocumentVersionsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// IngestionHints: What a client read of a file before uploading it.
+type IngestionHints struct {
+	// Pages, for a paged document.
+	Pages *int64 `json:"pages,omitempty"`
+	// Pages with a text layer.
+	TextPages *int64 `json:"textPages,omitempty"`
+	// Pages that are mostly graphics.
+	GraphicPages *int64 `json:"graphicPages,omitempty"`
+	// Pages with no text layer, read from the image.
+	ScannedPages *int64 `json:"scannedPages,omitempty"`
+	// Pictures to describe.
+	Pictures *int64 `json:"pictures,omitempty"`
+	// Seconds of audio or video.
+	MediaSeconds *int64 `json:"mediaSeconds,omitempty"`
+	// Characters, for a Markdown or Word document.
+	Characters *int64 `json:"characters,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *IngestionHints) UnmarshalJSON(b []byte) error {
+	type plain IngestionHints
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *IngestionHints) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *IngestionHints) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// UploadDescription is a file described for an estimate, before it is uploaded.
+type UploadDescription struct {
+	// The name the file will be uploaded with.
+	Name string `json:"name"`
+	// The file's media type.
+	ContentType string `json:"contentType"`
+	// The file's size in bytes.
+	ByteSize int64 `json:"byteSize"`
+	// What the SDK could read of the file cheaply, which makes the estimate closer.
+	Hints *IngestionHints `json:"hints,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *UploadDescription) UnmarshalJSON(b []byte) error {
+	type plain UploadDescription
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *UploadDescription) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *UploadDescription) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EstimateDocumentVersionResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type EstimateDocumentVersionResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The documents the job would work on.
+	Documents int64 `json:"documents"`
+	// The pages in them, where known.
+	Pages *int64 `json:"pages,omitempty"`
+	// The seconds of audio and video in them, where known.
+	MediaSeconds *int64 `json:"mediaSeconds,omitempty"`
+	// Documents whose length could not be told, priced as a typical file.
+	DocumentsOfUnknownLength *int64 `json:"documentsOfUnknownLength,omitempty"`
+	// How long the job would take, in seconds.
+	DurationSeconds NumberRange `json:"durationSeconds"`
+	// What the job would cost. Present only for callers who may see cost: those who may open the
+	// knowledge base's settings. Every other caller still gets the documents, pages and time.
+	Cost *Cost `json:"cost,omitempty"`
+	// What is particular to the job, for example a fill-in's passages to read, or the improvements
+	// reprocessing would bring.
+	Details any `json:"details,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *EstimateDocumentVersionResult) UnmarshalJSON(b []byte) error {
+	type plain EstimateDocumentVersionResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *EstimateDocumentVersionResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *EstimateDocumentVersionResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *EstimateDocumentVersionResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// EstimateReprocessDocumentsResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type EstimateReprocessDocumentsResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The documents the job would work on.
+	Documents int64 `json:"documents"`
+	// The pages in them, where known.
+	Pages *int64 `json:"pages,omitempty"`
+	// The seconds of audio and video in them, where known.
+	MediaSeconds *int64 `json:"mediaSeconds,omitempty"`
+	// Documents whose length could not be told, priced as a typical file.
+	DocumentsOfUnknownLength *int64 `json:"documentsOfUnknownLength,omitempty"`
+	// How long the job would take, in seconds.
+	DurationSeconds NumberRange `json:"durationSeconds"`
+	// What the job would cost. Present only for callers who may see cost: those who may open the
+	// knowledge base's settings. Every other caller still gets the documents, pages and time.
+	Cost *Cost `json:"cost,omitempty"`
+	// What is particular to the job, for example a fill-in's passages to read, or the improvements
+	// reprocessing would bring.
+	Details any `json:"details,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *EstimateReprocessDocumentsResult) UnmarshalJSON(b []byte) error {
+	type plain EstimateReprocessDocumentsResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *EstimateReprocessDocumentsResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *EstimateReprocessDocumentsResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *EstimateReprocessDocumentsResult) ResponseMetadata() core.ResponseMetadata {
+	return v.metadata
+}
+
+// DocumentContent is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type DocumentContent struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The address of the bytes, which the client follows.
+	// From the Location response header.
+	Location string `json:"-"`
+	// The same address, for a client that does not follow redirects.
+	URL string `json:"url"`
+	// When the address stops working.
+	ExpiresAt time.Time `json:"expiresAt"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *DocumentContent) UnmarshalJSON(b []byte) error {
+	type plain DocumentContent
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *DocumentContent) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *DocumentContent) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *DocumentContent) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// DocumentDownload is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type DocumentDownload struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The address of the bytes. It needs no credential.
+	URL string `json:"url"`
+	// When the address stops working.
+	ExpiresAt time.Time `json:"expiresAt"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *DocumentDownload) UnmarshalJSON(b []byte) error {
+	type plain DocumentDownload
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *DocumentDownload) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *DocumentDownload) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *DocumentDownload) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
 // ListDocumentsPage is generated from the Caitlyn model.
 //
 // Header-bound members are filled from the response headers; Raw holds the body as received.
 type ListDocumentsPage struct {
-	// The request's identifier. The same value is in every error body; quote it to support.
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
 	// From the Caitlyn-Request-Id response header.
 	RequestID *string `json:"-"`
 	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
@@ -1316,9 +5307,2170 @@ func (v *ListDocumentsPage) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *ListDocumentsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *ListDocumentsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// Job: Work running on a knowledge base: ingesting documents, filling in fields, reprocessing,
+// layout-aware
+// search, a folder change or an access change. The building blocks call it an Operation. Each reports
+// on the knowledge base's watch: ingests and fill-ins through the ingestion progress feed, and
+// layout-aware search from its own record.
+//
+// Deleting the thing a job works on stops the job, which ends `cancelled`.
+type Job struct {
+	// The identifier GetOperation, WatchOperation and CancelOperation take.
+	ID string `json:"id"`
+	// What kind of work it is.
+	Kind OperationKind `json:"kind"`
+	// Where the work is.
+	Status OperationStatus `json:"status"`
+	// What the work is on.
+	Target *OperationTarget `json:"target,omitempty"`
+	// How far the work has got, where it can say.
+	Progress *OperationProgress `json:"progress,omitempty"`
+	// How far the work has got, from 0 to 100, weighted by how long each part takes; never moves
+	// back.
+	Percent *int32 `json:"percent,omitempty"`
+	// How long is left, once the work has run long enough to say.
+	Eta *Eta `json:"eta,omitempty"`
+	// What the work has cost so far. Present only for callers who may see cost.
+	CostSoFar *Cost `json:"costSoFar,omitempty"`
+	// When the work was requested.
+	CreatedAt time.Time `json:"createdAt"`
+	// When the work started.
+	StartedAt *time.Time `json:"startedAt,omitempty"`
+	// When the Operation last changed.
+	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
+	// When the work ended. Present once `status` is final.
+	EndedAt *time.Time `json:"endedAt,omitempty"`
+	// Who asked for the work.
+	CreatedBy *Actor `json:"createdBy,omitempty"`
+	// Why the work failed. Present only when `status` is `failed`.
+	Error *OperationError `json:"error,omitempty"`
+	// Parts of the work that did not complete, at most the first 100. They never fail the whole.
+	PartialFailures []PartialFailure `json:"partialFailures,omitzero"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *Job) UnmarshalJSON(b []byte) error {
+	type plain Job
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *Job) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *Job) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ReprocessDocumentsResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ReprocessDocumentsResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The job that processes them.
+	Job Job `json:"job"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ReprocessDocumentsResult) UnmarshalJSON(b []byte) error {
+	type plain ReprocessDocumentsResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ReprocessDocumentsResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ReprocessDocumentsResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ReprocessDocumentsResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// RetryDocumentResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type RetryDocumentResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The document's new ETag.
+	// From the ETag response header.
+	ETag string `json:"-"`
+	// The document in its new state.
+	Document Document `json:"document"`
+	// The Operation that tracks ingestion.
+	Operation Operation `json:"operation"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *RetryDocumentResult) UnmarshalJSON(b []byte) error {
+	type plain RetryDocumentResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *RetryDocumentResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *RetryDocumentResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *RetryDocumentResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ClearableDocumentField: The document members that can be cleared. Open: `metadata.<key>` and
+// `extraMetadata.<key>` remove
+// one key, and an older SDK may send a newer value as a string.
+//
+// ClearableDocumentField is open: a value this SDK does not know yet is kept as it is.
+type ClearableDocumentField string
+
+// ClearableDocumentField values known to this SDK.
+const (
+	ClearableDocumentFieldSourceURL     ClearableDocumentField = "sourceUrl"
+	ClearableDocumentFieldExternalID    ClearableDocumentField = "externalId"
+	ClearableDocumentFieldMetadata      ClearableDocumentField = "metadata"
+	ClearableDocumentFieldExtraMetadata ClearableDocumentField = "extraMetadata"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v ClearableDocumentField) Known() bool {
+	switch v {
+	case ClearableDocumentFieldSourceURL, ClearableDocumentFieldExternalID, ClearableDocumentFieldMetadata, ClearableDocumentFieldExtraMetadata:
+		return true
+	}
+	return false
+}
+
+// UpdateDocumentResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type UpdateDocumentResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The document's new ETag.
+	// From the ETag response header.
+	ETag string `json:"-"`
+	// The document as it now reads.
+	Document Document `json:"document"`
+	// The Operation that applies the change to search, when it needs processing.
+	Operation *Operation `json:"operation,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *UpdateDocumentResult) UnmarshalJSON(b []byte) error {
+	type plain UpdateDocumentResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *UpdateDocumentResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *UpdateDocumentResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *UpdateDocumentResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// EnableLayoutAwareSearchResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type EnableLayoutAwareSearchResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The Operation, as `/api/v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}`.
+	// From the Location response header.
+	Location *string `json:"-"`
+	// The Operation that rebuilds the knowledge base's search vectors.
+	Operation Operation `json:"operation"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *EnableLayoutAwareSearchResult) UnmarshalJSON(b []byte) error {
+	type plain EnableLayoutAwareSearchResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *EnableLayoutAwareSearchResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *EnableLayoutAwareSearchResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *EnableLayoutAwareSearchResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// EstimateIngestionResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type EstimateIngestionResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The documents the job would work on.
+	Documents int64 `json:"documents"`
+	// The pages in them, where known.
+	Pages *int64 `json:"pages,omitempty"`
+	// The seconds of audio and video in them, where known.
+	MediaSeconds *int64 `json:"mediaSeconds,omitempty"`
+	// Documents whose length could not be told, priced as a typical file.
+	DocumentsOfUnknownLength *int64 `json:"documentsOfUnknownLength,omitempty"`
+	// How long the job would take, in seconds.
+	DurationSeconds NumberRange `json:"durationSeconds"`
+	// What the job would cost. Present only for callers who may see cost: those who may open the
+	// knowledge base's settings. Every other caller still gets the documents, pages and time.
+	Cost *Cost `json:"cost,omitempty"`
+	// What is particular to the job, for example a fill-in's passages to read, or the improvements
+	// reprocessing would bring.
+	Details any `json:"details,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *EstimateIngestionResult) UnmarshalJSON(b []byte) error {
+	type plain EstimateIngestionResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *EstimateIngestionResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *EstimateIngestionResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *EstimateIngestionResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// EstimateLayoutAwareSearchResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type EstimateLayoutAwareSearchResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The documents the job would work on.
+	Documents int64 `json:"documents"`
+	// The pages in them, where known.
+	Pages *int64 `json:"pages,omitempty"`
+	// The seconds of audio and video in them, where known.
+	MediaSeconds *int64 `json:"mediaSeconds,omitempty"`
+	// Documents whose length could not be told, priced as a typical file.
+	DocumentsOfUnknownLength *int64 `json:"documentsOfUnknownLength,omitempty"`
+	// How long the job would take, in seconds.
+	DurationSeconds NumberRange `json:"durationSeconds"`
+	// What the job would cost. Present only for callers who may see cost: those who may open the
+	// knowledge base's settings. Every other caller still gets the documents, pages and time.
+	Cost *Cost `json:"cost,omitempty"`
+	// What is particular to the job, for example a fill-in's passages to read, or the improvements
+	// reprocessing would bring.
+	Details any `json:"details,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *EstimateLayoutAwareSearchResult) UnmarshalJSON(b []byte) error {
+	type plain EstimateLayoutAwareSearchResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *EstimateLayoutAwareSearchResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *EstimateLayoutAwareSearchResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *EstimateLayoutAwareSearchResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// MetadataChoice: One choice of a list field.
+type MetadataChoice struct {
+	// The stored value.
+	Key string `json:"key"`
+	// What people see.
+	Value string `json:"value"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *MetadataChoice) UnmarshalJSON(b []byte) error {
+	type plain MetadataChoice
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *MetadataChoice) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *MetadataChoice) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// FieldInstructions: How a metadata field is filled and used.
+type FieldInstructions struct {
+	// How ingestion works out the field's value from a document.
+	HowToFill *string `json:"howToFill,omitempty"`
+	// How an agent should use the value when it reads it.
+	WhenToUse *string `json:"whenToUse,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *FieldInstructions) UnmarshalJSON(b []byte) error {
+	type plain FieldInstructions
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *FieldInstructions) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *FieldInstructions) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// PartialDates: What a date field stores when a document gives only a month or a year. Open: new
+// values may be
+// added.
+//
+// PartialDates is open: a value this SDK does not know yet is kept as it is.
+type PartialDates string
+
+// PartialDates values known to this SDK.
+const (
+	PartialDatesStart PartialDates = "start"
+	PartialDatesEmpty PartialDates = "empty"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v PartialDates) Known() bool {
+	switch v {
+	case PartialDatesStart, PartialDatesEmpty:
+		return true
+	}
+	return false
+}
+
+// FieldLevel: The level a field's value is kept at, which decides whether one value describes the
+// whole
+// document or each passage has its own. Open: new values may be added.
+//
+// FieldLevel is open: a value this SDK does not know yet is kept as it is.
+type FieldLevel string
+
+// FieldLevel values known to this SDK.
+const (
+	FieldLevelDocument FieldLevel = "document"
+	FieldLevelPassage  FieldLevel = "passage"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v FieldLevel) Known() bool {
+	switch v {
+	case FieldLevelDocument, FieldLevelPassage:
+		return true
+	}
+	return false
+}
+
+// FieldType is a metadata field's type. Open: new values may be added.
+//
+// FieldType is open: a value this SDK does not know yet is kept as it is.
+type FieldType string
+
+// FieldType values known to this SDK.
+const (
+	FieldTypeText    FieldType = "text"
+	FieldTypeList    FieldType = "list"
+	FieldTypeDate    FieldType = "date"
+	FieldTypeNumber  FieldType = "number"
+	FieldTypeBoolean FieldType = "boolean"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v FieldType) Known() bool {
+	switch v {
+	case FieldTypeText, FieldTypeList, FieldTypeDate, FieldTypeNumber, FieldTypeBoolean:
+		return true
+	}
+	return false
+}
+
+// FieldWork: How many documents still need work for one field.
+type FieldWork struct {
+	// Documents with no value yet, which a fill-in would fill.
+	Values int64 `json:"values"`
+	// Documents whose value is not yet written to the search index.
+	Index int64 `json:"index"`
+	// Documents whose passages need new search vectors for the field.
+	Embed int64 `json:"embed"`
+	// Documents needing any of these.
+	Documents int64 `json:"documents"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *FieldWork) UnmarshalJSON(b []byte) error {
+	type plain FieldWork
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *FieldWork) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *FieldWork) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// Field is a metadata field: a value each document in the knowledge base can carry.
+//
+// Every call that gives a Field returns this type, as do lists and watch snapshots. One read from a
+// single response (a get, an update, a create, a Wait) carries that response's ResponseMetadata, and its ETag
+// filled from the ETag header when the body has none; a list item or a snapshot entry carries no metadata.
+type Field struct {
+	// The field's name, as people see it.
+	Name string `json:"name"`
+	// What the field holds, for people.
+	Description *string `json:"description,omitempty"`
+	// How the field's values are entered and checked; a list field offers its `choices`.
+	Type FieldType `json:"type"`
+	// Where the field's values belong. Defaults to `document`. A value that belongs to each
+	// passage cannot be set on a document.
+	Scope *FieldLevel `json:"scope,omitempty"`
+	// For `list`: the values it may take.
+	Choices []MetadataChoice `json:"choices,omitzero"`
+	// For a `date` field: what is stored when a document gives only a month or a year. Defaults to
+	// `start`.
+	PartialDates *PartialDates `json:"partialDates,omitempty"`
+	// How ingestion fills the field, and how an agent uses it.
+	Instructions *FieldInstructions `json:"instructions,omitempty"`
+	// Whether searches can filter on the field. Defaults to false.
+	Filterable *bool `json:"filterable,omitempty"`
+	// Whether the field's value is given to the agent with each passage. Defaults to false.
+	GivenToAgent *bool `json:"givenToAgent,omitempty"`
+	// Whether the field is shown in a document's settings. Defaults to true.
+	VisibleOnDocuments *bool `json:"visibleOnDocuments,omitempty"`
+	// The field's key, as documents' `metadata` names it.
+	Key string `json:"key"`
+	// How many documents still need work for this field: values to fill in, index writes and new
+	// search vectors.
+	NeedsWork *FieldWork `json:"needsWork,omitempty"`
+	// The field's ETag; send it as `If-Match` to change it.
+	ETag string `json:"etag"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *Field) UnmarshalJSON(b []byte) error {
+	type plain Field
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *Field) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *Field) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this Field was read from:
+// the zero value for a list item, a snapshot entry or one built in code. It is never marshalled.
+func (v *Field) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// DeleteFieldResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type DeleteFieldResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *DeleteFieldResult) UnmarshalJSON(b []byte) error {
+	type plain DeleteFieldResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *DeleteFieldResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *DeleteFieldResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *DeleteFieldResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// EstimateFillInFieldsResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type EstimateFillInFieldsResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The documents the job would work on.
+	Documents int64 `json:"documents"`
+	// The pages in them, where known.
+	Pages *int64 `json:"pages,omitempty"`
+	// The seconds of audio and video in them, where known.
+	MediaSeconds *int64 `json:"mediaSeconds,omitempty"`
+	// Documents whose length could not be told, priced as a typical file.
+	DocumentsOfUnknownLength *int64 `json:"documentsOfUnknownLength,omitempty"`
+	// How long the job would take, in seconds.
+	DurationSeconds NumberRange `json:"durationSeconds"`
+	// What the job would cost. Present only for callers who may see cost: those who may open the
+	// knowledge base's settings. Every other caller still gets the documents, pages and time.
+	Cost *Cost `json:"cost,omitempty"`
+	// What is particular to the job, for example a fill-in's passages to read, or the improvements
+	// reprocessing would bring.
+	Details any `json:"details,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *EstimateFillInFieldsResult) UnmarshalJSON(b []byte) error {
+	type plain EstimateFillInFieldsResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *EstimateFillInFieldsResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *EstimateFillInFieldsResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *EstimateFillInFieldsResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// FillInFieldsResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type FillInFieldsResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The job that fills them in.
+	Job Job `json:"job"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *FillInFieldsResult) UnmarshalJSON(b []byte) error {
+	type plain FillInFieldsResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *FillInFieldsResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *FillInFieldsResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *FillInFieldsResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ListFieldsPage is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ListFieldsPage struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// This page of fields.
+	Items []Field `json:"items"`
+	// The cursor for the next page. Absent on the last page.
+	NextCursor *string `json:"nextCursor,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ListFieldsPage) UnmarshalJSON(b []byte) error {
+	type plain ListFieldsPage
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ListFieldsPage) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ListFieldsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ListFieldsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// CreateFolderResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type CreateFolderResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The Operation, as `/api/v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}`.
+	// From the Location response header.
+	Location *string `json:"-"`
+	// The Operation that tracks the folder's creation.
+	Operation Operation `json:"operation"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *CreateFolderResult) UnmarshalJSON(b []byte) error {
+	type plain CreateFolderResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *CreateFolderResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *CreateFolderResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *CreateFolderResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// DeleteFolderResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type DeleteFolderResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The Operation, as `/api/v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}`.
+	// From the Location response header.
+	Location *string `json:"-"`
+	// The Operation that tracks the deletion.
+	Operation Operation `json:"operation"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *DeleteFolderResult) UnmarshalJSON(b []byte) error {
+	type plain DeleteFolderResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *DeleteFolderResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *DeleteFolderResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *DeleteFolderResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// Folder is a folder in a knowledge base.
+type Folder struct {
+	// The folder's path, for example `/hr/leave/`.
+	Path string `json:"path"`
+	// The folder it is in.
+	Parent string `json:"parent"`
+	// The folder's own name, the last part of its path.
+	Name string `json:"name"`
+	// The folder's ETag; send it as `If-Match` to rename or move it.
+	ETag string `json:"etag"`
+	// Who may read the folder's documents.
+	Readers Readers `json:"readers"`
+	// When `readers` is `inherit`: the folder whose readers apply.
+	InheritedFrom *string `json:"inheritedFrom,omitempty"`
+	// How many folders are directly in it.
+	FolderCount int64 `json:"folderCount"`
+	// How many documents are directly in it.
+	DocumentCount int64 `json:"documentCount"`
+	// When the folder last changed.
+	UpdatedAt time.Time `json:"updatedAt"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *Folder) UnmarshalJSON(b []byte) error {
+	type plain Folder
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *Folder) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *Folder) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ListFoldersPage is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ListFoldersPage struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// This page of folders.
+	Items []Folder `json:"items"`
+	// The cursor for the next page. Absent on the last page.
+	NextCursor *string `json:"nextCursor,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ListFoldersPage) UnmarshalJSON(b []byte) error {
+	type plain ListFoldersPage
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ListFoldersPage) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ListFoldersPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ListFoldersPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// UpdateFolderResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type UpdateFolderResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The folder's new ETag.
+	// From the ETag response header.
+	ETag string `json:"-"`
+	// The Operation, as `/api/v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}`.
+	// From the Location response header.
+	Location *string `json:"-"`
+	// The Operation that tracks the move.
+	Operation Operation `json:"operation"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *UpdateFolderResult) UnmarshalJSON(b []byte) error {
+	type plain UpdateFolderResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *UpdateFolderResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *UpdateFolderResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *UpdateFolderResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// IngestionBatchCounts: How many of a batch's items have each outcome and status.
+type IngestionBatchCounts struct {
+	// Items by their planned outcome.
+	ByOutcome map[IngestionItemOutcome]int64 `json:"byOutcome,omitzero"`
+	// Items by their status after Start.
+	ByStatus map[IngestionItemStatus]int64 `json:"byStatus,omitzero"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *IngestionBatchCounts) UnmarshalJSON(b []byte) error {
+	type plain IngestionBatchCounts
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *IngestionBatchCounts) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *IngestionBatchCounts) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// IngestionBatchFailureCode: Why an ingestion batch failed. Open: new values may be added.
+//
+// IngestionBatchFailureCode is open: a value this SDK does not know yet is kept as it is.
+type IngestionBatchFailureCode string
+
+// IngestionBatchFailureCode values known to this SDK.
+const (
+	IngestionBatchFailureCodeConflictPolicyFail IngestionBatchFailureCode = "conflict_policy_fail"
+	IngestionBatchFailureCodePlanningFailed     IngestionBatchFailureCode = "planning_failed"
+	IngestionBatchFailureCodeInternalError      IngestionBatchFailureCode = "internal_error"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v IngestionBatchFailureCode) Known() bool {
+	switch v {
+	case IngestionBatchFailureCodeConflictPolicyFail, IngestionBatchFailureCodePlanningFailed, IngestionBatchFailureCodeInternalError:
+		return true
+	}
+	return false
+}
+
+// IngestionBatchFailure: Why an ingestion batch failed, as a stable code and a message telling the
+// caller what to do.
+type IngestionBatchFailure struct {
+	// What went wrong.
+	Code IngestionBatchFailureCode `json:"code"`
+	// What went wrong and what to do, written for the integrator. The same for every batch with the
+	// same code.
+	Message string `json:"message"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *IngestionBatchFailure) UnmarshalJSON(b []byte) error {
+	type plain IngestionBatchFailure
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *IngestionBatchFailure) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *IngestionBatchFailure) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ConflictRule: What to do with a conflict. Open: new values may be added.
+//
+// ConflictRule is open: a value this SDK does not know yet is kept as it is.
+type ConflictRule string
+
+// ConflictRule values known to this SDK.
+const (
+	ConflictRuleAsk        ConflictRule = "ask"
+	ConflictRuleSkip       ConflictRule = "skip"
+	ConflictRuleNewVersion ConflictRule = "new_version"
+	ConflictRuleOverwrite  ConflictRule = "overwrite"
+	ConflictRuleFail       ConflictRule = "fail"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v ConflictRule) Known() bool {
+	switch v {
+	case ConflictRuleAsk, ConflictRuleSkip, ConflictRuleNewVersion, ConflictRuleOverwrite, ConflictRuleFail:
+		return true
+	}
+	return false
+}
+
+// ConflictRules: What to do with each kind of conflict. A kind with no rule uses `default`.
+type ConflictRules struct {
+	// The rule for a kind of conflict with no rule of its own. Defaults to `ask`.
+	Default *ConflictRule `json:"default,omitempty"`
+	// The path and the `externalId` name different documents, or the path holds one the caller may
+	// not read.
+	PathTaken *ConflictRule `json:"pathTaken,omitempty"`
+	// No `externalId`, and several current documents have these bytes.
+	AmbiguousContent *ConflictRule `json:"ambiguousContent,omitempty"`
+	// Two documents share the path.
+	DuplicatePath *ConflictRule `json:"duplicatePath,omitempty"`
+	// Two documents share the `externalId` (reason `duplicate_external_id`). Named "key" because
+	// a member ending "Id" must hold an identifier.
+	DuplicateExternalKey *ConflictRule `json:"duplicateExternalKey,omitempty"`
+	// Two items in the batch name the same document.
+	DuplicateInBatch *ConflictRule `json:"duplicateInBatch,omitempty"`
+	// The document changed between planning and Start.
+	ChangedSincePlan *ConflictRule `json:"changedSincePlan,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ConflictRules) UnmarshalJSON(b []byte) error {
+	type plain ConflictRules
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ConflictRules) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ConflictRules) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// MovedRule: What to do with content found at another path. Open: new values may be added.
+//
+// MovedRule is open: a value this SDK does not know yet is kept as it is.
+type MovedRule string
+
+// MovedRule values known to this SDK.
+const (
+	MovedRuleMove MovedRule = "move"
+	MovedRuleCopy MovedRule = "copy"
+	MovedRuleSkip MovedRule = "skip"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v MovedRule) Known() bool {
+	switch v {
+	case MovedRuleMove, MovedRuleCopy, MovedRuleSkip:
+		return true
+	}
+	return false
+}
+
+// RemoveRule: What to do with a `remove` item. Open: new values may be added.
+//
+// RemoveRule is open: a value this SDK does not know yet is kept as it is.
+type RemoveRule string
+
+// RemoveRule values known to this SDK.
+const (
+	RemoveRuleRemove RemoveRule = "remove"
+	RemoveRuleAsk    RemoveRule = "ask"
+	RemoveRuleSkip   RemoveRule = "skip"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v RemoveRule) Known() bool {
+	switch v {
+	case RemoveRuleRemove, RemoveRuleAsk, RemoveRuleSkip:
+		return true
+	}
+	return false
+}
+
+// UnchangedRule: What to do with unchanged bytes. Open: new values may be added.
+//
+// UnchangedRule is open: a value this SDK does not know yet is kept as it is.
+type UnchangedRule string
+
+// UnchangedRule values known to this SDK.
+const (
+	UnchangedRuleSkip     UnchangedRule = "skip"
+	UnchangedRuleReingest UnchangedRule = "reingest"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v UnchangedRule) Known() bool {
+	switch v {
+	case UnchangedRuleSkip, UnchangedRuleReingest:
+		return true
+	}
+	return false
+}
+
+// IngestionPolicy is the rules that resolve each item's outcome. A rule applies to every item not
+// resolved by hand.
+type IngestionPolicy struct {
+	// What to do with each kind of conflict. Defaults to `{default: "ask"}`.
+	OnConflict *ConflictRules `json:"onConflict,omitempty"`
+	// What to do with a `remove` item that matches a document. Defaults to `remove`.
+	OnRemove *RemoveRule `json:"onRemove,omitempty"`
+	// What to do with an item whose bytes are the current version's. Defaults to `skip`. Supplied
+	// metadata that differs is still updated without ingesting.
+	OnUnchanged *UnchangedRule `json:"onUnchanged,omitempty"`
+	// What to do with content found at another path. Defaults to `move`, which keeps the document
+	// and its history.
+	OnMoved *MovedRule `json:"onMoved,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *IngestionPolicy) UnmarshalJSON(b []byte) error {
+	type plain IngestionPolicy
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *IngestionPolicy) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *IngestionPolicy) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// IngestionBoundary: The folder a batch is kept inside, so that a batch cannot change documents
+// anywhere else in the
+// knowledge base.
+type IngestionBoundary struct {
+	// Every item must lie inside this folder; any other item is refused. The boundary only refuses
+	// items: it never removes anything.
+	FolderPath string `json:"folderPath"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *IngestionBoundary) UnmarshalJSON(b []byte) error {
+	type plain IngestionBoundary
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *IngestionBoundary) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *IngestionBoundary) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// StartMode: When a planned ingestion batch starts. Open: new values may be added.
+//
+// StartMode is open: a value this SDK does not know yet is kept as it is.
+type StartMode string
+
+// StartMode values known to this SDK.
+const (
+	StartModeWhenPlanned StartMode = "when_planned"
+	StartModeManual      StartMode = "manual"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v StartMode) Known() bool {
+	switch v {
+	case StartModeWhenPlanned, StartModeManual:
+		return true
+	}
+	return false
+}
+
+// IngestionBatchStatus: Where an ingestion batch is. Open: new values may be added. `succeeded`,
+// `completed_with_failures`, `failed`, `cancelled` and `expired` are final.
+//
+// IngestionBatchStatus is open: a value this SDK does not know yet is kept as it is.
+type IngestionBatchStatus string
+
+// IngestionBatchStatus values known to this SDK.
+const (
+	IngestionBatchStatusDraft                 IngestionBatchStatus = "draft"
+	IngestionBatchStatusPlanning              IngestionBatchStatus = "planning"
+	IngestionBatchStatusPlanned               IngestionBatchStatus = "planned"
+	IngestionBatchStatusRunning               IngestionBatchStatus = "running"
+	IngestionBatchStatusSucceeded             IngestionBatchStatus = "succeeded"
+	IngestionBatchStatusCompletedWithFailures IngestionBatchStatus = "completed_with_failures"
+	IngestionBatchStatusFailed                IngestionBatchStatus = "failed"
+	IngestionBatchStatusCancelled             IngestionBatchStatus = "cancelled"
+	IngestionBatchStatusExpired               IngestionBatchStatus = "expired"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v IngestionBatchStatus) Known() bool {
+	switch v {
+	case IngestionBatchStatusDraft, IngestionBatchStatusPlanning, IngestionBatchStatusPlanned, IngestionBatchStatusRunning, IngestionBatchStatusSucceeded, IngestionBatchStatusCompletedWithFailures, IngestionBatchStatusFailed, IngestionBatchStatusCancelled, IngestionBatchStatusExpired:
+		return true
+	}
+	return false
+}
+
+// IngestionBatch is an ingestion batch: a planned set of document changes to a knowledge base, and
+// their progress.
+//
+// Every call that gives a IngestionBatch returns this type, as do lists and watch snapshots. One read from a
+// single response (a get, an update, a create, a Wait) carries that response's ResponseMetadata, and its ETag
+// filled from the ETag header when the body has none; a list item or a snapshot entry carries no metadata.
+type IngestionBatch struct {
+	// The identifier every call about this batch takes.
+	ID string `json:"id"`
+	// The knowledge base the batch ingests into.
+	KnowledgeBaseID string `json:"knowledgeBaseId"`
+	// Where the batch is in its lifecycle.
+	Status IngestionBatchStatus `json:"status"`
+	// When the batch starts once it is planned.
+	Start StartMode `json:"start"`
+	// While true, the batch stays `draft` and takes more items.
+	AwaitMoreItems bool `json:"awaitMoreItems"`
+	// The rules that resolve each item's outcome.
+	Policy IngestionPolicy `json:"policy"`
+	// When set, every item must lie inside this folder.
+	Scope *IngestionBoundary `json:"scope,omitempty"`
+	// How many items the batch holds.
+	ItemCount int64 `json:"itemCount"`
+	// Items by outcome after planning, and by status after Start.
+	Counts *IngestionBatchCounts `json:"counts,omitempty"`
+	// How far the batch has got, from 0 to 100: its documents' progress, weighted by how long each
+	// is expected to take. Never moves back.
+	Percent *int32 `json:"percent,omitempty"`
+	// How long is left: the longest of its documents' times left.
+	Eta *Eta `json:"eta,omitempty"`
+	// When the plan goes stale, 5 minutes after planning. StartIngestionBatch on a stale plan plans
+	// again first.
+	PlanExpiresAt *time.Time `json:"planExpiresAt,omitempty"`
+	// Who made the batch.
+	CreatedBy *Actor `json:"createdBy,omitempty"`
+	// When the batch was made.
+	CreatedAt time.Time `json:"createdAt"`
+	// When the batch last changed.
+	UpdatedAt time.Time `json:"updatedAt"`
+	// When the batch was started.
+	StartedAt *time.Time `json:"startedAt,omitempty"`
+	// When the batch reached a final state.
+	EndedAt *time.Time `json:"endedAt,omitempty"`
+	// Why the batch failed, as a stable code and a fixed message. Present only when `status` is
+	// `failed`.
+	Failure *IngestionBatchFailure `json:"failure,omitempty"`
+	// The batch's ETag.
+	ETag string `json:"etag"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *IngestionBatch) UnmarshalJSON(b []byte) error {
+	type plain IngestionBatch
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *IngestionBatch) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *IngestionBatch) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this IngestionBatch was read from:
+// the zero value for a list item, a snapshot entry or one built in code. It is never marshalled.
+func (v *IngestionBatch) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// UploadCompletionStatus: Whether an item's upload was accepted. Open: new values may be added.
+//
+// UploadCompletionStatus is open: a value this SDK does not know yet is kept as it is.
+type UploadCompletionStatus string
+
+// UploadCompletionStatus values known to this SDK.
+const (
+	UploadCompletionStatusAccepted UploadCompletionStatus = "accepted"
+	UploadCompletionStatusFailed   UploadCompletionStatus = "failed"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v UploadCompletionStatus) Known() bool {
+	switch v {
+	case UploadCompletionStatusAccepted, UploadCompletionStatusFailed:
+		return true
+	}
+	return false
+}
+
+// UploadCompletionResult is the result of reporting one item's upload.
+type UploadCompletionResult struct {
+	// The item the result is for.
+	ItemID string `json:"itemId"`
+	// Whether the upload was accepted for ingestion.
+	Status UploadCompletionStatus `json:"status"`
+	// Why it failed, as a stable code. Present only when `failed`.
+	Code *string `json:"code,omitempty"`
+	// What went wrong, written for the integrator. Present only when `failed`.
+	Detail *string `json:"detail,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *UploadCompletionResult) UnmarshalJSON(b []byte) error {
+	type plain UploadCompletionResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *UploadCompletionResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *UploadCompletionResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// CompleteIngestionBatchUploadsResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type CompleteIngestionBatchUploadsResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// One result per item, in request order.
+	Results []UploadCompletionResult `json:"results"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *CompleteIngestionBatchUploadsResult) UnmarshalJSON(b []byte) error {
+	type plain CompleteIngestionBatchUploadsResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *CompleteIngestionBatchUploadsResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *CompleteIngestionBatchUploadsResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *CompleteIngestionBatchUploadsResult) ResponseMetadata() core.ResponseMetadata {
+	return v.metadata
+}
+
+// UploadPolicy: An upload policy: one signature that lets the caller upload every item of a batch that
+// needs
+// bytes, each as an HTML form POST.
+type UploadPolicy struct {
+	// Where to POST each file.
+	UploadURL string `json:"uploadUrl"`
+	// The form fields every upload sends first, in this order, before its own `key`,
+	// `Content-Type`, `x-amz-checksum-algorithm` (`SHA256`), `x-amz-checksum-sha256` and the file.
+	FormFields map[string]string `json:"formFields"`
+	// The prefix every item's `objectKey` starts with.
+	KeyPrefix string `json:"keyPrefix"`
+	// The largest file the policy accepts, in bytes.
+	MaxByteSize int64 `json:"maxByteSize"`
+	// When the policy stops working. Renew it with CreateIngestionBatchUploadPolicy.
+	ExpiresAt time.Time `json:"expiresAt"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *UploadPolicy) UnmarshalJSON(b []byte) error {
+	type plain UploadPolicy
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *UploadPolicy) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *UploadPolicy) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// IngestionBatchUploadPolicy is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type IngestionBatchUploadPolicy struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The batch the policy is for, as
+	// `/api/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}`. A policy
+	// has no address of its own; the batch's items say which still need their bytes.
+	// From the Location response header.
+	Location *string `json:"-"`
+	// The new policy.
+	UploadPolicy UploadPolicy `json:"uploadPolicy"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *IngestionBatchUploadPolicy) UnmarshalJSON(b []byte) error {
+	type plain IngestionBatchUploadPolicy
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *IngestionBatchUploadPolicy) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *IngestionBatchUploadPolicy) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *IngestionBatchUploadPolicy) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ListIngestionBatchItemsPage is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ListIngestionBatchItemsPage struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// This page of items.
+	Items []IngestionBatchItem `json:"items"`
+	// The cursor for the next page. Absent on the last page.
+	NextCursor *string `json:"nextCursor,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ListIngestionBatchItemsPage) UnmarshalJSON(b []byte) error {
+	type plain ListIngestionBatchItemsPage
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ListIngestionBatchItemsPage) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ListIngestionBatchItemsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ListIngestionBatchItemsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ListIngestionBatchesPage is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ListIngestionBatchesPage struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// This page of batches, newest first.
+	Items []IngestionBatch `json:"items"`
+	// The cursor for the next page. Absent on the last page.
+	NextCursor *string `json:"nextCursor,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ListIngestionBatchesPage) UnmarshalJSON(b []byte) error {
+	type plain ListIngestionBatchesPage
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ListIngestionBatchesPage) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ListIngestionBatchesPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ListIngestionBatchesPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// StartIngestionBatchResult is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type StartIngestionBatchResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// The batch's new ETag.
+	// From the ETag response header.
+	ETag string `json:"-"`
+	// The batch, now `running`.
+	Batch IngestionBatch `json:"batch"`
+	// The policy every item that needs bytes is uploaded with. Absent when no item needs bytes.
+	UploadPolicy *UploadPolicy `json:"uploadPolicy,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *StartIngestionBatchResult) UnmarshalJSON(b []byte) error {
+	type plain StartIngestionBatchResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *StartIngestionBatchResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *StartIngestionBatchResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *StartIngestionBatchResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ListKnowledgeBasesPage is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ListKnowledgeBasesPage struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// This page of knowledge bases.
+	Items []KnowledgeBase `json:"items"`
+	// The cursor for the next page. Absent on the last page.
+	NextCursor *string `json:"nextCursor,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ListKnowledgeBasesPage) UnmarshalJSON(b []byte) error {
+	type plain ListKnowledgeBasesPage
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ListKnowledgeBasesPage) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ListKnowledgeBasesPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ListKnowledgeBasesPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ListOperationsPage is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ListOperationsPage struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// This page of Operations, newest first.
+	Items []Operation `json:"items"`
+	// The cursor for the next page. Absent on the last page.
+	NextCursor *string `json:"nextCursor,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ListOperationsPage) UnmarshalJSON(b []byte) error {
+	type plain ListOperationsPage
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ListOperationsPage) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ListOperationsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ListOperationsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ClearableKnowledgeBaseField: The knowledge base members that can be cleared. Open: an older SDK may
+// send a newer value as a
+// string.
+//
+// ClearableKnowledgeBaseField is open: a value this SDK does not know yet is kept as it is.
+type ClearableKnowledgeBaseField string
+
+// ClearableKnowledgeBaseField values known to this SDK.
+const (
+	ClearableKnowledgeBaseFieldDescription      ClearableKnowledgeBaseField = "description"
+	ClearableKnowledgeBaseFieldAgentDescription ClearableKnowledgeBaseField = "agentDescription"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v ClearableKnowledgeBaseField) Known() bool {
+	switch v {
+	case ClearableKnowledgeBaseFieldDescription, ClearableKnowledgeBaseFieldAgentDescription:
+		return true
+	}
+	return false
+}
+
+// GuardrailSummary is a guardrail an agent version can screen attached documents with.
+type GuardrailSummary struct {
+	// The guardrail's identifier, as `contentSafety.guardrail` names it.
+	ID string `json:"id"`
+	// The guardrail's name, as people see it.
+	Name string `json:"name"`
+	// The guardrail version that screens documents.
+	Version string `json:"version"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *GuardrailSummary) UnmarshalJSON(b []byte) error {
+	type plain GuardrailSummary
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *GuardrailSummary) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *GuardrailSummary) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ListGuardrailsPage is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ListGuardrailsPage struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// This page of guardrails.
+	Items []GuardrailSummary `json:"items"`
+	// The cursor for the next page. Absent on the last page.
+	NextCursor *string `json:"nextCursor,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ListGuardrailsPage) UnmarshalJSON(b []byte) error {
+	type plain ListGuardrailsPage
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ListGuardrailsPage) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ListGuardrailsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ListGuardrailsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// MemoryStoreSummary is a memory store an agent can remember people in.
+type MemoryStoreSummary struct {
+	// The memory store's identifier, as an agent configuration names it.
+	ID string `json:"id"`
+	// The memory store's name, as people see it.
+	Name string `json:"name"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *MemoryStoreSummary) UnmarshalJSON(b []byte) error {
+	type plain MemoryStoreSummary
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *MemoryStoreSummary) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *MemoryStoreSummary) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ListMemoryStoresPage is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ListMemoryStoresPage struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// This page of memory stores.
+	Items []MemoryStoreSummary `json:"items"`
+	// The cursor for the next page. Absent on the last page.
+	NextCursor *string `json:"nextCursor,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ListMemoryStoresPage) UnmarshalJSON(b []byte) error {
+	type plain ListMemoryStoresPage
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ListMemoryStoresPage) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ListMemoryStoresPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ListMemoryStoresPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ModelReasoning: Whether a model reasons before it answers. Open: new values may be added.
+//
+// ModelReasoning is open: a value this SDK does not know yet is kept as it is.
+type ModelReasoning string
+
+// ModelReasoning values known to this SDK.
+const (
+	ModelReasoningNone     ModelReasoning = "none"
+	ModelReasoningOptional ModelReasoning = "optional"
+	ModelReasoningAlways   ModelReasoning = "always"
+)
+
+// Known reports whether v is one of the values known to this SDK.
+func (v ModelReasoning) Known() bool {
+	switch v {
+	case ModelReasoningNone, ModelReasoningOptional, ModelReasoningAlways:
+		return true
+	}
+	return false
+}
+
+// ModelSummary is a model an agent can use, and the settings it accepts.
+type ModelSummary struct {
+	// The model's identifier, as an agent configuration names it.
+	ID string `json:"id"`
+	// The model's name, as people see it.
+	Name string `json:"name"`
+	// Whether the model reasons before it answers, and whether an agent's `reasoning` setting can
+	// change that.
+	Reasoning ModelReasoning `json:"reasoning"`
+	// The reasoning effort levels it offers. Empty when it offers none.
+	EffortLevels []ReasoningEffort `json:"effortLevels,omitzero"`
+	// Whether it accepts `temperature`.
+	AcceptsTemperature bool `json:"acceptsTemperature"`
+	// Whether it accepts `topP`.
+	AcceptsTopP bool `json:"acceptsTopP"`
+	// Whether it accepts `topK`.
+	AcceptsTopK bool `json:"acceptsTopK"`
+	// The most tokens it can write in one answer.
+	MaxOutputTokens int32 `json:"maxOutputTokens"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ModelSummary) UnmarshalJSON(b []byte) error {
+	type plain ModelSummary
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ModelSummary) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ModelSummary) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ListModelsPage is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ListModelsPage struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// This page of models.
+	Items []ModelSummary `json:"items"`
+	// The cursor for the next page. Absent on the last page.
+	NextCursor *string `json:"nextCursor,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ListModelsPage) UnmarshalJSON(b []byte) error {
+	type plain ListModelsPage
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ListModelsPage) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ListModelsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ListModelsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// ToolSummary: One of Caitlyn's own tools.
+type ToolSummary struct {
+	// The tool's name, as a phase names it.
+	Name string `json:"name"`
+	// What the tool does, in the words the agent reads unless a phase gives its own.
+	Description string `json:"description"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ToolSummary) UnmarshalJSON(b []byte) error {
+	type plain ToolSummary
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ToolSummary) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ToolSummary) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ListToolsPage is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ListToolsPage struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// This page of tools.
+	Items []ToolSummary `json:"items"`
+	// The cursor for the next page. Absent on the last page.
+	NextCursor *string `json:"nextCursor,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ListToolsPage) UnmarshalJSON(b []byte) error {
+	type plain ListToolsPage
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ListToolsPage) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ListToolsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ListToolsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// VoiceSummary is a cloud voice an agent can speak in.
+type VoiceSummary struct {
+	// The voice's identifier, as an agent configuration names it.
+	ID string `json:"id"`
+	// The voice's name, as people see it.
+	Name string `json:"name"`
+	// The language and accent it speaks, as a BCP 47 tag, for example `en-NZ`.
+	Language string `json:"language"`
+	// The qualities it comes in.
+	Qualities []VoiceQuality `json:"qualities"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *VoiceSummary) UnmarshalJSON(b []byte) error {
+	type plain VoiceSummary
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *VoiceSummary) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *VoiceSummary) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ListVoicesPage is generated from the Caitlyn model.
+//
+// Header-bound members are filled from the response headers; Raw holds the body as received.
+type ListVoicesPage struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
+	// From the Caitlyn-Request-Id response header.
+	RequestID *string `json:"-"`
+	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+	// seen and refuse to call operations or send members newer than it.
+	// From the Caitlyn-Api-Version response header.
+	APIVersion *string `json:"-"`
+	// This page of voices.
+	Items []VoiceSummary `json:"items"`
+	// The cursor for the next page. Absent on the last page.
+	NextCursor *string `json:"nextCursor,omitempty"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *ListVoicesPage) UnmarshalJSON(b []byte) error {
+	type plain ListVoicesPage
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *ListVoicesPage) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *ListVoicesPage) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *ListVoicesPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// UploadPurpose: What an upload is for. At most one member is set.
+type UploadPurpose struct {
+	// True when the file is an agent's avatar picture: a PNG, JPEG or WebP image of at most 1 MB,
+	// checked when the upload is reserved. Use the upload as `avatar.mark.pictureUploadId` on
+	// CreateAgent or UpdateAgent.
+	AgentAvatar *bool `json:"agentAvatar,omitempty"`
+	// The conversation the file will be attached to. The caller must be able to send to it (its
+	// update grant, as SendMessage needs); otherwise the call is refused with 404, as for a
+	// conversation it may not see. Its agent's attachment settings (whether it takes attachments, how
+	// many, how large and which types) are checked before the upload is reserved, and a file they
+	// refuse is refused with 400 `ATTACHMENTS_NOT_ACCEPTED` or `VALIDATION_FAILED`.
+	ConversationID *string `json:"conversationId,omitempty"`
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *UploadPurpose) UnmarshalJSON(b []byte) error {
+	type plain UploadPurpose
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *UploadPurpose) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *UploadPurpose) RawJSON() json.RawMessage { return v.raw.JSON() }
 
 // UploadStatus: Where an upload is in its lifecycle. Open: new values may be added. `consumed` and
 // `expired`
@@ -1344,11 +7496,12 @@ func (v UploadStatus) Known() bool {
 	return false
 }
 
-// Upload is generated from the Caitlyn model.
+// CreateUploadResult is generated from the Caitlyn model.
 //
 // Header-bound members are filled from the response headers; Raw holds the body as received.
-type Upload struct {
-	// The request's identifier. The same value is in every error body; quote it to support.
+type CreateUploadResult struct {
+	// The identifier support uses to find this request. The same value is in every error body;
+	// quote it to support.
 	// From the Caitlyn-Request-Id response header.
 	RequestID *string `json:"-"`
 	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
@@ -1377,6 +7530,45 @@ type Upload struct {
 }
 
 // UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *CreateUploadResult) UnmarshalJSON(b []byte) error {
+	type plain CreateUploadResult
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *CreateUploadResult) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *CreateUploadResult) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
+// (the zero value for a result built in code).
+func (v *CreateUploadResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// Upload is a short-lived slot for the bytes of one file.
+//
+// Every call that gives a Upload returns this type, as do lists and watch snapshots. One read from a
+// single response (a get, an update, a create, a Wait) carries that response's ResponseMetadata, and its ETag
+// filled from the ETag header when the body has none; a list item or a snapshot entry carries no metadata.
+type Upload struct {
+	// The identifier the operation that uses the upload takes, for example CreateDocument's
+	// `uploadId`.
+	ID string `json:"id"`
+	// Where the upload is in its lifecycle.
+	Status UploadStatus `json:"status"`
+	// When the upload URL stops working.
+	ExpiresAt time.Time `json:"expiresAt"`
+
+	metadata core.ResponseMetadata
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
 func (v *Upload) UnmarshalJSON(b []byte) error {
 	type plain Upload
 	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
@@ -1392,52 +7584,9 @@ func (v *Upload) Raw() map[string]any { return v.raw.Map() }
 // RawJSON returns that object's bytes as received.
 func (v *Upload) RawJSON() json.RawMessage { return v.raw.JSON() }
 
-// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
-// (the zero value for a result built in code).
+// ResponseMetadata returns the HTTP status, request id and API version of the response this Upload was read from:
+// the zero value for a list item, a snapshot entry or one built in code. It is never marshalled.
 func (v *Upload) ResponseMetadata() core.ResponseMetadata { return v.metadata }
-
-// GetUploadResult is generated from the Caitlyn model.
-//
-// Header-bound members are filled from the response headers; Raw holds the body as received.
-type GetUploadResult struct {
-	// The request's identifier. The same value is in every error body; quote it to support.
-	// From the Caitlyn-Request-Id response header.
-	RequestID *string `json:"-"`
-	// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
-	// seen and refuse to call operations or send members newer than it.
-	// From the Caitlyn-Api-Version response header.
-	APIVersion *string `json:"-"`
-	// The upload's identifier.
-	ID string `json:"id"`
-	// Where the upload is in its lifecycle.
-	Status UploadStatus `json:"status"`
-	// When the upload URL stops working. An upload not used by then becomes `expired`.
-	ExpiresAt time.Time `json:"expiresAt"`
-
-	metadata core.ResponseMetadata
-
-	raw core.Raw
-}
-
-// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
-func (v *GetUploadResult) UnmarshalJSON(b []byte) error {
-	type plain GetUploadResult
-	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
-		return err
-	}
-	v.raw = core.NewRaw(b)
-	return nil
-}
-
-// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
-func (v *GetUploadResult) Raw() map[string]any { return v.raw.Map() }
-
-// RawJSON returns that object's bytes as received.
-func (v *GetUploadResult) RawJSON() json.RawMessage { return v.raw.JSON() }
-
-// ResponseMetadata returns the HTTP status, request id and ETag of the response this result was read from
-// (the zero value for a result built in code).
-func (v *GetUploadResult) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
 // ActorType is the kind of caller that caused an event. Open: new values may be added.
 //
@@ -1459,38 +7608,6 @@ func (v ActorType) Known() bool {
 	}
 	return false
 }
-
-// Citation is a passage the answer cites.
-type Citation struct {
-	// The citation's number in the answer text, starting at 1.
-	Number int32 `json:"number"`
-	// The cited document.
-	DocumentID *string `json:"documentId,omitempty"`
-	// The knowledge base the document is in.
-	KnowledgeBaseID *string `json:"knowledgeBaseId,omitempty"`
-	// The cited document's name.
-	DocumentName *string `json:"documentName,omitempty"`
-	// The page the passage is on, starting at 1, for paged documents.
-	PageNumber *int32 `json:"pageNumber,omitempty"`
-
-	raw core.Raw
-}
-
-// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
-func (v *Citation) UnmarshalJSON(b []byte) error {
-	type plain Citation
-	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
-		return err
-	}
-	v.raw = core.NewRaw(b)
-	return nil
-}
-
-// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
-func (v *Citation) Raw() map[string]any { return v.raw.Map() }
-
-// RawJSON returns that object's bytes as received.
-func (v *Citation) RawJSON() json.RawMessage { return v.raw.JSON() }
 
 // CitationAdded is the data of `citation.added`.
 type CitationAdded struct {
@@ -1528,7 +7645,7 @@ func (*CitationAdded) isConversationEvent() {}
 
 // ConversationCreated is the data of `conversation.created`.
 type ConversationCreated struct {
-	// The conversation's identifier.
+	// The identifier every call about this conversation takes; it never changes.
 	ID string `json:"id"`
 	// The agent it is with.
 	AgentID string `json:"agentId"`
@@ -1586,7 +7703,7 @@ func (v *EventActor) RawJSON() json.RawMessage { return v.raw.JSON() }
 type EventSubject struct {
 	// The kind of thing. Open: `conversation` today.
 	Type string `json:"type"`
-	// Its identifier.
+	// The identifier of the thing the event is about, of the kind `type` names.
 	ID string `json:"id"`
 
 	raw core.Raw
@@ -1620,7 +7737,7 @@ type ConversationCreatedEvent struct {
 	Subject EventSubject `json:"subject"`
 	// Who caused it. Named only to the owner of the subject; everyone else sees only its type.
 	Actor EventActor `json:"actor"`
-	// The conversation.
+	// The conversation that was started.
 	Data ConversationCreated `json:"data"`
 
 	eventID string
@@ -1686,60 +7803,6 @@ func (*InputRequested) EventType() string { return "input.requested" }
 
 func (*InputRequested) isConversationEvent() {}
 
-// MessageRole: Who wrote a message. Open: new values may be added.
-//
-// MessageRole is open: a value this SDK does not know yet is kept as it is.
-type MessageRole string
-
-// MessageRole values known to this SDK.
-const (
-	MessageRoleUser      MessageRole = "user"
-	MessageRoleAssistant MessageRole = "assistant"
-)
-
-// Known reports whether v is one of the values known to this SDK.
-func (v MessageRole) Known() bool {
-	switch v {
-	case MessageRoleUser, MessageRoleAssistant:
-		return true
-	}
-	return false
-}
-
-// Message is a message in a conversation.
-type Message struct {
-	// The message's identifier.
-	ID string `json:"id"`
-	// Who wrote the message.
-	Role MessageRole `json:"role"`
-	// The message text. For an answer, the whole text the deltas built up.
-	Text string `json:"text"`
-	// The agent version that wrote an answer.
-	AgentVersion *string `json:"agentVersion,omitempty"`
-	// The passages an answer cites, in citation number order.
-	Citations []Citation `json:"citations,omitempty"`
-	// When the message was written.
-	CreatedAt time.Time `json:"createdAt"`
-
-	raw core.Raw
-}
-
-// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
-func (v *Message) UnmarshalJSON(b []byte) error {
-	type plain Message
-	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
-		return err
-	}
-	v.raw = core.NewRaw(b)
-	return nil
-}
-
-// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
-func (v *Message) Raw() map[string]any { return v.raw.Map() }
-
-// RawJSON returns that object's bytes as received.
-func (v *Message) RawJSON() json.RawMessage { return v.raw.JSON() }
-
 // MessageCompleted is the data of `message.completed`.
 type MessageCompleted struct {
 	// The complete answer message.
@@ -1794,8 +7857,8 @@ type MessageFailed struct {
 	// support.
 	RequestID string `json:"requestId"`
 	// Field-level problems, one per member or parameter at fault. Present only on 400
-	// `VALIDATION_FAILED`.
-	Errors []FieldError `json:"errors,omitempty"`
+	// `VALIDATION_FAILED` and on the 422 `METADATA_*` codes.
+	Errors []FieldError `json:"errors,omitzero"`
 
 	eventID string
 
@@ -2056,7 +8119,7 @@ func (v ToolStatus) Known() bool {
 
 // ToolFinished is the data of `tool.finished`.
 type ToolFinished struct {
-	// The tool call's identifier.
+	// Matches the tool call's finish to its start.
 	ToolCallID string `json:"toolCallId"`
 	// The tool called.
 	ToolName string `json:"toolName"`
@@ -2098,7 +8161,7 @@ func (*ToolFinished) isConversationEvent() {}
 
 // ToolStarted is the data of `tool.started`.
 type ToolStarted struct {
-	// The tool call's identifier.
+	// Matches the tool call's start to its finish.
 	ToolCallID string `json:"toolCallId"`
 	// The tool called.
 	ToolName string `json:"toolName"`
@@ -2235,6 +8298,216 @@ func decodeConversationEvent(errorFor core.ErrorFor, raise bool) func(name, id s
 	}
 }
 
+// DocumentChanged is the data of `document.created` and `document.updated`.
+type DocumentChanged struct {
+	// The document as it now is.
+	Document Document `json:"document"`
+
+	eventID   string
+	eventType string
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *DocumentChanged) UnmarshalJSON(b []byte) error {
+	type plain DocumentChanged
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *DocumentChanged) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *DocumentChanged) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
+func (v *DocumentChanged) EventID() string { return v.eventID }
+
+// EventType returns the SSE event name the event arrived as: one of document.created, document.updated (empty when the value is not an event itself).
+func (v *DocumentChanged) EventType() string { return v.eventType }
+
+func (*DocumentChanged) isKnowledgeBaseEvent() {}
+
+// DocumentDeleted is the data of `document.deleted`.
+type DocumentDeleted struct {
+	// The document that was deleted.
+	DocumentID string `json:"documentId"`
+
+	eventID string
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *DocumentDeleted) UnmarshalJSON(b []byte) error {
+	type plain DocumentDeleted
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *DocumentDeleted) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *DocumentDeleted) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
+func (v *DocumentDeleted) EventID() string { return v.eventID }
+
+// EventType returns the event's SSE event name, "document.deleted".
+func (*DocumentDeleted) EventType() string { return "document.deleted" }
+
+func (*DocumentDeleted) isKnowledgeBaseEvent() {}
+
+// DocumentProgress is the data of `document.progress`.
+type DocumentProgress struct {
+	// The document whose processing moved on.
+	DocumentID string `json:"documentId"`
+	// How far the document's processing has got.
+	Processing DocumentProcessing `json:"processing"`
+
+	eventID string
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *DocumentProgress) UnmarshalJSON(b []byte) error {
+	type plain DocumentProgress
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *DocumentProgress) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *DocumentProgress) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
+func (v *DocumentProgress) EventID() string { return v.eventID }
+
+// EventType returns the event's SSE event name, "document.progress".
+func (*DocumentProgress) EventType() string { return "document.progress" }
+
+func (*DocumentProgress) isKnowledgeBaseEvent() {}
+
+// DocumentVersionIndexed is the data of `document_version.indexed`.
+type DocumentVersionIndexed struct {
+	// The document whose new version became searchable.
+	DocumentID string `json:"documentId"`
+	// The version that became searchable, now the current one.
+	Version int32 `json:"version"`
+
+	eventID string
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *DocumentVersionIndexed) UnmarshalJSON(b []byte) error {
+	type plain DocumentVersionIndexed
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *DocumentVersionIndexed) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *DocumentVersionIndexed) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
+func (v *DocumentVersionIndexed) EventID() string { return v.eventID }
+
+// EventType returns the event's SSE event name, "document_version.indexed".
+func (*DocumentVersionIndexed) EventType() string { return "document_version.indexed" }
+
+func (*DocumentVersionIndexed) isKnowledgeBaseEvent() {}
+
+// FolderChanged is the data of `folder.created` and `folder.updated`.
+type FolderChanged struct {
+	// The folder as it now is.
+	Folder Folder `json:"folder"`
+
+	eventID   string
+	eventType string
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *FolderChanged) UnmarshalJSON(b []byte) error {
+	type plain FolderChanged
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *FolderChanged) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *FolderChanged) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
+func (v *FolderChanged) EventID() string { return v.eventID }
+
+// EventType returns the SSE event name the event arrived as: one of folder.created, folder.updated (empty when the value is not an event itself).
+func (v *FolderChanged) EventType() string { return v.eventType }
+
+func (*FolderChanged) isKnowledgeBaseEvent() {}
+
+// FolderDeleted is the data of `folder.deleted`.
+type FolderDeleted struct {
+	// Where the deleted folder was.
+	Path string `json:"path"`
+
+	eventID string
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *FolderDeleted) UnmarshalJSON(b []byte) error {
+	type plain FolderDeleted
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *FolderDeleted) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *FolderDeleted) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
+func (v *FolderDeleted) EventID() string { return v.eventID }
+
+// EventType returns the event's SSE event name, "folder.deleted".
+func (*FolderDeleted) EventType() string { return "folder.deleted" }
+
+func (*FolderDeleted) isKnowledgeBaseEvent() {}
+
 // InputRequestedEvent: `input.requested`.
 type InputRequestedEvent struct {
 	// The event's identifier: a cursor, sent back as `after` or `Last-Event-ID`.
@@ -2278,6 +8551,283 @@ func (v *InputRequestedEvent) EventID() string { return v.eventID }
 func (*InputRequestedEvent) EventType() string { return "input.requested" }
 
 func (*InputRequestedEvent) isWorkspaceEvent() {}
+
+// JobChanged is the data of `job.progress` and `job.finished`.
+type JobChanged struct {
+	// The job as it now is.
+	Job Job `json:"job"`
+
+	eventID   string
+	eventType string
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *JobChanged) UnmarshalJSON(b []byte) error {
+	type plain JobChanged
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *JobChanged) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *JobChanged) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
+func (v *JobChanged) EventID() string { return v.eventID }
+
+// EventType returns the SSE event name the event arrived as: one of job.finished, job.progress (empty when the value is not an event itself).
+func (v *JobChanged) EventType() string { return v.eventType }
+
+func (*JobChanged) isKnowledgeBaseEvent() {}
+
+// KnowledgeBaseChanged is the data of `knowledge_base.updated`.
+type KnowledgeBaseChanged struct {
+	// The knowledge base as it now is.
+	KnowledgeBase KnowledgeBase `json:"knowledgeBase"`
+
+	eventID string
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *KnowledgeBaseChanged) UnmarshalJSON(b []byte) error {
+	type plain KnowledgeBaseChanged
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *KnowledgeBaseChanged) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *KnowledgeBaseChanged) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
+func (v *KnowledgeBaseChanged) EventID() string { return v.eventID }
+
+// EventType returns the event's SSE event name, "knowledge_base.updated".
+func (*KnowledgeBaseChanged) EventType() string { return "knowledge_base.updated" }
+
+func (*KnowledgeBaseChanged) isKnowledgeBaseEvent() {}
+
+// KnowledgeBaseSnapshot is the data of `snapshot`: the thing watched, its jobs, and its documents'
+// progress.
+type KnowledgeBaseSnapshot struct {
+	// The knowledge base, when the whole knowledge base is watched.
+	KnowledgeBase *KnowledgeBase `json:"knowledgeBase,omitempty"`
+	// The document, when one document is watched.
+	Document *Document `json:"document,omitempty"`
+	// The folder, when one folder is watched.
+	Folder *Folder `json:"folder,omitempty"`
+	// The batch, when one batch is watched.
+	Batch *IngestionBatch `json:"batch,omitempty"`
+	// The jobs running on what is watched, and those that ended in the last hour.
+	Jobs []Job `json:"jobs"`
+	// The progress of each document being processed, at most the first 1,000; each entry is what a
+	// `document.progress` event carries.
+	Progress []DocumentProgress `json:"progress"`
+
+	eventID string
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *KnowledgeBaseSnapshot) UnmarshalJSON(b []byte) error {
+	type plain KnowledgeBaseSnapshot
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *KnowledgeBaseSnapshot) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *KnowledgeBaseSnapshot) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
+func (v *KnowledgeBaseSnapshot) EventID() string { return v.eventID }
+
+// EventType returns the event's SSE event name, "snapshot".
+func (*KnowledgeBaseSnapshot) EventType() string { return "snapshot" }
+
+func (*KnowledgeBaseSnapshot) isKnowledgeBaseEvent() {}
+
+// KnowledgeBaseEvent is the events on a knowledge base's watch.
+//
+// KnowledgeBaseEvent is one of*KnowledgeBaseSnapshot, *DocumentProgress, *DocumentChanged,
+// *DocumentChanged, *DocumentDeleted, *DocumentVersionIndexed, *FolderChanged, *FolderChanged,
+// *FolderDeleted, *JobChanged, *JobChanged, *KnowledgeBaseChanged. Switch on its type; event names
+// this SDK does not know are skipped. On a stream with a final event, an error event ends the stream
+// with a typed error instead; on a watch it is delivered like any other.
+//
+//	switch e := ev.(type) {
+//	case *KnowledgeBaseSnapshot:
+//		…
+//	}
+type KnowledgeBaseEvent interface {
+	// EventID returns the event's SSE id.
+	EventID() string
+	// EventType returns the event's SSE event name, for example "text.delta".
+	EventType() string
+	// GetProcessing returns the watched thing's processing on a scope's watch (doc.Watch, folder.Watch,
+	// batch.Watch); nil when the event carries none. Get-prefixed, as an event may have a Processing field.
+	GetProcessing() *Processing
+	// ProcessingOf returns, on the knowledge base's own watch, the processing of the document or job whose
+	// identifier is given; nil when the event carries none.
+	ProcessingOf(id string) *Processing
+	isKnowledgeBaseEvent()
+}
+
+// GetProcessing returns the watched thing's processing, or nil (KnowledgeBaseEvent.GetProcessing).
+func (v *KnowledgeBaseSnapshot) GetProcessing() *Processing { return processingOf(v, "") }
+
+// ProcessingOf returns the processing of the document or job named by id, or nil (KnowledgeBaseEvent.ProcessingOf).
+func (v *KnowledgeBaseSnapshot) ProcessingOf(id string) *Processing { return processingOf(v, id) }
+
+// GetProcessing returns the watched thing's processing, or nil (KnowledgeBaseEvent.GetProcessing).
+func (v *DocumentProgress) GetProcessing() *Processing { return processingOf(v, "") }
+
+// ProcessingOf returns the processing of the document or job named by id, or nil (KnowledgeBaseEvent.ProcessingOf).
+func (v *DocumentProgress) ProcessingOf(id string) *Processing { return processingOf(v, id) }
+
+// GetProcessing returns the watched thing's processing, or nil (KnowledgeBaseEvent.GetProcessing).
+func (v *DocumentChanged) GetProcessing() *Processing { return processingOf(v, "") }
+
+// ProcessingOf returns the processing of the document or job named by id, or nil (KnowledgeBaseEvent.ProcessingOf).
+func (v *DocumentChanged) ProcessingOf(id string) *Processing { return processingOf(v, id) }
+
+// GetProcessing returns the watched thing's processing, or nil (KnowledgeBaseEvent.GetProcessing).
+func (v *DocumentDeleted) GetProcessing() *Processing { return processingOf(v, "") }
+
+// ProcessingOf returns the processing of the document or job named by id, or nil (KnowledgeBaseEvent.ProcessingOf).
+func (v *DocumentDeleted) ProcessingOf(id string) *Processing { return processingOf(v, id) }
+
+// GetProcessing returns the watched thing's processing, or nil (KnowledgeBaseEvent.GetProcessing).
+func (v *DocumentVersionIndexed) GetProcessing() *Processing { return processingOf(v, "") }
+
+// ProcessingOf returns the processing of the document or job named by id, or nil (KnowledgeBaseEvent.ProcessingOf).
+func (v *DocumentVersionIndexed) ProcessingOf(id string) *Processing { return processingOf(v, id) }
+
+// GetProcessing returns the watched thing's processing, or nil (KnowledgeBaseEvent.GetProcessing).
+func (v *FolderChanged) GetProcessing() *Processing { return processingOf(v, "") }
+
+// ProcessingOf returns the processing of the document or job named by id, or nil (KnowledgeBaseEvent.ProcessingOf).
+func (v *FolderChanged) ProcessingOf(id string) *Processing { return processingOf(v, id) }
+
+// GetProcessing returns the watched thing's processing, or nil (KnowledgeBaseEvent.GetProcessing).
+func (v *FolderDeleted) GetProcessing() *Processing { return processingOf(v, "") }
+
+// ProcessingOf returns the processing of the document or job named by id, or nil (KnowledgeBaseEvent.ProcessingOf).
+func (v *FolderDeleted) ProcessingOf(id string) *Processing { return processingOf(v, id) }
+
+// GetProcessing returns the watched thing's processing, or nil (KnowledgeBaseEvent.GetProcessing).
+func (v *JobChanged) GetProcessing() *Processing { return processingOf(v, "") }
+
+// ProcessingOf returns the processing of the document or job named by id, or nil (KnowledgeBaseEvent.ProcessingOf).
+func (v *JobChanged) ProcessingOf(id string) *Processing { return processingOf(v, id) }
+
+// GetProcessing returns the watched thing's processing, or nil (KnowledgeBaseEvent.GetProcessing).
+func (v *KnowledgeBaseChanged) GetProcessing() *Processing { return processingOf(v, "") }
+
+// ProcessingOf returns the processing of the document or job named by id, or nil (KnowledgeBaseEvent.ProcessingOf).
+func (v *KnowledgeBaseChanged) ProcessingOf(id string) *Processing { return processingOf(v, id) }
+
+// decodeKnowledgeBaseEvent decodes one SSE event; ok is false for an event name this SDK does not know. With raise,
+// an error event is returned as its typed error (a stream with a final event, PROTOCOL.md 5.5).
+func decodeKnowledgeBaseEvent(errorFor core.ErrorFor, raise bool) func(name, id string, data []byte) (KnowledgeBaseEvent, bool, error) {
+	return func(name, id string, data []byte) (KnowledgeBaseEvent, bool, error) {
+		switch name {
+		case "snapshot":
+			v := &KnowledgeBaseSnapshot{eventID: id}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		case "document.progress":
+			v := &DocumentProgress{eventID: id}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		case "document.created":
+			v := &DocumentChanged{eventID: id, eventType: name}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		case "document.updated":
+			v := &DocumentChanged{eventID: id, eventType: name}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		case "document.deleted":
+			v := &DocumentDeleted{eventID: id}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		case "document_version.indexed":
+			v := &DocumentVersionIndexed{eventID: id}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		case "folder.created":
+			v := &FolderChanged{eventID: id, eventType: name}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		case "folder.updated":
+			v := &FolderChanged{eventID: id, eventType: name}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		case "folder.deleted":
+			v := &FolderDeleted{eventID: id}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		case "job.progress":
+			v := &JobChanged{eventID: id, eventType: name}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		case "job.finished":
+			v := &JobChanged{eventID: id, eventType: name}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		case "knowledge_base.updated":
+			v := &KnowledgeBaseChanged{eventID: id}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		}
+		return nil, false, nil
+	}
+}
 
 // MessageCompletedEvent: `message.completed`.
 type MessageCompletedEvent struct {
@@ -2366,6 +8916,114 @@ func (v *MessageFailedEvent) EventID() string { return v.eventID }
 func (*MessageFailedEvent) EventType() string { return "message.failed" }
 
 func (*MessageFailedEvent) isWorkspaceEvent() {}
+
+// OperationFinished is the data of `operation.finished`.
+type OperationFinished struct {
+	// The Operation as it ended.
+	Operation Operation `json:"operation"`
+
+	eventID string
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *OperationFinished) UnmarshalJSON(b []byte) error {
+	type plain OperationFinished
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *OperationFinished) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *OperationFinished) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
+func (v *OperationFinished) EventID() string { return v.eventID }
+
+// EventType returns the event's SSE event name, "operation.finished".
+func (*OperationFinished) EventType() string { return "operation.finished" }
+
+func (*OperationFinished) isOperationEvent() {}
+
+// OperationUpdated is the data of `operation.updated`.
+type OperationUpdated struct {
+	// The Operation as it now is.
+	Operation Operation `json:"operation"`
+
+	eventID string
+
+	raw core.Raw
+}
+
+// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.
+func (v *OperationUpdated) UnmarshalJSON(b []byte) error {
+	type plain OperationUpdated
+	if err := json.Unmarshal(b, (*plain)(v)); err != nil {
+		return err
+	}
+	v.raw = core.NewRaw(b)
+	return nil
+}
+
+// Raw returns the JSON object this value was read from, unknown fields included (nil if it was not read from JSON).
+func (v *OperationUpdated) Raw() map[string]any { return v.raw.Map() }
+
+// RawJSON returns that object's bytes as received.
+func (v *OperationUpdated) RawJSON() json.RawMessage { return v.raw.JSON() }
+
+// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.
+func (v *OperationUpdated) EventID() string { return v.eventID }
+
+// EventType returns the event's SSE event name, "operation.updated".
+func (*OperationUpdated) EventType() string { return "operation.updated" }
+
+func (*OperationUpdated) isOperationEvent() {}
+
+// OperationEvent is the events on an Operation's stream.
+//
+// OperationEvent is one of*OperationUpdated, *OperationFinished. Switch on its type; event names this
+// SDK does not know are skipped. On a stream with a final event, an error event ends the stream with a
+// typed error instead; on a watch it is delivered like any other.
+//
+//	switch e := ev.(type) {
+//	case *OperationUpdated:
+//		…
+//	}
+type OperationEvent interface {
+	// EventID returns the event's SSE id.
+	EventID() string
+	// EventType returns the event's SSE event name, for example "text.delta".
+	EventType() string
+	isOperationEvent()
+}
+
+// decodeOperationEvent decodes one SSE event; ok is false for an event name this SDK does not know. With raise,
+// an error event is returned as its typed error (a stream with a final event, PROTOCOL.md 5.5).
+func decodeOperationEvent(errorFor core.ErrorFor, raise bool) func(name, id string, data []byte) (OperationEvent, bool, error) {
+	return func(name, id string, data []byte) (OperationEvent, bool, error) {
+		switch name {
+		case "operation.updated":
+			v := &OperationUpdated{eventID: id}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		case "operation.finished":
+			v := &OperationFinished{eventID: id}
+			if err := json.Unmarshal(data, v); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		}
+		return nil, false, nil
+	}
+}
 
 // ToolFinishedEvent: `tool.finished`.
 type ToolFinishedEvent struct {

@@ -16,25 +16,45 @@ cargo add caitlyn-sdk
 
 ## Using it
 
+The client is a tree of scopes: `client.knowledge_base(id)` is one knowledge base, and every call about it hangs off
+it. Making a scope sends nothing. A call returns a request: required members are its arguments, the rest are
+setters, and `.send().await` (or `.await`) sends it.
+
 ```rust
-use caitlyn_sdk::{Auth, Client, GetAgentVersionInput, SendMessageInput, UpdateDraftVersionInput};
+use caitlyn_sdk::{Auth, Client, Readers, SyncInput};
 
 let client = Client::new("your-company.getcaitlyn.ai", Auth::token("cait-pat-…"))?;
+let kb = client.knowledge_base("KB4T7YQ2WL");
 
-// One call: options go on the call, then .await it.
-let draft = client.agents().versions().get(GetAgentVersionInput { agent_id: "GHT7YRWXPL".into(), version: "draft".into() }).await?;
-let input = UpdateDraftVersionInput { instructions: Some("Cite clause numbers.".into()), ..Default::default() };
-client.agents().versions().update_draft("GHT7YRWXPL", input).if_match(&draft.etag).await?;
+// A call that starts work returns what the call returned, with wait(), which follows that work to its end.
+let doc = kb.documents().create("./leave-policy.pdf").folder("/hr/").wait().await?;
+
+// Keep a folder in step, and follow a document after a page reload, with its progress as it changes.
+let report = kb.ingestion().sync(SyncInput::dir("./policies").folder("/policies/")).await?;
+kb.document(&doc.id).wait().on_progress(|p| println!("{:?}%", p.percent())).await?;
+
+// Who may read a folder: "inherit", Readers::everyone() or Readers::roles([...]).
+kb.folder("/hr/investigations/").access().set().readers(Readers::roles(["hr-team"])).await?;
+
+// Agents: create returns the agent's scope; publish its draft, or roll back by publishing an earlier version.
+let agent = client.agents().create("HR assistant").await?;
+agent.draft().publish().name("v1").await?;
+client.agent("GHT7YRWXPL").version("v13").publish().await?;
 
 // A stream of typed events; a dropped connection resumes with Last-Event-ID.
-let mut answer = client.conversations().send("c-1", SendMessageInput { message: "How much leave do I get?".into(), ..Default::default() }).await?;
-while let Some(event) = answer.next().await {
-    println!("{:?}", event?);
+let conversation = client.agent("GHT7YRWXPL").live().conversations().create().await?;
+let mut answer = conversation.send("How much leave do I get?").await?.text();
+while let Some(text) = answer.next().await {
+    print!("{}", text?);
 }
 
-// A list: items across pages.
-let docs = client.documents().list(caitlyn_sdk::ListDocumentsInput { knowledge_base_id: "KB4T7YQ2WL".into(), ..Default::default() }).collect().await?;
+// A list: items across pages. Estimates sit beside their jobs, with the same arguments.
+let docs = kb.documents().list().folder("/hr/").collect().await?;
+let estimate = kb.fields().estimate_fill_in(["policyOwner"]).await?;
 ```
+
+The scope types are in `caitlyn_sdk::scope`. The building blocks (uploads, ingestion batch items, Operations) are
+under `client.core()`, taking their identifiers as arguments.
 
 Errors are `caitlyn_sdk::Error`, one variant per modelled error (`Error::NotFound`, `Error::PreconditionFailed`…)
 chosen by HTTP status, each carrying an `ApiError` with `status`, `code` and `request_id`. A call that got no

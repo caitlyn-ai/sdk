@@ -9,7 +9,8 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 image="caitlyn-sdk-toolchain:$(shasum -a 256 "$root/docker/Dockerfile" | cut -c1-12)"
 # Cargo's build output is kept per checkout: two checkouts building at once in one shared volume corrupt each
-# other's builds (a module reported missing that is there). The other caches are safe to share.
+# other's builds (a module reported missing that is there). So is the Maven repository, because generate.sh clears
+# this project's own artifacts from it before each build. The other caches are safe to share.
 checkout="$(printf '%s' "$root" | shasum -a 256 | cut -c1-12)"
 docker image inspect "$image" > /dev/null 2>&1 \
   || docker build -q -t "$image" -f "$root/docker/Dockerfile" "$root"
@@ -25,7 +26,7 @@ while IFS= read -r name; do env_args+=(-e "$name"); done < <(env | sed -n 's/^\(
 docker run --rm ${tty[@]+"${tty[@]}"} ${env_args[@]+"${env_args[@]}"} \
   -v "$root":/work \
   -v caitlyn-sdk-gradle:/root/.gradle \
-  -v caitlyn-sdk-m2:/root/.m2 \
+  -v "caitlyn-sdk-m2-${checkout}":/root/.m2 \
   -v caitlyn-sdk-go-mod:/root/go/pkg/mod \
   -v caitlyn-sdk-go-build:/root/.cache/go-build \
   -v caitlyn-sdk-npm:/root/.npm \

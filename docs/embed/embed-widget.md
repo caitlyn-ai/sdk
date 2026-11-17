@@ -72,7 +72,7 @@ Only the `<div id="caitlyn-chat">` container and the `<script>` tag are required
 | `data-path`           | Path appended to the widget URL (e.g. `live-avatar`) to load a specific surface.  | _Optional_ |
 | `data-chat-height`    | `contained` fills the container at 100%; `auto` grows with the content (default). | _Optional_ |
 
-> **Note**: The agent and alias IDs are the ones the app shows today. The v3 API names an agent's configurations as versions (`draft`, `production` or a version name) rather than aliases; its attributes and event names may change when the embed moves onto the v3 API, and this page will say so first.
+> **Note**: The agent and alias IDs are the ones the app shows today. The v3 API names an agent's configurations as versions (`draft`, `live` or a version name) rather than aliases; its attributes and event names may change when the embed moves onto the v3 API, and this page will say so first.
 
 ## Listening to events
 

@@ -35,6 +35,8 @@ final class ModelFacts {
     final Map<ShapeId, String> resultNames;
     /** Result classes that another operation's result already generates. */
     final Set<ShapeId> duplicateResults;
+    /** Outputs that return a thing (ResultNames.payloadOf): the call returns the payload's own type. */
+    final Map<ShapeId, MemberShape> payloads = new HashMap<>();
     final Set<ShapeId> inputs = new HashSet<>();
     final Set<ShapeId> streamingOutputs = new HashSet<>();
     final SseEvents sse;
@@ -53,8 +55,15 @@ final class ModelFacts {
      * the problem details, so models.py re-exports caitlyn_core's class instead of generating one.
      */
     final java.util.Optional<ShapeId> fieldError;
+    /**
+     * The members a nested {@code @uploadTarget} path ends on ({@code avatar.mark.pictureUploadId}): their models take a
+     * file as well as an upload's id, and the operation's method uploads the file first (PROTOCOL.md 10).
+     */
+    final Set<ShapeId> uploadFileMembers = new HashSet<>();
     /** Highest @since in the service: the Caitlyn release the SDK is generated against. */
     final String apiVersion;
+    /** The client as scopes (PROTOCOL.md 10), computed once in model-support for every generator. */
+    final ai.caitlyn.codegen.model.ScopeTree tree;
 
     ModelFacts(Model model, ShapeId serviceId) {
         ServiceShape service = model.expectShape(serviceId, ServiceShape.class);
@@ -63,9 +72,13 @@ final class ModelFacts {
         ResultNames results = new ResultNames(model, service, UnaryOperator.identity());
         resultNames = results.names();
         duplicateResults = results.duplicates();
+        for (OperationShape op : TopDownIndex.of(model).getContainedOperations(service)) {
+            ops.getOutputShape(op).ifPresent(out -> results.payloadOf(out.getId()).ifPresent(m -> payloads.put(out.getId(), m)));
+        }
         sse = new SseEvents(model, service);
         sseUnions = sse.unions().keySet();
         apiVersion = Versions.modelVersion(model, service);
+        tree = ai.caitlyn.codegen.model.ScopeTree.of(model, service);
         problemFields.addAll(ProblemDetails.memberNames(model, service));
         problemFields.add("retryAfterSeconds");
         fieldError = service.getErrorsSet().stream()
@@ -93,9 +106,14 @@ final class ModelFacts {
             }
         });
         for (ShapeId unionId : sseUnions) {
-            for (MemberShape m : model.expectShape(unionId).getAllMembers().values()) {
+            java.util.Collection<MemberShape> members = model.expectShape(unionId).getAllMembers().values();
+            for (MemberShape m : members) {
                 String target = m.getTarget().getName();
-                eventClassNames.put(m.getId(), target.endsWith("Event") ? target : target + "Event");
+                // One structure behind several events of a stream (DocumentChanged is document.created and
+                // document.updated): each event's class is named after its member (DocumentCreatedEvent).
+                boolean shared = members.stream().filter(o -> o.getTarget().equals(m.getTarget())).count() > 1;
+                String base = shared ? Character.toUpperCase(m.getMemberName().charAt(0)) + m.getMemberName().substring(1) : target;
+                eventClassNames.put(m.getId(), base.endsWith("Event") ? base : base + "Event");
                 boolean usedElsewhere = model.getMemberShapes().stream()
                         .anyMatch(o -> o.getTarget().equals(m.getTarget()) && !sseUnions.contains(o.getContainer()));
                 if (!usedElsewhere) {
@@ -134,6 +152,25 @@ final class ModelFacts {
                 throw new CodegenException("two SSE events would get the Python class name " + e.getValue() + ": " + prev + " and " + event);
             }
         }
+        for (OperationShape op : TopDownIndex.of(model).getContainedOperations(service)) {
+            CaitlynTraits.stringMember(op, CaitlynTraits.UPLOAD_TARGET, "member").filter(m -> m.contains(".")).ifPresent(path -> {
+                StructureShape at = ops.expectInputShape(op);
+                String[] parts = path.split("\\.");
+                for (int i = 0; i < parts.length; i++) {
+                    String seg = parts[i];
+                    MemberShape m = at.getAllMembers().get(seg);
+                    if (m == null) {
+                        throw new CodegenException(op.getId() + ": @uploadTarget " + path + ": no member " + seg);
+                    }
+                    if (i == parts.length - 1) {
+                        uploadFileMembers.add(m.getId());
+                    } else {
+                        at = model.expectShape(m.getTarget()).asStructureShape()
+                                .orElseThrow(() -> new CodegenException(op.getId() + ": @uploadTarget " + path + " walks into a non-structure at " + seg));
+                    }
+                }
+            });
+        }
         Bindings.checkSupported(model, service);
     }
 
@@ -147,7 +184,7 @@ final class ModelFacts {
     }
 
     boolean isGenerated(StructureShape s) {
-        return !inputs.contains(s.getId()) && !streamingOutputs.contains(s.getId())
+        return !inputs.contains(s.getId()) && !streamingOutputs.contains(s.getId()) && !payloads.containsKey(s.getId())
                 && !duplicateResults.contains(s.getId()) && !sseOnlyStructures.contains(s.getId())
                 && !s.hasTrait(MixinTrait.class) && !s.hasTrait(ErrorTrait.class);
     }

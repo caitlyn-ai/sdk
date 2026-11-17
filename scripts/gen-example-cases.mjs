@@ -53,7 +53,10 @@ function request(opId, input) {
     const t = def.traits ?? {};
     const v = input[name];
     if (t[T('httpLabel')] !== undefined) {
-      req.path = req.path.replace(`{${name}}`, encodeURIComponent(v));
+      // A greedy label ({folderPath+}) keeps its slashes (PROTOCOL.md 3: each segment is encoded).
+      req.path = req.path
+        .replace(`{${name}}`, encodeURIComponent(v))
+        .replace(`{${name}+}`, String(v).split('/').map(encodeURIComponent).join('/'));
     } else if (t[T('httpQuery')] !== undefined) {
       if (v !== undefined) req.query[t[T('httpQuery')]] = Array.isArray(v) ? v.map(queryValue) : queryValue(v);
     } else if (t[T('httpHeader')] !== undefined) {
@@ -82,10 +85,26 @@ function successResponse(opId, output = {}) {
     const t = def.traits ?? {};
     if (output[name] === undefined) continue;
     if (t[T('httpHeader')] !== undefined) headers[t[T('httpHeader')]] = String(output[name]);
-    else if (t[T('httpPayload')] !== undefined) throw new Error(`${opId}: @httpPayload outputs are not supported by the example cases yet`);
+    // One type per thing: the payload member is the whole body, the thing itself
+    else if (t[T('httpPayload')] !== undefined) body = output[name];
     else body[t[T('jsonName')] ?? name] = output[name];
   }
   return { status: http.code ?? 200, headers, body };
+}
+
+/** The thing a call returns (PROTOCOL.md 4): an output whose only body member is its @httpPayload, as the SDK gives it,
+ * with `etag` filled from the ETag header when the example's body has none. Undefined for other outputs. */
+function thingOutput(opId, output = {}) {
+  const op = shapes[opId];
+  if (op.traits['ai.caitlyn.traits#sseEvents']) return undefined;
+  const ms = Object.entries(members(op.output.target));
+  const body = ms.filter(([, d]) => (d.traits ?? {})[T('httpHeader')] === undefined && (d.traits ?? {})[T('httpResponseCode')] === undefined);
+  if (body.length !== 1 || (body[0][1].traits ?? {})[T('httpPayload')] === undefined) return undefined;
+  const thing = output[body[0][0]];
+  if (thing === undefined) return undefined;
+  const etagMember = ms.find(([, d]) => String((d.traits ?? {})[T('httpHeader')] ?? '').toLowerCase() === 'etag');
+  const etag = thing.etag ?? (etagMember ? output[etagMember[0]] : undefined);
+  return etag === undefined ? thing : { ...thing, etag };
 }
 
 function errorResponse(shapeId, content) {
@@ -105,7 +124,7 @@ for (const opId of [...operations].sort()) {
       input: ex.input ?? {},
       request: request(opId, ex.input ?? {}),
       response: ex.error ? errorResponse(ex.error.shapeId, ex.error.content) : successResponse(opId, ex.output),
-      expected: ex.error ? { error: { status: shapes[ex.error.shapeId].traits[T('httpError')], code: ex.error.content.code, shape: ex.error.shapeId.split('#')[1], requestId: ex.error.content.requestId } } : { output: ex.output ?? null },
+      expected: ex.error ? { error: { status: shapes[ex.error.shapeId].traits[T('httpError')], code: ex.error.content.code, shape: ex.error.shapeId.split('#')[1], requestId: ex.error.content.requestId } } : { output: thingOutput(opId, ex.output) ?? ex.output ?? null, ...(thingOutput(opId, ex.output) ? { thing: true } : {}) },
     });
   }
   const errors = [...(op.errors ?? []), ...(service.errors ?? [])].map((e) => e.target);

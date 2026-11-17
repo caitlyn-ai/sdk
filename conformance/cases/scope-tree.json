@@ -1,0 +1,1784 @@
+{
+    "kind": "root",
+    "path": "caitlyn",
+    "methods": [
+        {
+            "name": "me",
+            "operation": "GetCaller"
+        }
+    ],
+    "children": {
+        "agents": {
+            "kind": "collection",
+            "path": "caitlyn.agents",
+            "name": "agents",
+            "resource": "AgentResource",
+            "singular": "agent",
+            "identifiers": [
+                {
+                    "name": "agentId"
+                }
+            ],
+            "methods": [
+                {
+                    "name": "list",
+                    "operation": "ListAgents"
+                },
+                {
+                    "name": "create",
+                    "operation": "CreateAgent",
+                    "creates": {
+                        "collection": "caitlyn.agents",
+                        "source": "output:agent.id"
+                    }
+                }
+            ],
+            "children": {
+                "options": {
+                    "kind": "namespace",
+                    "path": "caitlyn.agents.options",
+                    "name": "options",
+                    "methods": [
+                        {
+                            "name": "guardrails",
+                            "operation": "ListGuardrails"
+                        },
+                        {
+                            "name": "memoryStores",
+                            "operation": "ListMemoryStores"
+                        },
+                        {
+                            "name": "models",
+                            "operation": "ListModels"
+                        },
+                        {
+                            "name": "tools",
+                            "operation": "ListTools"
+                        },
+                        {
+                            "name": "voices",
+                            "operation": "ListVoices"
+                        }
+                    ]
+                }
+            },
+            "scope": {
+                "kind": "scope",
+                "path": "caitlyn.agents(agentId)",
+                "name": "agents",
+                "resource": "AgentResource",
+                "identifiers": [
+                    {
+                        "name": "agentId"
+                    }
+                ],
+                "methods": [
+                    {
+                        "name": "get",
+                        "operation": "GetAgent",
+                        "fills": [
+                            {
+                                "member": "agentId",
+                                "identifier": "agentId"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "update",
+                        "operation": "UpdateAgent",
+                        "fills": [
+                            {
+                                "member": "agentId",
+                                "identifier": "agentId"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "delete",
+                        "operation": "DeleteAgent",
+                        "fills": [
+                            {
+                                "member": "agentId",
+                                "identifier": "agentId"
+                            }
+                        ]
+                    }
+                ],
+                "children": {
+                    "conversations": {
+                        "kind": "namespace",
+                        "path": "caitlyn.agents(agentId).conversations",
+                        "name": "conversations",
+                        "methods": [
+                            {
+                                "name": "list",
+                                "operation": "ListConversations",
+                                "fills": [
+                                    {
+                                        "member": "agentId",
+                                        "identifier": "agentId"
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    "draft": {
+                        "kind": "scope",
+                        "path": "caitlyn.agents(agentId).draft",
+                        "name": "draft",
+                        "resource": "Draft",
+                        "alias": "draft",
+                        "identifiers": [
+                            {
+                                "name": "agentId"
+                            },
+                            {
+                                "name": "version",
+                                "fixed": "draft"
+                            }
+                        ],
+                        "methods": [
+                            {
+                                "name": "replace",
+                                "operation": "ReplaceDraftVersion",
+                                "fills": [
+                                    {
+                                        "member": "agentId",
+                                        "identifier": "agentId"
+                                    }
+                                ],
+                                "ifMatchOptional": true
+                            },
+                            {
+                                "name": "reset",
+                                "operation": "ResetDraftVersion",
+                                "fills": [
+                                    {
+                                        "member": "agentId",
+                                        "identifier": "agentId"
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "save",
+                                "operation": "SaveDraftVersion",
+                                "fills": [
+                                    {
+                                        "member": "agentId",
+                                        "identifier": "agentId"
+                                    }
+                                ],
+                                "ifMatchOptional": true
+                            },
+                            {
+                                "name": "update",
+                                "operation": "UpdateDraftVersion",
+                                "fills": [
+                                    {
+                                        "member": "agentId",
+                                        "identifier": "agentId"
+                                    }
+                                ],
+                                "ifMatchOptional": true
+                            },
+                            {
+                                "name": "get",
+                                "operation": "GetAgentVersion",
+                                "fills": [
+                                    {
+                                        "member": "agentId",
+                                        "identifier": "agentId"
+                                    },
+                                    {
+                                        "member": "version",
+                                        "identifier": "version"
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "compare",
+                                "operation": "CompareAgentVersions",
+                                "fills": [
+                                    {
+                                        "member": "agentId",
+                                        "identifier": "agentId"
+                                    },
+                                    {
+                                        "member": "version",
+                                        "identifier": "version"
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "publish",
+                                "operation": "PublishAgentVersion",
+                                "fills": [
+                                    {
+                                        "member": "agentId",
+                                        "identifier": "agentId"
+                                    },
+                                    {
+                                        "member": "version",
+                                        "identifier": "version"
+                                    }
+                                ],
+                                "ifMatchOptional": true
+                            }
+                        ],
+                        "children": {
+                            "conversations": {
+                                "kind": "namespace",
+                                "path": "caitlyn.agents(agentId).draft.conversations",
+                                "name": "conversations",
+                                "methods": [
+                                    {
+                                        "name": "create",
+                                        "operation": "CreateConversation",
+                                        "fills": [
+                                            {
+                                                "member": "agentId",
+                                                "identifier": "agentId"
+                                            },
+                                            {
+                                                "member": "version",
+                                                "identifier": "version"
+                                            }
+                                        ],
+                                        "creates": {
+                                            "collection": "caitlyn.conversations",
+                                            "source": "output:conversation.id"
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "history": {
+                        "kind": "collection",
+                        "path": "caitlyn.agents(agentId).history",
+                        "name": "history",
+                        "resource": "HistoryEntryResource",
+                        "singular": "historyEntry",
+                        "identifiers": [
+                            {
+                                "name": "historyEntryId"
+                            }
+                        ],
+                        "methods": [
+                            {
+                                "name": "list",
+                                "operation": "ListHistoryEntries",
+                                "fills": [
+                                    {
+                                        "member": "agentId",
+                                        "identifier": "agentId"
+                                    }
+                                ]
+                            }
+                        ],
+                        "scope": {
+                            "kind": "scope",
+                            "path": "caitlyn.agents(agentId).history(historyEntryId)",
+                            "name": "history",
+                            "resource": "HistoryEntryResource",
+                            "identifiers": [
+                                {
+                                    "name": "agentId"
+                                },
+                                {
+                                    "name": "historyEntryId"
+                                }
+                            ],
+                            "methods": [
+                                {
+                                    "name": "get",
+                                    "operation": "GetHistoryEntry",
+                                    "fills": [
+                                        {
+                                            "member": "agentId",
+                                            "identifier": "agentId"
+                                        },
+                                        {
+                                            "member": "historyEntryId",
+                                            "identifier": "historyEntryId"
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    "versions": {
+                        "kind": "collection",
+                        "path": "caitlyn.agents(agentId).versions",
+                        "name": "versions",
+                        "resource": "VersionResource",
+                        "singular": "version",
+                        "identifiers": [
+                            {
+                                "name": "version"
+                            }
+                        ],
+                        "methods": [
+                            {
+                                "name": "list",
+                                "operation": "ListAgentVersions",
+                                "fills": [
+                                    {
+                                        "member": "agentId",
+                                        "identifier": "agentId"
+                                    }
+                                ]
+                            }
+                        ],
+                        "scope": {
+                            "kind": "scope",
+                            "path": "caitlyn.agents(agentId).versions(version)",
+                            "name": "versions",
+                            "resource": "VersionResource",
+                            "identifiers": [
+                                {
+                                    "name": "agentId"
+                                },
+                                {
+                                    "name": "version"
+                                }
+                            ],
+                            "methods": [
+                                {
+                                    "name": "get",
+                                    "operation": "GetAgentVersion",
+                                    "fills": [
+                                        {
+                                            "member": "agentId",
+                                            "identifier": "agentId"
+                                        },
+                                        {
+                                            "member": "version",
+                                            "identifier": "version"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "name": "delete",
+                                    "operation": "DeleteAgentVersion",
+                                    "fills": [
+                                        {
+                                            "member": "agentId",
+                                            "identifier": "agentId"
+                                        },
+                                        {
+                                            "member": "version",
+                                            "identifier": "version"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "name": "compare",
+                                    "operation": "CompareAgentVersions",
+                                    "fills": [
+                                        {
+                                            "member": "agentId",
+                                            "identifier": "agentId"
+                                        },
+                                        {
+                                            "member": "version",
+                                            "identifier": "version"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "name": "publish",
+                                    "operation": "PublishAgentVersion",
+                                    "fills": [
+                                        {
+                                            "member": "agentId",
+                                            "identifier": "agentId"
+                                        },
+                                        {
+                                            "member": "version",
+                                            "identifier": "version"
+                                        }
+                                    ],
+                                    "ifMatchOptional": true
+                                }
+                            ],
+                            "children": {
+                                "conversations": {
+                                    "kind": "namespace",
+                                    "path": "caitlyn.agents(agentId).versions(version).conversations",
+                                    "name": "conversations",
+                                    "methods": [
+                                        {
+                                            "name": "create",
+                                            "operation": "CreateConversation",
+                                            "fills": [
+                                                {
+                                                    "member": "agentId",
+                                                    "identifier": "agentId"
+                                                },
+                                                {
+                                                    "member": "version",
+                                                    "identifier": "version"
+                                                }
+                                            ],
+                                            "creates": {
+                                                "collection": "caitlyn.conversations",
+                                                "source": "output:conversation.id"
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "live": {
+                        "kind": "scope",
+                        "path": "caitlyn.agents(agentId).live",
+                        "name": "live",
+                        "resource": "VersionResource",
+                        "alias": "live",
+                        "identifiers": [
+                            {
+                                "name": "agentId"
+                            },
+                            {
+                                "name": "version",
+                                "fixed": "live"
+                            }
+                        ],
+                        "methods": [
+                            {
+                                "name": "get",
+                                "operation": "GetAgentVersion",
+                                "fills": [
+                                    {
+                                        "member": "agentId",
+                                        "identifier": "agentId"
+                                    },
+                                    {
+                                        "member": "version",
+                                        "identifier": "version"
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "compare",
+                                "operation": "CompareAgentVersions",
+                                "fills": [
+                                    {
+                                        "member": "agentId",
+                                        "identifier": "agentId"
+                                    },
+                                    {
+                                        "member": "version",
+                                        "identifier": "version"
+                                    }
+                                ]
+                            }
+                        ],
+                        "children": {
+                            "conversations": {
+                                "kind": "namespace",
+                                "path": "caitlyn.agents(agentId).live.conversations",
+                                "name": "conversations",
+                                "methods": [
+                                    {
+                                        "name": "create",
+                                        "operation": "CreateConversation",
+                                        "fills": [
+                                            {
+                                                "member": "agentId",
+                                                "identifier": "agentId"
+                                            },
+                                            {
+                                                "member": "version",
+                                                "identifier": "version"
+                                            }
+                                        ],
+                                        "creates": {
+                                            "collection": "caitlyn.conversations",
+                                            "source": "output:conversation.id"
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "conversations": {
+            "kind": "collection",
+            "path": "caitlyn.conversations",
+            "name": "conversations",
+            "resource": "ConversationResource",
+            "singular": "conversation",
+            "identifiers": [
+                {
+                    "name": "conversationId"
+                }
+            ],
+            "scope": {
+                "kind": "scope",
+                "path": "caitlyn.conversations(conversationId)",
+                "name": "conversations",
+                "resource": "ConversationResource",
+                "identifiers": [
+                    {
+                        "name": "conversationId"
+                    }
+                ],
+                "methods": [
+                    {
+                        "name": "get",
+                        "operation": "GetConversation",
+                        "fills": [
+                            {
+                                "member": "conversationId",
+                                "identifier": "conversationId"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "send",
+                        "operation": "SendMessage",
+                        "fills": [
+                            {
+                                "member": "conversationId",
+                                "identifier": "conversationId"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "watch",
+                        "operation": "WatchConversation",
+                        "fills": [
+                            {
+                                "member": "conversationId",
+                                "identifier": "conversationId"
+                            }
+                        ]
+                    }
+                ],
+                "children": {
+                    "messages": {
+                        "kind": "collection",
+                        "path": "caitlyn.conversations(conversationId).messages",
+                        "name": "messages",
+                        "resource": "ConversationMessage",
+                        "singular": "message",
+                        "identifiers": [
+                            {
+                                "name": "messageId"
+                            }
+                        ],
+                        "methods": [
+                            {
+                                "name": "list",
+                                "operation": "ListMessages",
+                                "fills": [
+                                    {
+                                        "member": "conversationId",
+                                        "identifier": "conversationId"
+                                    }
+                                ]
+                            }
+                        ],
+                        "scope": {
+                            "kind": "scope",
+                            "path": "caitlyn.conversations(conversationId).messages(messageId)",
+                            "name": "messages",
+                            "resource": "ConversationMessage",
+                            "identifiers": [
+                                {
+                                    "name": "conversationId"
+                                },
+                                {
+                                    "name": "messageId"
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "events": {
+            "kind": "scope",
+            "path": "caitlyn.events",
+            "name": "events",
+            "resource": "Event",
+            "methods": [
+                {
+                    "name": "watch",
+                    "operation": "WatchWorkspaceEvents"
+                }
+            ]
+        },
+        "knowledgeBases": {
+            "kind": "collection",
+            "path": "caitlyn.knowledgeBases",
+            "name": "knowledgeBases",
+            "resource": "KnowledgeBaseResource",
+            "singular": "knowledgeBase",
+            "identifiers": [
+                {
+                    "name": "knowledgeBaseId"
+                }
+            ],
+            "methods": [
+                {
+                    "name": "list",
+                    "operation": "ListKnowledgeBases"
+                },
+                {
+                    "name": "create",
+                    "operation": "CreateKnowledgeBase",
+                    "longRunning": {
+                        "watch": "WatchKnowledgeBase"
+                    },
+                    "creates": {
+                        "collection": "caitlyn.knowledgeBases",
+                        "source": "output:knowledgeBase.id"
+                    }
+                }
+            ],
+            "scope": {
+                "kind": "scope",
+                "path": "caitlyn.knowledgeBases(knowledgeBaseId)",
+                "name": "knowledgeBases",
+                "resource": "KnowledgeBaseResource",
+                "identifiers": [
+                    {
+                        "name": "knowledgeBaseId"
+                    }
+                ],
+                "watch": {
+                    "watch": "WatchKnowledgeBase"
+                },
+                "methods": [
+                    {
+                        "name": "get",
+                        "operation": "GetKnowledgeBase",
+                        "fills": [
+                            {
+                                "member": "knowledgeBaseId",
+                                "identifier": "knowledgeBaseId"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "update",
+                        "operation": "UpdateKnowledgeBase",
+                        "fills": [
+                            {
+                                "member": "knowledgeBaseId",
+                                "identifier": "knowledgeBaseId"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "delete",
+                        "operation": "DeleteKnowledgeBase",
+                        "fills": [
+                            {
+                                "member": "knowledgeBaseId",
+                                "identifier": "knowledgeBaseId"
+                            }
+                        ],
+                        "longRunning": {
+                            "watch": "WatchKnowledgeBase"
+                        }
+                    },
+                    {
+                        "name": "watch",
+                        "operation": "WatchKnowledgeBase",
+                        "fills": [
+                            {
+                                "member": "knowledgeBaseId",
+                                "identifier": "knowledgeBaseId"
+                            }
+                        ]
+                    }
+                ],
+                "children": {
+                    "layoutAwareSearch": {
+                        "kind": "namespace",
+                        "path": "caitlyn.knowledgeBases(knowledgeBaseId).layoutAwareSearch",
+                        "name": "layoutAwareSearch",
+                        "methods": [
+                            {
+                                "name": "enable",
+                                "operation": "EnableLayoutAwareSearch",
+                                "fills": [
+                                    {
+                                        "member": "knowledgeBaseId",
+                                        "identifier": "knowledgeBaseId"
+                                    }
+                                ],
+                                "longRunning": {
+                                    "watch": "WatchKnowledgeBase"
+                                },
+                                "estimate": "EstimateLayoutAwareSearch"
+                            }
+                        ]
+                    },
+                    "access": {
+                        "kind": "scope",
+                        "path": "caitlyn.knowledgeBases(knowledgeBaseId).access",
+                        "name": "access",
+                        "resource": "AccessResource",
+                        "identifiers": [
+                            {
+                                "name": "knowledgeBaseId"
+                            }
+                        ],
+                        "methods": [
+                            {
+                                "name": "get",
+                                "operation": "GetAccess",
+                                "fills": [
+                                    {
+                                        "member": "knowledgeBaseId",
+                                        "identifier": "knowledgeBaseId"
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "set",
+                                "operation": "PutAccess",
+                                "fills": [
+                                    {
+                                        "member": "knowledgeBaseId",
+                                        "identifier": "knowledgeBaseId"
+                                    }
+                                ],
+                                "ifMatchOptional": true
+                            }
+                        ]
+                    },
+                    "documents": {
+                        "kind": "collection",
+                        "path": "caitlyn.knowledgeBases(knowledgeBaseId).documents",
+                        "name": "documents",
+                        "resource": "DocumentResource",
+                        "singular": "document",
+                        "identifiers": [
+                            {
+                                "name": "documentId"
+                            }
+                        ],
+                        "methods": [
+                            {
+                                "name": "list",
+                                "operation": "ListDocuments",
+                                "fills": [
+                                    {
+                                        "member": "knowledgeBaseId",
+                                        "identifier": "knowledgeBaseId"
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "create",
+                                "operation": "CreateDocument",
+                                "fills": [
+                                    {
+                                        "member": "knowledgeBaseId",
+                                        "identifier": "knowledgeBaseId"
+                                    }
+                                ],
+                                "longRunning": {
+                                    "watch": "WatchKnowledgeBase",
+                                    "filter": "document"
+                                },
+                                "creates": {
+                                    "collection": "caitlyn.knowledgeBases(knowledgeBaseId).documents",
+                                    "source": "output:document.id"
+                                },
+                                "estimate": "EstimateIngestion"
+                            },
+                            {
+                                "name": "deleteMany",
+                                "operation": "BatchDeleteDocuments",
+                                "fills": [
+                                    {
+                                        "member": "knowledgeBaseId",
+                                        "identifier": "knowledgeBaseId"
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "reprocess",
+                                "operation": "ReprocessDocuments",
+                                "fills": [
+                                    {
+                                        "member": "knowledgeBaseId",
+                                        "identifier": "knowledgeBaseId"
+                                    }
+                                ],
+                                "longRunning": {
+                                    "watch": "WatchKnowledgeBase"
+                                },
+                                "estimate": "EstimateReprocessDocuments"
+                            }
+                        ],
+                        "scope": {
+                            "kind": "scope",
+                            "path": "caitlyn.knowledgeBases(knowledgeBaseId).documents(documentId)",
+                            "name": "documents",
+                            "resource": "DocumentResource",
+                            "identifiers": [
+                                {
+                                    "name": "knowledgeBaseId"
+                                },
+                                {
+                                    "name": "documentId"
+                                }
+                            ],
+                            "watch": {
+                                "watch": "WatchKnowledgeBase",
+                                "filter": "document"
+                            },
+                            "methods": [
+                                {
+                                    "name": "get",
+                                    "operation": "GetDocument",
+                                    "fills": [
+                                        {
+                                            "member": "knowledgeBaseId",
+                                            "identifier": "knowledgeBaseId"
+                                        },
+                                        {
+                                            "member": "documentId",
+                                            "identifier": "documentId"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "name": "update",
+                                    "operation": "UpdateDocument",
+                                    "fills": [
+                                        {
+                                            "member": "knowledgeBaseId",
+                                            "identifier": "knowledgeBaseId"
+                                        },
+                                        {
+                                            "member": "documentId",
+                                            "identifier": "documentId"
+                                        }
+                                    ],
+                                    "longRunning": {
+                                        "watch": "WatchKnowledgeBase",
+                                        "filter": "document"
+                                    }
+                                },
+                                {
+                                    "name": "delete",
+                                    "operation": "DeleteDocument",
+                                    "fills": [
+                                        {
+                                            "member": "knowledgeBaseId",
+                                            "identifier": "knowledgeBaseId"
+                                        },
+                                        {
+                                            "member": "documentId",
+                                            "identifier": "documentId"
+                                        }
+                                    ],
+                                    "longRunning": {
+                                        "watch": "WatchKnowledgeBase",
+                                        "filter": "document"
+                                    }
+                                },
+                                {
+                                    "name": "cancelProcessing",
+                                    "operation": "CancelDocumentProcessing",
+                                    "fills": [
+                                        {
+                                            "member": "knowledgeBaseId",
+                                            "identifier": "knowledgeBaseId"
+                                        },
+                                        {
+                                            "member": "documentId",
+                                            "identifier": "documentId"
+                                        }
+                                    ],
+                                    "longRunning": {
+                                        "watch": "WatchKnowledgeBase",
+                                        "filter": "document",
+                                        "cancels": true
+                                    }
+                                },
+                                {
+                                    "name": "replace",
+                                    "operation": "CreateDocumentVersion",
+                                    "fills": [
+                                        {
+                                            "member": "knowledgeBaseId",
+                                            "identifier": "knowledgeBaseId"
+                                        },
+                                        {
+                                            "member": "documentId",
+                                            "identifier": "documentId"
+                                        }
+                                    ],
+                                    "longRunning": {
+                                        "watch": "WatchKnowledgeBase",
+                                        "filter": "document"
+                                    },
+                                    "estimate": "EstimateDocumentVersion",
+                                    "ifMatchOptional": true
+                                },
+                                {
+                                    "name": "download",
+                                    "operation": "GetDocumentDownload",
+                                    "fills": [
+                                        {
+                                            "member": "knowledgeBaseId",
+                                            "identifier": "knowledgeBaseId"
+                                        },
+                                        {
+                                            "member": "documentId",
+                                            "identifier": "documentId"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "name": "retry",
+                                    "operation": "RetryDocument",
+                                    "fills": [
+                                        {
+                                            "member": "knowledgeBaseId",
+                                            "identifier": "knowledgeBaseId"
+                                        },
+                                        {
+                                            "member": "documentId",
+                                            "identifier": "documentId"
+                                        }
+                                    ],
+                                    "longRunning": {
+                                        "watch": "WatchKnowledgeBase",
+                                        "filter": "document"
+                                    }
+                                }
+                            ],
+                            "children": {
+                                "versions": {
+                                    "kind": "collection",
+                                    "path": "caitlyn.knowledgeBases(knowledgeBaseId).documents(documentId).versions",
+                                    "name": "versions",
+                                    "resource": "DocumentVersionResource",
+                                    "singular": "version",
+                                    "identifiers": [
+                                        {
+                                            "name": "version"
+                                        }
+                                    ],
+                                    "methods": [
+                                        {
+                                            "name": "list",
+                                            "operation": "ListDocumentVersions",
+                                            "fills": [
+                                                {
+                                                    "member": "knowledgeBaseId",
+                                                    "identifier": "knowledgeBaseId"
+                                                },
+                                                {
+                                                    "member": "documentId",
+                                                    "identifier": "documentId"
+                                                }
+                                            ]
+                                        }
+                                    ],
+                                    "scope": {
+                                        "kind": "scope",
+                                        "path": "caitlyn.knowledgeBases(knowledgeBaseId).documents(documentId).versions(version)",
+                                        "name": "versions",
+                                        "resource": "DocumentVersionResource",
+                                        "identifiers": [
+                                            {
+                                                "name": "knowledgeBaseId"
+                                            },
+                                            {
+                                                "name": "documentId"
+                                            },
+                                            {
+                                                "name": "version"
+                                            }
+                                        ],
+                                        "methods": [
+                                            {
+                                                "name": "get",
+                                                "operation": "GetDocumentVersion",
+                                                "fills": [
+                                                    {
+                                                        "member": "knowledgeBaseId",
+                                                        "identifier": "knowledgeBaseId"
+                                                    },
+                                                    {
+                                                        "member": "documentId",
+                                                        "identifier": "documentId"
+                                                    },
+                                                    {
+                                                        "member": "version",
+                                                        "identifier": "version"
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                "name": "delete",
+                                                "operation": "DeleteDocumentVersion",
+                                                "fills": [
+                                                    {
+                                                        "member": "knowledgeBaseId",
+                                                        "identifier": "knowledgeBaseId"
+                                                    },
+                                                    {
+                                                        "member": "documentId",
+                                                        "identifier": "documentId"
+                                                    },
+                                                    {
+                                                        "member": "version",
+                                                        "identifier": "version"
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                },
+                                "access": {
+                                    "kind": "namespace",
+                                    "path": "caitlyn.knowledgeBases(knowledgeBaseId).documents(documentId).access",
+                                    "name": "access",
+                                    "methods": [
+                                        {
+                                            "name": "get",
+                                            "operation": "GetAccess",
+                                            "fills": [
+                                                {
+                                                    "member": "knowledgeBaseId",
+                                                    "identifier": "knowledgeBaseId"
+                                                },
+                                                {
+                                                    "member": "document",
+                                                    "identifier": "documentId"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "name": "set",
+                                            "operation": "PutAccess",
+                                            "fills": [
+                                                {
+                                                    "member": "knowledgeBaseId",
+                                                    "identifier": "knowledgeBaseId"
+                                                },
+                                                {
+                                                    "member": "document",
+                                                    "identifier": "documentId"
+                                                }
+                                            ],
+                                            "ifMatchOptional": true
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "fields": {
+                        "kind": "collection",
+                        "path": "caitlyn.knowledgeBases(knowledgeBaseId).fields",
+                        "name": "fields",
+                        "resource": "FieldResource",
+                        "singular": "field",
+                        "identifiers": [
+                            {
+                                "name": "fieldKey"
+                            }
+                        ],
+                        "methods": [
+                            {
+                                "name": "list",
+                                "operation": "ListFields",
+                                "fills": [
+                                    {
+                                        "member": "knowledgeBaseId",
+                                        "identifier": "knowledgeBaseId"
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "create",
+                                "operation": "CreateField",
+                                "fills": [
+                                    {
+                                        "member": "knowledgeBaseId",
+                                        "identifier": "knowledgeBaseId"
+                                    }
+                                ],
+                                "creates": {
+                                    "collection": "caitlyn.knowledgeBases(knowledgeBaseId).fields",
+                                    "source": "input:key"
+                                }
+                            },
+                            {
+                                "name": "fillIn",
+                                "operation": "FillInFields",
+                                "fills": [
+                                    {
+                                        "member": "knowledgeBaseId",
+                                        "identifier": "knowledgeBaseId"
+                                    }
+                                ],
+                                "longRunning": {
+                                    "watch": "WatchKnowledgeBase"
+                                },
+                                "estimate": "EstimateFillInFields"
+                            }
+                        ],
+                        "scope": {
+                            "kind": "scope",
+                            "path": "caitlyn.knowledgeBases(knowledgeBaseId).fields(fieldKey)",
+                            "name": "fields",
+                            "resource": "FieldResource",
+                            "identifiers": [
+                                {
+                                    "name": "knowledgeBaseId"
+                                },
+                                {
+                                    "name": "fieldKey"
+                                }
+                            ],
+                            "methods": [
+                                {
+                                    "name": "get",
+                                    "operation": "GetField",
+                                    "fills": [
+                                        {
+                                            "member": "knowledgeBaseId",
+                                            "identifier": "knowledgeBaseId"
+                                        },
+                                        {
+                                            "member": "fieldKey",
+                                            "identifier": "fieldKey"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "name": "update",
+                                    "operation": "UpdateField",
+                                    "fills": [
+                                        {
+                                            "member": "knowledgeBaseId",
+                                            "identifier": "knowledgeBaseId"
+                                        },
+                                        {
+                                            "member": "fieldKey",
+                                            "identifier": "fieldKey"
+                                        }
+                                    ],
+                                    "ifMatchOptional": true
+                                },
+                                {
+                                    "name": "delete",
+                                    "operation": "DeleteField",
+                                    "fills": [
+                                        {
+                                            "member": "knowledgeBaseId",
+                                            "identifier": "knowledgeBaseId"
+                                        },
+                                        {
+                                            "member": "fieldKey",
+                                            "identifier": "fieldKey"
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    "folders": {
+                        "kind": "collection",
+                        "path": "caitlyn.knowledgeBases(knowledgeBaseId).folders",
+                        "name": "folders",
+                        "resource": "FolderResource",
+                        "singular": "folder",
+                        "identifiers": [
+                            {
+                                "name": "folderPath"
+                            }
+                        ],
+                        "methods": [
+                            {
+                                "name": "list",
+                                "operation": "ListFolders",
+                                "fills": [
+                                    {
+                                        "member": "knowledgeBaseId",
+                                        "identifier": "knowledgeBaseId"
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "create",
+                                "operation": "CreateFolder",
+                                "fills": [
+                                    {
+                                        "member": "knowledgeBaseId",
+                                        "identifier": "knowledgeBaseId"
+                                    }
+                                ],
+                                "longRunning": {
+                                    "watch": "WatchKnowledgeBase",
+                                    "filter": "folder"
+                                },
+                                "creates": {
+                                    "collection": "caitlyn.knowledgeBases(knowledgeBaseId).folders",
+                                    "source": "input:path"
+                                }
+                            }
+                        ],
+                        "scope": {
+                            "kind": "scope",
+                            "path": "caitlyn.knowledgeBases(knowledgeBaseId).folders(folderPath)",
+                            "name": "folders",
+                            "resource": "FolderResource",
+                            "identifiers": [
+                                {
+                                    "name": "knowledgeBaseId"
+                                },
+                                {
+                                    "name": "folderPath"
+                                }
+                            ],
+                            "watch": {
+                                "watch": "WatchKnowledgeBase",
+                                "filter": "folder"
+                            },
+                            "methods": [
+                                {
+                                    "name": "update",
+                                    "operation": "UpdateFolder",
+                                    "fills": [
+                                        {
+                                            "member": "knowledgeBaseId",
+                                            "identifier": "knowledgeBaseId"
+                                        },
+                                        {
+                                            "member": "folderPath",
+                                            "identifier": "folderPath",
+                                            "trimSlashes": true
+                                        }
+                                    ],
+                                    "longRunning": {
+                                        "watch": "WatchKnowledgeBase",
+                                        "filter": "folder"
+                                    }
+                                },
+                                {
+                                    "name": "delete",
+                                    "operation": "DeleteFolder",
+                                    "fills": [
+                                        {
+                                            "member": "knowledgeBaseId",
+                                            "identifier": "knowledgeBaseId"
+                                        },
+                                        {
+                                            "member": "folderPath",
+                                            "identifier": "folderPath",
+                                            "trimSlashes": true
+                                        }
+                                    ],
+                                    "longRunning": {
+                                        "watch": "WatchKnowledgeBase",
+                                        "filter": "folder"
+                                    }
+                                }
+                            ],
+                            "children": {
+                                "access": {
+                                    "kind": "namespace",
+                                    "path": "caitlyn.knowledgeBases(knowledgeBaseId).folders(folderPath).access",
+                                    "name": "access",
+                                    "methods": [
+                                        {
+                                            "name": "get",
+                                            "operation": "GetAccess",
+                                            "fills": [
+                                                {
+                                                    "member": "knowledgeBaseId",
+                                                    "identifier": "knowledgeBaseId"
+                                                },
+                                                {
+                                                    "member": "folder",
+                                                    "identifier": "folderPath"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "name": "set",
+                                            "operation": "PutAccess",
+                                            "fills": [
+                                                {
+                                                    "member": "knowledgeBaseId",
+                                                    "identifier": "knowledgeBaseId"
+                                                },
+                                                {
+                                                    "member": "folder",
+                                                    "identifier": "folderPath"
+                                                }
+                                            ],
+                                            "ifMatchOptional": true
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "ingestion": {
+                        "kind": "namespace",
+                        "path": "caitlyn.knowledgeBases(knowledgeBaseId).ingestion",
+                        "name": "ingestion",
+                        "children": {
+                            "batches": {
+                                "kind": "collection",
+                                "path": "caitlyn.knowledgeBases(knowledgeBaseId).ingestion.batches",
+                                "name": "batches",
+                                "resource": "IngestionBatchResource",
+                                "singular": "batch",
+                                "identifiers": [
+                                    {
+                                        "name": "ingestionBatchId"
+                                    }
+                                ],
+                                "methods": [
+                                    {
+                                        "name": "list",
+                                        "operation": "ListIngestionBatches",
+                                        "fills": [
+                                            {
+                                                "member": "knowledgeBaseId",
+                                                "identifier": "knowledgeBaseId"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "name": "create",
+                                        "operation": "CreateIngestionBatch",
+                                        "fills": [
+                                            {
+                                                "member": "knowledgeBaseId",
+                                                "identifier": "knowledgeBaseId"
+                                            }
+                                        ],
+                                        "longRunning": {
+                                            "watch": "WatchKnowledgeBase",
+                                            "filter": "batch"
+                                        },
+                                        "creates": {
+                                            "collection": "caitlyn.knowledgeBases(knowledgeBaseId).ingestion.batches",
+                                            "source": "output:batch.id"
+                                        }
+                                    }
+                                ],
+                                "scope": {
+                                    "kind": "scope",
+                                    "path": "caitlyn.knowledgeBases(knowledgeBaseId).ingestion.batches(ingestionBatchId)",
+                                    "name": "batches",
+                                    "resource": "IngestionBatchResource",
+                                    "identifiers": [
+                                        {
+                                            "name": "knowledgeBaseId"
+                                        },
+                                        {
+                                            "name": "ingestionBatchId"
+                                        }
+                                    ],
+                                    "watch": {
+                                        "watch": "WatchKnowledgeBase",
+                                        "filter": "batch"
+                                    },
+                                    "methods": [
+                                        {
+                                            "name": "get",
+                                            "operation": "GetIngestionBatch",
+                                            "fills": [
+                                                {
+                                                    "member": "knowledgeBaseId",
+                                                    "identifier": "knowledgeBaseId"
+                                                },
+                                                {
+                                                    "member": "ingestionBatchId",
+                                                    "identifier": "ingestionBatchId"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "name": "update",
+                                            "operation": "UpdateIngestionBatch",
+                                            "fills": [
+                                                {
+                                                    "member": "knowledgeBaseId",
+                                                    "identifier": "knowledgeBaseId"
+                                                },
+                                                {
+                                                    "member": "ingestionBatchId",
+                                                    "identifier": "ingestionBatchId"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "name": "cancel",
+                                            "operation": "CancelIngestionBatch",
+                                            "fills": [
+                                                {
+                                                    "member": "knowledgeBaseId",
+                                                    "identifier": "knowledgeBaseId"
+                                                },
+                                                {
+                                                    "member": "ingestionBatchId",
+                                                    "identifier": "ingestionBatchId"
+                                                }
+                                            ],
+                                            "longRunning": {
+                                                "watch": "WatchKnowledgeBase",
+                                                "filter": "batch",
+                                                "cancels": true
+                                            }
+                                        },
+                                        {
+                                            "name": "start",
+                                            "operation": "StartIngestionBatch",
+                                            "fills": [
+                                                {
+                                                    "member": "knowledgeBaseId",
+                                                    "identifier": "knowledgeBaseId"
+                                                },
+                                                {
+                                                    "member": "ingestionBatchId",
+                                                    "identifier": "ingestionBatchId"
+                                                }
+                                            ],
+                                            "longRunning": {
+                                                "watch": "WatchKnowledgeBase",
+                                                "filter": "batch"
+                                            },
+                                            "ifMatchOptional": true
+                                        }
+                                    ],
+                                    "children": {
+                                        "items": {
+                                            "kind": "collection",
+                                            "path": "caitlyn.knowledgeBases(knowledgeBaseId).ingestion.batches(ingestionBatchId).items",
+                                            "name": "items",
+                                            "resource": "IngestionBatchItemResource",
+                                            "singular": "item",
+                                            "identifiers": [
+                                                {
+                                                    "name": "itemId"
+                                                }
+                                            ],
+                                            "methods": [
+                                                {
+                                                    "name": "list",
+                                                    "operation": "ListIngestionBatchItems",
+                                                    "fills": [
+                                                        {
+                                                            "member": "knowledgeBaseId",
+                                                            "identifier": "knowledgeBaseId"
+                                                        },
+                                                        {
+                                                            "member": "ingestionBatchId",
+                                                            "identifier": "ingestionBatchId"
+                                                        }
+                                                    ]
+                                                }
+                                            ],
+                                            "scope": {
+                                                "kind": "scope",
+                                                "path": "caitlyn.knowledgeBases(knowledgeBaseId).ingestion.batches(ingestionBatchId).items(itemId)",
+                                                "name": "items",
+                                                "resource": "IngestionBatchItemResource",
+                                                "identifiers": [
+                                                    {
+                                                        "name": "knowledgeBaseId"
+                                                    },
+                                                    {
+                                                        "name": "ingestionBatchId"
+                                                    },
+                                                    {
+                                                        "name": "itemId"
+                                                    }
+                                                ],
+                                                "methods": [
+                                                    {
+                                                        "name": "get",
+                                                        "operation": "GetIngestionBatchItem",
+                                                        "fills": [
+                                                            {
+                                                                "member": "knowledgeBaseId",
+                                                                "identifier": "knowledgeBaseId"
+                                                            },
+                                                            {
+                                                                "member": "ingestionBatchId",
+                                                                "identifier": "ingestionBatchId"
+                                                            },
+                                                            {
+                                                                "member": "itemId",
+                                                                "identifier": "itemId"
+                                                            }
+                                                        ]
+                                                    },
+                                                    {
+                                                        "name": "resolve",
+                                                        "operation": "UpdateIngestionBatchItem",
+                                                        "fills": [
+                                                            {
+                                                                "member": "knowledgeBaseId",
+                                                                "identifier": "knowledgeBaseId"
+                                                            },
+                                                            {
+                                                                "member": "ingestionBatchId",
+                                                                "identifier": "ingestionBatchId"
+                                                            },
+                                                            {
+                                                                "member": "itemId",
+                                                                "identifier": "itemId"
+                                                            }
+                                                        ],
+                                                        "ifMatchOptional": true
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "core": {
+            "kind": "namespace",
+            "path": "caitlyn.core",
+            "name": "core",
+            "children": {
+                "documents": {
+                    "kind": "namespace",
+                    "path": "caitlyn.core.documents",
+                    "name": "documents",
+                    "methods": [
+                        {
+                            "name": "content",
+                            "operation": "GetDocumentContent",
+                            "fills": [
+                                {
+                                    "member": "knowledgeBaseId",
+                                    "identifier": "knowledgeBaseId"
+                                },
+                                {
+                                    "member": "documentId",
+                                    "identifier": "documentId"
+                                }
+                            ],
+                            "leading": [
+                                "knowledgeBaseId",
+                                "documentId"
+                            ]
+                        }
+                    ]
+                },
+                "ingestion": {
+                    "kind": "namespace",
+                    "path": "caitlyn.core.ingestion",
+                    "name": "ingestion",
+                    "methods": [
+                        {
+                            "name": "completeUploads",
+                            "operation": "CompleteIngestionBatchUploads",
+                            "fills": [
+                                {
+                                    "member": "knowledgeBaseId",
+                                    "identifier": "knowledgeBaseId"
+                                },
+                                {
+                                    "member": "ingestionBatchId",
+                                    "identifier": "ingestionBatchId"
+                                }
+                            ],
+                            "leading": [
+                                "knowledgeBaseId",
+                                "ingestionBatchId"
+                            ]
+                        },
+                        {
+                            "name": "uploadPolicy",
+                            "operation": "CreateIngestionBatchUploadPolicy",
+                            "fills": [
+                                {
+                                    "member": "knowledgeBaseId",
+                                    "identifier": "knowledgeBaseId"
+                                },
+                                {
+                                    "member": "ingestionBatchId",
+                                    "identifier": "ingestionBatchId"
+                                }
+                            ],
+                            "leading": [
+                                "knowledgeBaseId",
+                                "ingestionBatchId"
+                            ]
+                        },
+                        {
+                            "name": "addItems",
+                            "operation": "BatchCreateIngestionBatchItems",
+                            "fills": [
+                                {
+                                    "member": "knowledgeBaseId",
+                                    "identifier": "knowledgeBaseId"
+                                },
+                                {
+                                    "member": "ingestionBatchId",
+                                    "identifier": "ingestionBatchId"
+                                }
+                            ],
+                            "leading": [
+                                "knowledgeBaseId",
+                                "ingestionBatchId"
+                            ]
+                        }
+                    ]
+                },
+                "operations": {
+                    "kind": "collection",
+                    "path": "caitlyn.core.operations",
+                    "name": "operations",
+                    "resource": "OperationResource",
+                    "singular": "operation",
+                    "identifiers": [
+                        {
+                            "name": "knowledgeBaseId"
+                        },
+                        {
+                            "name": "operationId"
+                        }
+                    ],
+                    "methods": [
+                        {
+                            "name": "list",
+                            "operation": "ListOperations",
+                            "fills": [
+                                {
+                                    "member": "knowledgeBaseId",
+                                    "identifier": "knowledgeBaseId"
+                                }
+                            ],
+                            "leading": [
+                                "knowledgeBaseId"
+                            ]
+                        }
+                    ],
+                    "scope": {
+                        "kind": "scope",
+                        "path": "caitlyn.core.operations(knowledgeBaseId, operationId)",
+                        "name": "operations",
+                        "resource": "OperationResource",
+                        "identifiers": [
+                            {
+                                "name": "knowledgeBaseId"
+                            },
+                            {
+                                "name": "operationId"
+                            }
+                        ],
+                        "methods": [
+                            {
+                                "name": "get",
+                                "operation": "GetOperation",
+                                "fills": [
+                                    {
+                                        "member": "knowledgeBaseId",
+                                        "identifier": "knowledgeBaseId"
+                                    },
+                                    {
+                                        "member": "operationId",
+                                        "identifier": "operationId"
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "cancel",
+                                "operation": "CancelOperation",
+                                "fills": [
+                                    {
+                                        "member": "knowledgeBaseId",
+                                        "identifier": "knowledgeBaseId"
+                                    },
+                                    {
+                                        "member": "operationId",
+                                        "identifier": "operationId"
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "watch",
+                                "operation": "WatchOperation",
+                                "fills": [
+                                    {
+                                        "member": "knowledgeBaseId",
+                                        "identifier": "knowledgeBaseId"
+                                    },
+                                    {
+                                        "member": "operationId",
+                                        "identifier": "operationId"
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                },
+                "uploads": {
+                    "kind": "collection",
+                    "path": "caitlyn.core.uploads",
+                    "name": "uploads",
+                    "resource": "UploadResource",
+                    "singular": "upload",
+                    "identifiers": [
+                        {
+                            "name": "uploadId"
+                        }
+                    ],
+                    "methods": [
+                        {
+                            "name": "reserve",
+                            "operation": "CreateUpload"
+                        }
+                    ],
+                    "scope": {
+                        "kind": "scope",
+                        "path": "caitlyn.core.uploads(uploadId)",
+                        "name": "uploads",
+                        "resource": "UploadResource",
+                        "identifiers": [
+                            {
+                                "name": "uploadId"
+                            }
+                        ],
+                        "methods": [
+                            {
+                                "name": "get",
+                                "operation": "GetUpload",
+                                "fills": [
+                                    {
+                                        "member": "uploadId",
+                                        "identifier": "uploadId"
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }
+}

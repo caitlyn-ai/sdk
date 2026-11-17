@@ -82,6 +82,12 @@ impl Request {
     }
 }
 
+/// A folder path as people write it (`/hr/leave/`) without its first and last `/`, for a request path (PROTOCOL.md 10).
+pub fn trim_slashes(path: &str) -> String {
+    let p = path.strip_prefix('/').unwrap_or(path);
+    p.strip_suffix('/').unwrap_or(p).to_owned()
+}
+
 /// Escapes a label value for one path segment.
 pub fn path_label(v: &str) -> String {
     const SEGMENT: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
@@ -122,6 +128,11 @@ impl CallOptions {
     pub fn cancel_on(mut self, token: CancellationToken) -> Self {
         self.cancel = Some(token);
         self
+    }
+
+    /// The cancellation token, when one was set.
+    pub fn cancel_token(&self) -> Option<&CancellationToken> {
+        self.cancel.as_ref()
     }
 
     /// The same cancellation, without `If-Match` or the idempotency key: for the requests a call makes on its
@@ -185,6 +196,13 @@ impl<T, Er> Call<T, Er> {
     }
 }
 
+impl<T, Er> Call<T, Er> {
+    /// Sends the call: the same as awaiting it.
+    pub fn send(self) -> BoxFuture<'static, Result<T, Er>> {
+        (self.run)(self.opts)
+    }
+}
+
 impl<T, Er> IntoFuture for Call<T, Er> {
     type Output = Result<T, Er>;
     type IntoFuture = BoxFuture<'static, Result<T, Er>>;
@@ -213,9 +231,23 @@ pub struct ResponseMetadata {
     pub request_id: Option<String>,
     /// The `ETag` header, when the response has one.
     pub etag: Option<String>,
+    /// The `Caitlyn-Api-Version` header: the server's model version.
+    pub api_version: Option<String>,
 }
 
 impl PartialEq for ResponseMetadata {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+/// Where a thing keeps the response it was read from (PROTOCOL.md 4.2): set on a thing from one response (get,
+/// update, create, wait), empty on a list item, a snapshot entry or a value built in code. Never serialised, and
+/// ignored when things are compared. Read it with the thing's `response_metadata()`.
+#[derive(Clone, Debug, Default)]
+pub struct ThingMetadata(pub Option<ResponseMetadata>);
+
+impl PartialEq for ThingMetadata {
     fn eq(&self, _: &Self) -> bool {
         true
     }
@@ -228,6 +260,7 @@ impl Response {
             http_status_code: self.inner.status().as_u16(),
             request_id: self.header("caitlyn-request-id"),
             etag: self.header("etag"),
+            api_version: self.header("caitlyn-api-version"),
         }
     }
 
@@ -255,10 +288,21 @@ impl Response {
     }
 }
 
+/// Escapes a greedy label (`{folderPath+}`): each segment as [`path_label`] does, keeping the `/` between them, with
+/// no leading or trailing `/` (the path template supplies the one before it).
+pub fn path_greedy_label(v: &str) -> String {
+    v.trim_matches('/').split('/').map(path_label).collect::<Vec<_>>().join("/")
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn labels_escape_one_segment() {
         assert_eq!(super::path_label("a b/c~d"), "a%20b%2Fc~d");
+    }
+
+    #[test]
+    fn greedy_labels_keep_their_slashes() {
+        assert_eq!(super::path_greedy_label("/hr/leave policies/"), "hr/leave%20policies");
     }
 }

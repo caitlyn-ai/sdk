@@ -1,0 +1,552 @@
+{
+  "$comment": "The SDK reference's pages for the helpers each SDK writes in its runtime core rather than generates from an operation. scripts/docs-reference.mjs makes one page per entry, in the sidebars' group of `scope` (a path in the client tree) or after the operation or helper named by `after`. `name` is the page's subtitle; a scope's watch() and wait() give `call` instead of spellings, and their calls are spelled from the client tree; `calls` are the operations a helper makes; `example` names a region of the examples in every language (examples/<lang>/<file>#<region>, with {lang} for the language's folder). Every spelling and example is the SDKs' own.",
+  "helpers": [
+    {
+      "id": "ingestion.sync",
+      "name": "kb.ingestion.sync()",
+      "title": "Sync a folder",
+      "scope": "caitlyn.knowledgeBases(knowledgeBaseId).ingestion",
+      "summary": "Keeps a folder of a knowledge base in step with a folder of files, or a list of items, through one ingestion batch.",
+      "description": [
+        "Keeps a folder of a knowledge base in step with a folder of files, or a list of items, through one ingestion batch: new files are added, changed ones get a new version and, with `removeMissing`, documents whose file is gone are removed. Files are keyed by their path in the folder unless you say otherwise, and go to `/` unless you give a `folder`.",
+        "The call hashes every file, creates the batch, waits until it is planned, starts it, uploads the files that need their bytes (six at a time) and waits until the batch has finished. It returns a report of every item: its outcome, its status, its document and any failure. A file that fails is reported there, never raised; the call raises only when the whole batch cannot be created, planned or started, or when you cancel it."
+      ],
+      "spellings": {
+        "typescript": "kb.ingestion.sync(directoryOrItems, { folder, removeMissing, include, exclude, policy, confirm, resolve, onProgress, onItem, concurrency, signal, cancelIngestion })",
+        "python": "kb.ingestion.sync(directory_or_items, folder=…, remove_missing=…, include=…, exclude=…, policy=…, confirm=…, resolver=…, on_progress=…, on_item=…, concurrency=…, cancel_ingestion=…)",
+        "go": "kb.Ingestion.Sync(ctx, caitlyn.Dir(dir), &caitlyn.SyncOptions{Folder: …, RemoveMissing: …})",
+        "rust": "kb.ingestion().sync(SyncInput::dir(dir).folder(…).remove_missing(…))"
+      },
+      "options": [
+        [
+          "folder",
+          "The folder the files go into, starting and ending in `/`. Default `/`."
+        ],
+        [
+          "removeMissing",
+          "Remove each document under the folder that has no file."
+        ],
+        [
+          "include, exclude",
+          "Globs over the files' relative paths (`**`, `*`, `?`). A `.caitlynignore` file in the folder leaves files out too."
+        ],
+        [
+          "policy",
+          "The batch's rules: what to do with a new file, a changed one, one that moved, and one that matches a document already there."
+        ],
+        [
+          "confirm",
+          "Called with the plan and its estimate before anything is uploaded; returning false cancels the batch."
+        ],
+        [
+          "resolve",
+          "Decides an item the policy left unresolved. Without it, such an item stops the call with `INGESTION_BATCH_UNRESOLVED` and leaves the batch planned for you to finish."
+        ],
+        [
+          "onProgress",
+          "Called with the phase (checksum, planning, planned, upload, queued, processing, then the final state) and how far it has got."
+        ],
+        [
+          "onItem",
+          "Called once for each item, when it ends."
+        ],
+        [
+          "concurrency",
+          "Uploads at once. Default 6."
+        ],
+        [
+          "cancelIngestion",
+          "When the call is cancelled, also cancel the batch, stopping ingestion already running."
+        ]
+      ],
+      "calls": [
+        "CreateIngestionBatch",
+        "BatchCreateIngestionBatchItems",
+        "EstimateIngestion",
+        "StartIngestionBatch",
+        "ListIngestionBatchItems",
+        "CreateIngestionBatchUploadPolicy",
+        "CompleteIngestionBatchUploads",
+        "WatchKnowledgeBase",
+        "ListDocuments"
+      ],
+      "resources": [
+        "knowledge-base",
+        "document"
+      ],
+      "example": {
+        "typescript": "examples/typescript/jobs.ts#sync-folder",
+        "python": "examples/python/jobs.py#sync-folder",
+        "go": "examples/go/documents/documents.go#sync-folder",
+        "rust": "examples/rust/src/documents.rs#sync-folder"
+      }
+    },
+    {
+      "id": "ingestion.sync.estimate",
+      "name": "kb.ingestion.sync.estimate()",
+      "title": "Estimate a sync",
+      "after": "ingestion.sync",
+      "summary": "What the same sync would do and cost, before anything is uploaded.",
+      "description": [
+        "What `kb.ingestion.sync` with the same arguments would do and cost, before anything is uploaded: it hashes the files, creates the batch and waits until it is planned, then prices every item that could need its bytes, items still unresolved whose outcome could take bytes included, so the estimate is the most the batch could cost. It returns the plan, each item with what would happen to it, and the estimate: the documents to process, how long that takes, and its cost when you may see costs, in your organisation's chosen form.",
+        "Nothing is uploaded or processed. The batch is left planned: its plan goes stale after 5 minutes (starting it plans it again), and a batch that is never started is cleared after 7 days."
+      ],
+      "spellings": {
+        "typescript": "kb.ingestion.sync.estimate(directoryOrItems, { folder, removeMissing, include, exclude, policy })",
+        "python": "kb.ingestion.sync.estimate(directory_or_items, folder=…, remove_missing=…, include=…, exclude=…, policy=…)",
+        "go": "kb.Ingestion.EstimateSync(ctx, caitlyn.Dir(dir), &caitlyn.SyncOptions{Folder: …, RemoveMissing: …})",
+        "rust": "kb.ingestion().estimate_sync(SyncInput::dir(dir).folder(…).remove_missing(…))"
+      },
+      "options": [
+        [
+          "folder, removeMissing, include, exclude, policy",
+          "As for `kb.ingestion.sync`, so the plan is the one the sync would follow."
+        ]
+      ],
+      "calls": [
+        "CreateIngestionBatch",
+        "BatchCreateIngestionBatchItems",
+        "WatchKnowledgeBase",
+        "EstimateIngestion",
+        "ListDocuments"
+      ],
+      "resources": [
+        "knowledge-base",
+        "document"
+      ],
+      "example": {
+        "typescript": "examples/typescript/jobs.ts#sync-estimate",
+        "python": "examples/python/jobs.py#sync-estimate",
+        "go": "examples/go/documents/documents.go#sync-estimate",
+        "rust": "examples/rust/src/documents.rs#sync-estimate"
+      }
+    },
+    {
+      "id": "stream.text",
+      "name": "stream.text()",
+      "title": "Read an answer's text",
+      "after": "SendMessage",
+      "summary": "The text of an answer as it arrives, from the stream a conversation's send() returns.",
+      "description": [
+        "The text of an answer as it arrives, from the stream `conversation.send()` returns: the text of each `text.delta` event, in order. Every other event is skipped. It ends when the answer is complete, and raises the answer's error if it failed.",
+        "The stream still has the whole message afterwards, with its citations (`finalMessage()`)."
+      ],
+      "spellings": {
+        "typescript": "conversation.send(message).text()",
+        "python": "conversation.send(message).text()",
+        "go": "caitlyn.Text(stream)",
+        "rust": "conversation.send(message).await?.text()"
+      },
+      "options": [],
+      "calls": [
+        "SendMessage"
+      ],
+      "resources": [
+        "conversation"
+      ],
+      "example": {
+        "typescript": "examples/typescript/jobs.ts#chat",
+        "python": "examples/python/jobs.py#chat",
+        "go": "examples/go/conversations/conversations.go#chat",
+        "rust": "examples/rust/src/conversations.rs#chat"
+      }
+    },
+    {
+      "id": "batch.watch",
+      "title": "Watch a batch",
+      "after": "GetIngestionBatch",
+      "summary": "Follows a batch as it changes, also after a page reload: a snapshot of how it stands, then each change.",
+      "call": {
+        "operation": "WatchKnowledgeBase",
+        "input": {
+          "knowledgeBaseId": "knowledgeBaseId",
+          "batch": "ingestionBatchId"
+        },
+        "method": "watch"
+      },
+      "description": [
+        "Follows a batch as it changes, from its identifier alone, so it works the same on a batch you have just made and on one you looked up after a page reload.",
+        "The first event is a snapshot: how it stands, its running and recently finished jobs, and the progress of what is being processed. Then one event per change. A dropped connection, or the clean end the server makes after at most an hour, reconnects by itself and starts with a new snapshot, so nothing is lost and nothing is replayed. If the batch is deleted, the watch ends.",
+        "It is the knowledge base's watch, filtered to this batch: [Watch a knowledge base](/reference/watch-knowledge-base/) has every event and how each is sent."
+      ],
+      "sections": [
+        {
+          "heading": "Progress on every event",
+          "body": [
+            "Every event has the batch's processing in one place: `processing` in TypeScript and Python, `GetProcessing()` in Go, `processing()` in Rust. A batch's is the job running on it. It is absent when the event carries none.",
+            "On the knowledge base's own watch, where an event can be about any document, folder or batch, read one thing's processing with its identifier: `processingOf(id)` in TypeScript, `processing_of(id)` in Python and Rust, `ProcessingOf(id)` in Go."
+          ]
+        }
+      ],
+      "options": [],
+      "calls": [
+        "WatchKnowledgeBase"
+      ],
+      "resources": [
+        "knowledge-base"
+      ]
+    },
+    {
+      "id": "batch.wait",
+      "title": "Wait for a batch",
+      "after": "batch.watch",
+      "summary": "Returns the batch once nothing runs on it, or raises the error that stopped it.",
+      "call": {
+        "operation": "WatchKnowledgeBase",
+        "input": {
+          "knowledgeBaseId": "knowledgeBaseId",
+          "batch": "ingestionBatchId"
+        },
+        "method": "wait"
+      },
+      "description": [
+        "Returns the batch once nothing runs on it, from its identifier alone, so it works the same on a batch you have just made and on one you looked up after a page reload. It is built on [Watch a batch](/reference/helpers/batch-watch/): the first snapshot may already show it done.",
+        "It returns the batch as [Get an ingestion batch](/reference/get-ingestion-batch/) gives it. To wait only until it is planned, before starting it, use the batch's `planned()`."
+      ],
+      "sections": [
+        {
+          "heading": "When it returns",
+          "body": [
+            "- **Busy** means a job runs on the batch, or the batch is `planning` or `running`.",
+            "- **Some failures.** Work that ended `completed_with_failures` returns, with the partial failures on the batch.",
+            "- **Failure.** Work that failed raises the typed error for its code. Work that was cancelled raises `CANCELLED`. A batch that expired (it was never started, and its plan was cleared) raises `EXPIRED`.",
+            "- **Gone.** A batch that is gone ends the wait: after you deleted it, as success; otherwise as `NOT_FOUND`.",
+            "- **Time.** There is no time limit unless you give one. A wait that runs out raises `WAIT_TIMEOUT` as the language's own timeout: `TimeoutError` in TypeScript and Python, an error for which `errors.Is(err, context.DeadlineExceeded)` holds in Go, `Error::Timeout` in Rust. Cancelling it is the language's own cancellation."
+          ]
+        }
+      ],
+      "options": [
+        {
+          "option": "Progress",
+          "spellings": {
+            "typescript": "{ onProgress }",
+            "python": "on_progress=…",
+            "go": "caitlyn.WithProgress(fn)",
+            "rust": ".on_progress(f)"
+          },
+          "doc": "Called with the batch's processing: first the snapshot's, then once for each progress event, in order, and never after the wait has returned or raised."
+        },
+        {
+          "option": "Time limit",
+          "spellings": {
+            "typescript": "{ timeoutMs }",
+            "python": "timeout=…",
+            "go": "caitlyn.WithTimeLimit(d)",
+            "rust": ".timeout(d)"
+          },
+          "doc": "Gives up after this long with `WAIT_TIMEOUT`. No limit by default."
+        }
+      ],
+      "calls": [
+        "WatchKnowledgeBase",
+        "GetIngestionBatch"
+      ],
+      "resources": [
+        "knowledge-base"
+      ]
+    },
+    {
+      "id": "batch.planned",
+      "title": "Wait until planned",
+      "after": "batch.wait",
+      "summary": "Returns the batch once it is planned or past it, before anything is started.",
+      "call": {
+        "operation": "WatchKnowledgeBase",
+        "input": {
+          "knowledgeBaseId": "knowledgeBaseId",
+          "batch": "ingestionBatchId"
+        },
+        "method": "planned"
+      },
+      "description": [
+        "Returns the ingestion batch once it is planned or past it, so you can read the plan (what each item will do, and the batch's counts) and decide before you start it. It is built on [Watch a batch](/reference/helpers/batch-watch/), the knowledge base's watch filtered to the batch; [Watch a knowledge base](/reference/watch-knowledge-base/) has the events.",
+        "It returns the batch as [Get an ingestion batch](/reference/get-ingestion-batch/) gives it. To wait until the whole batch has finished, use [Wait for a batch](/reference/helpers/batch-wait/)."
+      ],
+      "sections": [
+        {
+          "heading": "When it returns",
+          "body": [
+            "- **Busy** means the batch is still `planning`.",
+            "- **Planned or past it.** A batch that is `planned`, `running` or finished returns at once.",
+            "- **Expired.** A batch that expired (it was never started, and its plan was cleared) raises `EXPIRED`.",
+            "- **Failure.** Planning that failed raises the typed error for its code.",
+            "- **Gone.** A batch that is gone ends the wait as `NOT_FOUND`.",
+            "- **Time.** There is no time limit unless you give one. A wait that runs out raises `WAIT_TIMEOUT` as the language's own timeout: `TimeoutError` in TypeScript and Python, an error for which `errors.Is(err, context.DeadlineExceeded)` holds in Go, `Error::Timeout` in Rust. Cancelling it is the language's own cancellation."
+          ]
+        }
+      ],
+      "options": [
+        {
+          "option": "Time limit",
+          "spellings": {
+            "typescript": "{ timeoutMs }",
+            "python": "timeout=…",
+            "go": "caitlyn.WithTimeLimit(d)",
+            "rust": ".timeout(d)"
+          },
+          "doc": "Gives up after this long with `WAIT_TIMEOUT`. No limit by default."
+        }
+      ],
+      "calls": [
+        "WatchKnowledgeBase",
+        "GetIngestionBatch"
+      ],
+      "resources": [
+        "knowledge-base"
+      ]
+    },
+    {
+      "id": "document.watch",
+      "title": "Watch a document",
+      "after": "GetDocument",
+      "summary": "Follows a document as it changes, also after a page reload: a snapshot of how it stands, then each change.",
+      "call": {
+        "operation": "WatchKnowledgeBase",
+        "input": {
+          "knowledgeBaseId": "knowledgeBaseId",
+          "document": "documentId"
+        },
+        "method": "watch"
+      },
+      "description": [
+        "Follows a document as it changes, from its identifier alone, so it works the same on a document you have just made and on one you looked up after a page reload.",
+        "The first event is a snapshot: how it stands, its running and recently finished jobs, and the progress of what is being processed. Then one event per change. A dropped connection, or the clean end the server makes after at most an hour, reconnects by itself and starts with a new snapshot, so nothing is lost and nothing is replayed. If the document is deleted, the watch ends.",
+        "It is the knowledge base's watch, filtered to this document: [Watch a knowledge base](/reference/watch-knowledge-base/) has every event and how each is sent."
+      ],
+      "sections": [
+        {
+          "heading": "Progress on every event",
+          "body": [
+            "Every event has the document's processing in one place: `processing` in TypeScript and Python, `GetProcessing()` in Go, `processing()` in Rust. A document's is its `DocumentProcessing`: the stage, how far it has got and when it should be done. It is absent when the event carries none.",
+            "On the knowledge base's own watch, where an event can be about any document, folder or batch, read one thing's processing with its identifier: `processingOf(id)` in TypeScript, `processing_of(id)` in Python and Rust, `ProcessingOf(id)` in Go."
+          ]
+        }
+      ],
+      "options": [],
+      "calls": [
+        "WatchKnowledgeBase"
+      ],
+      "resources": [
+        "knowledge-base",
+        "document"
+      ]
+    },
+    {
+      "id": "document.wait",
+      "title": "Wait for a document",
+      "after": "document.watch",
+      "summary": "Returns the document once nothing runs on it, or raises the error that stopped it.",
+      "call": {
+        "operation": "WatchKnowledgeBase",
+        "input": {
+          "knowledgeBaseId": "knowledgeBaseId",
+          "document": "documentId"
+        },
+        "method": "wait"
+      },
+      "description": [
+        "Returns the document once nothing runs on it, from its identifier alone, so it works the same on a document you have just made and on one you looked up after a page reload. It is built on [Watch a document](/reference/helpers/document-watch/): the first snapshot may already show it done.",
+        "It returns the document as [Get a document](/reference/get-document/) gives it. The percentage it reports never goes backwards, and reaches 100 only once the document can be searched."
+      ],
+      "sections": [
+        {
+          "heading": "When it returns",
+          "body": [
+            "- **Busy** means a job runs on the document, or the document is `pending`, `processing` or `deleting`. So `delete()` then `wait()` waits while the document is deleting, then returns once it is gone.",
+            "- **Some failures.** Work that ended `completed_with_failures` returns, with the partial failures on the document.",
+            "- **Failure.** Work that failed raises the typed error for its code. Work that was cancelled raises `CANCELLED`.",
+            "- **Gone.** A document that is gone ends the wait: after you deleted it, as success; otherwise as `NOT_FOUND`.",
+            "- **Time.** There is no time limit unless you give one. A wait that runs out raises `WAIT_TIMEOUT` as the language's own timeout: `TimeoutError` in TypeScript and Python, an error for which `errors.Is(err, context.DeadlineExceeded)` holds in Go, `Error::Timeout` in Rust. Cancelling it is the language's own cancellation."
+          ]
+        }
+      ],
+      "options": [
+        {
+          "option": "Progress",
+          "spellings": {
+            "typescript": "{ onProgress }",
+            "python": "on_progress=…",
+            "go": "caitlyn.WithProgress(fn)",
+            "rust": ".on_progress(f)"
+          },
+          "doc": "Called with the document's processing: first the snapshot's, then once for each progress event, in order, and never after the wait has returned or raised."
+        },
+        {
+          "option": "Time limit",
+          "spellings": {
+            "typescript": "{ timeoutMs }",
+            "python": "timeout=…",
+            "go": "caitlyn.WithTimeLimit(d)",
+            "rust": ".timeout(d)"
+          },
+          "doc": "Gives up after this long with `WAIT_TIMEOUT`. No limit by default."
+        }
+      ],
+      "calls": [
+        "WatchKnowledgeBase",
+        "GetDocument"
+      ],
+      "resources": [
+        "knowledge-base",
+        "document"
+      ],
+      "example": {
+        "typescript": "examples/typescript/jobs.ts#watch-document",
+        "python": "examples/python/jobs.py#watch-document",
+        "go": "examples/go/documents/documents.go#watch-document",
+        "rust": "examples/rust/src/documents.rs#watch-document"
+      }
+    },
+    {
+      "id": "folder.watch",
+      "title": "Watch a folder",
+      "after": "UpdateFolder",
+      "summary": "Follows a folder as it changes, also after a page reload: a snapshot of how it stands, then each change.",
+      "call": {
+        "operation": "WatchKnowledgeBase",
+        "input": {
+          "knowledgeBaseId": "knowledgeBaseId",
+          "folder": "folderPath"
+        },
+        "method": "watch"
+      },
+      "description": [
+        "Follows a folder as it changes, from its identifier alone, so it works the same on a folder you have just made and on one you looked up after a page reload.",
+        "The first event is a snapshot: how it stands, its running and recently finished jobs, and the progress of what is being processed. Then one event per change. A dropped connection, or the clean end the server makes after at most an hour, reconnects by itself and starts with a new snapshot, so nothing is lost and nothing is replayed. If the folder is deleted, the watch ends.",
+        "It is the knowledge base's watch, filtered to this folder: [Watch a knowledge base](/reference/watch-knowledge-base/) has every event and how each is sent."
+      ],
+      "sections": [
+        {
+          "heading": "Progress on every event",
+          "body": [
+            "Every event has the folder's processing in one place: `processing` in TypeScript and Python, `GetProcessing()` in Go, `processing()` in Rust. A folder's is the job running on it. It is absent when the event carries none.",
+            "On the knowledge base's own watch, where an event can be about any document, folder or batch, read one thing's processing with its identifier: `processingOf(id)` in TypeScript, `processing_of(id)` in Python and Rust, `ProcessingOf(id)` in Go."
+          ]
+        }
+      ],
+      "options": [],
+      "calls": [
+        "WatchKnowledgeBase"
+      ],
+      "resources": [
+        "knowledge-base"
+      ]
+    },
+    {
+      "id": "folder.wait",
+      "title": "Wait for a folder",
+      "after": "folder.watch",
+      "summary": "Returns the folder once nothing runs on it, or raises the error that stopped it.",
+      "call": {
+        "operation": "WatchKnowledgeBase",
+        "input": {
+          "knowledgeBaseId": "knowledgeBaseId",
+          "folder": "folderPath"
+        },
+        "method": "wait"
+      },
+      "description": [
+        "Returns the folder once nothing runs on it, from its identifier alone, so it works the same on a folder you have just made and on one you looked up after a page reload. It is built on [Watch a folder](/reference/helpers/folder-watch/): the first snapshot may already show it done.",
+        "It returns the folder's summary, as [List folders](/reference/list-folders/) gives it (a folder has no get of its own)."
+      ],
+      "sections": [
+        {
+          "heading": "When it returns",
+          "body": [
+            "- **Busy** means a job that changes the folder runs: one that creates, renames, moves or deletes it. A folder has no status of its own.",
+            "- **Some failures.** Work that ended `completed_with_failures` returns, with the partial failures on the folder.",
+            "- **Failure.** Work that failed raises the typed error for its code. Work that was cancelled raises `CANCELLED`.",
+            "- **Gone.** A folder that is gone ends the wait: after you deleted it, as success; otherwise as `NOT_FOUND`.",
+            "- **Time.** There is no time limit unless you give one. A wait that runs out raises `WAIT_TIMEOUT` as the language's own timeout: `TimeoutError` in TypeScript and Python, an error for which `errors.Is(err, context.DeadlineExceeded)` holds in Go, `Error::Timeout` in Rust. Cancelling it is the language's own cancellation."
+          ]
+        }
+      ],
+      "options": [
+        {
+          "option": "Progress",
+          "spellings": {
+            "typescript": "{ onProgress }",
+            "python": "on_progress=…",
+            "go": "caitlyn.WithProgress(fn)",
+            "rust": ".on_progress(f)"
+          },
+          "doc": "Called with the folder's processing: first the snapshot's, then once for each progress event, in order, and never after the wait has returned or raised."
+        },
+        {
+          "option": "Time limit",
+          "spellings": {
+            "typescript": "{ timeoutMs }",
+            "python": "timeout=…",
+            "go": "caitlyn.WithTimeLimit(d)",
+            "rust": ".timeout(d)"
+          },
+          "doc": "Gives up after this long with `WAIT_TIMEOUT`. No limit by default."
+        }
+      ],
+      "calls": [
+        "WatchKnowledgeBase"
+      ],
+      "resources": [
+        "knowledge-base"
+      ]
+    },
+    {
+      "id": "knowledgeBase.wait",
+      "title": "Wait for a knowledge base",
+      "after": "WatchKnowledgeBase",
+      "summary": "Returns the knowledge base once nothing runs on it, or raises the error that stopped it.",
+      "call": {
+        "operation": "WatchKnowledgeBase",
+        "input": {
+          "knowledgeBaseId": "knowledgeBaseId"
+        },
+        "method": "wait"
+      },
+      "description": [
+        "Returns the knowledge base once nothing runs on it, from its identifier alone, so it works the same on a knowledge base you have just made and on one you looked up after a page reload. It is built on [Watch a knowledge base](/reference/watch-knowledge-base/): the first snapshot may already show it done.",
+        "It returns the knowledge base as [Get a knowledge base](/reference/get-knowledge-base/) gives it."
+      ],
+      "sections": [
+        {
+          "heading": "When it returns",
+          "body": [
+            "- **Busy** means a job runs on the knowledge base (layout-aware search being turned on, documents being reprocessed or a field being filled in, say), or the knowledge base is `creating`, `moving` or `deleting`. So `delete()` then `wait()` waits while it is deleting, then returns once it is gone.",
+            "- **Some failures.** Work that ended `completed_with_failures` returns, with the partial failures on the knowledge base.",
+            "- **Failure.** Work that failed raises the typed error for its code. Work that was cancelled raises `CANCELLED`.",
+            "- **Gone.** A knowledge base that is gone ends the wait: after you deleted it, as success; otherwise as `NOT_FOUND`.",
+            "- **Time.** There is no time limit unless you give one. A wait that runs out raises `WAIT_TIMEOUT` as the language's own timeout: `TimeoutError` in TypeScript and Python, an error for which `errors.Is(err, context.DeadlineExceeded)` holds in Go, `Error::Timeout` in Rust. Cancelling it is the language's own cancellation."
+          ]
+        }
+      ],
+      "options": [
+        {
+          "option": "Progress",
+          "spellings": {
+            "typescript": "{ onProgress }",
+            "python": "on_progress=…",
+            "go": "caitlyn.WithProgress(fn)",
+            "rust": ".on_progress(f)"
+          },
+          "doc": "Called with the knowledge base's processing: first the snapshot's, then once for each progress event, in order, and never after the wait has returned or raised."
+        },
+        {
+          "option": "Time limit",
+          "spellings": {
+            "typescript": "{ timeoutMs }",
+            "python": "timeout=…",
+            "go": "caitlyn.WithTimeLimit(d)",
+            "rust": ".timeout(d)"
+          },
+          "doc": "Gives up after this long with `WAIT_TIMEOUT`. No limit by default."
+        }
+      ],
+      "calls": [
+        "WatchKnowledgeBase",
+        "GetKnowledgeBase"
+      ],
+      "resources": [
+        "knowledge-base"
+      ]
+    }
+  ]
+}

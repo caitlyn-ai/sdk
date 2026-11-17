@@ -8,47 +8,65 @@ import (
 	"github.com/caitlyn-ai/sdk/go/core"
 )
 
-// CreateUploadInput is the input of Uploads.Reserve. The idempotency key is generated, or set with
-// WithIdempotencyKey.
+// Uploads holds the calls on caitlyn.core.uploads as a whole (Reserve). One of them is UploadScope,
+// made by its parent's Upload method.
+type Uploads struct {
+	c *Client
+}
+
+func newUploads(c *Client) *Uploads {
+	return &Uploads{
+		c: c,
+	}
+}
+
+// Reserve reserves a short-lived slot for a file's bytes and returns a presigned URL bound to their
+// checksum.
+//
+// Send the bytes with `uploadMethod` to `uploadUrl`, with every header in `requiredHeaders`,
+// before `expiresAt`; then pass the upload's `id` to the operation that uses it. Files can be at
+// most 2 GB. For an attachment, name the conversation in `purpose`: the conversation's attachment
+// settings are checked here, before the bytes travel. The SDKs' `core.uploads.send(file)` does all of
+// this, and their document and attachment helpers call it for you. Many files at once go through an
+// ingestion batch instead, which signs one upload policy for them all.
+//
+// Since Caitlyn 5.115.0; beta.
+func (s *Uploads) Reserve(ctx context.Context, in *CreateUploadInput, opts ...CallOption) (*CreateUploadResult, error) {
+	p := &createUploadParams{}
+	if in != nil {
+		p.FileName = in.FileName
+		p.ContentType = in.ContentType
+		p.ByteSize = in.ByteSize
+		p.SHA256 = in.SHA256
+		p.Purpose = in.Purpose
+	}
+	return s.c.callCreateUpload(ctx, p, opts)
+}
+
+// CreateUploadInput is what the caller gives CreateUpload; the scope it is called on fills the
+// identifiers. The idempotency key is generated, or set with WithIdempotencyKey.
 type CreateUploadInput struct {
 	// The file's name on the caller's machine.
 	FileName string `json:"fileName"`
 	// The file's media type.
 	ContentType string `json:"contentType"`
-	// The file's size in bytes.
+	// The file's size in bytes, at most 2 GB (2,147,483,648 bytes). A larger file is refused
+	// with 413 `PAYLOAD_TOO_LARGE`.
 	ByteSize int64 `json:"byteSize"`
 	// The base64-encoded SHA-256 of the file's bytes. The upload URL accepts only these bytes.
 	SHA256 string `json:"sha256"`
+	// What the upload is for, when that decides whether it is accepted. Absent means a document.
+	// Since Caitlyn 5.115.0: refused before sending to an older server.
+	Purpose *UploadPurpose `json:"purpose,omitempty"`
 }
 
-func errorsCreateUpload(status int, e *core.APIError) error {
-	switch status {
-	case 400:
-		return &ValidationError{e}
-	case 401:
-		return &UnauthenticatedError{e}
-	case 403:
-		return &PermissionDeniedError{e}
-	case 404:
-		return &NotFoundError{e}
-	case 409:
-		return &ConflictError{e}
-	case 412:
-		return &PreconditionFailedError{e}
-	case 413:
-		return &PayloadTooLargeError{e}
-	case 422:
-		return &UnprocessableContentError{e}
-	case 428:
-		return &PreconditionRequiredError{e}
-	case 429:
-		return &TooManyRequestsError{e}
-	case 500:
-		return &InternalError{e}
-	case 503:
-		return &ServiceUnavailableError{e}
-	}
-	return e
+// createUploadParams is every member of CreateUpload's input: the caller's, and those the scope fills.
+type createUploadParams struct {
+	FileName    string         `json:"fileName"`
+	ContentType string         `json:"contentType"`
+	ByteSize    int64          `json:"byteSize"`
+	SHA256      string         `json:"sha256"`
+	Purpose     *UploadPurpose `json:"purpose,omitempty"`
 }
 
 var opCreateUpload = &core.Operation{
@@ -58,10 +76,10 @@ var opCreateUpload = &core.Operation{
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},
-	Errors:            errorsCreateUpload,
+	Errors:            errorForStatus,
 }
 
-func buildCreateUpload(in *CreateUploadInput) (*core.Request, error) {
+func buildCreateUpload(in *createUploadParams) (*core.Request, error) {
 	req := core.NewRequest("/v3/uploads")
 	if err := req.JSONBody(in); err != nil {
 		return nil, err
@@ -69,8 +87,8 @@ func buildCreateUpload(in *CreateUploadInput) (*core.Request, error) {
 	return req, nil
 }
 
-func readCreateUpload(resp *core.Response) (*Upload, error) {
-	out := &Upload{}
+func readCreateUpload(resp *core.Response) (*CreateUploadResult, error) {
+	out := &CreateUploadResult{}
 	if err := resp.DecodeJSON(out); err != nil {
 		return nil, err
 	}
@@ -81,135 +99,14 @@ func readCreateUpload(resp *core.Response) (*Upload, error) {
 	return out, nil
 }
 
-// Reserve reserves a short-lived slot for a file's bytes and returns a presigned URL bound to their
-// checksum.
-//
-// Send the bytes with `uploadMethod` to `uploadUrl`, with every header in `requiredHeaders`,
-// before `expiresAt`; then pass the upload's `id` to the operation that uses it. The SDKs'
-// `uploads.create(file)` does all of this.
-//
-// Errors: *InternalError (500), *PermissionDeniedError (403), *ServiceUnavailableError (503),
-// *TooManyRequestsError (429), *UnauthenticatedError (401), *ValidationError (400), *ConflictError
-// (409), *PayloadTooLargeError (413), *UnprocessableContentError (422); another status the API models
-// has its own type too (*NotFoundError for 404), and any other status is an *Error.
-//
-// Since Caitlyn 5.115.0; beta.
-func (c *UploadsClient) Reserve(ctx context.Context, in *CreateUploadInput, opts ...CallOption) (*Upload, error) {
-	if in == nil {
-		in = &CreateUploadInput{}
-	}
-	req, err := buildCreateUpload(in)
+func (c *Client) callCreateUpload(ctx context.Context, p *createUploadParams, opts []CallOption) (*CreateUploadResult, error) {
+	req, err := buildCreateUpload(p)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.c.core.Do(ctx, opCreateUpload, req, opts)
+	resp, err := c.core.Do(ctx, opCreateUpload, req, opts)
 	if err != nil {
 		return nil, err
 	}
 	return readCreateUpload(resp)
-}
-
-// GetUploadInput is the input of Uploads.Get.
-type GetUploadInput struct {
-	// The upload to read.
-	// Sent in the path.
-	UploadID string `json:"-"`
-}
-
-func errorsGetUpload(status int, e *core.APIError) error {
-	switch status {
-	case 400:
-		return &ValidationError{e}
-	case 401:
-		return &UnauthenticatedError{e}
-	case 403:
-		return &PermissionDeniedError{e}
-	case 404:
-		return &NotFoundError{e}
-	case 409:
-		return &ConflictError{e}
-	case 412:
-		return &PreconditionFailedError{e}
-	case 413:
-		return &PayloadTooLargeError{e}
-	case 422:
-		return &UnprocessableContentError{e}
-	case 428:
-		return &PreconditionRequiredError{e}
-	case 429:
-		return &TooManyRequestsError{e}
-	case 500:
-		return &InternalError{e}
-	case 503:
-		return &ServiceUnavailableError{e}
-	}
-	return e
-}
-
-var opGetUpload = &core.Operation{
-	Name:      "GetUpload",
-	Method:    "GET",
-	Since:     "5.115.0",
-	RetrySafe: true,
-	Retryable: []int{503, 429},
-	Errors:    errorsGetUpload,
-}
-
-func buildGetUpload(in *GetUploadInput) (*core.Request, error) {
-	if in.UploadID == "" {
-		return nil, core.MissingInput("GetUpload", "uploadId")
-	}
-	req := core.NewRequest("/v3/uploads/" + core.PathLabel(in.UploadID))
-	return req, nil
-}
-
-func readGetUpload(resp *core.Response) (*GetUploadResult, error) {
-	out := &GetUploadResult{}
-	if err := resp.DecodeJSON(out); err != nil {
-		return nil, err
-	}
-	out.APIVersion = resp.HeaderPtr("Caitlyn-Api-Version")
-	out.RequestID = resp.HeaderPtr("Caitlyn-Request-Id")
-	out.metadata = resp.Metadata()
-	return out, nil
-}
-
-// Get gets an upload's status and when its upload URL expires.
-//
-// Use it to check that the bytes arrived before passing the upload's `id` to the operation that
-// uses it. Only the person or client that reserved the upload can read it; anyone else gets 404.
-//
-// Errors: *InternalError (500), *PermissionDeniedError (403), *ServiceUnavailableError (503),
-// *TooManyRequestsError (429), *UnauthenticatedError (401), *ValidationError (400), *NotFoundError
-// (404); another status the API models has its own type too (*NotFoundError for 404), and any other
-// status is an *Error.
-//
-// Since Caitlyn 5.115.0; beta.
-func (c *UploadsClient) Get(ctx context.Context, in *GetUploadInput, opts ...CallOption) (*GetUploadResult, error) {
-	if in == nil {
-		in = &GetUploadInput{}
-	}
-	req, err := buildGetUpload(in)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.c.core.Do(ctx, opGetUpload, req, opts)
-	if err != nil {
-		return nil, err
-	}
-	return readGetUpload(resp)
-}
-
-// Create uploads a file: it computes the SHA-256, reserves a slot with Reserve, then sends the bytes
-// to the presigned URL with exactly the required headers (no Caitlyn credentials go there). Bytes that
-// cannot be sent give an *Error with the code UPLOAD_PUT_FAILED.
-func (c *UploadsClient) Create(ctx context.Context, file *UploadFile, opts ...CallOption) (*Upload, error) {
-	up, err := c.Reserve(ctx, &CreateUploadInput{FileName: file.Name, ContentType: file.ContentType, ByteSize: int64(len(file.Data)), SHA256: file.SHA256()}, opts...)
-	if err != nil {
-		return nil, err
-	}
-	if err := c.c.core.PutPresigned(ctx, up.UploadMethod, up.UploadURL, up.RequiredHeaders, file.Data); err != nil {
-		return nil, err
-	}
-	return up, nil
 }

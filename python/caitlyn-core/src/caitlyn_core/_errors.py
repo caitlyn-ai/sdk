@@ -57,6 +57,9 @@ class CaitlynError(Exception):
         errors the SDK raises."""
         self.raw_body_truncated = raw_body_truncated
         """True when the body was longer than 8 KiB and ``raw_body`` holds only its first 8 KiB."""
+        self.report: Any = None
+        """For ``CANCELLED`` from ``ingestion.sync`` (its ``confirm`` declined the plan): the report so far, a
+        ``SyncReport`` of every item and the batch. None otherwise."""
 
 
 class CaitlynConnectionError(CaitlynError):

@@ -19,8 +19,8 @@ rustls-ring = ["dep:rustls"]
 [dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "stream", "http2", "json"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
-tokio = { version = "1.40", features = ["time", "sync", "macros", "rt"] }
-tokio-util = "0.7"
+tokio = { version = "1.40", features = ["time", "sync", "macros", "rt", "fs", "io-util"] }
+tokio-util = { version = "0.7", features = ["io"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 bytes = "1"
 http = "1"

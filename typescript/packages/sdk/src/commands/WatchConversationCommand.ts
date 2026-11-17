@@ -29,12 +29,17 @@ export interface WatchConversationCommandOutput extends Omit<WatchConversationOu
  * caller closes the stream. An answer whose stream ended moments before the watch opened may still
  * be delivered, from its `message.started` event; match answers on your own message ID.
  *
+ * Opened without `Last-Event-ID` while an answer is being written, the watch replays that answer
+ * from its start, so it shows the answer so far. An answer too long for the replay buffer cannot be
+ * replayed: the watch sends `stream.reset` instead, then the answers after it. Read the turn with
+ * ListMessages once it ends.
+ *
  * With `Last-Event-ID`, it resumes from the event after that one, so a dropped connection loses
  * nothing; the SDKs use this to re-attach to `SendMessage`, and to reconnect a dropped watch. When
  * the answer that event belongs to has ended, or can no longer be replayed, the watch sends
  * `stream.reset` with a new cursor instead, then carries on. Each answer ends with
  * `message.completed` or `message.failed`, which end that answer but not the stream, so
- * `waitUntil`-style helpers watch for the event they need and then close.
+ * helpers watch for the event they need and then close.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript
@@ -92,8 +97,9 @@ export interface WatchConversationCommandOutput extends Omit<WatchConversationOu
  *
  * @throws {@link ValidationError} (client fault)
  *  The request is malformed: a member is missing, the wrong type or out of range; it has a member,
- * filter or sort field the operation does not define; its cursor is not valid for this list; or it
- * asks to delete `draft` or `production`, which every agent keeps.
+ * filter or sort field the operation does not define; its cursor is not valid for this list; it
+ * asks to delete `draft` or `live`, which every agent keeps; an agent configuration would be
+ * larger than 256 KiB; or a file is meant for a conversation whose agent takes no attachments.
  *
  * @throws {@link CaitlynServiceException}
  * <p>Base exception class for all service exceptions from Caitlyn service.</p>

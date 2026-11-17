@@ -40,8 +40,8 @@ export const ERROR_CODES = {
     action: "Create the client for the organisation's primary workspace (its hostname) and call the operation there.",
   },
   NOT_FOUND: {
-    meaning: 'The record does not exist, or the caller may not see it. The two are deliberately the same, so identifiers cannot be probed. For an agent version, it is also what someone without the agent\'s version access grant gets for the draft or a pinned version.',
-    action: 'Check the identifier, and that the caller has access to the record (and, for the draft or a pinned version, the version access grant).',
+    meaning: 'The record does not exist, or the caller may not see it. The two are deliberately the same, so identifiers cannot be probed. For an agent version, it is also what someone without the agent\'s version access grant gets for the draft or a saved version.',
+    action: 'Check the identifier, and that the caller has access to the record (and, for the draft or a saved version, the version access grant).',
   },
   CONFLICT: {
     meaning: "The resource's current state does not allow the request: for example, an upload that has already been used, or a message sent while an answer to the previous one is still being written.",
@@ -88,7 +88,59 @@ export const ERROR_CODES = {
     action: 'Wait for `Retry-After` (`retryAfterSeconds`) and try again. The SDKs do this for operations that are safe to repeat ([Retries](/retries/)).',
   },
   VERSION_NOT_DELETABLE: {
-    meaning: 'The version named cannot be deleted. `draft` and `production` are not saved versions: the draft is the version you edit, and production is whichever version is published.',
-    action: 'Delete a saved version by its name (from `agents.versions.list`). To change what production serves, publish another version; to discard the draft\'s changes, reset the draft from a saved version.',
+    meaning: 'The version named cannot be deleted. `draft` and `live` are not saved versions: every agent keeps both, the draft being the version you edit and live whichever version is published.',
+    action: 'Delete a saved version by its name (from `agents.versions.list`). To change what live serves, publish another version; to discard the draft\'s changes, reset the draft from a saved version.',
+  },
+  VERSION_IN_USE: {
+    meaning: "The agent version is the one live points at, so it cannot be deleted: deleting it would leave live naming nothing.",
+    action: "Publish another version first, so live points at that, then delete this one. See [Change an agent safely](/guides/change-an-agent-safely/).",
+  },
+  VERSION_IN_HISTORY: {
+    meaning: "The agent version is named by an entry in the agent's live history: it was live once. Versions are the record of what was live, so one the history names is kept.",
+    action: "Nothing to fix: the version stays as part of the record. Only a saved version that was never live can be deleted.",
+  },
+  DOCUMENT_INGESTION_IN_PROGRESS: {
+    meaning: "The document is still processing a version, so it takes no new one yet.",
+    action: "Wait for the version in progress to finish (the document's `wait()` in the SDKs), then add the new one. The error's `Retry-After` says when to try again.",
+  },
+  INGESTION_BATCH_UNRESOLVED: {
+    meaning: "The ingestion batch has items the plan left unresolved, so it cannot start.",
+    action: "Resolve each unresolved item (the SDKs' `ingestion.sync` passes them to your resolver), or start again with a policy that settles them. The batch stays planned until then.",
+  },
+  TARGET_IN_USE: {
+    meaning: "An ingestion batch is working on this document, so other changes to it are refused until the batch has finished with it.",
+    action: "Wait for the batch to finish, or cancel it, then try again. The error's `Retry-After` says when.",
+  },
+  METADATA_FIELD_UNDEFINED: {
+    meaning: "The metadata names a field the knowledge base does not define.",
+    action: "Use only the knowledge base's own metadata fields (they are on the knowledge base), or add the field to the knowledge base first. `errors` points at each field at fault.",
+  },
+  METADATA_VALUE_INVALID: {
+    meaning: "A metadata value does not fit its field's definition: the wrong type, or a value the field does not allow.",
+    action: "Check each value against the field's definition on the knowledge base. `errors` points at each value at fault.",
+  },
+  METADATA_FIELD_PASSAGE_SCOPED: {
+    meaning: "The field is set for each passage of a document, not for the document as a whole, so it cannot be given with the document.",
+    action: "Leave the field out of the document's metadata: Caitlyn fills it in for each passage as the document is processed.",
+  },
+  METADATA_LIMIT_EXCEEDED: {
+    meaning: "The metadata is over a limit: too many fields, or a value or the whole too large.",
+    action: "Send less: drop fields you do not need, or shorten long values. `errors` points at what is over.",
+  },
+  BATCH_ITEM_CONTENT_AMBIGUOUS: {
+    meaning: "An ingestion batch item says both what its content is (its checksum, size and type) and where to fetch it from, or neither.",
+    action: "Give each item exactly one: the file's description, for a file you upload, or a `fetchUrl`, for one Caitlyn fetches.",
+  },
+  CONTENT_REJECTED: {
+    meaning: "The file was refused by the content checks that guard what documents a knowledge base takes.",
+    action: "Check that the file is one this knowledge base should hold. Sending it again unchanged is refused the same way.",
+  },
+  CONFIGURATION_TOO_LARGE: {
+    meaning: "The agent's configuration would be larger than 256 KiB.",
+    action: "Make the configuration smaller: shorten the instructions, or move reference material into a knowledge base the agent searches.",
+  },
+  ATTACHMENTS_NOT_ACCEPTED: {
+    meaning: "The conversation's agent does not take this attachment: it takes no attachments, or not this many, this large or of this type.",
+    action: "Check the agent's attachment settings. The SDKs check them before anything is uploaded, so nothing is sent for a file the agent would refuse.",
   },
 };

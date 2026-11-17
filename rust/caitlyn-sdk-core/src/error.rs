@@ -26,13 +26,21 @@ pub enum Error {
     Auth(AuthError),
     /// The call's cancellation token fired.
     Cancelled,
+    /// A cancelled call that carries what it had done so far: a `sync`'s report (the generated crate's
+    /// `SyncReport`), read with the generated error's `report()`.
+    CancelledWith(Partial),
+    /// A problem the SDK raised itself that also carries what the call had done (a declined `sync` confirm: `CANCELLED`,
+    /// status 0, with the report so far).
+    ApiWith(Box<ApiError>, Partial),
+    /// A wait's time limit passed (PROTOCOL.md 16): status 0, code `WAIT_TIMEOUT`. The watch it was reading is closed.
+    Timeout,
 }
 
 impl Error {
     /// The problem details, for an [`Error::Api`].
     pub fn api(&self) -> Option<&ApiError> {
         match self {
-            Error::Api(e) => Some(e),
+            Error::Api(e) | Error::ApiWith(e, _) => Some(e),
             _ => None,
         }
     }
@@ -40,8 +48,8 @@ impl Error {
     /// The HTTP status of a problem, and 0 for a connection error or a problem the SDK raised itself.
     pub fn status(&self) -> Option<u16> {
         match self {
-            Error::Api(e) => Some(e.status),
-            Error::Connection(_) => Some(0),
+            Error::Api(e) | Error::ApiWith(e, _) => Some(e.status),
+            Error::Connection(_) | Error::Timeout => Some(0),
             _ => None,
         }
     }
@@ -49,8 +57,9 @@ impl Error {
     /// The stable code of a problem (`NOT_FOUND`), or `CONNECTION_ERROR`.
     pub fn code(&self) -> Option<&str> {
         match self {
-            Error::Api(e) => Some(&e.code),
+            Error::Api(e) | Error::ApiWith(e, _) => Some(&e.code),
             Error::Connection(_) => Some(CONNECTION_ERROR),
+            Error::Timeout => Some(WAIT_TIMEOUT),
             _ => None,
         }
     }
@@ -78,12 +87,13 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Api(e) => e.fmt(f),
+            Error::Api(e) | Error::ApiWith(e, _) => e.fmt(f),
             Error::NotSupportedByServer(e) => e.fmt(f),
             Error::Input(e) => e.fmt(f),
             Error::Auth(e) => e.fmt(f),
             Error::Connection(e) => e.fmt(f),
-            Error::Cancelled => f.write_str("caitlyn: the call was cancelled"),
+            Error::Cancelled | Error::CancelledWith(_) => f.write_str("caitlyn: the call was cancelled"),
+            Error::Timeout => f.write_str("caitlyn: the wait's time limit passed"),
         }
     }
 }
@@ -91,7 +101,7 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::Api(e) => e.source.as_deref().map(|s| s as _),
+            Error::Api(e) | Error::ApiWith(e, _) => e.source.as_deref().map(|s| s as _),
             Error::Connection(e) => Some(&e.source),
             _ => None,
         }
@@ -294,6 +304,17 @@ pub struct InputError {
     pub reason: String,
 }
 
+impl InputError {
+    /// `member` of `operation` is refused before sending, for `reason` ("is required").
+    pub fn new(operation: impl Into<String>, member: impl Into<String>, reason: impl Into<String>) -> Self {
+        InputError {
+            operation: operation.into(),
+            member: member.into(),
+            reason: reason.into(),
+        }
+    }
+}
+
 impl fmt::Display for InputError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "caitlyn: {}: {} {}", self.operation, self.member, self.reason)
@@ -335,6 +356,19 @@ impl fmt::Display for AuthError {
 impl std::error::Error for AuthError {}
 
 /// The code of a [`ConnectionError`].
+/// What a cancelled call had done so far ([`Error::CancelledWith`]): a value the generated crate reads back as its own
+/// type (a `sync`'s `SyncReport`).
+pub struct Partial(pub Box<dyn std::any::Any + Send + Sync>);
+
+impl fmt::Debug for Partial {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Partial(..)")
+    }
+}
+
+/// The code of [`Error::Timeout`]: a wait whose time limit passed.
+pub const WAIT_TIMEOUT: &str = "WAIT_TIMEOUT";
+
 pub const CONNECTION_ERROR: &str = "CONNECTION_ERROR";
 
 /// No response arrived, or the connection failed while the body was read (PROTOCOL.md 6.5). Its status is 0 and

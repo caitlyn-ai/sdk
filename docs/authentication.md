@@ -362,9 +362,9 @@ Caitlyn issues three kinds of credential. The modes above use them:
 - **A credential never does more than the identity behind it.** Scopes narrow; they never widen. A personal
   access token granted `knowledge-bases:write` still reaches only the knowledge bases its owner can reach, and if
   the owner's access is reduced, the token's is reduced with it on its next request.
-- **A personal access token has a lower ceiling than an API client.** It can never hold the **Developer tools**
-  area, which can switch off document access control, and it holds **Roles and access** at read only, because a
-  token able to rewrite its owner's role could widen itself. Both limits hold even for a token granted everything.
+- **A personal access token has a lower ceiling than an API client.** It holds **Roles and access** at read only,
+  because a token able to rewrite its owner's role could widen itself. That limit holds even for a token granted
+  everything.
   If creating a token refuses a scope you expected, this is usually why, and an API client is the credential to
   use instead.
 - **Every credential expires**, on a date chosen when it is created: up to a year ahead, with no never-expires

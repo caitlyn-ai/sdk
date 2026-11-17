@@ -4,46 +4,40 @@
 //! hand-written runtime `caitlyn-sdk-core`. Async on tokio, TLS through rustls, telemetry through
 //! `tracing`; it reads no AWS configuration.
 //!
+//! The client is a tree of scopes (PROTOCOL.md 10): `client.knowledge_base(id)` is a knowledge base,
+//! `client.knowledge_bases().list()` lists them, and everything about one hangs off its scope. Making a
+//! scope sends nothing; a call is sent when its request is awaited.
+//!
 //! ```no_run
 //! # async fn run() -> Result<(), caitlyn_sdk::Error> {
 //! use caitlyn_sdk::{Auth, Client};
 //!
 //! let client = Client::new("your-company.getcaitlyn.ai", Auth::token("cait-pat-…"))?;
-//! let out = client.documents().batch_delete(caitlyn_sdk::BatchDeleteDocumentsInput {
-//!     ..Default::default()
-//! }).await?;
-//! println!("{:?}", out);
+//! let kb = client.knowledge_base("kb_123");
+//! let document = kb.documents().create("./leave-policy.pdf").folder("/hr/").wait().await?;
+//! println!("{} {}", document.id, document.status);
 //! # Ok(())
 //! # }
 //! ```
 #![forbid(unsafe_code)]
 
-mod agents_production_history;
-mod agents_versions;
-mod callers;
-mod client;
-mod conversations;
-mod documents;
 mod error;
-mod events;
+mod operations;
+pub mod scope;
 pub mod types;
-mod uploads;
 
-pub use agents_production_history::*;
-pub use agents_versions::*;
-pub use callers::*;
-pub use client::*;
-pub use conversations::*;
-pub use documents::*;
 pub use error::Error;
-pub use events::*;
+pub use operations::*;
+pub use scope::{
+    BatchFiles, BatchUpload, BatchUploadRequest, Client, ClientBuilder, EstimateUploadRequest, IngestionProgress, LocalFile, SyncInput,
+    SyncItem, SyncPhase, SyncPlan, SyncReport,
+};
 pub use types::*;
-pub use uploads::*;
 
 pub use caitlyn_sdk_core::{
-    ApiError, Auth, AuthError, AuthSession, AuthorizationUrl, AwsCredentialProvider, AwsCredentials, Call, CallOptions, Callback,
-    CancellationToken, ConnectionError, FieldError, InputError, Items, MemoryTokenStore, NotSupportedByServer, OAuthTokens, Pages,
-    Propagator, Raw, ResponseMetadata, SigningAlgorithm, Stream, TokenStore, UploadFile, Wait, WaitReason, WaiterError,
+    ApiError, Attachment, Auth, AuthError, AuthSession, AuthorizationUrl, AwsCredentialProvider, AwsCredentials, Call, CallOptions,
+    Callback, CancellationToken, ConnectionError, Created, FieldError, InputError, Items, MemoryTokenStore, NotSupportedByServer,
+    OAuthTokens, Pages, Propagator, Raw, ResponseMetadata, SigningAlgorithm, Started, Stream, TokenStore, UploadFile, WaitOptions, Waiting,
 };
 
 /// The sign-in modes' option types.

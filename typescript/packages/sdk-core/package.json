@@ -16,10 +16,10 @@
   "exports": {
     ".": {
       "types": "./dist-types/index.d.ts",
-      "workerd": "./dist-es/index.mjs",
-      "worker": "./dist-es/index.mjs",
-      "deno": "./dist-es/index.mjs",
-      "edge-light": "./dist-es/index.mjs",
+      "workerd": "./dist-edge/index.mjs",
+      "worker": "./dist-edge/index.mjs",
+      "deno": "./dist-edge/index.mjs",
+      "edge-light": "./dist-edge/index.mjs",
       "browser": "./dist-browser/index.mjs",
       "import": "./dist-es/index.mjs",
       "require": "./dist-cjs/index.cjs"
@@ -29,10 +29,10 @@
       "default": "./dist-browser/index.mjs"
     },
     "./smithy": {
-      "workerd": "./dist-es/smithy.mjs",
-      "worker": "./dist-es/smithy.mjs",
-      "deno": "./dist-es/smithy.mjs",
-      "edge-light": "./dist-es/smithy.mjs",
+      "workerd": "./dist-edge/smithy.mjs",
+      "worker": "./dist-edge/smithy.mjs",
+      "deno": "./dist-edge/smithy.mjs",
+      "edge-light": "./dist-edge/smithy.mjs",
       "browser": "./dist-browser/smithy.mjs",
       "import": "./dist-es/smithy.mjs",
       "require": "./dist-cjs/smithy.cjs"

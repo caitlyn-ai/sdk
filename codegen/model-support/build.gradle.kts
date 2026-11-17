@@ -13,3 +13,9 @@ dependencies {
 }
 
 tasks.test { useJUnitPlatform() }
+
+// scripts/generate.sh: the scope tree as JSON (conformance/cases/scope-tree.json), for the docs and the harnesses.
+tasks.register<JavaExec>("scopeTree") {
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("ai.caitlyn.codegen.model.ScopeTree")
+}

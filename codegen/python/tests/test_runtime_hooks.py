@@ -37,7 +37,7 @@ class Recorder(Interceptor):
 def test_sync_hooks_order(mock: Mock) -> None:
     mock.faults(status={"GetAgentVersion": [{"status": 503, "retryAfter": 0}]})
     rec = Recorder()
-    Caitlyn(workspace="x", auth=Token("t"), endpoint=mock.base, interceptors=[rec]).agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
+    Caitlyn(workspace="x", auth=Token("t"), endpoint=mock.base, interceptors=[rec]).agents("GHT7YRWXPL").draft.get()
     assert rec.log == ["call GetAgentVersion", "attempt 0", "status 503", "attempt 1", "status 200", "done ok True"]
 
 
@@ -45,11 +45,11 @@ async def test_async_hooks_see_the_final_error(mock: Mock) -> None:
     mock.faults(status={"GetAgentVersion": [{"status": 503, "retryAfter": 0}] * 3})
     rec = Recorder()
     with pytest.raises(ServiceUnavailableError):
-        await AsyncCaitlyn(workspace="x", auth=Token("t"), endpoint=mock.base, interceptors=[rec]).agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
+        await AsyncCaitlyn(workspace="x", auth=Token("t"), endpoint=mock.base, interceptors=[rec]).agents("GHT7YRWXPL").draft.get()
     assert rec.log[-1] == "done ServiceUnavailableError True"
     assert rec.log.count("status 503") == 3
 
 
 async def test_hook_can_change_the_request(mock: Mock) -> None:
-    await AsyncCaitlyn(workspace="x", auth=Token("t"), endpoint=mock.base, interceptors=[Recorder()]).agents.versions.get(agent_id="GHT7YRWXPL", version="draft")
+    await AsyncCaitlyn(workspace="x", auth=Token("t"), endpoint=mock.base, interceptors=[Recorder()]).agents("GHT7YRWXPL").draft.get()
     assert "x-test-attempt" in mock.requests()[-1]["headerNames"]

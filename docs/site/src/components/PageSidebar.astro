@@ -6,7 +6,7 @@ import Default from '@astrojs/starlight/components/PageSidebar.astro';
 import MobileTableOfContents from 'virtual:starlight/components/MobileTableOfContents';
 import OperationPanel from './OperationPanel.astro';
 
-const data = Astro.locals.starlightRoute.entry.data as { operation?: { kind?: 'sdk' | 'api'; panel?: Parameters<typeof OperationPanel>[0]['panel']; responses?: Parameters<typeof OperationPanel>[0]['responses'] } };
+const data = Astro.locals.starlightRoute.entry.data as { operation?: { kind?: 'sdk' | 'api'; panel?: Parameters<typeof OperationPanel>[0]['panel']; responses?: Parameters<typeof OperationPanel>[0]['responses']; returns?: Record<string, string>; errorClasses?: Record<string, Record<string, string>> } };
 const panel = data.operation?.panel;
 const kind = data.operation?.kind ?? 'sdk';
 ---
@@ -17,7 +17,7 @@ const kind = data.operation?.kind ?? 'sdk';
       <div class="lg:sl-hidden">
         <MobileTableOfContents />
       </div>
-      <OperationPanel panel={panel} responses={data.operation?.responses} kind={kind} />
+      <OperationPanel panel={panel} responses={data.operation?.responses} returns={data.operation?.returns} errorClasses={data.operation?.errorClasses} kind={kind} />
     </>
   ) : (
     <Default />

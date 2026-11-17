@@ -47,6 +47,10 @@ class Mock:
         """The forms posted to the token endpoint, in order."""
         return [dict(urllib.parse.parse_qsl(r.get("body") or "")) for r in self.requests() if r.get("path") == "/oauth/token"]
 
+    def uploads(self) -> dict[str, Any]:
+        """The S3 stand-in's state: the most form POSTs held at once, and the objects stored."""
+        return self._get("/__mock/uploads")
+
     def prime_example(self, case_id: str) -> None:
         self._post("/__mock/example", {"id": case_id})
 

@@ -5,81 +5,6 @@ import { CaitlynServiceException as __BaseException } from "./CaitlynServiceExce
 import type { FieldError } from "./models_0";
 
 /**
- * The resource's state does not allow the request, a unique name is taken, or a request with the
- * same idempotency key is still in progress.
- * @public
- */
-export class ConflictError extends __BaseException {
-  public static readonly shapeId: string = "ai.caitlyn.v3#ConflictError";
-  readonly name = "ConflictError" as const;
-  readonly $fault = "client" as const;
-  /**
-   * A stable URI for the code: its page in the public error reference,
-   * `https://build.caitlyn.ai/errors/\{code\}`.
-   * @public
-   */
-  type: string;
-
-  /**
-   * A short, human-readable summary of the problem, the same for every occurrence of the code.
-   * @public
-   */
-  title: string;
-
-  /**
-   * The HTTP status code, repeated from the response.
-   * @public
-   */
-  status: number;
-
-  /**
-   * The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never
-   * renamed; callers match on it.
-   * @public
-   */
-  code: string;
-
-  /**
-   * What went wrong in this occurrence, written for the integrator. Never holds stack traces,
-   * storage keys or another person's data.
-   * @public
-   */
-  detail?: string | undefined;
-
-  /**
-   * The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to
-   * support.
-   * @public
-   */
-  requestId: string;
-
-  /**
-   * Field-level problems, one per member or parameter at fault. Present only on 400
-   * `VALIDATION_FAILED`.
-   * @public
-   */
-  errors?: FieldError[] | undefined;
-  /**
-   * @internal
-   */
-  constructor(opts: __ExceptionOptionType<ConflictError, __BaseException>) {
-    super({
-      name: "ConflictError",
-      $fault: "client",
-      ...opts,
-    });
-    Object.setPrototypeOf(this, new.target.prototype);
-    this.type = opts.type;
-    this.title = opts.title;
-    this.status = opts.status;
-    this.code = opts.code;
-    this.detail = opts.detail;
-    this.requestId = opts.requestId;
-    this.errors = opts.errors;
-  }
-}
-
-/**
  * An unexpected server failure. Not retried by the SDKs.
  * @public
  */
@@ -129,7 +54,7 @@ export class InternalError extends __BaseException {
 
   /**
    * Field-level problems, one per member or parameter at fault. Present only on 400
-   * `VALIDATION_FAILED`.
+   * `VALIDATION_FAILED` and on the 422 `METADATA_*` codes.
    * @public
    */
   errors?: FieldError[] | undefined;
@@ -204,7 +129,7 @@ export class NotFoundError extends __BaseException {
 
   /**
    * Field-level problems, one per member or parameter at fault. Present only on 400
-   * `VALIDATION_FAILED`.
+   * `VALIDATION_FAILED` and on the 422 `METADATA_*` codes.
    * @public
    */
   errors?: FieldError[] | undefined;
@@ -280,7 +205,7 @@ export class PermissionDeniedError extends __BaseException {
 
   /**
    * Field-level problems, one per member or parameter at fault. Present only on 400
-   * `VALIDATION_FAILED`.
+   * `VALIDATION_FAILED` and on the 422 `METADATA_*` codes.
    * @public
    */
   errors?: FieldError[] | undefined;
@@ -290,80 +215,6 @@ export class PermissionDeniedError extends __BaseException {
   constructor(opts: __ExceptionOptionType<PermissionDeniedError, __BaseException>) {
     super({
       name: "PermissionDeniedError",
-      $fault: "client",
-      ...opts,
-    });
-    Object.setPrototypeOf(this, new.target.prototype);
-    this.type = opts.type;
-    this.title = opts.title;
-    this.status = opts.status;
-    this.code = opts.code;
-    this.detail = opts.detail;
-    this.requestId = opts.requestId;
-    this.errors = opts.errors;
-  }
-}
-
-/**
- * `If-Match` does not match the resource's current ETag: it changed since the caller read it.
- * @public
- */
-export class PreconditionFailedError extends __BaseException {
-  public static readonly shapeId: string = "ai.caitlyn.v3#PreconditionFailedError";
-  readonly name = "PreconditionFailedError" as const;
-  readonly $fault = "client" as const;
-  /**
-   * A stable URI for the code: its page in the public error reference,
-   * `https://build.caitlyn.ai/errors/\{code\}`.
-   * @public
-   */
-  type: string;
-
-  /**
-   * A short, human-readable summary of the problem, the same for every occurrence of the code.
-   * @public
-   */
-  title: string;
-
-  /**
-   * The HTTP status code, repeated from the response.
-   * @public
-   */
-  status: number;
-
-  /**
-   * The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never
-   * renamed; callers match on it.
-   * @public
-   */
-  code: string;
-
-  /**
-   * What went wrong in this occurrence, written for the integrator. Never holds stack traces,
-   * storage keys or another person's data.
-   * @public
-   */
-  detail?: string | undefined;
-
-  /**
-   * The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to
-   * support.
-   * @public
-   */
-  requestId: string;
-
-  /**
-   * Field-level problems, one per member or parameter at fault. Present only on 400
-   * `VALIDATION_FAILED`.
-   * @public
-   */
-  errors?: FieldError[] | undefined;
-  /**
-   * @internal
-   */
-  constructor(opts: __ExceptionOptionType<PreconditionFailedError, __BaseException>) {
-    super({
-      name: "PreconditionFailedError",
       $fault: "client",
       ...opts,
     });
@@ -430,7 +281,7 @@ export class ServiceUnavailableError extends __BaseException {
 
   /**
    * Field-level problems, one per member or parameter at fault. Present only on 400
-   * `VALIDATION_FAILED`.
+   * `VALIDATION_FAILED` and on the 422 `METADATA_*` codes.
    * @public
    */
   errors?: FieldError[] | undefined;
@@ -514,7 +365,7 @@ export class TooManyRequestsError extends __BaseException {
 
   /**
    * Field-level problems, one per member or parameter at fault. Present only on 400
-   * `VALIDATION_FAILED`.
+   * `VALIDATION_FAILED` and on the 422 `METADATA_*` codes.
    * @public
    */
   errors?: FieldError[] | undefined;
@@ -595,7 +446,7 @@ export class UnauthenticatedError extends __BaseException {
 
   /**
    * Field-level problems, one per member or parameter at fault. Present only on 400
-   * `VALIDATION_FAILED`.
+   * `VALIDATION_FAILED` and on the 422 `METADATA_*` codes.
    * @public
    */
   errors?: FieldError[] | undefined;
@@ -620,83 +471,10 @@ export class UnauthenticatedError extends __BaseException {
 }
 
 /**
- * The idempotency key was already used with a different request body.
- * @public
- */
-export class UnprocessableContentError extends __BaseException {
-  public static readonly shapeId: string = "ai.caitlyn.v3#UnprocessableContentError";
-  readonly name = "UnprocessableContentError" as const;
-  readonly $fault = "client" as const;
-  /**
-   * A stable URI for the code: its page in the public error reference,
-   * `https://build.caitlyn.ai/errors/\{code\}`.
-   * @public
-   */
-  type: string;
-
-  /**
-   * A short, human-readable summary of the problem, the same for every occurrence of the code.
-   * @public
-   */
-  title: string;
-
-  /**
-   * The HTTP status code, repeated from the response.
-   * @public
-   */
-  status: number;
-
-  /**
-   * The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never
-   * renamed; callers match on it.
-   * @public
-   */
-  code: string;
-
-  /**
-   * What went wrong in this occurrence, written for the integrator. Never holds stack traces,
-   * storage keys or another person's data.
-   * @public
-   */
-  detail?: string | undefined;
-
-  /**
-   * The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to
-   * support.
-   * @public
-   */
-  requestId: string;
-
-  /**
-   * Field-level problems, one per member or parameter at fault. Present only on 400
-   * `VALIDATION_FAILED`.
-   * @public
-   */
-  errors?: FieldError[] | undefined;
-  /**
-   * @internal
-   */
-  constructor(opts: __ExceptionOptionType<UnprocessableContentError, __BaseException>) {
-    super({
-      name: "UnprocessableContentError",
-      $fault: "client",
-      ...opts,
-    });
-    Object.setPrototypeOf(this, new.target.prototype);
-    this.type = opts.type;
-    this.title = opts.title;
-    this.status = opts.status;
-    this.code = opts.code;
-    this.detail = opts.detail;
-    this.requestId = opts.requestId;
-    this.errors = opts.errors;
-  }
-}
-
-/**
  * The request is malformed: a member is missing, the wrong type or out of range; it has a member,
- * filter or sort field the operation does not define; its cursor is not valid for this list; or it
- * asks to delete `draft` or `production`, which every agent keeps.
+ * filter or sort field the operation does not define; its cursor is not valid for this list; it
+ * asks to delete `draft` or `live`, which every agent keeps; an agent configuration would be
+ * larger than 256 KiB; or a file is meant for a conversation whose agent takes no attachments.
  * @public
  */
 export class ValidationError extends __BaseException {
@@ -745,7 +523,7 @@ export class ValidationError extends __BaseException {
 
   /**
    * Field-level problems, one per member or parameter at fault. Present only on 400
-   * `VALIDATION_FAILED`.
+   * `VALIDATION_FAILED` and on the 422 `METADATA_*` codes.
    * @public
    */
   errors?: FieldError[] | undefined;
@@ -755,6 +533,247 @@ export class ValidationError extends __BaseException {
   constructor(opts: __ExceptionOptionType<ValidationError, __BaseException>) {
     super({
       name: "ValidationError",
+      $fault: "client",
+      ...opts,
+    });
+    Object.setPrototypeOf(this, new.target.prototype);
+    this.type = opts.type;
+    this.title = opts.title;
+    this.status = opts.status;
+    this.code = opts.code;
+    this.detail = opts.detail;
+    this.requestId = opts.requestId;
+    this.errors = opts.errors;
+  }
+}
+
+/**
+ * `If-Match` does not match the resource's current ETag: it changed since the caller read it.
+ * @public
+ */
+export class PreconditionFailedError extends __BaseException {
+  public static readonly shapeId: string = "ai.caitlyn.v3#PreconditionFailedError";
+  readonly name = "PreconditionFailedError" as const;
+  readonly $fault = "client" as const;
+  /**
+   * A stable URI for the code: its page in the public error reference,
+   * `https://build.caitlyn.ai/errors/\{code\}`.
+   * @public
+   */
+  type: string;
+
+  /**
+   * A short, human-readable summary of the problem, the same for every occurrence of the code.
+   * @public
+   */
+  title: string;
+
+  /**
+   * The HTTP status code, repeated from the response.
+   * @public
+   */
+  status: number;
+
+  /**
+   * The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never
+   * renamed; callers match on it.
+   * @public
+   */
+  code: string;
+
+  /**
+   * What went wrong in this occurrence, written for the integrator. Never holds stack traces,
+   * storage keys or another person's data.
+   * @public
+   */
+  detail?: string | undefined;
+
+  /**
+   * The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to
+   * support.
+   * @public
+   */
+  requestId: string;
+
+  /**
+   * Field-level problems, one per member or parameter at fault. Present only on 400
+   * `VALIDATION_FAILED` and on the 422 `METADATA_*` codes.
+   * @public
+   */
+  errors?: FieldError[] | undefined;
+  /**
+   * @internal
+   */
+  constructor(opts: __ExceptionOptionType<PreconditionFailedError, __BaseException>) {
+    super({
+      name: "PreconditionFailedError",
+      $fault: "client",
+      ...opts,
+    });
+    Object.setPrototypeOf(this, new.target.prototype);
+    this.type = opts.type;
+    this.title = opts.title;
+    this.status = opts.status;
+    this.code = opts.code;
+    this.detail = opts.detail;
+    this.requestId = opts.requestId;
+    this.errors = opts.errors;
+  }
+}
+
+/**
+ * The resource's state does not allow the request, a unique name is taken, or a request with the
+ * same idempotency key is still in progress. An agent version that live points at
+ * (`VERSION_IN_USE`) or that live history names (`VERSION_IN_HISTORY`) cannot be deleted. A
+ * document still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an
+ * ingestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document
+ * an ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry
+ * `Retry-After`.
+ * @public
+ */
+export class ConflictError extends __BaseException {
+  public static readonly shapeId: string = "ai.caitlyn.v3#ConflictError";
+  readonly name = "ConflictError" as const;
+  readonly $fault = "client" as const;
+  /**
+   * A stable URI for the code: its page in the public error reference,
+   * `https://build.caitlyn.ai/errors/\{code\}`.
+   * @public
+   */
+  type: string;
+
+  /**
+   * A short, human-readable summary of the problem, the same for every occurrence of the code.
+   * @public
+   */
+  title: string;
+
+  /**
+   * The HTTP status code, repeated from the response.
+   * @public
+   */
+  status: number;
+
+  /**
+   * The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never
+   * renamed; callers match on it.
+   * @public
+   */
+  code: string;
+
+  /**
+   * What went wrong in this occurrence, written for the integrator. Never holds stack traces,
+   * storage keys or another person's data.
+   * @public
+   */
+  detail?: string | undefined;
+
+  /**
+   * The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to
+   * support.
+   * @public
+   */
+  requestId: string;
+
+  /**
+   * Field-level problems, one per member or parameter at fault. Present only on 400
+   * `VALIDATION_FAILED` and on the 422 `METADATA_*` codes.
+   * @public
+   */
+  errors?: FieldError[] | undefined;
+
+  /**
+   * Seconds to wait before trying again, from the `Retry-After` header. Present on
+   * `DOCUMENT_INGESTION_IN_PROGRESS` and `TARGET_IN_USE`. The SDKs do not retry a 409 on their own.
+   * @public
+   */
+  retryAfterSeconds?: number | undefined;
+  /**
+   * @internal
+   */
+  constructor(opts: __ExceptionOptionType<ConflictError, __BaseException>) {
+    super({
+      name: "ConflictError",
+      $fault: "client",
+      ...opts,
+    });
+    Object.setPrototypeOf(this, new.target.prototype);
+    this.type = opts.type;
+    this.title = opts.title;
+    this.status = opts.status;
+    this.code = opts.code;
+    this.detail = opts.detail;
+    this.requestId = opts.requestId;
+    this.errors = opts.errors;
+    this.retryAfterSeconds = opts.retryAfterSeconds;
+  }
+}
+
+/**
+ * The idempotency key was already used with a different request body; supplied metadata does not
+ * fit the knowledge base's field definitions or limits (`METADATA_FIELD_UNDEFINED`,
+ * `METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one
+ * entry per field in `errors`; an ingestion batch item gives both or neither of its content's
+ * description and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused
+ * a file (`CONTENT_REJECTED`).
+ * @public
+ */
+export class UnprocessableContentError extends __BaseException {
+  public static readonly shapeId: string = "ai.caitlyn.v3#UnprocessableContentError";
+  readonly name = "UnprocessableContentError" as const;
+  readonly $fault = "client" as const;
+  /**
+   * A stable URI for the code: its page in the public error reference,
+   * `https://build.caitlyn.ai/errors/\{code\}`.
+   * @public
+   */
+  type: string;
+
+  /**
+   * A short, human-readable summary of the problem, the same for every occurrence of the code.
+   * @public
+   */
+  title: string;
+
+  /**
+   * The HTTP status code, repeated from the response.
+   * @public
+   */
+  status: number;
+
+  /**
+   * The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never
+   * renamed; callers match on it.
+   * @public
+   */
+  code: string;
+
+  /**
+   * What went wrong in this occurrence, written for the integrator. Never holds stack traces,
+   * storage keys or another person's data.
+   * @public
+   */
+  detail?: string | undefined;
+
+  /**
+   * The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to
+   * support.
+   * @public
+   */
+  requestId: string;
+
+  /**
+   * Field-level problems, one per member or parameter at fault. Present only on 400
+   * `VALIDATION_FAILED` and on the 422 `METADATA_*` codes.
+   * @public
+   */
+  errors?: FieldError[] | undefined;
+  /**
+   * @internal
+   */
+  constructor(opts: __ExceptionOptionType<UnprocessableContentError, __BaseException>) {
+    super({
+      name: "UnprocessableContentError",
       $fault: "client",
       ...opts,
     });
@@ -819,7 +838,7 @@ export class PreconditionRequiredError extends __BaseException {
 
   /**
    * Field-level problems, one per member or parameter at fault. Present only on 400
-   * `VALIDATION_FAILED`.
+   * `VALIDATION_FAILED` and on the 422 `METADATA_*` codes.
    * @public
    */
   errors?: FieldError[] | undefined;
@@ -893,7 +912,7 @@ export class PayloadTooLargeError extends __BaseException {
 
   /**
    * Field-level problems, one per member or parameter at fault. Present only on 400
-   * `VALIDATION_FAILED`.
+   * `VALIDATION_FAILED` and on the 422 `METADATA_*` codes.
    * @public
    */
   errors?: FieldError[] | undefined;

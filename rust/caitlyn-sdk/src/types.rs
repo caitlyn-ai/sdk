@@ -5,35 +5,271 @@
 use caitlyn_sdk_core as rt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// A person or an API client that made a change.
+/// How a folder's or document's readers are decided. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`ReadersKind::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum ReadersKind {
+    /// `inherit`
+    Inherit,
+    /// `everyone`
+    Everyone,
+    /// `specific`
+    Specific,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl ReadersKind {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            ReadersKind::Inherit => "inherit",
+            ReadersKind::Everyone => "everyone",
+            ReadersKind::Specific => "specific",
+            ReadersKind::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, ReadersKind::Unknown(_))
+    }
+}
+
+impl From<&str> for ReadersKind {
+    fn from(s: &str) -> Self {
+        match s {
+            "inherit" => ReadersKind::Inherit,
+            "everyone" => ReadersKind::Everyone,
+            "specific" => ReadersKind::Specific,
+            other => ReadersKind::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for ReadersKind {
+    fn from(s: String) -> Self {
+        ReadersKind::from(s.as_str())
+    }
+}
+
+impl Default for ReadersKind {
+    fn default() -> Self {
+        ReadersKind::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for ReadersKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ReadersKind {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ReadersKind {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(ReadersKind::from(String::deserialize(d)?))
+    }
+}
+
+/// Who may read a folder's or a document's contents.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
-pub struct Actor {
-    /// The person, when a person made the change.
-    #[serde(rename = "userId", skip_serializing_if = "Option::is_none")]
-    pub user_id: Option<String>,
-    /// The API client, when one made the change or a person made it through one.
-    #[serde(rename = "apiClientId", skip_serializing_if = "Option::is_none")]
-    pub api_client_id: Option<String>,
-    /// The person's or API client's name, as people saw it when the change was made.
-    #[serde(rename = "displayName")]
-    pub display_name: String,
+pub struct Readers {
+    /// How the readers are decided. With `specific`, `roles` and `people` say who.
+    #[serde(rename = "kind")]
+    pub kind: ReadersKind,
+    /// For `specific`: the roles that may read it.
+    #[serde(rename = "roles", skip_serializing_if = "Option::is_none")]
+    pub roles: Option<Vec<String>>,
+    /// For `specific`: the people who may read it.
+    #[serde(rename = "people", skip_serializing_if = "Option::is_none")]
+    pub people: Option<Vec<String>>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
     pub raw: rt::Raw,
 }
 
-impl Serialize for Actor {
+impl Serialize for Readers {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        Actor::serialize(self, s)
+        Readers::serialize(self, s)
     }
 }
 
-impl<'de> Deserialize<'de> for Actor {
+impl<'de> Deserialize<'de> for Readers {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
-        rt::raw::with_raw(v, |v| Actor::deserialize(v), |o, r| o.raw = r)
+        rt::raw::with_raw(v, |v| Readers::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// One thing a role may do with a knowledge base. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`AccessAction::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum AccessAction {
+    /// `find`
+    Find,
+    /// `read`
+    Read,
+    /// `edit`
+    Edit,
+    /// `delete`
+    Delete,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl AccessAction {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            AccessAction::Find => "find",
+            AccessAction::Read => "read",
+            AccessAction::Edit => "edit",
+            AccessAction::Delete => "delete",
+            AccessAction::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, AccessAction::Unknown(_))
+    }
+}
+
+impl From<&str> for AccessAction {
+    fn from(s: &str) -> Self {
+        match s {
+            "find" => AccessAction::Find,
+            "read" => AccessAction::Read,
+            "edit" => AccessAction::Edit,
+            "delete" => AccessAction::Delete,
+            other => AccessAction::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for AccessAction {
+    fn from(s: String) -> Self {
+        AccessAction::from(s.as_str())
+    }
+}
+
+impl Default for AccessAction {
+    fn default() -> Self {
+        AccessAction::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for AccessAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for AccessAction {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for AccessAction {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(AccessAction::from(String::deserialize(d)?))
+    }
+}
+
+/// What one role may do with a knowledge base.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct RoleAccess {
+    /// The role this grant is for.
+    #[serde(rename = "roleId")]
+    pub role_id: String,
+    /// The role's name, as people see it. Returned; ignored when sent.
+    #[serde(rename = "name", skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// What the role may do with the knowledge base.
+    #[serde(rename = "can")]
+    pub can: Vec<AccessAction>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for RoleAccess {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        RoleAccess::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for RoleAccess {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| RoleAccess::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Who may use a knowledge base, or who may read a folder or a document in it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct Access {
+    /// For the knowledge base: each role's grants. A role left out has none.
+    #[serde(rename = "roles", skip_serializing_if = "Option::is_none")]
+    pub roles: Option<Vec<RoleAccess>>,
+    /// For a folder or a document: who may read it.
+    #[serde(rename = "readers", skip_serializing_if = "Option::is_none")]
+    pub readers: Option<Readers>,
+    /// The access's ETag; send it as `If-Match` to set it.
+    #[serde(rename = "etag")]
+    pub etag: String,
+    /// For a folder or a document whose readers are inherited: the folder they come from.
+    #[serde(rename = "inheritedFrom", skip_serializing_if = "Option::is_none")]
+    pub inherited_from: Option<String>,
+    /// The response this thing was read from; see [`response_metadata`](Self::response_metadata).
+    #[serde(skip)]
+    pub(crate) response_metadata: rt::ThingMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for Access {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        Access::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Access {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| Access::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl Access {
+    /// The response this Access was read from (PROTOCOL.md 4.2): its HTTP status, request id and ETag. `Some` on a
+    /// thing from one response (get, update, create, `wait()`); `None` on a list item, a snapshot entry or a value
+    /// built in code. It is never serialised, and things compare equal whatever it holds.
+    pub fn response_metadata(&self) -> Option<&rt::ResponseMetadata> {
+        self.response_metadata.0.as_ref()
+    }
+
+    /// The JSON object this Access was read from, unknown fields included (PROTOCOL.md 4.1).
+    pub fn raw(&self) -> &rt::Raw {
+        &self.raw
     }
 }
 
@@ -74,16 +310,495 @@ impl<'de> Deserialize<'de> for FieldError {
     }
 }
 
+/// A person or an API client that made a change.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct Actor {
+    /// The person, when a person made the change.
+    #[serde(rename = "userId", skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+    /// The API client, when one made the change or a person made it through one.
+    #[serde(rename = "apiClientId", skip_serializing_if = "Option::is_none")]
+    pub api_client_id: Option<String>,
+    /// The person's or API client's name, as people saw it when the change was made.
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for Actor {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        Actor::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Actor {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| Actor::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// An agent avatar's colour. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`AvatarColour::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum AvatarColour {
+    /// `amber`
+    Amber,
+    /// `sage`
+    Sage,
+    /// `blue`
+    Blue,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl AvatarColour {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            AvatarColour::Amber => "amber",
+            AvatarColour::Sage => "sage",
+            AvatarColour::Blue => "blue",
+            AvatarColour::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, AvatarColour::Unknown(_))
+    }
+}
+
+impl From<&str> for AvatarColour {
+    fn from(s: &str) -> Self {
+        match s {
+            "amber" => AvatarColour::Amber,
+            "sage" => AvatarColour::Sage,
+            "blue" => AvatarColour::Blue,
+            other => AvatarColour::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for AvatarColour {
+    fn from(s: String) -> Self {
+        AvatarColour::from(s.as_str())
+    }
+}
+
+impl Default for AvatarColour {
+    fn default() -> Self {
+        AvatarColour::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for AvatarColour {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for AvatarColour {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for AvatarColour {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(AvatarColour::from(String::deserialize(d)?))
+    }
+}
+
+/// A named icon for an agent's avatar. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`AgentIconName::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum AgentIconName {
+    /// `leaf`
+    Leaf,
+    /// `package`
+    Package,
+    /// `document`
+    Document,
+    /// `chat`
+    Chat,
+    /// `book`
+    Book,
+    /// `people`
+    People,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl AgentIconName {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            AgentIconName::Leaf => "leaf",
+            AgentIconName::Package => "package",
+            AgentIconName::Document => "document",
+            AgentIconName::Chat => "chat",
+            AgentIconName::Book => "book",
+            AgentIconName::People => "people",
+            AgentIconName::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, AgentIconName::Unknown(_))
+    }
+}
+
+impl From<&str> for AgentIconName {
+    fn from(s: &str) -> Self {
+        match s {
+            "leaf" => AgentIconName::Leaf,
+            "package" => AgentIconName::Package,
+            "document" => AgentIconName::Document,
+            "chat" => AgentIconName::Chat,
+            "book" => AgentIconName::Book,
+            "people" => AgentIconName::People,
+            other => AgentIconName::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for AgentIconName {
+    fn from(s: String) -> Self {
+        AgentIconName::from(s.as_str())
+    }
+}
+
+impl Default for AgentIconName {
+    fn default() -> Self {
+        AgentIconName::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for AgentIconName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for AgentIconName {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for AgentIconName {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(AgentIconName::from(String::deserialize(d)?))
+    }
+}
+
+/// What an agent's avatar shows. Exactly one member is present.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct AgentMark {
+    /// A named icon from the platform's set.
+    #[serde(rename = "icon", skip_serializing_if = "Option::is_none")]
+    pub icon: Option<AgentIconName>,
+    /// The uploaded picture's address, to show as an image. It may stop working after a time; read the
+    /// agent again for a fresh one.
+    #[serde(rename = "pictureUrl", skip_serializing_if = "Option::is_none")]
+    pub picture_url: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for AgentMark {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        AgentMark::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for AgentMark {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| AgentMark::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// How an agent looks.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct AgentAvatar {
+    /// The colour behind the avatar's icon, picture or initials.
+    #[serde(rename = "colour", skip_serializing_if = "Option::is_none")]
+    pub colour: Option<AvatarColour>,
+    /// What the avatar shows: a named icon, or a picture. Absent shows the agent's initials.
+    #[serde(rename = "mark", skip_serializing_if = "Option::is_none")]
+    pub mark: Option<AgentMark>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for AgentAvatar {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        AgentAvatar::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for AgentAvatar {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| AgentAvatar::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// An agent: its name, description, avatar and which version is live.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct Agent {
+    /// The identifier every call about this agent takes; it never changes.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// What people see the agent called, in the app and in chat. Not versioned.
+    #[serde(rename = "name")]
+    pub name: String,
+    /// What the agent is for. Not versioned. Where a version's handover readers find no description of
+    /// their own, they use this one.
+    #[serde(rename = "description", skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// How the agent looks in lists and in the chat. Not versioned.
+    #[serde(rename = "avatar", skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<AgentAvatar>,
+    /// The version live points at. Absent until the agent's first publish.
+    #[serde(rename = "liveVersion", skip_serializing_if = "Option::is_none")]
+    pub live_version: Option<String>,
+    /// When the agent was created.
+    #[serde(rename = "createdAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// When the agent's name, description or avatar last changed.
+    #[serde(
+        rename = "updatedAt",
+        with = "::caitlyn_sdk_core::time::rfc3339_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// The agent's ETag; send it as `If-Match` to change it.
+    #[serde(rename = "etag")]
+    pub etag: String,
+    /// The response this thing was read from; see [`response_metadata`](Self::response_metadata).
+    #[serde(skip)]
+    pub(crate) response_metadata: rt::ThingMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for Agent {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        Agent::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Agent {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| Agent::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl Agent {
+    /// The response this Agent was read from (PROTOCOL.md 4.2): its HTTP status, request id and ETag. `Some` on a
+    /// thing from one response (get, update, create, `wait()`); `None` on a list item, a snapshot entry or a value
+    /// built in code. It is never serialised, and things compare equal whatever it holds.
+    pub fn response_metadata(&self) -> Option<&rt::ResponseMetadata> {
+        self.response_metadata.0.as_ref()
+    }
+
+    /// The JSON object this Agent was read from, unknown fields included (PROTOCOL.md 4.1).
+    pub fn raw(&self) -> &rt::Raw {
+        &self.raw
+    }
+}
+
+/// What an agent's avatar should show. Exactly one of `icon` and `pictureUploadId`; both or neither
+/// is refused with 400 `VALIDATION_FAILED`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct AgentMarkInput {
+    /// A named icon from the platform's set.
+    #[serde(rename = "icon", skip_serializing_if = "Option::is_none")]
+    pub icon: Option<AgentIconName>,
+    /// An upload holding the picture, reserved with CreateUpload and `purpose: {agentAvatar: true}`.
+    /// Each upload can be used once.
+    #[serde(rename = "pictureUploadId", skip_serializing_if = "Option::is_none")]
+    pub picture_upload_id: Option<String>,
+    /// A file to send in place of `picture_upload_id`: the call reserves an upload for it with
+    /// `core().uploads()`, sends the bytes, then sends the upload's id as `picture_upload_id`. Set this or
+    /// `picture_upload_id`, not both.
+    #[serde(skip)]
+    pub picture: Option<rt::UploadFile>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for AgentMarkInput {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        AgentMarkInput::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for AgentMarkInput {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| AgentMarkInput::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// How an agent should look, as a caller sets it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct AgentAvatarInput {
+    /// The colour behind the avatar's icon, picture or initials.
+    #[serde(rename = "colour", skip_serializing_if = "Option::is_none")]
+    pub colour: Option<AvatarColour>,
+    /// What the avatar shows: a named icon, or a picture.
+    #[serde(rename = "mark", skip_serializing_if = "Option::is_none")]
+    pub mark: Option<AgentMarkInput>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for AgentAvatarInput {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        AgentAvatarInput::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for AgentAvatarInput {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| AgentAvatarInput::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// How an agent cites its sources.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct CitationSettings {
+    /// Whether the agent may cite the person's own earlier messages. Defaults to false.
+    #[serde(rename = "userMessages", skip_serializing_if = "Option::is_none")]
+    pub user_messages: Option<bool>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for CitationSettings {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        CitationSettings::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for CitationSettings {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| CitationSettings::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Images and media in answers.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct MediaEmbedSettings {
+    /// Whether answers show images and media from the passages they cite. Defaults to false.
+    #[serde(rename = "enabled", skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    /// How many search results are kept for media, from 0 to 10. Defaults to 2.
+    #[serde(rename = "reservedResults", skip_serializing_if = "Option::is_none")]
+    pub reserved_results: Option<i32>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for MediaEmbedSettings {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        MediaEmbedSettings::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for MediaEmbedSettings {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| MediaEmbedSettings::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// How answers are shaped.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct AnswerSettings {
+    /// Whether the agent ends an answer by offering follow-up questions. Defaults to true.
+    #[serde(rename = "followUpQuestions", skip_serializing_if = "Option::is_none")]
+    pub follow_up_questions: Option<bool>,
+    /// How the agent cites its sources.
+    #[serde(rename = "citations", skip_serializing_if = "Option::is_none")]
+    pub citations: Option<CitationSettings>,
+    /// Whether the agent shows images and media from the passages it cites.
+    #[serde(rename = "mediaEmbeds", skip_serializing_if = "Option::is_none")]
+    pub media_embeds: Option<MediaEmbedSettings>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for AnswerSettings {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        AnswerSettings::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for AnswerSettings {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| AnswerSettings::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
 /// Chat attachment settings.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
 pub struct AttachmentSettings {
-    /// Whether people may attach files in chat. Defaults to false.
+    /// Whether people may attach documents in chat. Defaults to false.
     #[serde(rename = "enabled", skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
-    /// The most files one message may carry, from 1 to 20.
+    /// The most documents one conversation may hold, from 1 to 10. Defaults to 5.
     #[serde(rename = "maxFiles", skip_serializing_if = "Option::is_none")]
     pub max_files: Option<i32>,
+    /// The largest document accepted, in bytes, from 102,400 (100 KB) to 10,485,760 (10 MB).
+    /// Defaults to 4,718,592 (4.5 MB).
+    #[serde(rename = "maxByteSize", skip_serializing_if = "Option::is_none")]
+    pub max_byte_size: Option<i64>,
+    /// The file extensions accepted. Defaults to `pdf`, `docx`, `txt`, `csv` and `md`.
+    #[serde(rename = "acceptedTypes", skip_serializing_if = "Option::is_none")]
+    pub accepted_types: Option<Vec<String>>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -103,13 +818,40 @@ impl<'de> Deserialize<'de> for AttachmentSettings {
     }
 }
 
-/// The content safety setting on a version.
+/// One of the workspace's connectors an agent version may use.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ConnectorBinding {
+    /// Which of the workspace's connectors the version may use.
+    #[serde(rename = "connectorId")]
+    pub connector_id: String,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ConnectorBinding {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ConnectorBinding::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ConnectorBinding {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ConnectorBinding::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The guardrail that screens documents attached in chat.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
 pub struct ContentSafety {
-    /// The guardrail applied, from the guardrails list. Absent means none.
-    #[serde(rename = "guardrailId", skip_serializing_if = "Option::is_none")]
-    pub guardrail_id: Option<String>,
+    /// The ID of an entry in `GET /v3/guardrails`, `default` (the platform default, also used when
+    /// absent) or `none`.
+    #[serde(rename = "guardrail", skip_serializing_if = "Option::is_none")]
+    pub guardrail: Option<String>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -129,20 +871,485 @@ impl<'de> Deserialize<'de> for ContentSafety {
     }
 }
 
-/// One knowledge base an agent searches, and how.
+/// How the chat looks and behaves.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ConversationSettings {
+    /// The hint in the empty chat box, at most 200 characters. Absent or empty uses the workspace
+    /// theme's.
+    #[serde(rename = "inputPlaceholder", skip_serializing_if = "Option::is_none")]
+    pub input_placeholder: Option<String>,
+    /// The time zone dates and "today" are read in, as an IANA name. Defaults to `Pacific/Auckland`.
+    #[serde(rename = "timeZone", skip_serializing_if = "Option::is_none")]
+    pub time_zone: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ConversationSettings {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ConversationSettings::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ConversationSettings {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ConversationSettings::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Who the agent is and how it behaves, and the text it follows at particular points in an answer.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct AgentGuidance {
+    /// Who the agent is and whom it serves, at the top of every prompt, at most 4,000 characters.
+    /// Absent uses the platform's.
+    #[serde(rename = "identity", skip_serializing_if = "Option::is_none")]
+    pub identity: Option<String>,
+    /// How the agent behaves, at most 100,000 characters. Always present when read; an empty string
+    /// means none.
+    #[serde(rename = "instructions", skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+    /// What makes an answer relevant to the people this agent serves, and what it should decline.
+    #[serde(rename = "relevance", skip_serializing_if = "Option::is_none")]
+    pub relevance: Option<String>,
+    /// A glossary of terms the agent reads the same way every time.
+    #[serde(rename = "definitions", skip_serializing_if = "Option::is_none")]
+    pub definitions: Option<String>,
+    /// How to turn a question into the topics it searches for.
+    #[serde(rename = "searchTopics", skip_serializing_if = "Option::is_none")]
+    pub search_topics: Option<String>,
+    /// How to judge the passages a search finds, for example "prefer the most recent". Not used with
+    /// the `reranker` evaluation method.
+    #[serde(rename = "resultEvaluation", skip_serializing_if = "Option::is_none")]
+    pub result_evaluation: Option<String>,
+    /// What to say when the knowledge bases hold too little to answer. When set, it replaces
+    /// `instructions` in the reply to a question with no evidence.
+    #[serde(rename = "limitedEvidence", skip_serializing_if = "Option::is_none")]
+    pub limited_evidence: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for AgentGuidance {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        AgentGuidance::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for AgentGuidance {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| AgentGuidance::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The poster on a journey page.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct JourneyPoster {
+    /// The words on the poster, such as "Onboarding".
+    #[serde(rename = "label")]
+    pub label: String,
+    /// Short lines at the foot of the poster, one per line, at most 6.
+    #[serde(rename = "footer", skip_serializing_if = "Option::is_none")]
+    pub footer: Option<Vec<String>>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for JourneyPoster {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        JourneyPoster::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for JourneyPoster {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| JourneyPoster::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The introduction on a journey page.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct JourneyIntroduction {
+    /// The small label above the title, such as "Getting started". Used on `start` only.
+    #[serde(rename = "eyebrow", skip_serializing_if = "Option::is_none")]
+    pub eyebrow: Option<String>,
+    /// The title, such as "Welcome. Let's set up Caitlyn for your organisation."
+    #[serde(rename = "title")]
+    pub title: String,
+    /// The paragraph under the title. Required on `start`.
+    #[serde(rename = "lead", skip_serializing_if = "Option::is_none")]
+    pub lead: Option<String>,
+    /// The button, such as "Begin set-up" or "Continue in your set-up chat".
+    #[serde(rename = "buttonLabel")]
+    pub button_label: String,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for JourneyIntroduction {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        JourneyIntroduction::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for JourneyIntroduction {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| JourneyIntroduction::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The page shown for a stepped workflow: a poster on one side, and an introduction that changes once
+/// some steps are done. Its steps are the phases' `step` settings, numbered in the order their phases
+/// are declared; a step is done when its phases complete, or when its `doneWhen` signal says so.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct JourneySettings {
+    /// The poster beside the introduction. Always present when read.
+    #[serde(rename = "poster", skip_serializing_if = "Option::is_none")]
+    pub poster: Option<JourneyPoster>,
+    /// What a person sees before they start. Always present when read.
+    #[serde(rename = "start", skip_serializing_if = "Option::is_none")]
+    pub start: Option<JourneyIntroduction>,
+    /// What a person sees once some steps are done or skipped. Always present when read.
+    #[serde(rename = "resume", skip_serializing_if = "Option::is_none")]
+    pub resume: Option<JourneyIntroduction>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for JourneySettings {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        JourneySettings::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for JourneySettings {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| JourneySettings::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// How much effort a model spends reasoning. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`ReasoningEffort::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum ReasoningEffort {
+    /// `low`
+    Low,
+    /// `medium`
+    Medium,
+    /// `high`
+    High,
+    /// `xhigh`
+    Xhigh,
+    /// `max`
+    Max,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl ReasoningEffort {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            ReasoningEffort::Low => "low",
+            ReasoningEffort::Medium => "medium",
+            ReasoningEffort::High => "high",
+            ReasoningEffort::Xhigh => "xhigh",
+            ReasoningEffort::Max => "max",
+            ReasoningEffort::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, ReasoningEffort::Unknown(_))
+    }
+}
+
+impl From<&str> for ReasoningEffort {
+    fn from(s: &str) -> Self {
+        match s {
+            "low" => ReasoningEffort::Low,
+            "medium" => ReasoningEffort::Medium,
+            "high" => ReasoningEffort::High,
+            "xhigh" => ReasoningEffort::Xhigh,
+            "max" => ReasoningEffort::Max,
+            other => ReasoningEffort::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for ReasoningEffort {
+    fn from(s: String) -> Self {
+        ReasoningEffort::from(s.as_str())
+    }
+}
+
+impl Default for ReasoningEffort {
+    fn default() -> Self {
+        ReasoningEffort::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for ReasoningEffort {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ReasoningEffort {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ReasoningEffort {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(ReasoningEffort::from(String::deserialize(d)?))
+    }
+}
+
+/// Native reasoning ("extended thinking") for a model that supports it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ReasoningSettings {
+    /// Whether the model reasons before it answers. Defaults to false; a model whose `reasoning` is
+    /// `always` reasons whatever this says.
+    #[serde(rename = "enabled", skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    /// How much effort the model spends reasoning. Absent uses the model's default. Refused with 400
+    /// for a level the model does not list in `effortLevels`.
+    #[serde(rename = "effort", skip_serializing_if = "Option::is_none")]
+    pub effort: Option<ReasoningEffort>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ReasoningSettings {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ReasoningSettings::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ReasoningSettings {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ReasoningSettings::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// One job's model and its settings.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ModelSettings {
+    /// The model, from `GET /v3/models`. Absent uses the job's default.
+    #[serde(rename = "model", skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Sampling temperature, from 0 to 1. Absent uses the model's default. Refused with 400 for a
+    /// model that does not accept it (see `acceptsTemperature` in `GET /v3/models`).
+    #[serde(rename = "temperature", skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
+    /// Nucleus sampling, from 0 to 1. Absent uses the model's default.
+    #[serde(rename = "topP", skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f32>,
+    /// Top-K sampling, from 0 to 250. Absent uses the model's default.
+    #[serde(rename = "topK", skip_serializing_if = "Option::is_none")]
+    pub top_k: Option<i32>,
+    /// The most tokens the job may write, from 1 to 16,384. Defaults to 2,048.
+    #[serde(rename = "maxOutputTokens", skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<i32>,
+    /// How many times a failed call to the model is tried, from 1 to 10. Defaults to 3.
+    #[serde(rename = "maxAttempts", skip_serializing_if = "Option::is_none")]
+    pub max_attempts: Option<i32>,
+    /// Native reasoning, for a model that supports it; refused with 400 for one that does not.
+    #[serde(rename = "reasoning", skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<ReasoningSettings>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ModelSettings {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ModelSettings::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ModelSettings {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ModelSettings::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// How search results are judged. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`ResultEvaluationMethod::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum ResultEvaluationMethod {
+    /// `reranker`
+    Reranker,
+    /// `model`
+    Model,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl ResultEvaluationMethod {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            ResultEvaluationMethod::Reranker => "reranker",
+            ResultEvaluationMethod::Model => "model",
+            ResultEvaluationMethod::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, ResultEvaluationMethod::Unknown(_))
+    }
+}
+
+impl From<&str> for ResultEvaluationMethod {
+    fn from(s: &str) -> Self {
+        match s {
+            "reranker" => ResultEvaluationMethod::Reranker,
+            "model" => ResultEvaluationMethod::Model,
+            other => ResultEvaluationMethod::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for ResultEvaluationMethod {
+    fn from(s: String) -> Self {
+        ResultEvaluationMethod::from(s.as_str())
+    }
+}
+
+impl Default for ResultEvaluationMethod {
+    fn default() -> Self {
+        ResultEvaluationMethod::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for ResultEvaluationMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ResultEvaluationMethod {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ResultEvaluationMethod {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(ResultEvaluationMethod::from(String::deserialize(d)?))
+    }
+}
+
+/// How the passages a search finds are judged.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ResultEvaluation {
+    /// What judges the search results. Defaults to `reranker`.
+    #[serde(rename = "method", skip_serializing_if = "Option::is_none")]
+    pub method: Option<ResultEvaluationMethod>,
+    /// The most passages each search keeps for evaluation, from 1 to 100. Defaults to 10.
+    #[serde(rename = "maxSearchResults", skip_serializing_if = "Option::is_none")]
+    pub max_search_results: Option<i32>,
+    /// The most passages kept after evaluation, from 1 to 100, and at most `maxQueries` ×
+    /// `maxSearchResults`. Defaults to 10.
+    #[serde(rename = "maxResults", skip_serializing_if = "Option::is_none")]
+    pub max_results: Option<i32>,
+    /// For `model`: the model that judges each passage. Unset members fall back to
+    /// `models.planning`.
+    #[serde(rename = "judge", skip_serializing_if = "Option::is_none")]
+    pub judge: Option<ModelSettings>,
+    /// For `reranker`: the reranking model, from `GET /v3/models`. Absent uses the platform's
+    /// preference.
+    #[serde(rename = "reranker", skip_serializing_if = "Option::is_none")]
+    pub reranker: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ResultEvaluation {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ResultEvaluation::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ResultEvaluation {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ResultEvaluation::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// One knowledge base an agent searches, and how hard.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
 pub struct KnowledgeBaseBinding {
-    /// The knowledge base searched.
+    /// The knowledge base searched. The caller must be able to read it.
     #[serde(rename = "knowledgeBaseId")]
     pub knowledge_base_id: String,
-    /// How many passages to retrieve per search, from 1 to 100. Absent means the server default.
+    /// What it holds, so the agent knows when to search it, at most 2,000 characters. Absent uses
+    /// the knowledge base's own `agentDescription`.
+    #[serde(rename = "description", skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// The most searches the agent may write for this knowledge base per question, from 1 to 20.
+    /// Defaults to 3.
+    #[serde(rename = "maxQueries", skip_serializing_if = "Option::is_none")]
+    pub max_queries: Option<i32>,
+    /// How many passages each search retrieves, from 1 to 50. Defaults to 6.
     #[serde(rename = "numberOfResults", skip_serializing_if = "Option::is_none")]
     pub number_of_results: Option<i32>,
-    /// The lowest relevance score a passage needs to be used, from 0 to 1. Absent means the server
-    /// default.
+    /// The lowest similarity score a passage needs before it is evaluated, from 0 to 1. Defaults to
+    /// 0.3.
     #[serde(rename = "minimumScore", skip_serializing_if = "Option::is_none")]
     pub minimum_score: Option<f32>,
+    /// The lowest relevance an evaluated passage needs to reach the answer, from 0 to 1. Defaults to
+    /// 0.5.
+    #[serde(rename = "minimumRelevance", skip_serializing_if = "Option::is_none")]
+    pub minimum_relevance: Option<f32>,
+    /// Whether an audio or video citation shows its transcript beside the player. Absent follows the
+    /// knowledge base.
+    #[serde(rename = "transcriptPanel", skip_serializing_if = "Option::is_none")]
+    pub transcript_panel: Option<bool>,
+    /// How the passages a search finds are judged before they reach the answer. One method per
+    /// search.
+    #[serde(rename = "evaluation", skip_serializing_if = "Option::is_none")]
+    pub evaluation: Option<ResultEvaluation>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -162,32 +1369,2289 @@ impl<'de> Deserialize<'de> for KnowledgeBaseBinding {
     }
 }
 
-/// An agent version's configuration.
+/// What a live avatar says while an answer is being written.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct HoldingPhrases {
+    /// Phrases that acknowledge the person has finished speaking.
+    #[serde(rename = "openers", skip_serializing_if = "Option::is_none")]
+    pub openers: Option<Vec<String>>,
+    /// Groups of phrases, said one group after another while the answer is written.
+    #[serde(rename = "groups", skip_serializing_if = "Option::is_none")]
+    pub groups: Option<Vec<Vec<String>>>,
+    /// What the avatar says when the answer is taking longer than usual.
+    #[serde(rename = "stillProcessing", skip_serializing_if = "Option::is_none")]
+    pub still_processing: Option<String>,
+    /// What the avatar says to invite the person to clarify when no answer arrived.
+    #[serde(rename = "followUp", skip_serializing_if = "Option::is_none")]
+    pub follow_up: Option<String>,
+    /// Milliseconds between holding phrases, from 1,000 to 60,000.
+    #[serde(rename = "intervalMs", skip_serializing_if = "Option::is_none")]
+    pub interval_ms: Option<i32>,
+    /// The chance, from 0 to 1, that any one holding phrase is skipped, so the rhythm sounds less
+    /// mechanical.
+    #[serde(rename = "skipChance", skip_serializing_if = "Option::is_none")]
+    pub skip_chance: Option<f32>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for HoldingPhrases {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        HoldingPhrases::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for HoldingPhrases {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| HoldingPhrases::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Pausing a live avatar conversation and carrying on later.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct PauseAndResume {
+    /// What the avatar says when a conversation starts fresh, at most 1,000 characters.
+    #[serde(rename = "openingIntro")]
+    pub opening_intro: String,
+    /// What the avatar says in place of the intro when a paused conversation resumes, at most 500
+    /// characters.
+    #[serde(rename = "resumeIntro")]
+    pub resume_intro: String,
+    /// Milliseconds a paused conversation stays resumable, from 60,000 to 3,600,000. Defaults to ten
+    /// minutes.
+    #[serde(rename = "pausedTimeoutMs", skip_serializing_if = "Option::is_none")]
+    pub paused_timeout_ms: Option<i32>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for PauseAndResume {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        PauseAndResume::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for PauseAndResume {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| PauseAndResume::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// A live avatar provider. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`LiveAvatarProvider::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum LiveAvatarProvider {
+    /// `heygen`
+    Heygen,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl LiveAvatarProvider {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            LiveAvatarProvider::Heygen => "heygen",
+            LiveAvatarProvider::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, LiveAvatarProvider::Unknown(_))
+    }
+}
+
+impl From<&str> for LiveAvatarProvider {
+    fn from(s: &str) -> Self {
+        match s {
+            "heygen" => LiveAvatarProvider::Heygen,
+            other => LiveAvatarProvider::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for LiveAvatarProvider {
+    fn from(s: String) -> Self {
+        LiveAvatarProvider::from(s.as_str())
+    }
+}
+
+impl Default for LiveAvatarProvider {
+    fn default() -> Self {
+        LiveAvatarProvider::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for LiveAvatarProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for LiveAvatarProvider {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for LiveAvatarProvider {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(LiveAvatarProvider::from(String::deserialize(d)?))
+    }
+}
+
+/// A speech-to-text provider for a live avatar. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`SpeechToTextProvider::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum SpeechToTextProvider {
+    /// `deepgram`
+    Deepgram,
+    /// `assembly_ai`
+    AssemblyAi,
+    /// `gladia`
+    Gladia,
+    /// `elevenlabs`
+    Elevenlabs,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl SpeechToTextProvider {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            SpeechToTextProvider::Deepgram => "deepgram",
+            SpeechToTextProvider::AssemblyAi => "assembly_ai",
+            SpeechToTextProvider::Gladia => "gladia",
+            SpeechToTextProvider::Elevenlabs => "elevenlabs",
+            SpeechToTextProvider::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, SpeechToTextProvider::Unknown(_))
+    }
+}
+
+impl From<&str> for SpeechToTextProvider {
+    fn from(s: &str) -> Self {
+        match s {
+            "deepgram" => SpeechToTextProvider::Deepgram,
+            "assembly_ai" => SpeechToTextProvider::AssemblyAi,
+            "gladia" => SpeechToTextProvider::Gladia,
+            "elevenlabs" => SpeechToTextProvider::Elevenlabs,
+            other => SpeechToTextProvider::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for SpeechToTextProvider {
+    fn from(s: String) -> Self {
+        SpeechToTextProvider::from(s.as_str())
+    }
+}
+
+impl Default for SpeechToTextProvider {
+    fn default() -> Self {
+        SpeechToTextProvider::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for SpeechToTextProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for SpeechToTextProvider {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for SpeechToTextProvider {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(SpeechToTextProvider::from(String::deserialize(d)?))
+    }
+}
+
+/// Adjustments to a live avatar's voice.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct AvatarVoiceTuning {
+    /// How fast the avatar speaks, from 0.8 to 1.2. Defaults to 1.
+    #[serde(rename = "speed", skip_serializing_if = "Option::is_none")]
+    pub speed: Option<f32>,
+    /// Which of the provider's voice models speaks. Absent uses the provider's default.
+    #[serde(rename = "model", skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// How steady the voice is, from 0 to 1. Absent uses the provider's default.
+    #[serde(rename = "stability", skip_serializing_if = "Option::is_none")]
+    pub stability: Option<f32>,
+    /// How much the voice exaggerates its style, from 0 to 1. Absent uses the provider's default.
+    #[serde(rename = "style", skip_serializing_if = "Option::is_none")]
+    pub style: Option<f32>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for AvatarVoiceTuning {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        AvatarVoiceTuning::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for AvatarVoiceTuning {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| AvatarVoiceTuning::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// A live video avatar that speaks for the agent. Its provider's key is referenced by `secretId`,
+/// never copied, so publishing or resetting from an old version cannot bring back an old key.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct LiveAvatarSettings {
+    /// Which company's service runs the avatar. Defaults to `heygen`, the only one.
+    #[serde(rename = "provider", skip_serializing_if = "Option::is_none")]
+    pub provider: Option<LiveAvatarProvider>,
+    /// The stored secret holding the provider's key. Exported as a template variable.
+    #[serde(rename = "secretId")]
+    pub secret_id: String,
+    /// The version of this agent that answers for the avatar. Absent means this version. `draft` and
+    /// `live` follow their moving target: edits to the draft, and each publish, take effect without
+    /// this setting changing. A saved version's name never moves.
+    #[serde(rename = "answerVersion", skip_serializing_if = "Option::is_none")]
+    pub answer_version: Option<String>,
+    /// Phrases that hand the conversation to the answering version when the avatar says one, at
+    /// least one.
+    #[serde(rename = "triggerPhrases")]
+    pub trigger_phrases: Vec<String>,
+    /// Which of the provider's avatars appears.
+    #[serde(rename = "avatarId")]
+    pub avatar_id: String,
+    /// Which of the provider's voices the avatar speaks with.
+    #[serde(rename = "voiceId")]
+    pub voice_id: String,
+    /// The provider's conversation context.
+    #[serde(rename = "contextId")]
+    pub context_id: String,
+    /// The language the avatar speaks, as a BCP 47 tag, for example `en-NZ`.
+    #[serde(rename = "language")]
+    pub language: String,
+    /// What the avatar says while an answer is being written.
+    #[serde(rename = "holdingPhrases", skip_serializing_if = "Option::is_none")]
+    pub holding_phrases: Option<HoldingPhrases>,
+    /// When true (the default), the microphone is muted whenever the avatar speaks; when false, only
+    /// while an answer is being written, so the person can interrupt.
+    #[serde(rename = "muteWhileSpeaking", skip_serializing_if = "Option::is_none")]
+    pub mute_while_speaking: Option<bool>,
+    /// Which service turns what people say into text. Absent uses the platform's.
+    #[serde(rename = "speechToText", skip_serializing_if = "Option::is_none")]
+    pub speech_to_text: Option<SpeechToTextProvider>,
+    /// Milliseconds of silence before the avatar ends the conversation. 0 never ends it.
+    #[serde(rename = "inactivityTimeoutMs", skip_serializing_if = "Option::is_none")]
+    pub inactivity_timeout_ms: Option<i64>,
+    /// Which part of the video stays in view on a narrow screen: `left`, `centre`, `right`, or a whole
+    /// percentage from the left edge, such as `40`.
+    #[serde(rename = "videoAlignment", skip_serializing_if = "Option::is_none")]
+    pub video_alignment: Option<String>,
+    /// Adjustments to the provider's voice.
+    #[serde(rename = "voiceTuning", skip_serializing_if = "Option::is_none")]
+    pub voice_tuning: Option<AvatarVoiceTuning>,
+    /// When set, people can pause the conversation and carry on later.
+    #[serde(rename = "pauseAndResume", skip_serializing_if = "Option::is_none")]
+    pub pause_and_resume: Option<PauseAndResume>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for LiveAvatarSettings {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        LiveAvatarSettings::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for LiveAvatarSettings {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| LiveAvatarSettings::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Whether, and how, the agent remembers people between conversations.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct MemorySettings {
+    /// Whether the agent remembers. Defaults to false.
+    #[serde(rename = "enabled", skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    /// The memory store, from `GET /v3/memory-stores`. Required when `enabled`.
+    #[serde(rename = "memoryStoreId", skip_serializing_if = "Option::is_none")]
+    pub memory_store_id: Option<String>,
+    /// The lowest relevance a memory needs to be recalled, from 0 to 1. Defaults to 0.4.
+    #[serde(rename = "minimumRelevance", skip_serializing_if = "Option::is_none")]
+    pub minimum_relevance: Option<f32>,
+    /// The most memories recalled for one answer, from 1 to 100. Defaults to 10.
+    #[serde(rename = "maxResults", skip_serializing_if = "Option::is_none")]
+    pub max_results: Option<i32>,
+    /// Whether the agent remembers what people prefer. Defaults to false.
+    #[serde(rename = "preferences", skip_serializing_if = "Option::is_none")]
+    pub preferences: Option<bool>,
+    /// Whether the agent remembers summaries of earlier conversations. Defaults to false.
+    #[serde(rename = "summaries", skip_serializing_if = "Option::is_none")]
+    pub summaries: Option<bool>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for MemorySettings {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        MemorySettings::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for MemorySettings {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| MemorySettings::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The answer job's model and its settings.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct AnswerModelSettings {
+    /// The model, from `GET /v3/models`. Absent uses the job's default.
+    #[serde(rename = "model", skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Sampling temperature, from 0 to 1. Absent uses the model's default. Refused with 400 for a
+    /// model that does not accept it (see `acceptsTemperature` in `GET /v3/models`).
+    #[serde(rename = "temperature", skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
+    /// Nucleus sampling, from 0 to 1. Absent uses the model's default.
+    #[serde(rename = "topP", skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f32>,
+    /// Top-K sampling, from 0 to 250. Absent uses the model's default.
+    #[serde(rename = "topK", skip_serializing_if = "Option::is_none")]
+    pub top_k: Option<i32>,
+    /// The most tokens the job may write, from 1 to 16,384. Defaults to 2,048.
+    #[serde(rename = "maxOutputTokens", skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<i32>,
+    /// How many times a failed call to the model is tried, from 1 to 10. Defaults to 3.
+    #[serde(rename = "maxAttempts", skip_serializing_if = "Option::is_none")]
+    pub max_attempts: Option<i32>,
+    /// Native reasoning, for a model that supports it; refused with 400 for one that does not.
+    #[serde(rename = "reasoning", skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<ReasoningSettings>,
+    /// How many times an answer that ran out of output may be continued, from 0 to 5. Defaults to
+    /// 0, which is off.
+    #[serde(rename = "maxContinuations", skip_serializing_if = "Option::is_none")]
+    pub max_continuations: Option<i32>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for AnswerModelSettings {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        AnswerModelSettings::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for AnswerModelSettings {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| AnswerModelSettings::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The model that names conversations.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct TitleModelSettings {
+    /// The model, from `GET /v3/models`. Absent uses a small, fast model.
+    #[serde(rename = "model", skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// The most tokens a title may take, from 1 to 512. Defaults to 32.
+    #[serde(rename = "maxOutputTokens", skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<i32>,
+    /// How many times a failed call to the model is tried, from 1 to 10. Defaults to 2.
+    #[serde(rename = "maxAttempts", skip_serializing_if = "Option::is_none")]
+    pub max_attempts: Option<i32>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for TitleModelSettings {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        TitleModelSettings::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for TitleModelSettings {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| TitleModelSettings::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The model for each job in an answer. A job left unset uses its default.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct AgentModels {
+    /// Writes the answer. The other jobs fall back to this one's model when their own is unset.
+    #[serde(rename = "answer", skip_serializing_if = "Option::is_none")]
+    pub answer: Option<AnswerModelSettings>,
+    /// Plans the answer: reads the question, plans the searches and reads attached documents.
+    #[serde(rename = "planning", skip_serializing_if = "Option::is_none")]
+    pub planning: Option<ModelSettings>,
+    /// Summarises a long conversation so the answer stays within the model's limits.
+    #[serde(rename = "summary", skip_serializing_if = "Option::is_none")]
+    pub summary: Option<ModelSettings>,
+    /// Decides what kind of message arrived, and whether the question is in scope.
+    #[serde(rename = "classification", skip_serializing_if = "Option::is_none")]
+    pub classification: Option<ModelSettings>,
+    /// Writes the search topics for a question. Falls back to `planning`, then `answer`.
+    #[serde(rename = "searchTopics", skip_serializing_if = "Option::is_none")]
+    pub search_topics: Option<ModelSettings>,
+    /// Names a conversation, once. Defaults to a small, fast model, not the answer model.
+    #[serde(rename = "title", skip_serializing_if = "Option::is_none")]
+    pub title: Option<TitleModelSettings>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for AgentModels {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        AgentModels::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for AgentModels {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| AgentModels::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// One policy an agent version uses.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct PolicyBinding {
+    /// Which policy the version may review documents against.
+    #[serde(rename = "policyId")]
+    pub policy_id: String,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for PolicyBinding {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        PolicyBinding::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for PolicyBinding {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| PolicyBinding::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Whose permissions an unattended run of this version uses.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct RunAs {
+    /// The role whose permissions unattended runs use. The caller may name only a role it could
+    /// assign.
+    #[serde(rename = "roleId")]
+    pub role_id: String,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for RunAs {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        RunAs::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for RunAs {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| RunAs::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Where an agent's voice comes from. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`VoiceProvider::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum VoiceProvider {
+    /// `browser`
+    Browser,
+    /// `cloud`
+    Cloud,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl VoiceProvider {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            VoiceProvider::Browser => "browser",
+            VoiceProvider::Cloud => "cloud",
+            VoiceProvider::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, VoiceProvider::Unknown(_))
+    }
+}
+
+impl From<&str> for VoiceProvider {
+    fn from(s: &str) -> Self {
+        match s {
+            "browser" => VoiceProvider::Browser,
+            "cloud" => VoiceProvider::Cloud,
+            other => VoiceProvider::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for VoiceProvider {
+    fn from(s: String) -> Self {
+        VoiceProvider::from(s.as_str())
+    }
+}
+
+impl Default for VoiceProvider {
+    fn default() -> Self {
+        VoiceProvider::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for VoiceProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for VoiceProvider {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for VoiceProvider {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(VoiceProvider::from(String::deserialize(d)?))
+    }
+}
+
+/// How natural a cloud voice sounds. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`VoiceQuality::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum VoiceQuality {
+    /// `natural`
+    Natural,
+    /// `standard`
+    Standard,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl VoiceQuality {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            VoiceQuality::Natural => "natural",
+            VoiceQuality::Standard => "standard",
+            VoiceQuality::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, VoiceQuality::Unknown(_))
+    }
+}
+
+impl From<&str> for VoiceQuality {
+    fn from(s: &str) -> Self {
+        match s {
+            "natural" => VoiceQuality::Natural,
+            "standard" => VoiceQuality::Standard,
+            other => VoiceQuality::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for VoiceQuality {
+    fn from(s: String) -> Self {
+        VoiceQuality::from(s.as_str())
+    }
+}
+
+impl Default for VoiceQuality {
+    fn default() -> Self {
+        VoiceQuality::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for VoiceQuality {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for VoiceQuality {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for VoiceQuality {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(VoiceQuality::from(String::deserialize(d)?))
+    }
+}
+
+/// Whether, and how, the agent speaks its answers.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct VoiceSettings {
+    /// What speaks the agent's answers. Defaults to `browser`. The voices on offer are listed by
+    /// `GET /v3/voices`.
+    #[serde(rename = "provider", skip_serializing_if = "Option::is_none")]
+    pub provider: Option<VoiceProvider>,
+    /// For `cloud`: the voice, from `GET /v3/voices`, for example `Aria`.
+    #[serde(rename = "voiceId", skip_serializing_if = "Option::is_none")]
+    pub voice_id: Option<String>,
+    /// For a cloud voice: how natural it sounds. Defaults to `natural`.
+    #[serde(rename = "quality", skip_serializing_if = "Option::is_none")]
+    pub quality: Option<VoiceQuality>,
+    /// The language and accent, as a BCP 47 tag, for example `en-NZ`. Defaults to `en-NZ`.
+    #[serde(rename = "language", skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for VoiceSettings {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        VoiceSettings::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for VoiceSettings {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| VoiceSettings::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// How widely a conversation is shared, which decides the workspaces whose people can open it.
+/// Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`ConversationSharing::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum ConversationSharing {
+    /// `organisation`
+    Organisation,
+    /// `workspace`
+    Workspace,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl ConversationSharing {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            ConversationSharing::Organisation => "organisation",
+            ConversationSharing::Workspace => "workspace",
+            ConversationSharing::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, ConversationSharing::Unknown(_))
+    }
+}
+
+impl From<&str> for ConversationSharing {
+    fn from(s: &str) -> Self {
+        match s {
+            "organisation" => ConversationSharing::Organisation,
+            "workspace" => ConversationSharing::Workspace,
+            other => ConversationSharing::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for ConversationSharing {
+    fn from(s: String) -> Self {
+        ConversationSharing::from(s.as_str())
+    }
+}
+
+impl Default for ConversationSharing {
+    fn default() -> Self {
+        ConversationSharing::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for ConversationSharing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ConversationSharing {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ConversationSharing {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(ConversationSharing::from(String::deserialize(d)?))
+    }
+}
+
+/// A group of phases the agent handles as one area of work. While a conversation is in one of its
+/// phases, the model sees only the capability's instructions and its phases' tools. Moving into a
+/// phase of another capability hands the conversation over, with a summary for the next one.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct Capability {
+    /// The capability's identifier, unique within the workflow.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// What this capability does, in one sentence. The capability that receives a handover reads it.
+    #[serde(rename = "description")]
+    pub description: String,
+    /// Added after the agent's instructions while the capability is active.
+    #[serde(rename = "instructions", skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+    /// The phases it owns, at least one. When capabilities are declared, every phase belongs to
+    /// exactly one.
+    #[serde(rename = "phases")]
+    pub phases: Vec<String>,
+    /// Who a conversation in this capability is shared with. Absent decides nothing: the
+    /// conversation keeps its sharing until it enters a capability that sets one.
+    #[serde(rename = "conversationScope", skip_serializing_if = "Option::is_none")]
+    pub conversation_scope: Option<ConversationSharing>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for Capability {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        Capability::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Capability {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| Capability::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The action a `take_action` phase takes.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct PhaseAction {
+    /// What the action is, in plain words.
+    #[serde(rename = "description")]
+    pub description: String,
+    /// Tools the agent must call, at least one of them, before the action counts as done. Empty means
+    /// the agent's own account of what it did is enough.
+    #[serde(rename = "requiredTools", skip_serializing_if = "Option::is_none")]
+    pub required_tools: Option<Vec<String>>,
+    /// When true, the phase completes as soon as one of `requiredTools` succeeds. Defaults to false.
+    #[serde(rename = "completesOnRequiredTool", skip_serializing_if = "Option::is_none")]
+    pub completes_on_required_tool: Option<bool>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for PhaseAction {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        PhaseAction::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for PhaseAction {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| PhaseAction::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// What an attribution check does with a failure. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`AttributionCheckMode::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum AttributionCheckMode {
+    /// `record`
+    Record,
+    /// `enforce`
+    Enforce,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl AttributionCheckMode {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            AttributionCheckMode::Record => "record",
+            AttributionCheckMode::Enforce => "enforce",
+            AttributionCheckMode::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, AttributionCheckMode::Unknown(_))
+    }
+}
+
+impl From<&str> for AttributionCheckMode {
+    fn from(s: &str) -> Self {
+        match s {
+            "record" => AttributionCheckMode::Record,
+            "enforce" => AttributionCheckMode::Enforce,
+            other => AttributionCheckMode::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for AttributionCheckMode {
+    fn from(s: String) -> Self {
+        AttributionCheckMode::from(s.as_str())
+    }
+}
+
+impl Default for AttributionCheckMode {
+    fn default() -> Self {
+        AttributionCheckMode::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for AttributionCheckMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for AttributionCheckMode {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for AttributionCheckMode {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(AttributionCheckMode::from(String::deserialize(d)?))
+    }
+}
+
+/// Checks that an answer's claims are supported by what it cites.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct AttributionChecks {
+    /// The model that checks. Absent uses `models.planning`.
+    #[serde(rename = "model", skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// How many times an answer that fails the check may be rewritten, from 0 to 10. Defaults to 2.
+    #[serde(rename = "maxRetries", skip_serializing_if = "Option::is_none")]
+    pub max_retries: Option<i32>,
+    /// What happens when an answer fails a check. Defaults to `record`.
+    #[serde(rename = "mode", skip_serializing_if = "Option::is_none")]
+    pub mode: Option<AttributionCheckMode>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for AttributionChecks {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        AttributionChecks::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for AttributionChecks {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| AttributionChecks::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// What a phase field is. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`PhaseFieldKind::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum PhaseFieldKind {
+    /// `field`
+    Field,
+    /// `prerequisite`
+    Prerequisite,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl PhaseFieldKind {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            PhaseFieldKind::Field => "field",
+            PhaseFieldKind::Prerequisite => "prerequisite",
+            PhaseFieldKind::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, PhaseFieldKind::Unknown(_))
+    }
+}
+
+impl From<&str> for PhaseFieldKind {
+    fn from(s: &str) -> Self {
+        match s {
+            "field" => PhaseFieldKind::Field,
+            "prerequisite" => PhaseFieldKind::Prerequisite,
+            other => PhaseFieldKind::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for PhaseFieldKind {
+    fn from(s: String) -> Self {
+        PhaseFieldKind::from(s.as_str())
+    }
+}
+
+impl Default for PhaseFieldKind {
+    fn default() -> Self {
+        PhaseFieldKind::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for PhaseFieldKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for PhaseFieldKind {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for PhaseFieldKind {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(PhaseFieldKind::from(String::deserialize(d)?))
+    }
+}
+
+/// Where a phase field's value comes from. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`FieldSourceKind::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum FieldSourceKind {
+    /// `tool_result`
+    ToolResult,
+    /// `allowed_values`
+    AllowedValues,
+    /// `earlier_phase`
+    EarlierPhase,
+    /// `person`
+    Person,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl FieldSourceKind {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            FieldSourceKind::ToolResult => "tool_result",
+            FieldSourceKind::AllowedValues => "allowed_values",
+            FieldSourceKind::EarlierPhase => "earlier_phase",
+            FieldSourceKind::Person => "person",
+            FieldSourceKind::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, FieldSourceKind::Unknown(_))
+    }
+}
+
+impl From<&str> for FieldSourceKind {
+    fn from(s: &str) -> Self {
+        match s {
+            "tool_result" => FieldSourceKind::ToolResult,
+            "allowed_values" => FieldSourceKind::AllowedValues,
+            "earlier_phase" => FieldSourceKind::EarlierPhase,
+            "person" => FieldSourceKind::Person,
+            other => FieldSourceKind::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for FieldSourceKind {
+    fn from(s: String) -> Self {
+        FieldSourceKind::from(s.as_str())
+    }
+}
+
+impl Default for FieldSourceKind {
+    fn default() -> Self {
+        FieldSourceKind::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for FieldSourceKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for FieldSourceKind {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for FieldSourceKind {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(FieldSourceKind::from(String::deserialize(d)?))
+    }
+}
+
+/// One place a phase field's value may come from.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct FieldSource {
+    /// Which place the value comes from. The other members name the tool, the fixed values or the
+    /// earlier phase.
+    #[serde(rename = "kind")]
+    pub kind: FieldSourceKind,
+    /// For `tool_result`: the tool whose result holds the value.
+    #[serde(rename = "toolName", skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+    /// For `tool_result`: a path into the tool's output, for example `results[0].id`. Empty means the
+    /// whole output.
+    #[serde(rename = "path", skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// For `allowed_values`: the values the field may take, at least one.
+    #[serde(rename = "values", skip_serializing_if = "Option::is_none")]
+    pub values: Option<Vec<String>>,
+    /// For `earlier_phase`: the phase that gathered the value.
+    #[serde(rename = "phase", skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
+    /// For `earlier_phase`: the field it was gathered as.
+    #[serde(rename = "field", skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for FieldSource {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        FieldSource::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for FieldSource {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| FieldSource::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// What kind of value a phase field holds. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`PhaseFieldType::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum PhaseFieldType {
+    /// `text`
+    Text,
+    /// `document`
+    Document,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl PhaseFieldType {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            PhaseFieldType::Text => "text",
+            PhaseFieldType::Document => "document",
+            PhaseFieldType::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, PhaseFieldType::Unknown(_))
+    }
+}
+
+impl From<&str> for PhaseFieldType {
+    fn from(s: &str) -> Self {
+        match s {
+            "text" => PhaseFieldType::Text,
+            "document" => PhaseFieldType::Document,
+            other => PhaseFieldType::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for PhaseFieldType {
+    fn from(s: String) -> Self {
+        PhaseFieldType::from(s.as_str())
+    }
+}
+
+impl Default for PhaseFieldType {
+    fn default() -> Self {
+        PhaseFieldType::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for PhaseFieldType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for PhaseFieldType {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for PhaseFieldType {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(PhaseFieldType::from(String::deserialize(d)?))
+    }
+}
+
+/// One thing a phase asks for or needs: a field to gather, or an earlier phase that must be done.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct PhaseField {
+    /// The field's identifier, unique within the phase.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// Whether the entry is a value the phase gathers or an earlier phase that must be done first.
+    /// Defaults to `field`.
+    #[serde(rename = "kind", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<PhaseFieldKind>,
+    /// For `field`: what the value is. Required on a field.
+    #[serde(rename = "description", skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// For `field`: how the agent asks for it. Required on a field.
+    #[serde(rename = "request", skip_serializing_if = "Option::is_none")]
+    pub request: Option<String>,
+    /// For `field`: when true, the phase may finish without it. Defaults to false.
+    #[serde(rename = "optional", skip_serializing_if = "Option::is_none")]
+    pub optional: Option<bool>,
+    /// For a `field`: what kind of value it holds. Defaults to `text`.
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<PhaseFieldType>,
+    /// For a `document` field: the file extensions accepted, for example `pdf`.
+    #[serde(rename = "acceptedTypes", skip_serializing_if = "Option::is_none")]
+    pub accepted_types: Option<Vec<String>>,
+    /// For a `document` field: the largest file accepted, in bytes.
+    #[serde(rename = "maxByteSize", skip_serializing_if = "Option::is_none")]
+    pub max_byte_size: Option<i64>,
+    /// For a `document` field: the document metadata field the value fills.
+    #[serde(rename = "documentField", skip_serializing_if = "Option::is_none")]
+    pub document_field: Option<String>,
+    /// For `field`: where the value may come from, in order. Absent means the person.
+    #[serde(rename = "sources", skip_serializing_if = "Option::is_none")]
+    pub sources: Option<Vec<FieldSource>>,
+    /// For `prerequisite`: the phase that must be done first. Required on a prerequisite.
+    #[serde(rename = "prerequisite", skip_serializing_if = "Option::is_none")]
+    pub prerequisite: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for PhaseField {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        PhaseField::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for PhaseField {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| PhaseField::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// What kind of phase it is. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`PhaseKind::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum PhaseKind {
+    /// `conversational`
+    Conversational,
+    /// `gather_info`
+    GatherInfo,
+    /// `take_action`
+    TakeAction,
+    /// `policy_review`
+    PolicyReview,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl PhaseKind {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            PhaseKind::Conversational => "conversational",
+            PhaseKind::GatherInfo => "gather_info",
+            PhaseKind::TakeAction => "take_action",
+            PhaseKind::PolicyReview => "policy_review",
+            PhaseKind::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, PhaseKind::Unknown(_))
+    }
+}
+
+impl From<&str> for PhaseKind {
+    fn from(s: &str) -> Self {
+        match s {
+            "conversational" => PhaseKind::Conversational,
+            "gather_info" => PhaseKind::GatherInfo,
+            "take_action" => PhaseKind::TakeAction,
+            "policy_review" => PhaseKind::PolicyReview,
+            other => PhaseKind::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for PhaseKind {
+    fn from(s: String) -> Self {
+        PhaseKind::from(s.as_str())
+    }
+}
+
+impl Default for PhaseKind {
+    fn default() -> Self {
+        PhaseKind::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for PhaseKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for PhaseKind {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for PhaseKind {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(PhaseKind::from(String::deserialize(d)?))
+    }
+}
+
+/// What a phase does when it ends the conversation. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`PhaseEndType::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum PhaseEndType {
+    /// `restart`
+    Restart,
+    /// `close`
+    Close,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl PhaseEndType {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            PhaseEndType::Restart => "restart",
+            PhaseEndType::Close => "close",
+            PhaseEndType::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, PhaseEndType::Unknown(_))
+    }
+}
+
+impl From<&str> for PhaseEndType {
+    fn from(s: &str) -> Self {
+        match s {
+            "restart" => PhaseEndType::Restart,
+            "close" => PhaseEndType::Close,
+            other => PhaseEndType::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for PhaseEndType {
+    fn from(s: String) -> Self {
+        PhaseEndType::from(s.as_str())
+    }
+}
+
+impl Default for PhaseEndType {
+    fn default() -> Self {
+        PhaseEndType::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for PhaseEndType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for PhaseEndType {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for PhaseEndType {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(PhaseEndType::from(String::deserialize(d)?))
+    }
+}
+
+/// What happens when a phase ends the conversation.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct PhaseEnd {
+    /// What happens to the conversation when the phase ends it.
+    #[serde(rename = "type")]
+    pub r#type: PhaseEndType,
+    /// For `restart`: the phase the next message starts in. Defaults to the conversation's entry
+    /// phase.
+    #[serde(rename = "restartIn", skip_serializing_if = "Option::is_none")]
+    pub restart_in: Option<String>,
+    /// For `close`: what the person is told.
+    #[serde(rename = "closingMessage", skip_serializing_if = "Option::is_none")]
+    pub closing_message: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for PhaseEnd {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        PhaseEnd::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for PhaseEnd {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| PhaseEnd::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// What the person sees when a conversation starts in, or enters, a phase.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct PhaseOpening {
+    /// A message shown before the person types anything. `@user:firstName`, `@user:lastName` and
+    /// `@user:email` are replaced with the person's details.
+    #[serde(rename = "message", skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// A form, buttons or choices shown with the message, as `input.requested` carries one.
+    #[serde(rename = "input", skip_serializing_if = "Option::is_none")]
+    pub input_: Option<serde_json::Value>,
+    /// When true, the opening is shown whenever the conversation enters the phase, not only when a
+    /// conversation starts in it. Defaults to false.
+    #[serde(rename = "onEveryEntry", skip_serializing_if = "Option::is_none")]
+    pub on_every_entry: Option<bool>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for PhaseOpening {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        PhaseOpening::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for PhaseOpening {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| PhaseOpening::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// A set reply a phase may give, chosen by its description.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct PhaseResponse {
+    /// The reply's identifier, unique within the phase.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// When the agent gives this reply.
+    #[serde(rename = "description")]
+    pub description: String,
+    /// What the agent says.
+    #[serde(rename = "request")]
+    pub request: String,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for PhaseResponse {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        PhaseResponse::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for PhaseResponse {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| PhaseResponse::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The policy a `policy_review` phase reviews against.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct PolicyReviewSettings {
+    /// Which policy the phase reviews against. It must be in `policies`.
+    #[serde(rename = "policyId")]
+    pub policy_id: String,
+    /// The rules to check. Absent means every rule in the policy, read again each time a review
+    /// starts.
+    #[serde(rename = "ruleIds", skip_serializing_if = "Option::is_none")]
+    pub rule_ids: Option<Vec<String>>,
+    /// The policy's review stage this phase reviews at. Absent for a policy with no review stages.
+    #[serde(rename = "reviewStageId", skip_serializing_if = "Option::is_none")]
+    pub review_stage_id: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for PolicyReviewSettings {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        PolicyReviewSettings::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for PolicyReviewSettings {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| PolicyReviewSettings::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// A phase's step on the journey page.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct JourneyStep {
+    /// Groups phases into steps on the journey page. Phases that share one form one step.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// What the journey page calls the step, such as "Knowledge base".
+    #[serde(rename = "label")]
+    pub label: String,
+    /// A named signal that shows the step done outside the chat, such as `workspaceHasCustomTheme`.
+    /// Absent: the step is done when its phases complete.
+    #[serde(rename = "doneWhen", skip_serializing_if = "Option::is_none")]
+    pub done_when: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for JourneyStep {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        JourneyStep::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for JourneyStep {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| JourneyStep::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Checks each tool call against a rule before it runs.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ToolCallChecks {
+    /// The rule, in plain words, every tool call is checked against.
+    #[serde(rename = "policy")]
+    pub policy: String,
+    /// The model that checks. Absent uses `models.planning`.
+    #[serde(rename = "model", skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// How many times a refused call may be corrected, from 0 to 10. Defaults to 2.
+    #[serde(rename = "maxRetries", skip_serializing_if = "Option::is_none")]
+    pub max_retries: Option<i32>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ToolCallChecks {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ToolCallChecks::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ToolCallChecks {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ToolCallChecks::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// How a search treats its results. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`SearchMode::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum SearchMode {
+    /// `evaluated`
+    Evaluated,
+    /// `unevaluated`
+    Unevaluated,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl SearchMode {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            SearchMode::Evaluated => "evaluated",
+            SearchMode::Unevaluated => "unevaluated",
+            SearchMode::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, SearchMode::Unknown(_))
+    }
+}
+
+impl From<&str> for SearchMode {
+    fn from(s: &str) -> Self {
+        match s {
+            "evaluated" => SearchMode::Evaluated,
+            "unevaluated" => SearchMode::Unevaluated,
+            other => SearchMode::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for SearchMode {
+    fn from(s: String) -> Self {
+        SearchMode::from(s.as_str())
+    }
+}
+
+impl Default for SearchMode {
+    fn default() -> Self {
+        SearchMode::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for SearchMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for SearchMode {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for SearchMode {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(SearchMode::from(String::deserialize(d)?))
+    }
+}
+
+/// How Caitlyn's knowledge base search tool searches.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ToolSearchSettings {
+    /// The search modes the agent may choose from, at least one.
+    #[serde(rename = "modes")]
+    pub modes: Vec<SearchMode>,
+    /// The version of this agent whose knowledge bases and search settings the tool uses. `draft` and
+    /// `live` follow their moving target: edits to the draft, and each publish, take effect without
+    /// this setting changing. A saved version's name never moves.
+    #[serde(rename = "version")]
+    pub version: String,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ToolSearchSettings {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ToolSearchSettings::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ToolSearchSettings {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ToolSearchSettings::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// How the agent uses what a tool returns. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`ToolUse::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum ToolUse {
+    /// `answer`
+    Answer,
+    /// `context`
+    Context,
+    /// `default`
+    Default,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl ToolUse {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            ToolUse::Answer => "answer",
+            ToolUse::Context => "context",
+            ToolUse::Default => "default",
+            ToolUse::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, ToolUse::Unknown(_))
+    }
+}
+
+impl From<&str> for ToolUse {
+    fn from(s: &str) -> Self {
+        match s {
+            "answer" => ToolUse::Answer,
+            "context" => ToolUse::Context,
+            "default" => ToolUse::Default,
+            other => ToolUse::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for ToolUse {
+    fn from(s: String) -> Self {
+        ToolUse::from(s.as_str())
+    }
+}
+
+impl Default for ToolUse {
+    fn default() -> Self {
+        ToolUse::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for ToolUse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ToolUse {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ToolUse {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(ToolUse::from(String::deserialize(d)?))
+    }
+}
+
+/// A tool a phase may use: one of Caitlyn's own, or the tools on an MCP server.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct PhaseTool {
+    /// One of Caitlyn's own tools, from `GET /v3/tools`. Exactly one of `name` and `mcpServerId`.
+    #[serde(rename = "name", skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// An MCP server whose tools the phase may use. Exactly one of `name` and `mcpServerId`. With no
+    /// `tools`, every tool on the server, including tools it adds later; otherwise only those
+    /// listed. Exported as a template variable.
+    #[serde(rename = "mcpServerId", skip_serializing_if = "Option::is_none")]
+    pub mcp_server_id: Option<String>,
+    /// With `mcpServerId`: only these of the server's tools.
+    #[serde(rename = "tools", skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<String>>,
+    /// With `mcpServerId` and no `tools`: the server's tools the phase may not use.
+    #[serde(rename = "excludedTools", skip_serializing_if = "Option::is_none")]
+    pub excluded_tools: Option<Vec<String>>,
+    /// What the tool is for, in the agent's words. Absent uses the tool's own description.
+    #[serde(rename = "description", skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Whether the phase may use the tool. Defaults to true.
+    #[serde(rename = "enabled", skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    /// How the agent uses what the tool returns. Defaults to `default`.
+    #[serde(rename = "use", skip_serializing_if = "Option::is_none")]
+    pub r#use: Option<ToolUse>,
+    /// What a citation of this tool's results is called, for example "Policy register".
+    #[serde(rename = "citationLabel", skip_serializing_if = "Option::is_none")]
+    pub citation_label: Option<String>,
+    /// For Caitlyn's knowledge base search tool: how it searches.
+    #[serde(rename = "search", skip_serializing_if = "Option::is_none")]
+    pub search: Option<ToolSearchSettings>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for PhaseTool {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        PhaseTool::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for PhaseTool {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| PhaseTool::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// How a way out of a phase is gated. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`TransitionKind::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum TransitionKind {
+    /// `completion`
+    Completion,
+    /// `alternative`
+    Alternative,
+    /// `skip`
+    Skip,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl TransitionKind {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            TransitionKind::Completion => "completion",
+            TransitionKind::Alternative => "alternative",
+            TransitionKind::Skip => "skip",
+            TransitionKind::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, TransitionKind::Unknown(_))
+    }
+}
+
+impl From<&str> for TransitionKind {
+    fn from(s: &str) -> Self {
+        match s {
+            "completion" => TransitionKind::Completion,
+            "alternative" => TransitionKind::Alternative,
+            "skip" => TransitionKind::Skip,
+            other => TransitionKind::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for TransitionKind {
+    fn from(s: String) -> Self {
+        TransitionKind::from(s.as_str())
+    }
+}
+
+impl Default for TransitionKind {
+    fn default() -> Self {
+        TransitionKind::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for TransitionKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for TransitionKind {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for TransitionKind {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(TransitionKind::from(String::deserialize(d)?))
+    }
+}
+
+/// Where a transition reads its value. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`TransitionMatchSource::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum TransitionMatchSource {
+    /// `tool_result`
+    ToolResult,
+    /// `saved_field`
+    SavedField,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl TransitionMatchSource {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            TransitionMatchSource::ToolResult => "tool_result",
+            TransitionMatchSource::SavedField => "saved_field",
+            TransitionMatchSource::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, TransitionMatchSource::Unknown(_))
+    }
+}
+
+impl From<&str> for TransitionMatchSource {
+    fn from(s: &str) -> Self {
+        match s {
+            "tool_result" => TransitionMatchSource::ToolResult,
+            "saved_field" => TransitionMatchSource::SavedField,
+            other => TransitionMatchSource::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for TransitionMatchSource {
+    fn from(s: String) -> Self {
+        TransitionMatchSource::from(s.as_str())
+    }
+}
+
+impl Default for TransitionMatchSource {
+    fn default() -> Self {
+        TransitionMatchSource::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for TransitionMatchSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for TransitionMatchSource {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for TransitionMatchSource {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(TransitionMatchSource::from(String::deserialize(d)?))
+    }
+}
+
+/// A value that takes a way out of a phase automatically.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct TransitionMatch {
+    /// Where the value is read from. Defaults to `tool_result`.
+    #[serde(rename = "source", skip_serializing_if = "Option::is_none")]
+    pub source: Option<TransitionMatchSource>,
+    /// For `tool_result`, a dotted path into the tool's output, for example `isCovered`; for
+    /// `saved_field`, a field of this phase.
+    #[serde(rename = "field")]
+    pub field: String,
+    /// The value the field must hold: a string, number or boolean. A saved field is compared as a
+    /// string.
+    #[serde(rename = "equals")]
+    pub equals: serde_json::Value,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for TransitionMatch {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        TransitionMatch::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for TransitionMatch {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| TransitionMatch::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// A way out of a phase.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct PhaseTransition {
+    /// The phase it leads to.
+    #[serde(rename = "to")]
+    pub to: String,
+    /// The condition, in plain words, that makes this the way out. The agent decides by it.
+    #[serde(rename = "condition")]
+    pub condition: String,
+    /// How the way out is gated. Defaults to `alternative`.
+    #[serde(rename = "kind", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<TransitionKind>,
+    /// For `skip`: the words on the chat's skip button, such as "Skip theme configuration". Required
+    /// on a skip.
+    #[serde(rename = "skipLabel", skip_serializing_if = "Option::is_none")]
+    pub skip_label: Option<String>,
+    /// When true, the agent may take this way out only on the person's express choice. Defaults to
+    /// false.
+    #[serde(rename = "requiresUserChoice", skip_serializing_if = "Option::is_none")]
+    pub requires_user_choice: Option<bool>,
+    /// Takes this way out automatically when a value matches, without the agent deciding.
+    #[serde(rename = "when", skip_serializing_if = "Option::is_none")]
+    pub when: Option<TransitionMatch>,
+    /// How this phase wraps up before it hands over through this way out.
+    #[serde(rename = "handover", skip_serializing_if = "Option::is_none")]
+    pub handover: Option<String>,
+    /// Only when the conversation started in one of these phases.
+    #[serde(rename = "startedIn", skip_serializing_if = "Option::is_none")]
+    pub started_in: Option<Vec<String>>,
+    /// Never when the conversation started in one of these phases.
+    #[serde(rename = "notStartedIn", skip_serializing_if = "Option::is_none")]
+    pub not_started_in: Option<Vec<String>>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for PhaseTransition {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        PhaseTransition::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for PhaseTransition {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| PhaseTransition::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// One phase of a workflow. `kind` decides which kind-specific members apply; a member that does not
+/// apply to the kind is refused with 400, never ignored.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct Phase {
+    /// The phase's identifier, unique within the workflow.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// What the phase does, which decides which of its other members apply.
+    #[serde(rename = "kind")]
+    pub kind: PhaseKind,
+    /// The phase's own instructions, added to the agent's while it runs.
+    #[serde(rename = "instructions", skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+    /// The tools the phase may use, at most 30.
+    #[serde(rename = "tools", skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<PhaseTool>>,
+    /// Where the conversation may go from this phase.
+    #[serde(rename = "transitions", skip_serializing_if = "Option::is_none")]
+    pub transitions: Option<Vec<PhaseTransition>>,
+    /// The most model calls the phase may make in one answer, from 1 to 50. Defaults to 10, or 30
+    /// for `policy_review`.
+    #[serde(rename = "maxSteps", skip_serializing_if = "Option::is_none")]
+    pub max_steps: Option<i32>,
+    /// Native reasoning while the phase runs.
+    #[serde(rename = "reasoning", skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<ReasoningSettings>,
+    /// What the person sees when a conversation starts in, or enters, this phase.
+    #[serde(rename = "opening", skip_serializing_if = "Option::is_none")]
+    pub opening: Option<PhaseOpening>,
+    /// This phase's step on the journey page, when it is part of one.
+    #[serde(rename = "step", skip_serializing_if = "Option::is_none")]
+    pub step: Option<JourneyStep>,
+    /// What happens when the phase ends the conversation. Absent means the conversation carries on.
+    #[serde(rename = "onEnd", skip_serializing_if = "Option::is_none")]
+    pub on_end: Option<PhaseEnd>,
+    /// When true, the phase runs with no person: it asks the person nothing, and must finish with its
+    /// own tools. Defaults to false. For `gather_info`, `take_action` and `policy_review`.
+    #[serde(rename = "unattended", skip_serializing_if = "Option::is_none")]
+    pub unattended: Option<bool>,
+    /// For `conversational`: when true, the phase replies as soon as an earlier phase hands over,
+    /// rather than waiting for the person. Defaults to false.
+    #[serde(rename = "repliesOnEntry", skip_serializing_if = "Option::is_none")]
+    pub replies_on_entry: Option<bool>,
+    /// Checks each tool call against a rule before it runs.
+    #[serde(rename = "toolCallChecks", skip_serializing_if = "Option::is_none")]
+    pub tool_call_checks: Option<ToolCallChecks>,
+    /// Checks that each answer's claims are supported by what it cites.
+    #[serde(rename = "attributionChecks", skip_serializing_if = "Option::is_none")]
+    pub attribution_checks: Option<AttributionChecks>,
+    /// For `gather_info` and `take_action`: what the phase asks for or needs.
+    #[serde(rename = "fields", skip_serializing_if = "Option::is_none")]
+    pub fields: Option<Vec<PhaseField>>,
+    /// For `gather_info`, `take_action` and `policy_review`: the phase to move to when this one is
+    /// done.
+    #[serde(rename = "next", skip_serializing_if = "Option::is_none")]
+    pub next: Option<String>,
+    /// For `gather_info`, `take_action` and `policy_review`: how this phase wraps up before it hands
+    /// over to `next`.
+    #[serde(rename = "handover", skip_serializing_if = "Option::is_none")]
+    pub handover: Option<String>,
+    /// For `gather_info`, `take_action` and `policy_review`: what the phase's outcome is, and how
+    /// later phases should use it.
+    #[serde(rename = "outcomeDescription", skip_serializing_if = "Option::is_none")]
+    pub outcome_description: Option<String>,
+    /// Set replies the phase may give, each chosen by its description.
+    #[serde(rename = "responses", skip_serializing_if = "Option::is_none")]
+    pub responses: Option<Vec<PhaseResponse>>,
+    /// For `take_action`: the action the phase takes.
+    #[serde(rename = "action", skip_serializing_if = "Option::is_none")]
+    pub action: Option<PhaseAction>,
+    /// For `take_action`: the policy rules this phase checks, as `<policyId>/<ruleId>`. Each policy
+    /// must be in `policies`.
+    #[serde(rename = "policyRules", skip_serializing_if = "Option::is_none")]
+    pub policy_rules: Option<Vec<String>>,
+    /// For `policy_review`: the policy the phase reviews against, and which of its rules.
+    #[serde(rename = "review", skip_serializing_if = "Option::is_none")]
+    pub review: Option<PolicyReviewSettings>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for Phase {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        Phase::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Phase {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| Phase::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The agent's workflow: the phases a conversation moves through.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct AgentWorkflow {
+    /// The phase a new conversation starts in. Defaults to `answer`, the phase every agent has.
+    #[serde(rename = "entryPhase", skip_serializing_if = "Option::is_none")]
+    pub entry_phase: Option<String>,
+    /// The phases, in the order their journey steps are numbered. Always present when read. Lists
+    /// are replaced whole: to change one phase, send them all back.
+    #[serde(rename = "phases", skip_serializing_if = "Option::is_none")]
+    pub phases: Option<Vec<Phase>>,
+    /// Groups of phases that each run with their own instructions and only their own tools. Absent:
+    /// every phase shares one set of instructions and one set of tools.
+    #[serde(rename = "capabilities", skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<Vec<Capability>>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for AgentWorkflow {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        AgentWorkflow::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for AgentWorkflow {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| AgentWorkflow::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// An agent version's configuration: everything about how the agent behaves that a version holds.
+///
+/// The agent's name, description and avatar belong to the agent and are not versioned; who may use
+/// the draft and saved versions belongs to the versions' access grant. A configuration is at most
+/// 256 KiB as UTF-8 JSON; anything larger is refused with 400 `CONFIGURATION_TOO_LARGE`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
 pub struct AgentConfiguration {
-    /// The agent's identity statement. Absent when it was never set or was cleared.
-    #[serde(rename = "identity", skip_serializing_if = "Option::is_none")]
-    pub identity: Option<String>,
-    /// The agent's instructions. Empty when none are set.
-    #[serde(rename = "instructions")]
-    pub instructions: String,
-    /// The model the agent answers with.
-    #[serde(rename = "model", skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
-    /// The knowledge bases the agent searches, in no particular order.
+    /// Who the agent is and how it behaves, and the text it follows at particular points in an
+    /// answer. Always present when read.
+    #[serde(rename = "guidance", skip_serializing_if = "Option::is_none")]
+    pub guidance: Option<AgentGuidance>,
+    /// The model for each job in an answer. A job left unset uses its default.
+    #[serde(rename = "models", skip_serializing_if = "Option::is_none")]
+    pub models: Option<AgentModels>,
+    /// The knowledge bases the agent searches, and how hard, at most 50, each at most once.
     #[serde(rename = "knowledgeBases", skip_serializing_if = "Option::is_none")]
     pub knowledge_bases: Option<Vec<KnowledgeBaseBinding>>,
-    /// Whether people may attach files in chat, and how many.
+    /// The policies the agent's policy reviews and checked phases use, at most 20. Exported as a
+    /// template variable.
+    #[serde(rename = "policies", skip_serializing_if = "Option::is_none")]
+    pub policies: Option<Vec<PolicyBinding>>,
+    /// The workspace's connectors the agent may use, at most 20. Exported as a template variable.
+    #[serde(rename = "connectors", skip_serializing_if = "Option::is_none")]
+    pub connectors: Option<Vec<ConnectorBinding>>,
+    /// The phases a conversation moves through, and how they are grouped. Absent means one
+    /// conversational phase, `answer`.
+    #[serde(rename = "workflow", skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<AgentWorkflow>,
+    /// How answers are shaped: follow-up questions, citations and media embeds.
+    #[serde(rename = "answers", skip_serializing_if = "Option::is_none")]
+    pub answers: Option<AnswerSettings>,
+    /// How the chat looks and behaves: the input placeholder and the time zone.
+    #[serde(rename = "conversation", skip_serializing_if = "Option::is_none")]
+    pub conversation: Option<ConversationSettings>,
+    /// Whether people may attach documents in chat, how many and which kinds.
     #[serde(rename = "attachments", skip_serializing_if = "Option::is_none")]
     pub attachments: Option<AttachmentSettings>,
-    /// The content safety setting applied to uploads and answers.
+    /// The guardrail that screens documents attached in chat. Exported as a template variable.
     #[serde(rename = "contentSafety", skip_serializing_if = "Option::is_none")]
     pub content_safety: Option<ContentSafety>,
     /// When true, the answer stream tells the caller which documents were withheld from them.
     /// Defaults to false.
     #[serde(rename = "deniedDocuments", skip_serializing_if = "Option::is_none")]
     pub denied_documents: Option<bool>,
+    /// Whether the agent remembers people between conversations. Absent means it does not.
+    #[serde(rename = "memory", skip_serializing_if = "Option::is_none")]
+    pub memory: Option<MemorySettings>,
+    /// Whether the agent speaks its answers, and in which voice. Absent means the browser's own
+    /// voice.
+    #[serde(rename = "voice", skip_serializing_if = "Option::is_none")]
+    pub voice: Option<VoiceSettings>,
+    /// A live video avatar that speaks for the agent. Absent means none.
+    #[serde(rename = "liveAvatar", skip_serializing_if = "Option::is_none")]
+    pub live_avatar: Option<LiveAvatarSettings>,
+    /// The page people see before and while they work through a stepped workflow, such as
+    /// onboarding. Absent means the agent has no such page.
+    #[serde(rename = "journey", skip_serializing_if = "Option::is_none")]
+    pub journey: Option<JourneySettings>,
+    /// Whose permissions the agent's unattended runs use. Exported as a template variable. Absent
+    /// means the agent cannot run unattended.
+    #[serde(rename = "runAs", skip_serializing_if = "Option::is_none")]
+    pub run_as: Option<RunAs>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -207,14 +3671,54 @@ impl<'de> Deserialize<'de> for AgentConfiguration {
     }
 }
 
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct DeleteAgentResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for DeleteAgentResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        DeleteAgentResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for DeleteAgentResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| DeleteAgentResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
 /// How a version was made. Open: new values may be added.
 ///
 /// Open: a value this SDK does not know yet is kept as [`VersionSource::Unknown`], never an error.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum VersionSource {
-    /// `pin`
-    Pin,
+    /// `save`
+    Save,
     /// `publish`
     Publish,
     /// `migration`
@@ -229,7 +3733,7 @@ impl VersionSource {
     /// The value as sent on the wire.
     pub fn as_str(&self) -> &str {
         match self {
-            VersionSource::Pin => "pin",
+            VersionSource::Save => "save",
             VersionSource::Publish => "publish",
             VersionSource::Migration => "migration",
             VersionSource::Import => "import",
@@ -246,7 +3750,7 @@ impl VersionSource {
 impl From<&str> for VersionSource {
     fn from(s: &str) -> Self {
         match s {
-            "pin" => VersionSource::Pin,
+            "save" => VersionSource::Save,
             "publish" => VersionSource::Publish,
             "migration" => VersionSource::Migration,
             "import" => VersionSource::Import,
@@ -285,258 +3789,143 @@ impl<'de> Deserialize<'de> for VersionSource {
     }
 }
 
-///
-/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+/// A named version of an agent: `draft`, `live` or a saved version. A list leaves `configuration`
+/// out; read one version to get it.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
-pub struct PinDraftVersionResult {
-    /// The request's identifier. The same value is in every error body; quote it to support.
-    ///
-    /// From the `Caitlyn-Request-Id` response header.
-    #[serde(skip)]
-    pub request_id: Option<String>,
-    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
-    /// seen and refuse to call operations or send members newer than it.
-    ///
-    /// From the `Caitlyn-Api-Version` response header.
-    #[serde(skip)]
-    pub api_version: Option<String>,
-    /// The version's current ETag; send it as `If-Match` to change it.
-    ///
-    /// From the `ETag` response header.
-    #[serde(skip)]
-    pub etag: String,
+pub struct AgentVersion {
     /// The agent the version belongs to.
     #[serde(rename = "agentId")]
     pub agent_id: String,
-    /// `draft`, `production` or the version's name.
+    /// `draft`, `live` or the version's name.
     #[serde(rename = "name")]
     pub name: String,
-    /// How a pinned or published version was made. Absent on the draft.
+    /// On `live`: the name of the version live points at.
+    #[serde(rename = "liveVersion", skip_serializing_if = "Option::is_none")]
+    pub live_version: Option<String>,
+    /// How a named version was made. Absent on the draft.
     #[serde(rename = "source", skip_serializing_if = "Option::is_none")]
     pub source: Option<VersionSource>,
     /// The version this one was made from, where there is one.
     #[serde(rename = "basedOn", skip_serializing_if = "Option::is_none")]
     pub based_on: Option<String>,
-    /// True when this version's configuration is the one production currently answers with.
-    /// Defaults to false.
-    #[serde(rename = "matchesProduction", skip_serializing_if = "Option::is_none")]
-    pub matches_production: Option<bool>,
+    /// True on the version live points at, and on `live` itself. Defaults to false.
+    #[serde(rename = "matchesLive", skip_serializing_if = "Option::is_none")]
+    pub matches_live: Option<bool>,
     /// When the version was made; for the draft, when it was first created.
     #[serde(rename = "createdAt", with = "::caitlyn_sdk_core::time::rfc3339")]
     pub created_at: chrono::DateTime<chrono::Utc>,
-    /// When this configuration became production. Present only on `production`.
+    /// Who made the version. Absent on the draft and on versions carried over from before v3.
+    #[serde(rename = "createdBy", skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<Actor>,
+    /// On `live`: when live was pointed at this version.
     #[serde(
         rename = "publishedAt",
         with = "::caitlyn_sdk_core::time::rfc3339_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub published_at: Option<chrono::DateTime<chrono::Utc>>,
-    /// Who made this configuration production. Present only on `production`.
+    /// On `live`: who pointed live at this version.
     #[serde(rename = "publishedBy", skip_serializing_if = "Option::is_none")]
     pub published_by: Option<Actor>,
-    /// The note written when the version was pinned or published.
+    /// The note written when the version was saved or published.
     #[serde(rename = "note", skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    /// The version's configuration.
-    #[serde(rename = "configuration")]
-    pub configuration: AgentConfiguration,
-    /// The new version, as `/api/v3/agents/{agentId}/versions/{name}`.
-    ///
-    /// From the `Location` response header.
+    /// The members that differ from the version this one was made from (`basedOn`); for the draft,
+    /// from live. Lists are compared by their items' keys.
+    #[serde(rename = "changedMembers", skip_serializing_if = "Option::is_none")]
+    pub changed_members: Option<Vec<String>>,
+    /// The version's configuration. Present on a single read and on the draft operations; absent in
+    /// ListAgentVersions rows and in PublishAgentVersion's `version`.
+    #[serde(rename = "configuration", skip_serializing_if = "Option::is_none")]
+    pub configuration: Option<AgentConfiguration>,
+    /// The version's current ETag; send it as `If-Match` to change it. On `live`, it changes whenever
+    /// live moves to another version.
+    #[serde(rename = "etag")]
+    pub etag: String,
+    /// The response this thing was read from; see [`response_metadata`](Self::response_metadata).
     #[serde(skip)]
-    pub location: Option<String>,
-    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
-    /// The default on values you build yourself.
-    #[serde(skip)]
-    pub response_metadata: rt::ResponseMetadata,
+    pub(crate) response_metadata: rt::ThingMetadata,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
     pub raw: rt::Raw,
 }
 
-impl Serialize for PinDraftVersionResult {
+impl Serialize for AgentVersion {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        PinDraftVersionResult::serialize(self, s)
+        AgentVersion::serialize(self, s)
     }
 }
 
-impl<'de> Deserialize<'de> for PinDraftVersionResult {
+impl<'de> Deserialize<'de> for AgentVersion {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
-        rt::raw::with_raw(v, |v| PinDraftVersionResult::deserialize(v), |o, r| o.raw = r)
+        rt::raw::with_raw(v, |v| AgentVersion::deserialize(v), |o, r| o.raw = r)
     }
 }
 
-///
-/// Header-bound members are filled from the response headers; `raw` holds the body as received.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self", default)]
-pub struct ProductionHistoryEntry {
-    /// The request's identifier. The same value is in every error body; quote it to support.
-    ///
-    /// From the `Caitlyn-Request-Id` response header.
-    #[serde(skip)]
-    pub request_id: Option<String>,
-    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
-    /// seen and refuse to call operations or send members newer than it.
-    ///
-    /// From the `Caitlyn-Api-Version` response header.
-    #[serde(skip)]
-    pub api_version: Option<String>,
-    /// The entry's identifier.
-    #[serde(rename = "id")]
-    pub id: String,
-    /// The agent whose production this was.
-    #[serde(rename = "agentId")]
-    pub agent_id: String,
-    /// The name of the version production was published from, kept even if that version has since
-    /// been deleted. Absent when production did not come from a named version.
-    #[serde(rename = "versionName", skip_serializing_if = "Option::is_none")]
-    pub version_name: Option<String>,
-    /// When this configuration became production.
-    #[serde(rename = "publishedAt", with = "::caitlyn_sdk_core::time::rfc3339")]
-    pub published_at: chrono::DateTime<chrono::Utc>,
-    /// Who made it production.
-    #[serde(rename = "publishedBy")]
-    pub published_by: Actor,
-    /// When a publish replaced it.
-    #[serde(rename = "unpublishedAt", with = "::caitlyn_sdk_core::time::rfc3339")]
-    pub unpublished_at: chrono::DateTime<chrono::Utc>,
-    /// Who published the version that replaced it.
-    #[serde(rename = "unpublishedBy")]
-    pub unpublished_by: Actor,
-    /// The note written when it was published.
-    #[serde(rename = "note", skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-    /// The configuration production had.
-    #[serde(rename = "configuration")]
-    pub configuration: AgentConfiguration,
-    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
-    /// The default on values you build yourself.
-    #[serde(skip)]
-    pub response_metadata: rt::ResponseMetadata,
-    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
-    /// you build yourself.
-    #[serde(skip)]
-    pub raw: rt::Raw,
-}
+impl AgentVersion {
+    /// The response this AgentVersion was read from (PROTOCOL.md 4.2): its HTTP status, request id and ETag. `Some` on a
+    /// thing from one response (get, update, create, `wait()`); `None` on a list item, a snapshot entry or a value
+    /// built in code. It is never serialised, and things compare equal whatever it holds.
+    pub fn response_metadata(&self) -> Option<&rt::ResponseMetadata> {
+        self.response_metadata.0.as_ref()
+    }
 
-impl Serialize for ProductionHistoryEntry {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        ProductionHistoryEntry::serialize(self, s)
+    /// The JSON object this AgentVersion was read from, unknown fields included (PROTOCOL.md 4.1).
+    pub fn raw(&self) -> &rt::Raw {
+        &self.raw
     }
 }
 
-impl<'de> Deserialize<'de> for ProductionHistoryEntry {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let v = serde_json::Value::deserialize(d)?;
-        rt::raw::with_raw(v, |v| ProductionHistoryEntry::deserialize(v), |o, r| o.raw = r)
-    }
-}
-
-/// A production history entry, without its configuration (read that with GetProductionHistoryEntry).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self", default)]
-pub struct ProductionHistorySummary {
-    /// The entry's identifier.
-    #[serde(rename = "id")]
-    pub id: String,
-    /// The agent whose production this was.
-    #[serde(rename = "agentId")]
-    pub agent_id: String,
-    /// The name of the version production was published from, kept even if that version has since
-    /// been deleted. Absent when production did not come from a named version.
-    #[serde(rename = "versionName", skip_serializing_if = "Option::is_none")]
-    pub version_name: Option<String>,
-    /// When this configuration became production.
-    #[serde(rename = "publishedAt", with = "::caitlyn_sdk_core::time::rfc3339")]
-    pub published_at: chrono::DateTime<chrono::Utc>,
-    /// Who made it production.
-    #[serde(rename = "publishedBy")]
-    pub published_by: Actor,
-    /// When a publish replaced it.
-    #[serde(rename = "unpublishedAt", with = "::caitlyn_sdk_core::time::rfc3339")]
-    pub unpublished_at: chrono::DateTime<chrono::Utc>,
-    /// Who published the version that replaced it.
-    #[serde(rename = "unpublishedBy")]
-    pub unpublished_by: Actor,
-    /// The note written when it was published.
-    #[serde(rename = "note", skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
-    /// you build yourself.
-    #[serde(skip)]
-    pub raw: rt::Raw,
-}
-
-impl Serialize for ProductionHistorySummary {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        ProductionHistorySummary::serialize(self, s)
-    }
-}
-
-impl<'de> Deserialize<'de> for ProductionHistorySummary {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let v = serde_json::Value::deserialize(d)?;
-        rt::raw::with_raw(v, |v| ProductionHistorySummary::deserialize(v), |o, r| o.raw = r)
-    }
-}
-
-///
-/// Header-bound members are filled from the response headers; `raw` holds the body as received.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self", default)]
-pub struct ListProductionHistoryEntriesPage {
-    /// The request's identifier. The same value is in every error body; quote it to support.
-    ///
-    /// From the `Caitlyn-Request-Id` response header.
-    #[serde(skip)]
-    pub request_id: Option<String>,
-    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
-    /// seen and refuse to call operations or send members newer than it.
-    ///
-    /// From the `Caitlyn-Api-Version` response header.
-    #[serde(skip)]
-    pub api_version: Option<String>,
-    /// This page of entries, newest first.
-    #[serde(rename = "items")]
-    pub items: Vec<ProductionHistorySummary>,
-    /// The cursor for the next page. Absent on the last page.
-    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
-    pub next_cursor: Option<String>,
-    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
-    /// The default on values you build yourself.
-    #[serde(skip)]
-    pub response_metadata: rt::ResponseMetadata,
-    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
-    /// you build yourself.
-    #[serde(skip)]
-    pub raw: rt::Raw,
-}
-
-impl Serialize for ListProductionHistoryEntriesPage {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        ListProductionHistoryEntriesPage::serialize(self, s)
-    }
-}
-
-impl<'de> Deserialize<'de> for ListProductionHistoryEntriesPage {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let v = serde_json::Value::deserialize(d)?;
-        rt::raw::with_raw(v, |v| ListProductionHistoryEntriesPage::deserialize(v), |o, r| o.raw = r)
-    }
-}
-
-/// The draft members that can be cleared. Open: an older SDK may send a newer value as a string.
+/// The draft members that can be cleared, as paths. Open: an older SDK may send a newer value as a
+/// string.
 ///
 /// Open: a value this SDK does not know yet is kept as [`ClearableDraftField::Unknown`], never an error.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ClearableDraftField {
-    /// `identity`
-    Identity,
+    /// `guidance.identity`
+    GuidanceIdentity,
+    /// `guidance.instructions`
+    GuidanceInstructions,
+    /// `guidance.relevance`
+    GuidanceRelevance,
+    /// `guidance.definitions`
+    GuidanceDefinitions,
+    /// `guidance.searchTopics`
+    GuidanceSearchTopics,
+    /// `guidance.resultEvaluation`
+    GuidanceResultEvaluation,
+    /// `guidance.limitedEvidence`
+    GuidanceLimitedEvidence,
+    /// `models.answer`
+    ModelsAnswer,
+    /// `models.planning`
+    ModelsPlanning,
+    /// `models.summary`
+    ModelsSummary,
+    /// `models.classification`
+    ModelsClassification,
+    /// `models.searchTopics`
+    ModelsSearchTopics,
+    /// `models.title`
+    ModelsTitle,
+    /// `conversation.inputPlaceholder`
+    ConversationInputPlaceholder,
+    /// `workflow.capabilities`
+    WorkflowCapabilities,
+    /// `memory`
+    Memory,
+    /// `voice`
+    Voice,
+    /// `liveAvatar`
+    LiveAvatar,
+    /// `journey`
+    Journey,
+    /// `runAs`
+    RunAs,
     /// A value this SDK does not know yet, as received.
     Unknown(String),
 }
@@ -545,7 +3934,26 @@ impl ClearableDraftField {
     /// The value as sent on the wire.
     pub fn as_str(&self) -> &str {
         match self {
-            ClearableDraftField::Identity => "identity",
+            ClearableDraftField::GuidanceIdentity => "guidance.identity",
+            ClearableDraftField::GuidanceInstructions => "guidance.instructions",
+            ClearableDraftField::GuidanceRelevance => "guidance.relevance",
+            ClearableDraftField::GuidanceDefinitions => "guidance.definitions",
+            ClearableDraftField::GuidanceSearchTopics => "guidance.searchTopics",
+            ClearableDraftField::GuidanceResultEvaluation => "guidance.resultEvaluation",
+            ClearableDraftField::GuidanceLimitedEvidence => "guidance.limitedEvidence",
+            ClearableDraftField::ModelsAnswer => "models.answer",
+            ClearableDraftField::ModelsPlanning => "models.planning",
+            ClearableDraftField::ModelsSummary => "models.summary",
+            ClearableDraftField::ModelsClassification => "models.classification",
+            ClearableDraftField::ModelsSearchTopics => "models.searchTopics",
+            ClearableDraftField::ModelsTitle => "models.title",
+            ClearableDraftField::ConversationInputPlaceholder => "conversation.inputPlaceholder",
+            ClearableDraftField::WorkflowCapabilities => "workflow.capabilities",
+            ClearableDraftField::Memory => "memory",
+            ClearableDraftField::Voice => "voice",
+            ClearableDraftField::LiveAvatar => "liveAvatar",
+            ClearableDraftField::Journey => "journey",
+            ClearableDraftField::RunAs => "runAs",
             ClearableDraftField::Unknown(s) => s,
         }
     }
@@ -559,7 +3967,26 @@ impl ClearableDraftField {
 impl From<&str> for ClearableDraftField {
     fn from(s: &str) -> Self {
         match s {
-            "identity" => ClearableDraftField::Identity,
+            "guidance.identity" => ClearableDraftField::GuidanceIdentity,
+            "guidance.instructions" => ClearableDraftField::GuidanceInstructions,
+            "guidance.relevance" => ClearableDraftField::GuidanceRelevance,
+            "guidance.definitions" => ClearableDraftField::GuidanceDefinitions,
+            "guidance.searchTopics" => ClearableDraftField::GuidanceSearchTopics,
+            "guidance.resultEvaluation" => ClearableDraftField::GuidanceResultEvaluation,
+            "guidance.limitedEvidence" => ClearableDraftField::GuidanceLimitedEvidence,
+            "models.answer" => ClearableDraftField::ModelsAnswer,
+            "models.planning" => ClearableDraftField::ModelsPlanning,
+            "models.summary" => ClearableDraftField::ModelsSummary,
+            "models.classification" => ClearableDraftField::ModelsClassification,
+            "models.searchTopics" => ClearableDraftField::ModelsSearchTopics,
+            "models.title" => ClearableDraftField::ModelsTitle,
+            "conversation.inputPlaceholder" => ClearableDraftField::ConversationInputPlaceholder,
+            "workflow.capabilities" => ClearableDraftField::WorkflowCapabilities,
+            "memory" => ClearableDraftField::Memory,
+            "voice" => ClearableDraftField::Voice,
+            "liveAvatar" => ClearableDraftField::LiveAvatar,
+            "journey" => ClearableDraftField::Journey,
+            "runAs" => ClearableDraftField::RunAs,
             other => ClearableDraftField::Unknown(other.to_owned()),
         }
     }
@@ -595,12 +4022,578 @@ impl<'de> Deserialize<'de> for ClearableDraftField {
     }
 }
 
+/// What kind of change moved live. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`HistoryChangeKind::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum HistoryChangeKind {
+    /// `publish`
+    Publish,
+    /// `rollback`
+    Rollback,
+    /// `migration`
+    Migration,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl HistoryChangeKind {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            HistoryChangeKind::Publish => "publish",
+            HistoryChangeKind::Rollback => "rollback",
+            HistoryChangeKind::Migration => "migration",
+            HistoryChangeKind::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, HistoryChangeKind::Unknown(_))
+    }
+}
+
+impl From<&str> for HistoryChangeKind {
+    fn from(s: &str) -> Self {
+        match s {
+            "publish" => HistoryChangeKind::Publish,
+            "rollback" => HistoryChangeKind::Rollback,
+            "migration" => HistoryChangeKind::Migration,
+            other => HistoryChangeKind::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for HistoryChangeKind {
+    fn from(s: String) -> Self {
+        HistoryChangeKind::from(s.as_str())
+    }
+}
+
+impl Default for HistoryChangeKind {
+    fn default() -> Self {
+        HistoryChangeKind::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for HistoryChangeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for HistoryChangeKind {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for HistoryChangeKind {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(HistoryChangeKind::from(String::deserialize(d)?))
+    }
+}
+
+/// A live history entry. A list leaves `configuration` out; read one entry to get it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct HistoryEntry {
+    /// The identifier GetHistoryEntry takes to read this entry with its configuration.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// The agent whose live version changed.
+    #[serde(rename = "agentId")]
+    pub agent_id: String,
+    /// The version live pointed at after the change.
+    #[serde(rename = "version")]
+    pub version: String,
+    /// The version live pointed at before the change. Absent for an agent's first publish.
+    #[serde(rename = "previousVersion", skip_serializing_if = "Option::is_none")]
+    pub previous_version: Option<String>,
+    /// What kind of change it was.
+    #[serde(rename = "kind")]
+    pub kind: HistoryChangeKind,
+    /// When live changed.
+    #[serde(rename = "changedAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub changed_at: chrono::DateTime<chrono::Utc>,
+    /// Who changed it.
+    #[serde(rename = "changedBy")]
+    pub changed_by: Actor,
+    /// The note written with the change.
+    #[serde(rename = "note", skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// The members that differ between `previousVersion` and `version`, computed when the entry was
+    /// written. Lists are compared by their items' keys.
+    #[serde(rename = "changedMembers", skip_serializing_if = "Option::is_none")]
+    pub changed_members: Option<Vec<String>>,
+    /// The configuration of `version`. Present only when the caller may read that version: the agent
+    /// grant if it is live now, and the agent's version access grant if it is not, as GetAgentVersion
+    /// checks. Absent otherwise, in a list, and when that version no longer exists.
+    #[serde(rename = "configuration", skip_serializing_if = "Option::is_none")]
+    pub configuration: Option<AgentConfiguration>,
+    /// The response this thing was read from; see [`response_metadata`](Self::response_metadata).
+    #[serde(skip)]
+    pub(crate) response_metadata: rt::ThingMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for HistoryEntry {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        HistoryEntry::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for HistoryEntry {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| HistoryEntry::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl HistoryEntry {
+    /// The response this HistoryEntry was read from (PROTOCOL.md 4.2): its HTTP status, request id and ETag. `Some` on a
+    /// thing from one response (get, update, create, `wait()`); `None` on a list item, a snapshot entry or a value
+    /// built in code. It is never serialised, and things compare equal whatever it holds.
+    pub fn response_metadata(&self) -> Option<&rt::ResponseMetadata> {
+        self.response_metadata.0.as_ref()
+    }
+
+    /// The JSON object this HistoryEntry was read from, unknown fields included (PROTOCOL.md 4.1).
+    pub fn raw(&self) -> &rt::Raw {
+        &self.raw
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ListHistoryEntriesPage {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// This page of entries, newest first.
+    #[serde(rename = "items")]
+    pub items: Vec<HistoryEntry>,
+    /// The cursor for the next page. Absent on the last page.
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ListHistoryEntriesPage {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ListHistoryEntriesPage::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ListHistoryEntriesPage {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ListHistoryEntriesPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ListAgentsPage {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// This page of agents.
+    #[serde(rename = "items")]
+    pub items: Vec<Agent>,
+    /// The cursor for the next page. Absent on the last page.
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ListAgentsPage {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ListAgentsPage::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ListAgentsPage {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ListAgentsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Whether a conversation is answering. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`ConversationStatus::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum ConversationStatus {
+    /// `idle`
+    Idle,
+    /// `responding`
+    Responding,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl ConversationStatus {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            ConversationStatus::Idle => "idle",
+            ConversationStatus::Responding => "responding",
+            ConversationStatus::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, ConversationStatus::Unknown(_))
+    }
+}
+
+impl From<&str> for ConversationStatus {
+    fn from(s: &str) -> Self {
+        match s {
+            "idle" => ConversationStatus::Idle,
+            "responding" => ConversationStatus::Responding,
+            other => ConversationStatus::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for ConversationStatus {
+    fn from(s: String) -> Self {
+        ConversationStatus::from(s.as_str())
+    }
+}
+
+impl Default for ConversationStatus {
+    fn default() -> Self {
+        ConversationStatus::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for ConversationStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ConversationStatus {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ConversationStatus {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(ConversationStatus::from(String::deserialize(d)?))
+    }
+}
+
+/// A conversation between a caller and an agent version.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct Conversation {
+    /// The identifier every call about this conversation takes; it never changes.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// The agent the conversation is with.
+    #[serde(rename = "agentId")]
+    pub agent_id: String,
+    /// The version of the agent that answers, as it was asked for: `live`, `draft` or a version name.
+    #[serde(rename = "version")]
+    pub version: String,
+    /// The conversation's title, when it has one yet.
+    #[serde(rename = "title", skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Whether an answer is being written now.
+    #[serde(rename = "status")]
+    pub status: ConversationStatus,
+    /// When the conversation was created.
+    #[serde(rename = "createdAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// When the last message was written.
+    #[serde(
+        rename = "updatedAt",
+        with = "::caitlyn_sdk_core::time::rfc3339_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// The response this thing was read from; see [`response_metadata`](Self::response_metadata).
+    #[serde(skip)]
+    pub(crate) response_metadata: rt::ThingMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for Conversation {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        Conversation::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Conversation {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| Conversation::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl Conversation {
+    /// The response this Conversation was read from (PROTOCOL.md 4.2): its HTTP status, request id and ETag. `Some` on a
+    /// thing from one response (get, update, create, `wait()`); `None` on a list item, a snapshot entry or a value
+    /// built in code. It is never serialised, and things compare equal whatever it holds.
+    pub fn response_metadata(&self) -> Option<&rt::ResponseMetadata> {
+        self.response_metadata.0.as_ref()
+    }
+
+    /// The JSON object this Conversation was read from, unknown fields included (PROTOCOL.md 4.1).
+    pub fn raw(&self) -> &rt::Raw {
+        &self.raw
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ListConversationsPage {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// This page of conversations, newest first.
+    #[serde(rename = "items")]
+    pub items: Vec<Conversation>,
+    /// The cursor for the next page. Absent on the last page.
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ListConversationsPage {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ListConversationsPage::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ListConversationsPage {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ListConversationsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The agent members that can be cleared. Open: an older SDK may send a newer value as a string.
+///
+/// Open: a value this SDK does not know yet is kept as [`ClearableAgentField::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum ClearableAgentField {
+    /// `description`
+    Description,
+    /// `avatar`
+    Avatar,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl ClearableAgentField {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            ClearableAgentField::Description => "description",
+            ClearableAgentField::Avatar => "avatar",
+            ClearableAgentField::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, ClearableAgentField::Unknown(_))
+    }
+}
+
+impl From<&str> for ClearableAgentField {
+    fn from(s: &str) -> Self {
+        match s {
+            "description" => ClearableAgentField::Description,
+            "avatar" => ClearableAgentField::Avatar,
+            other => ClearableAgentField::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for ClearableAgentField {
+    fn from(s: String) -> Self {
+        ClearableAgentField::from(s.as_str())
+    }
+}
+
+impl Default for ClearableAgentField {
+    fn default() -> Self {
+        ClearableAgentField::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for ClearableAgentField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ClearableAgentField {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ClearableAgentField {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(ClearableAgentField::from(String::deserialize(d)?))
+    }
+}
+
+/// One member that differs between two versions.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct AgentVersionChange {
+    /// The member, as a path.
+    #[serde(rename = "path")]
+    pub path: String,
+    /// Its value in the version compared from. Absent when the other version added it.
+    #[serde(rename = "before", skip_serializing_if = "Option::is_none")]
+    pub before: Option<serde_json::Value>,
+    /// Its value in the version compared to. Absent when the other version removed it.
+    #[serde(rename = "after", skip_serializing_if = "Option::is_none")]
+    pub after: Option<serde_json::Value>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for AgentVersionChange {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        AgentVersionChange::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for AgentVersionChange {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| AgentVersionChange::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct CompareAgentVersionsResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// One change per member that differs, in path order.
+    #[serde(rename = "changes")]
+    pub changes: Vec<AgentVersionChange>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for CompareAgentVersionsResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        CompareAgentVersionsResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for CompareAgentVersionsResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| CompareAgentVersionsResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
 ///
 /// Header-bound members are filled from the response headers; `raw` holds the body as received.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
 pub struct DeleteAgentVersionResult {
-    /// The request's identifier. The same value is in every error body; quote it to support.
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
     ///
     /// From the `Caitlyn-Request-Id` response header.
     #[serde(skip)]
@@ -638,128 +4631,9 @@ impl<'de> Deserialize<'de> for DeleteAgentVersionResult {
 /// Header-bound members are filled from the response headers; `raw` holds the body as received.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
-pub struct AgentVersion {
-    /// The request's identifier. The same value is in every error body; quote it to support.
-    ///
-    /// From the `Caitlyn-Request-Id` response header.
-    #[serde(skip)]
-    pub request_id: Option<String>,
-    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
-    /// seen and refuse to call operations or send members newer than it.
-    ///
-    /// From the `Caitlyn-Api-Version` response header.
-    #[serde(skip)]
-    pub api_version: Option<String>,
-    /// The version's current ETag; send it as `If-Match` to change it.
-    ///
-    /// From the `ETag` response header.
-    #[serde(skip)]
-    pub etag: String,
-    /// The agent the version belongs to.
-    #[serde(rename = "agentId")]
-    pub agent_id: String,
-    /// `draft`, `production` or the version's name.
-    #[serde(rename = "name")]
-    pub name: String,
-    /// How a pinned or published version was made. Absent on the draft.
-    #[serde(rename = "source", skip_serializing_if = "Option::is_none")]
-    pub source: Option<VersionSource>,
-    /// The version this one was made from, where there is one.
-    #[serde(rename = "basedOn", skip_serializing_if = "Option::is_none")]
-    pub based_on: Option<String>,
-    /// True when this version's configuration is the one production currently answers with.
-    /// Defaults to false.
-    #[serde(rename = "matchesProduction", skip_serializing_if = "Option::is_none")]
-    pub matches_production: Option<bool>,
-    /// When the version was made; for the draft, when it was first created.
-    #[serde(rename = "createdAt", with = "::caitlyn_sdk_core::time::rfc3339")]
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    /// When this configuration became production. Present only on `production`.
-    #[serde(
-        rename = "publishedAt",
-        with = "::caitlyn_sdk_core::time::rfc3339_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub published_at: Option<chrono::DateTime<chrono::Utc>>,
-    /// Who made this configuration production. Present only on `production`.
-    #[serde(rename = "publishedBy", skip_serializing_if = "Option::is_none")]
-    pub published_by: Option<Actor>,
-    /// The note written when the version was pinned or published.
-    #[serde(rename = "note", skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-    /// The version's configuration.
-    #[serde(rename = "configuration")]
-    pub configuration: AgentConfiguration,
-    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
-    /// The default on values you build yourself.
-    #[serde(skip)]
-    pub response_metadata: rt::ResponseMetadata,
-    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
-    /// you build yourself.
-    #[serde(skip)]
-    pub raw: rt::Raw,
-}
-
-impl Serialize for AgentVersion {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        AgentVersion::serialize(self, s)
-    }
-}
-
-impl<'de> Deserialize<'de> for AgentVersion {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let v = serde_json::Value::deserialize(d)?;
-        rt::raw::with_raw(v, |v| AgentVersion::deserialize(v), |o, r| o.raw = r)
-    }
-}
-
-/// A named version, without its configuration (read that with GetAgentVersion).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self", default)]
-pub struct AgentVersionSummary {
-    /// The version's name.
-    #[serde(rename = "name")]
-    pub name: String,
-    /// How the version was made.
-    #[serde(rename = "source", skip_serializing_if = "Option::is_none")]
-    pub source: Option<VersionSource>,
-    /// The version this one was made from, where there is one.
-    #[serde(rename = "basedOn", skip_serializing_if = "Option::is_none")]
-    pub based_on: Option<String>,
-    /// True when production's configuration is this version's. Defaults to false.
-    #[serde(rename = "matchesProduction", skip_serializing_if = "Option::is_none")]
-    pub matches_production: Option<bool>,
-    /// When the version was made.
-    #[serde(rename = "createdAt", with = "::caitlyn_sdk_core::time::rfc3339")]
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    /// The note written when the version was pinned or published.
-    #[serde(rename = "note", skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
-    /// you build yourself.
-    #[serde(skip)]
-    pub raw: rt::Raw,
-}
-
-impl Serialize for AgentVersionSummary {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        AgentVersionSummary::serialize(self, s)
-    }
-}
-
-impl<'de> Deserialize<'de> for AgentVersionSummary {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let v = serde_json::Value::deserialize(d)?;
-        rt::raw::with_raw(v, |v| AgentVersionSummary::deserialize(v), |o, r| o.raw = r)
-    }
-}
-
-///
-/// Header-bound members are filled from the response headers; `raw` holds the body as received.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self", default)]
 pub struct ListAgentVersionsPage {
-    /// The request's identifier. The same value is in every error body; quote it to support.
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
     ///
     /// From the `Caitlyn-Request-Id` response header.
     #[serde(skip)]
@@ -772,7 +4646,7 @@ pub struct ListAgentVersionsPage {
     pub api_version: Option<String>,
     /// This page of versions, oldest first.
     #[serde(rename = "items")]
-    pub items: Vec<AgentVersionSummary>,
+    pub items: Vec<AgentVersion>,
     /// The cursor for the next page. Absent on the last page.
     #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
@@ -796,6 +4670,951 @@ impl<'de> Deserialize<'de> for ListAgentVersionsPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListAgentVersionsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Which version live points at, and since when.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct LiveState {
+    /// The version live points at.
+    #[serde(rename = "version")]
+    pub version: String,
+    /// When live was pointed at it.
+    #[serde(rename = "publishedAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub published_at: chrono::DateTime<chrono::Utc>,
+    /// Who pointed live at it.
+    #[serde(rename = "publishedBy")]
+    pub published_by: Actor,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for LiveState {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        LiveState::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for LiveState {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| LiveState::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct PublishAgentVersionResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// Live's new ETag.
+    ///
+    /// From the `ETag` response header.
+    #[serde(skip)]
+    pub etag: String,
+    /// Live after the publish.
+    #[serde(rename = "live")]
+    pub live: LiveState,
+    /// The version live now points at.
+    #[serde(rename = "version")]
+    pub version: AgentVersion,
+    /// The history entry the publish wrote.
+    #[serde(rename = "historyEntry")]
+    pub history_entry: HistoryEntry,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for PublishAgentVersionResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        PublishAgentVersionResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for PublishAgentVersionResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| PublishAgentVersionResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// An upload attached to a message.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct AttachmentReference {
+    /// The upload holding the document.
+    #[serde(rename = "uploadId")]
+    pub upload_id: String,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for AttachmentReference {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        AttachmentReference::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for AttachmentReference {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| AttachmentReference::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// What an item does. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`IngestionItemAction::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum IngestionItemAction {
+    /// `ingest`
+    Ingest,
+    /// `remove`
+    Remove,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl IngestionItemAction {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            IngestionItemAction::Ingest => "ingest",
+            IngestionItemAction::Remove => "remove",
+            IngestionItemAction::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, IngestionItemAction::Unknown(_))
+    }
+}
+
+impl From<&str> for IngestionItemAction {
+    fn from(s: &str) -> Self {
+        match s {
+            "ingest" => IngestionItemAction::Ingest,
+            "remove" => IngestionItemAction::Remove,
+            other => IngestionItemAction::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for IngestionItemAction {
+    fn from(s: String) -> Self {
+        IngestionItemAction::from(s.as_str())
+    }
+}
+
+impl Default for IngestionItemAction {
+    fn default() -> Self {
+        IngestionItemAction::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for IngestionItemAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for IngestionItemAction {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for IngestionItemAction {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(IngestionItemAction::from(String::deserialize(d)?))
+    }
+}
+
+/// One item a caller adds to a batch.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct IngestionItemInput {
+    /// What the item does to its document. Defaults to `ingest`.
+    #[serde(rename = "action", skip_serializing_if = "Option::is_none")]
+    pub action: Option<IngestionItemAction>,
+    /// The document's path: its folder and name, for example `/hr/leave-policy.pdf`. A re-upload at a
+    /// path is a new version of the document there.
+    #[serde(rename = "path", skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// The caller's own key for the document. When given, it identifies the document wherever it is,
+    /// so a renamed file keeps its document.
+    #[serde(rename = "externalId", skip_serializing_if = "Option::is_none")]
+    pub external_id: Option<String>,
+    /// For described content: the base64-encoded SHA-256 of the bytes.
+    #[serde(rename = "sha256", skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    /// For described content: the size of the bytes, at most 2 GB.
+    #[serde(rename = "byteSize", skip_serializing_if = "Option::is_none")]
+    pub byte_size: Option<i64>,
+    /// For described content: the media type of the bytes.
+    #[serde(rename = "contentType", skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+    /// For fetched content: the `http` or `https` address the server fetches the bytes from while
+    /// planning, at most 100 MB. Needs the files create permission.
+    #[serde(rename = "fetchUrl", skip_serializing_if = "Option::is_none")]
+    pub fetch_url: Option<String>,
+    /// The address a citation of the document links to. Defaults to `fetchUrl`.
+    #[serde(rename = "sourceUrl", skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<String>,
+    /// Values for the metadata fields the knowledge base defines, checked as CreateDocument checks
+    /// them, and kept as sent.
+    #[serde(rename = "metadata", skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<std::collections::BTreeMap<String, serde_json::Value>>,
+    /// Keys the knowledge base does not define, within the limits on ExtraMetadata.
+    #[serde(rename = "extraMetadata", skip_serializing_if = "Option::is_none")]
+    pub extra_metadata: Option<std::collections::BTreeMap<String, serde_json::Value>>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for IngestionItemInput {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        IngestionItemInput::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for IngestionItemInput {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| IngestionItemInput::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// An existing document a planned item refers to.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct DocumentMatch {
+    /// The existing document the item would act on.
+    #[serde(rename = "documentId")]
+    pub document_id: String,
+    /// Where that document is now, which may differ from the item's path.
+    #[serde(rename = "path")]
+    pub path: String,
+    /// The document's current version number.
+    #[serde(rename = "version", skip_serializing_if = "Option::is_none")]
+    pub version: Option<i32>,
+    /// The base64-encoded SHA-256 of the document's current bytes.
+    #[serde(rename = "sha256", skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    /// For `changed`: the earlier version whose bytes the item's equal.
+    #[serde(rename = "restoresVersion", skip_serializing_if = "Option::is_none")]
+    pub restores_version: Option<i32>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for DocumentMatch {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        DocumentMatch::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for DocumentMatch {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| DocumentMatch::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// What the plan found for an item. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`IngestionItemOutcome::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum IngestionItemOutcome {
+    /// `new`
+    New,
+    /// `unchanged`
+    Unchanged,
+    /// `changed`
+    Changed,
+    /// `moved`
+    Moved,
+    /// `in_progress`
+    InProgress,
+    /// `to_remove`
+    ToRemove,
+    /// `fetch_failed`
+    FetchFailed,
+    /// `conflict`
+    Conflict,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl IngestionItemOutcome {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            IngestionItemOutcome::New => "new",
+            IngestionItemOutcome::Unchanged => "unchanged",
+            IngestionItemOutcome::Changed => "changed",
+            IngestionItemOutcome::Moved => "moved",
+            IngestionItemOutcome::InProgress => "in_progress",
+            IngestionItemOutcome::ToRemove => "to_remove",
+            IngestionItemOutcome::FetchFailed => "fetch_failed",
+            IngestionItemOutcome::Conflict => "conflict",
+            IngestionItemOutcome::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, IngestionItemOutcome::Unknown(_))
+    }
+}
+
+impl From<&str> for IngestionItemOutcome {
+    fn from(s: &str) -> Self {
+        match s {
+            "new" => IngestionItemOutcome::New,
+            "unchanged" => IngestionItemOutcome::Unchanged,
+            "changed" => IngestionItemOutcome::Changed,
+            "moved" => IngestionItemOutcome::Moved,
+            "in_progress" => IngestionItemOutcome::InProgress,
+            "to_remove" => IngestionItemOutcome::ToRemove,
+            "fetch_failed" => IngestionItemOutcome::FetchFailed,
+            "conflict" => IngestionItemOutcome::Conflict,
+            other => IngestionItemOutcome::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for IngestionItemOutcome {
+    fn from(s: String) -> Self {
+        IngestionItemOutcome::from(s.as_str())
+    }
+}
+
+impl Default for IngestionItemOutcome {
+    fn default() -> Self {
+        IngestionItemOutcome::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for IngestionItemOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for IngestionItemOutcome {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for IngestionItemOutcome {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(IngestionItemOutcome::from(String::deserialize(d)?))
+    }
+}
+
+/// Why an item is a conflict, or why its fetch failed. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`IngestionItemReason::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum IngestionItemReason {
+    /// `path_taken`
+    PathTaken,
+    /// `ambiguous_content`
+    AmbiguousContent,
+    /// `duplicate_path`
+    DuplicatePath,
+    /// `duplicate_external_id`
+    DuplicateExternalId,
+    /// `duplicate_in_batch`
+    DuplicateInBatch,
+    /// `changed_since_plan`
+    ChangedSincePlan,
+    /// `fetch_blocked`
+    FetchBlocked,
+    /// `fetch_http_error`
+    FetchHttpError,
+    /// `fetch_timeout`
+    FetchTimeout,
+    /// `fetch_too_large`
+    FetchTooLarge,
+    /// `fetch_unsupported_type`
+    FetchUnsupportedType,
+    /// `fetch_too_many_redirects`
+    FetchTooManyRedirects,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl IngestionItemReason {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            IngestionItemReason::PathTaken => "path_taken",
+            IngestionItemReason::AmbiguousContent => "ambiguous_content",
+            IngestionItemReason::DuplicatePath => "duplicate_path",
+            IngestionItemReason::DuplicateExternalId => "duplicate_external_id",
+            IngestionItemReason::DuplicateInBatch => "duplicate_in_batch",
+            IngestionItemReason::ChangedSincePlan => "changed_since_plan",
+            IngestionItemReason::FetchBlocked => "fetch_blocked",
+            IngestionItemReason::FetchHttpError => "fetch_http_error",
+            IngestionItemReason::FetchTimeout => "fetch_timeout",
+            IngestionItemReason::FetchTooLarge => "fetch_too_large",
+            IngestionItemReason::FetchUnsupportedType => "fetch_unsupported_type",
+            IngestionItemReason::FetchTooManyRedirects => "fetch_too_many_redirects",
+            IngestionItemReason::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, IngestionItemReason::Unknown(_))
+    }
+}
+
+impl From<&str> for IngestionItemReason {
+    fn from(s: &str) -> Self {
+        match s {
+            "path_taken" => IngestionItemReason::PathTaken,
+            "ambiguous_content" => IngestionItemReason::AmbiguousContent,
+            "duplicate_path" => IngestionItemReason::DuplicatePath,
+            "duplicate_external_id" => IngestionItemReason::DuplicateExternalId,
+            "duplicate_in_batch" => IngestionItemReason::DuplicateInBatch,
+            "changed_since_plan" => IngestionItemReason::ChangedSincePlan,
+            "fetch_blocked" => IngestionItemReason::FetchBlocked,
+            "fetch_http_error" => IngestionItemReason::FetchHttpError,
+            "fetch_timeout" => IngestionItemReason::FetchTimeout,
+            "fetch_too_large" => IngestionItemReason::FetchTooLarge,
+            "fetch_unsupported_type" => IngestionItemReason::FetchUnsupportedType,
+            "fetch_too_many_redirects" => IngestionItemReason::FetchTooManyRedirects,
+            other => IngestionItemReason::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for IngestionItemReason {
+    fn from(s: String) -> Self {
+        IngestionItemReason::from(s.as_str())
+    }
+}
+
+impl Default for IngestionItemReason {
+    fn default() -> Self {
+        IngestionItemReason::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for IngestionItemReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for IngestionItemReason {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for IngestionItemReason {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(IngestionItemReason::from(String::deserialize(d)?))
+    }
+}
+
+/// What will be done with an item. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`IngestionItemResolution::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum IngestionItemResolution {
+    /// `add`
+    Add,
+    /// `new_version`
+    NewVersion,
+    /// `skip`
+    Skip,
+    /// `move`
+    Move,
+    /// `update_metadata`
+    UpdateMetadata,
+    /// `remove`
+    Remove,
+    /// `overwrite`
+    Overwrite,
+    /// `unresolved`
+    Unresolved,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl IngestionItemResolution {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            IngestionItemResolution::Add => "add",
+            IngestionItemResolution::NewVersion => "new_version",
+            IngestionItemResolution::Skip => "skip",
+            IngestionItemResolution::Move => "move",
+            IngestionItemResolution::UpdateMetadata => "update_metadata",
+            IngestionItemResolution::Remove => "remove",
+            IngestionItemResolution::Overwrite => "overwrite",
+            IngestionItemResolution::Unresolved => "unresolved",
+            IngestionItemResolution::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, IngestionItemResolution::Unknown(_))
+    }
+}
+
+impl From<&str> for IngestionItemResolution {
+    fn from(s: &str) -> Self {
+        match s {
+            "add" => IngestionItemResolution::Add,
+            "new_version" => IngestionItemResolution::NewVersion,
+            "skip" => IngestionItemResolution::Skip,
+            "move" => IngestionItemResolution::Move,
+            "update_metadata" => IngestionItemResolution::UpdateMetadata,
+            "remove" => IngestionItemResolution::Remove,
+            "overwrite" => IngestionItemResolution::Overwrite,
+            "unresolved" => IngestionItemResolution::Unresolved,
+            other => IngestionItemResolution::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for IngestionItemResolution {
+    fn from(s: String) -> Self {
+        IngestionItemResolution::from(s.as_str())
+    }
+}
+
+impl Default for IngestionItemResolution {
+    fn default() -> Self {
+        IngestionItemResolution::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for IngestionItemResolution {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for IngestionItemResolution {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for IngestionItemResolution {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(IngestionItemResolution::from(String::deserialize(d)?))
+    }
+}
+
+/// Where an item is. Open: new values may be added. Every value after `ingesting` is final.
+///
+/// Open: a value this SDK does not know yet is kept as [`IngestionItemStatus::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum IngestionItemStatus {
+    /// `draft`
+    Draft,
+    /// `awaiting_upload`
+    AwaitingUpload,
+    /// `ingesting`
+    Ingesting,
+    /// `indexed`
+    Indexed,
+    /// `skipped`
+    Skipped,
+    /// `moved`
+    Moved,
+    /// `updated`
+    Updated,
+    /// `removed`
+    Removed,
+    /// `cancelled`
+    Cancelled,
+    /// `failed`
+    Failed,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl IngestionItemStatus {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            IngestionItemStatus::Draft => "draft",
+            IngestionItemStatus::AwaitingUpload => "awaiting_upload",
+            IngestionItemStatus::Ingesting => "ingesting",
+            IngestionItemStatus::Indexed => "indexed",
+            IngestionItemStatus::Skipped => "skipped",
+            IngestionItemStatus::Moved => "moved",
+            IngestionItemStatus::Updated => "updated",
+            IngestionItemStatus::Removed => "removed",
+            IngestionItemStatus::Cancelled => "cancelled",
+            IngestionItemStatus::Failed => "failed",
+            IngestionItemStatus::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, IngestionItemStatus::Unknown(_))
+    }
+}
+
+impl From<&str> for IngestionItemStatus {
+    fn from(s: &str) -> Self {
+        match s {
+            "draft" => IngestionItemStatus::Draft,
+            "awaiting_upload" => IngestionItemStatus::AwaitingUpload,
+            "ingesting" => IngestionItemStatus::Ingesting,
+            "indexed" => IngestionItemStatus::Indexed,
+            "skipped" => IngestionItemStatus::Skipped,
+            "moved" => IngestionItemStatus::Moved,
+            "updated" => IngestionItemStatus::Updated,
+            "removed" => IngestionItemStatus::Removed,
+            "cancelled" => IngestionItemStatus::Cancelled,
+            "failed" => IngestionItemStatus::Failed,
+            other => IngestionItemStatus::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for IngestionItemStatus {
+    fn from(s: String) -> Self {
+        IngestionItemStatus::from(s.as_str())
+    }
+}
+
+impl Default for IngestionItemStatus {
+    fn default() -> Self {
+        IngestionItemStatus::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for IngestionItemStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for IngestionItemStatus {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for IngestionItemStatus {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(IngestionItemStatus::from(String::deserialize(d)?))
+    }
+}
+
+/// An ingestion batch item.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct IngestionBatchItem {
+    /// What the item does to its document. Defaults to `ingest`.
+    #[serde(rename = "action", skip_serializing_if = "Option::is_none")]
+    pub action: Option<IngestionItemAction>,
+    /// The document's path: its folder and name, for example `/hr/leave-policy.pdf`. A re-upload at a
+    /// path is a new version of the document there.
+    #[serde(rename = "path", skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// The caller's own key for the document. When given, it identifies the document wherever it is,
+    /// so a renamed file keeps its document.
+    #[serde(rename = "externalId", skip_serializing_if = "Option::is_none")]
+    pub external_id: Option<String>,
+    /// For described content: the base64-encoded SHA-256 of the bytes.
+    #[serde(rename = "sha256", skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    /// For described content: the size of the bytes, at most 2 GB.
+    #[serde(rename = "byteSize", skip_serializing_if = "Option::is_none")]
+    pub byte_size: Option<i64>,
+    /// For described content: the media type of the bytes.
+    #[serde(rename = "contentType", skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+    /// For fetched content: the `http` or `https` address the server fetches the bytes from while
+    /// planning, at most 100 MB. Needs the files create permission.
+    #[serde(rename = "fetchUrl", skip_serializing_if = "Option::is_none")]
+    pub fetch_url: Option<String>,
+    /// The address a citation of the document links to. Defaults to `fetchUrl`.
+    #[serde(rename = "sourceUrl", skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<String>,
+    /// Values for the metadata fields the knowledge base defines, checked as CreateDocument checks
+    /// them, and kept as sent.
+    #[serde(rename = "metadata", skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<std::collections::BTreeMap<String, serde_json::Value>>,
+    /// Keys the knowledge base does not define, within the limits on ExtraMetadata.
+    #[serde(rename = "extraMetadata", skip_serializing_if = "Option::is_none")]
+    pub extra_metadata: Option<std::collections::BTreeMap<String, serde_json::Value>>,
+    /// The identifier every call about this item takes, within its batch.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// What the plan found. Absent until the batch is planned.
+    #[serde(rename = "outcome", skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<IngestionItemOutcome>,
+    /// For `conflict`: why the plan could not decide. For `fetch_failed`: why the fetch failed.
+    #[serde(rename = "reason", skip_serializing_if = "Option::is_none")]
+    pub reason: Option<IngestionItemReason>,
+    /// For `unchanged`: true when the supplied metadata or `sourceUrl` differ from the document's.
+    #[serde(rename = "metadataChanged", skip_serializing_if = "Option::is_none")]
+    pub metadata_changed: Option<bool>,
+    /// The existing documents the outcome refers to. Never a document the caller may not read.
+    #[serde(rename = "matches", skip_serializing_if = "Option::is_none")]
+    pub matches: Option<Vec<DocumentMatch>>,
+    /// What will be done: set by the policy, or by hand with UpdateIngestionBatchItem.
+    #[serde(rename = "resolution", skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<IngestionItemResolution>,
+    /// Where the item is. `draft` before Start.
+    #[serde(rename = "status")]
+    pub status: IngestionItemStatus,
+    /// After Start, for an item awaiting upload: the key to upload its bytes to, under the batch's
+    /// upload policy.
+    #[serde(rename = "objectKey", skip_serializing_if = "Option::is_none")]
+    pub object_key: Option<String>,
+    /// The document the item made or changed.
+    #[serde(rename = "documentId", skip_serializing_if = "Option::is_none")]
+    pub document_id: Option<String>,
+    /// The document version the item made or changed.
+    #[serde(rename = "version", skip_serializing_if = "Option::is_none")]
+    pub version: Option<i32>,
+    /// Why the item failed, as a stable code: for example `UPLOAD_EXPIRED` (no bytes arrived before
+    /// the upload policy expired), `CHECKSUM_MISMATCH`, `PERMISSION_DENIED`, for `new_version`
+    /// `VALIDATION_FAILED` (another file type) or `DOCUMENT_INGESTION_IN_PROGRESS`, or a document's
+    /// failure code. Present only when `status` is `failed`.
+    #[serde(rename = "failureCode", skip_serializing_if = "Option::is_none")]
+    pub failure_code: Option<String>,
+    /// What went wrong, written for the integrator. Present only when `status` is `failed`.
+    #[serde(rename = "failureDetail", skip_serializing_if = "Option::is_none")]
+    pub failure_detail: Option<String>,
+    /// The item's ETag; send it as `If-Match` to resolve it.
+    #[serde(rename = "etag")]
+    pub etag: String,
+    /// The response this thing was read from; see [`response_metadata`](Self::response_metadata).
+    #[serde(skip)]
+    pub(crate) response_metadata: rt::ThingMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for IngestionBatchItem {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        IngestionBatchItem::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for IngestionBatchItem {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| IngestionBatchItem::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl IngestionBatchItem {
+    /// The response this IngestionBatchItem was read from (PROTOCOL.md 4.2): its HTTP status, request id and ETag. `Some` on a
+    /// thing from one response (get, update, create, `wait()`); `None` on a list item, a snapshot entry or a value
+    /// built in code. It is never serialised, and things compare equal whatever it holds.
+    pub fn response_metadata(&self) -> Option<&rt::ResponseMetadata> {
+        self.response_metadata.0.as_ref()
+    }
+
+    /// The JSON object this IngestionBatchItem was read from, unknown fields included (PROTOCOL.md 4.1).
+    pub fn raw(&self) -> &rt::Raw {
+        &self.raw
+    }
+}
+
+/// Whether an item was added. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`ItemCreateStatus::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum ItemCreateStatus {
+    /// `created`
+    Created,
+    /// `failed`
+    Failed,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl ItemCreateStatus {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            ItemCreateStatus::Created => "created",
+            ItemCreateStatus::Failed => "failed",
+            ItemCreateStatus::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, ItemCreateStatus::Unknown(_))
+    }
+}
+
+impl From<&str> for ItemCreateStatus {
+    fn from(s: &str) -> Self {
+        match s {
+            "created" => ItemCreateStatus::Created,
+            "failed" => ItemCreateStatus::Failed,
+            other => ItemCreateStatus::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for ItemCreateStatus {
+    fn from(s: String) -> Self {
+        ItemCreateStatus::from(s.as_str())
+    }
+}
+
+impl Default for ItemCreateStatus {
+    fn default() -> Self {
+        ItemCreateStatus::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for ItemCreateStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ItemCreateStatus {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ItemCreateStatus {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(ItemCreateStatus::from(String::deserialize(d)?))
+    }
+}
+
+/// The result of adding one item.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ItemCreateResult {
+    /// The item's position in the request, from 0.
+    #[serde(rename = "index")]
+    pub index: i32,
+    /// Whether the item was added.
+    #[serde(rename = "status")]
+    pub status: ItemCreateStatus,
+    /// The item, when `created`.
+    #[serde(rename = "item", skip_serializing_if = "Option::is_none")]
+    pub item: Option<IngestionBatchItem>,
+    /// Why it failed, as a stable code. Present only when `failed`.
+    #[serde(rename = "code", skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    /// What went wrong, written for the integrator. Present only when `failed`.
+    #[serde(rename = "detail", skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ItemCreateResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ItemCreateResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ItemCreateResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ItemCreateResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct BatchCreateIngestionBatchItemsResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// One result per item, in request order.
+    #[serde(rename = "results")]
+    pub results: Vec<ItemCreateResult>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for BatchCreateIngestionBatchItemsResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        BatchCreateIngestionBatchItemsResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for BatchCreateIngestionBatchItemsResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| BatchCreateIngestionBatchItemsResult::deserialize(v), |o, r| o.raw = r)
     }
 }
 
@@ -879,7 +5698,7 @@ pub struct DocumentDeleteResult {
     /// Whether the delete was accepted.
     #[serde(rename = "status")]
     pub status: DocumentDeleteStatus,
-    /// Why it failed, as a stable code, for example `NOT_FOUND` or `CONFLICT`. Present only when
+    /// Why it failed, as a stable code, for example `NOT_FOUND` or `SERVICE_UNAVAILABLE`. Present only when
     /// `failed`.
     #[serde(rename = "code", skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
@@ -910,7 +5729,8 @@ impl<'de> Deserialize<'de> for DocumentDeleteResult {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
 pub struct BatchDeleteDocumentsResult {
-    /// The request's identifier. The same value is in every error body; quote it to support.
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
     ///
     /// From the `Caitlyn-Request-Id` response header.
     #[serde(skip)]
@@ -944,6 +5764,271 @@ impl<'de> Deserialize<'de> for BatchDeleteDocumentsResult {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| BatchDeleteDocumentsResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// A document a message carries.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct MessageAttachment {
+    /// The document's name, as it was on the sender's machine.
+    #[serde(rename = "name")]
+    pub name: String,
+    /// The document's media type.
+    #[serde(rename = "contentType")]
+    pub content_type: String,
+    /// The document's size in bytes.
+    #[serde(rename = "byteSize")]
+    pub byte_size: i64,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for MessageAttachment {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        MessageAttachment::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for MessageAttachment {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| MessageAttachment::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// A passage the answer cites.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct Citation {
+    /// The citation's number in the answer text, starting at 1.
+    #[serde(rename = "number")]
+    pub number: i32,
+    /// The cited document.
+    #[serde(rename = "documentId", skip_serializing_if = "Option::is_none")]
+    pub document_id: Option<String>,
+    /// The knowledge base the document is in.
+    #[serde(rename = "knowledgeBaseId", skip_serializing_if = "Option::is_none")]
+    pub knowledge_base_id: Option<String>,
+    /// The cited document's name.
+    #[serde(rename = "documentName", skip_serializing_if = "Option::is_none")]
+    pub document_name: Option<String>,
+    /// The page the passage is on, starting at 1, for paged documents.
+    #[serde(rename = "pageNumber", skip_serializing_if = "Option::is_none")]
+    pub page_number: Option<i32>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for Citation {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        Citation::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Citation {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| Citation::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Who wrote a message. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`MessageRole::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum MessageRole {
+    /// `user`
+    User,
+    /// `assistant`
+    Assistant,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl MessageRole {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            MessageRole::User => "user",
+            MessageRole::Assistant => "assistant",
+            MessageRole::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, MessageRole::Unknown(_))
+    }
+}
+
+impl From<&str> for MessageRole {
+    fn from(s: &str) -> Self {
+        match s {
+            "user" => MessageRole::User,
+            "assistant" => MessageRole::Assistant,
+            other => MessageRole::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for MessageRole {
+    fn from(s: String) -> Self {
+        MessageRole::from(s.as_str())
+    }
+}
+
+impl Default for MessageRole {
+    fn default() -> Self {
+        MessageRole::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for MessageRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for MessageRole {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for MessageRole {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(MessageRole::from(String::deserialize(d)?))
+    }
+}
+
+/// A message in a conversation.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct Message {
+    /// The identifier that matches the message across its events and ListMessages.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// Who wrote the message.
+    #[serde(rename = "role")]
+    pub role: MessageRole,
+    /// What the message says. For an answer, the whole text the deltas built up.
+    #[serde(rename = "text")]
+    pub text: String,
+    /// The agent version that wrote an answer.
+    #[serde(rename = "agentVersion", skip_serializing_if = "Option::is_none")]
+    pub agent_version: Option<String>,
+    /// The passages an answer cites, in citation number order.
+    #[serde(rename = "citations", skip_serializing_if = "Option::is_none")]
+    pub citations: Option<Vec<Citation>>,
+    /// The documents the message carries, in the order they were sent.
+    #[serde(rename = "attachments", skip_serializing_if = "Option::is_none")]
+    pub attachments: Option<Vec<MessageAttachment>>,
+    /// When the message was written.
+    #[serde(rename = "createdAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for Message {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        Message::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Message {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| Message::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ListMessagesPage {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// This page of messages, oldest first.
+    #[serde(rename = "items")]
+    pub items: Vec<Message>,
+    /// The cursor for the next page. Absent on the last page.
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ListMessagesPage {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ListMessagesPage::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ListMessagesPage {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ListMessagesPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// One item of structured context, for example the page or record the person is looking at.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ContextItem {
+    /// What kind of thing the item describes, for example `page`.
+    #[serde(rename = "type")]
+    pub r#type: String,
+    /// A short label the agent can refer to.
+    #[serde(rename = "label")]
+    pub label: String,
+    /// Where the item lives, when it has an address.
+    #[serde(rename = "uri", skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
+    /// The item's data, as JSON. Counts towards the 16 KB limit.
+    #[serde(rename = "data", skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ContextItem {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ContextItem::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ContextItem {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ContextItem::deserialize(v), |o, r| o.raw = r)
     }
 }
 
@@ -1029,10 +6114,10 @@ impl<'de> Deserialize<'de> for CredentialKind {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
 pub struct OrganisationSummary {
-    /// The organisation's identifier.
+    /// The identifier calls about the organisation take.
     #[serde(rename = "id")]
     pub id: String,
-    /// The organisation's name.
+    /// What people see the organisation called.
     #[serde(rename = "name")]
     pub name: String,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
@@ -1059,7 +6144,8 @@ impl<'de> Deserialize<'de> for OrganisationSummary {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
 pub struct Caller {
-    /// The request's identifier. The same value is in every error body; quote it to support.
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
     ///
     /// From the `Caitlyn-Request-Id` response header.
     #[serde(skip)]
@@ -1114,12 +6200,1217 @@ impl<'de> Deserialize<'de> for Caller {
     }
 }
 
+/// The passages next to each one a search finds.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct NearbyPassages {
+    /// Whether they are returned. Defaults to false.
+    #[serde(rename = "enabled")]
+    pub enabled: bool,
+    /// How many on each side, from 0 to 2. Defaults to 1.
+    #[serde(rename = "count", skip_serializing_if = "Option::is_none")]
+    pub count: Option<i32>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for NearbyPassages {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        NearbyPassages::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for NearbyPassages {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| NearbyPassages::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Transcripts of audio and video documents.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct TranscriptSettings {
+    /// Whether a citation shows the transcript beside the player. Defaults to true.
+    #[serde(rename = "enabled")]
+    pub enabled: bool,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for TranscriptSettings {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        TranscriptSettings::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for TranscriptSettings {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| TranscriptSettings::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// A knowledge base's optional features.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct KnowledgeBaseFeatures {
+    /// Whether a search also returns the passages next to each one it finds.
+    #[serde(rename = "nearbyPassages", skip_serializing_if = "Option::is_none")]
+    pub nearby_passages: Option<NearbyPassages>,
+    /// Whether audio and video citations show their transcripts.
+    #[serde(rename = "transcripts", skip_serializing_if = "Option::is_none")]
+    pub transcripts: Option<TranscriptSettings>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for KnowledgeBaseFeatures {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        KnowledgeBaseFeatures::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for KnowledgeBaseFeatures {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| KnowledgeBaseFeatures::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// A knowledge base's default search settings.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct RetrievalDefaults {
+    /// How many passages each search retrieves, from 1 to 50.
+    #[serde(rename = "resultsPerSearch", skip_serializing_if = "Option::is_none")]
+    pub results_per_search: Option<i32>,
+    /// The lowest similarity score a passage needs, from 0 to 1.
+    #[serde(rename = "minimumMatch", skip_serializing_if = "Option::is_none")]
+    pub minimum_match: Option<f32>,
+    /// The lowest relevance an evaluated passage needs, from 0 to 1.
+    #[serde(rename = "minimumRelevance", skip_serializing_if = "Option::is_none")]
+    pub minimum_relevance: Option<f32>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for RetrievalDefaults {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        RetrievalDefaults::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for RetrievalDefaults {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| RetrievalDefaults::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// How many of a knowledge base's documents need attention.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct DocumentCounts {
+    /// Documents being processed.
+    #[serde(rename = "processing")]
+    pub processing: i64,
+    /// Documents whose latest attempt failed.
+    #[serde(rename = "failed")]
+    pub failed: i64,
+    /// Documents processed in an older way than the newest, which `ReprocessDocuments` would update.
+    #[serde(rename = "outOfDate", skip_serializing_if = "Option::is_none")]
+    pub out_of_date: Option<i64>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for DocumentCounts {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        DocumentCounts::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for DocumentCounts {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| DocumentCounts::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// What an embedding model reads. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`EngineInput::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum EngineInput {
+    /// `text`
+    Text,
+    /// `text_and_images`
+    TextAndImages,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl EngineInput {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            EngineInput::Text => "text",
+            EngineInput::TextAndImages => "text_and_images",
+            EngineInput::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, EngineInput::Unknown(_))
+    }
+}
+
+impl From<&str> for EngineInput {
+    fn from(s: &str) -> Self {
+        match s {
+            "text" => EngineInput::Text,
+            "text_and_images" => EngineInput::TextAndImages,
+            other => EngineInput::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for EngineInput {
+    fn from(s: String) -> Self {
+        EngineInput::from(s.as_str())
+    }
+}
+
+impl Default for EngineInput {
+    fn default() -> Self {
+        EngineInput::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for EngineInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for EngineInput {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for EngineInput {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(EngineInput::from(String::deserialize(d)?))
+    }
+}
+
+/// How a knowledge base searches. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`SearchType::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum SearchType {
+    /// `standard`
+    Standard,
+    /// `layout_aware`
+    LayoutAware,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl SearchType {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            SearchType::Standard => "standard",
+            SearchType::LayoutAware => "layout_aware",
+            SearchType::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, SearchType::Unknown(_))
+    }
+}
+
+impl From<&str> for SearchType {
+    fn from(s: &str) -> Self {
+        match s {
+            "standard" => SearchType::Standard,
+            "layout_aware" => SearchType::LayoutAware,
+            other => SearchType::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for SearchType {
+    fn from(s: String) -> Self {
+        SearchType::from(s.as_str())
+    }
+}
+
+impl Default for SearchType {
+    fn default() -> Self {
+        SearchType::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for SearchType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for SearchType {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for SearchType {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(SearchType::from(String::deserialize(d)?))
+    }
+}
+
+/// How a knowledge base reads and searches its documents.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct KnowledgeBaseEngine {
+    /// The model that turns passages into search vectors.
+    #[serde(rename = "embeddingModel")]
+    pub embedding_model: String,
+    /// What the embedding model reads from each passage.
+    #[serde(rename = "reads")]
+    pub reads: EngineInput,
+    /// The size of each search vector.
+    #[serde(rename = "dimensions")]
+    pub dimensions: i32,
+    /// The AWS Region the model runs in, for example `ap-southeast-2`.
+    #[serde(rename = "region")]
+    pub region: String,
+    /// How passages are matched to a search. Layout-aware search is turned on with
+    /// EnableLayoutAwareSearch.
+    #[serde(rename = "searchType")]
+    pub search_type: SearchType,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for KnowledgeBaseEngine {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        KnowledgeBaseEngine::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for KnowledgeBaseEngine {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| KnowledgeBaseEngine::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Where a knowledge base is in its lifecycle. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`KnowledgeBaseStatus::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum KnowledgeBaseStatus {
+    /// `creating`
+    Creating,
+    /// `ready`
+    Ready,
+    /// `moving`
+    Moving,
+    /// `failed`
+    Failed,
+    /// `deleting`
+    Deleting,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl KnowledgeBaseStatus {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            KnowledgeBaseStatus::Creating => "creating",
+            KnowledgeBaseStatus::Ready => "ready",
+            KnowledgeBaseStatus::Moving => "moving",
+            KnowledgeBaseStatus::Failed => "failed",
+            KnowledgeBaseStatus::Deleting => "deleting",
+            KnowledgeBaseStatus::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, KnowledgeBaseStatus::Unknown(_))
+    }
+}
+
+impl From<&str> for KnowledgeBaseStatus {
+    fn from(s: &str) -> Self {
+        match s {
+            "creating" => KnowledgeBaseStatus::Creating,
+            "ready" => KnowledgeBaseStatus::Ready,
+            "moving" => KnowledgeBaseStatus::Moving,
+            "failed" => KnowledgeBaseStatus::Failed,
+            "deleting" => KnowledgeBaseStatus::Deleting,
+            other => KnowledgeBaseStatus::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for KnowledgeBaseStatus {
+    fn from(s: String) -> Self {
+        KnowledgeBaseStatus::from(s.as_str())
+    }
+}
+
+impl Default for KnowledgeBaseStatus {
+    fn default() -> Self {
+        KnowledgeBaseStatus::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for KnowledgeBaseStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for KnowledgeBaseStatus {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for KnowledgeBaseStatus {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(KnowledgeBaseStatus::from(String::deserialize(d)?))
+    }
+}
+
+/// A knowledge base: documents an agent can search, with their settings.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct KnowledgeBase {
+    /// The identifier every call about this knowledge base takes.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// What people see the knowledge base called in the app.
+    #[serde(rename = "name")]
+    pub name: String,
+    /// What the knowledge base holds, in words for the people who use it.
+    #[serde(rename = "description", skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// What the knowledge base holds, in the words an agent reads to decide when to search it. Shown
+    /// only to callers who may change the knowledge base.
+    #[serde(rename = "agentDescription", skip_serializing_if = "Option::is_none")]
+    pub agent_description: Option<String>,
+    /// Where the knowledge base is in its lifecycle.
+    #[serde(rename = "status")]
+    pub status: KnowledgeBaseStatus,
+    /// How many documents are processing, and how many failed, counting each document's latest
+    /// attempt.
+    #[serde(rename = "documentCounts", skip_serializing_if = "Option::is_none")]
+    pub document_counts: Option<DocumentCounts>,
+    /// The search settings an agent uses unless its binding says otherwise.
+    #[serde(rename = "retrieval", skip_serializing_if = "Option::is_none")]
+    pub retrieval: Option<RetrievalDefaults>,
+    /// Optional search and viewing features.
+    #[serde(rename = "features", skip_serializing_if = "Option::is_none")]
+    pub features: Option<KnowledgeBaseFeatures>,
+    /// How the knowledge base reads and searches its documents. Read-only, and shown only to callers
+    /// who may change the knowledge base.
+    #[serde(rename = "engine", skip_serializing_if = "Option::is_none")]
+    pub engine: Option<KnowledgeBaseEngine>,
+    /// When the knowledge base was created.
+    #[serde(rename = "createdAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// When the knowledge base's settings last changed.
+    #[serde(rename = "updatedAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    /// The knowledge base's ETag; send it as `If-Match` to change it.
+    #[serde(rename = "etag")]
+    pub etag: String,
+    /// The response this thing was read from; see [`response_metadata`](Self::response_metadata).
+    #[serde(skip)]
+    pub(crate) response_metadata: rt::ThingMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for KnowledgeBase {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        KnowledgeBase::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for KnowledgeBase {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| KnowledgeBase::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl KnowledgeBase {
+    /// The response this KnowledgeBase was read from (PROTOCOL.md 4.2): its HTTP status, request id and ETag. `Some` on a
+    /// thing from one response (get, update, create, `wait()`); `None` on a list item, a snapshot entry or a value
+    /// built in code. It is never serialised, and things compare equal whatever it holds.
+    pub fn response_metadata(&self) -> Option<&rt::ResponseMetadata> {
+        self.response_metadata.0.as_ref()
+    }
+
+    /// The JSON object this KnowledgeBase was read from, unknown fields included (PROTOCOL.md 4.1).
+    pub fn raw(&self) -> &rt::Raw {
+        &self.raw
+    }
+}
+
+/// The form a cost is given in. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`CostUnit::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum CostUnit {
+    /// `usd`
+    Usd,
+    /// `percent_of_plan`
+    PercentOfPlan,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl CostUnit {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            CostUnit::Usd => "usd",
+            CostUnit::PercentOfPlan => "percent_of_plan",
+            CostUnit::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, CostUnit::Unknown(_))
+    }
+}
+
+impl From<&str> for CostUnit {
+    fn from(s: &str) -> Self {
+        match s {
+            "usd" => CostUnit::Usd,
+            "percent_of_plan" => CostUnit::PercentOfPlan,
+            other => CostUnit::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for CostUnit {
+    fn from(s: String) -> Self {
+        CostUnit::from(s.as_str())
+    }
+}
+
+impl Default for CostUnit {
+    fn default() -> Self {
+        CostUnit::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for CostUnit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for CostUnit {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for CostUnit {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(CostUnit::from(String::deserialize(d)?))
+    }
+}
+
+/// An amount of money, as a range, in the organisation's chosen form.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct Cost {
+    /// The lowest the cost is likely to be.
+    #[serde(rename = "low")]
+    pub low: f64,
+    /// The highest the cost is likely to be.
+    #[serde(rename = "high")]
+    pub high: f64,
+    /// The form `low` and `high` are in: money, or a share of the plan for an organisation that
+    /// sees usage rather than dollars.
+    #[serde(rename = "unit")]
+    pub unit: CostUnit,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for Cost {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        Cost::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Cost {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| Cost::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Why an Operation failed: a problem with a stable code.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct OperationError {
+    /// What went wrong, as a stable code.
+    #[serde(rename = "code")]
+    pub code: String,
+    /// What went wrong and what to do, written for the integrator.
+    #[serde(rename = "detail", skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for OperationError {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        OperationError::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for OperationError {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| OperationError::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// A range of numbers, low to high.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct NumberRange {
+    /// The low end.
+    #[serde(rename = "low")]
+    pub low: f64,
+    /// The high end.
+    #[serde(rename = "high")]
+    pub high: f64,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for NumberRange {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        NumberRange::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for NumberRange {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| NumberRange::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// How long is left.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct Eta {
+    /// Seconds left, as a range.
+    #[serde(rename = "seconds")]
+    pub seconds: NumberRange,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for Eta {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        Eta::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Eta {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| Eta::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// What kind of work an Operation is. Open: one value per kind of work, added as kinds are
+/// modelled.
+///
+/// Open: a value this SDK does not know yet is kept as [`OperationKind::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum OperationKind {
+    /// `document_ingestion`
+    DocumentIngestion,
+    /// `document_update`
+    DocumentUpdate,
+    /// `folder_change`
+    FolderChange,
+    /// `permissions_change`
+    PermissionsChange,
+    /// `knowledge_base_deletion`
+    KnowledgeBaseDeletion,
+    /// `layout_aware_search`
+    LayoutAwareSearch,
+    /// `fill_in`
+    FillIn,
+    /// `reprocess`
+    Reprocess,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl OperationKind {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            OperationKind::DocumentIngestion => "document_ingestion",
+            OperationKind::DocumentUpdate => "document_update",
+            OperationKind::FolderChange => "folder_change",
+            OperationKind::PermissionsChange => "permissions_change",
+            OperationKind::KnowledgeBaseDeletion => "knowledge_base_deletion",
+            OperationKind::LayoutAwareSearch => "layout_aware_search",
+            OperationKind::FillIn => "fill_in",
+            OperationKind::Reprocess => "reprocess",
+            OperationKind::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, OperationKind::Unknown(_))
+    }
+}
+
+impl From<&str> for OperationKind {
+    fn from(s: &str) -> Self {
+        match s {
+            "document_ingestion" => OperationKind::DocumentIngestion,
+            "document_update" => OperationKind::DocumentUpdate,
+            "folder_change" => OperationKind::FolderChange,
+            "permissions_change" => OperationKind::PermissionsChange,
+            "knowledge_base_deletion" => OperationKind::KnowledgeBaseDeletion,
+            "layout_aware_search" => OperationKind::LayoutAwareSearch,
+            "fill_in" => OperationKind::FillIn,
+            "reprocess" => OperationKind::Reprocess,
+            other => OperationKind::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for OperationKind {
+    fn from(s: String) -> Self {
+        OperationKind::from(s.as_str())
+    }
+}
+
+impl Default for OperationKind {
+    fn default() -> Self {
+        OperationKind::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for OperationKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for OperationKind {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for OperationKind {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(OperationKind::from(String::deserialize(d)?))
+    }
+}
+
+/// An enrichment that did not complete. It never fails the document.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct PartialFailure {
+    /// The part of the document the enrichment was for, where there is one.
+    #[serde(rename = "targetId", skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<String>,
+    /// What went wrong, as a stable code.
+    #[serde(rename = "code")]
+    pub code: String,
+    /// What went wrong, written for the integrator.
+    #[serde(rename = "detail", skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for PartialFailure {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        PartialFailure::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for PartialFailure {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| PartialFailure::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// What a unit of an Operation's work is. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`ProgressUnit::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum ProgressUnit {
+    /// `documents`
+    Documents,
+    /// `passages`
+    Passages,
+    /// `stages`
+    Stages,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl ProgressUnit {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            ProgressUnit::Documents => "documents",
+            ProgressUnit::Passages => "passages",
+            ProgressUnit::Stages => "stages",
+            ProgressUnit::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, ProgressUnit::Unknown(_))
+    }
+}
+
+impl From<&str> for ProgressUnit {
+    fn from(s: &str) -> Self {
+        match s {
+            "documents" => ProgressUnit::Documents,
+            "passages" => ProgressUnit::Passages,
+            "stages" => ProgressUnit::Stages,
+            other => ProgressUnit::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for ProgressUnit {
+    fn from(s: String) -> Self {
+        ProgressUnit::from(s.as_str())
+    }
+}
+
+impl Default for ProgressUnit {
+    fn default() -> Self {
+        ProgressUnit::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for ProgressUnit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ProgressUnit {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ProgressUnit {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(ProgressUnit::from(String::deserialize(d)?))
+    }
+}
+
+/// How far an Operation's work has got.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct OperationProgress {
+    /// Units of work done.
+    #[serde(rename = "completed")]
+    pub completed: i64,
+    /// Units of work in all, when known.
+    #[serde(rename = "total", skip_serializing_if = "Option::is_none")]
+    pub total: Option<i64>,
+    /// Units of work that failed.
+    #[serde(rename = "failed", skip_serializing_if = "Option::is_none")]
+    pub failed: Option<i64>,
+    /// What `completed`, `failed` and `total` count.
+    #[serde(rename = "unit")]
+    pub unit: ProgressUnit,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for OperationProgress {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        OperationProgress::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for OperationProgress {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| OperationProgress::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Where an Operation is. Open: new values may be added. `succeeded`, `completed_with_failures`,
+/// `failed` and `cancelled` are final.
+///
+/// Open: a value this SDK does not know yet is kept as [`OperationStatus::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum OperationStatus {
+    /// `queued`
+    Queued,
+    /// `running`
+    Running,
+    /// `succeeded`
+    Succeeded,
+    /// `completed_with_failures`
+    CompletedWithFailures,
+    /// `failed`
+    Failed,
+    /// `cancelled`
+    Cancelled,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl OperationStatus {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            OperationStatus::Queued => "queued",
+            OperationStatus::Running => "running",
+            OperationStatus::Succeeded => "succeeded",
+            OperationStatus::CompletedWithFailures => "completed_with_failures",
+            OperationStatus::Failed => "failed",
+            OperationStatus::Cancelled => "cancelled",
+            OperationStatus::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, OperationStatus::Unknown(_))
+    }
+}
+
+impl From<&str> for OperationStatus {
+    fn from(s: &str) -> Self {
+        match s {
+            "queued" => OperationStatus::Queued,
+            "running" => OperationStatus::Running,
+            "succeeded" => OperationStatus::Succeeded,
+            "completed_with_failures" => OperationStatus::CompletedWithFailures,
+            "failed" => OperationStatus::Failed,
+            "cancelled" => OperationStatus::Cancelled,
+            other => OperationStatus::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for OperationStatus {
+    fn from(s: String) -> Self {
+        OperationStatus::from(s.as_str())
+    }
+}
+
+impl Default for OperationStatus {
+    fn default() -> Self {
+        OperationStatus::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for OperationStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for OperationStatus {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for OperationStatus {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(OperationStatus::from(String::deserialize(d)?))
+    }
+}
+
+/// The kind of thing an Operation's work is on. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`OperationTargetType::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum OperationTargetType {
+    /// `knowledge_base`
+    KnowledgeBase,
+    /// `folder`
+    Folder,
+    /// `document`
+    Document,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl OperationTargetType {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            OperationTargetType::KnowledgeBase => "knowledge_base",
+            OperationTargetType::Folder => "folder",
+            OperationTargetType::Document => "document",
+            OperationTargetType::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, OperationTargetType::Unknown(_))
+    }
+}
+
+impl From<&str> for OperationTargetType {
+    fn from(s: &str) -> Self {
+        match s {
+            "knowledge_base" => OperationTargetType::KnowledgeBase,
+            "folder" => OperationTargetType::Folder,
+            "document" => OperationTargetType::Document,
+            other => OperationTargetType::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for OperationTargetType {
+    fn from(s: String) -> Self {
+        OperationTargetType::from(s.as_str())
+    }
+}
+
+impl Default for OperationTargetType {
+    fn default() -> Self {
+        OperationTargetType::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for OperationTargetType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for OperationTargetType {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for OperationTargetType {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(OperationTargetType::from(String::deserialize(d)?))
+    }
+}
+
+/// What an Operation's work is on.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct OperationTarget {
+    /// What kind of thing `id` names.
+    #[serde(rename = "type")]
+    pub r#type: OperationTargetType,
+    /// The thing's identifier.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// The knowledge base it is in, for a document or folder.
+    #[serde(rename = "knowledgeBaseId", skip_serializing_if = "Option::is_none")]
+    pub knowledge_base_id: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for OperationTarget {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        OperationTarget::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for OperationTarget {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| OperationTarget::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Background work that continues after the request that started it: a job, as the building blocks
+/// see it. Read it, wait on it or watch it; never start the work again to find out how it went. An
+/// Operation is kept for at least 7 days after it ends.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct Operation {
+    /// The identifier GetOperation, WatchOperation and CancelOperation take.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// What kind of work it is.
+    #[serde(rename = "kind")]
+    pub kind: OperationKind,
+    /// Where the work is.
+    #[serde(rename = "status")]
+    pub status: OperationStatus,
+    /// What the work is on.
+    #[serde(rename = "target", skip_serializing_if = "Option::is_none")]
+    pub target: Option<OperationTarget>,
+    /// How far the work has got, where it can say.
+    #[serde(rename = "progress", skip_serializing_if = "Option::is_none")]
+    pub progress: Option<OperationProgress>,
+    /// How far the work has got, from 0 to 100, weighted by how long each part takes; never moves
+    /// back.
+    #[serde(rename = "percent", skip_serializing_if = "Option::is_none")]
+    pub percent: Option<i32>,
+    /// How long is left, once the work has run long enough to say.
+    #[serde(rename = "eta", skip_serializing_if = "Option::is_none")]
+    pub eta: Option<Eta>,
+    /// What the work has cost so far. Present only for callers who may see cost.
+    #[serde(rename = "costSoFar", skip_serializing_if = "Option::is_none")]
+    pub cost_so_far: Option<Cost>,
+    /// When the work was requested.
+    #[serde(rename = "createdAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// When the work started.
+    #[serde(
+        rename = "startedAt",
+        with = "::caitlyn_sdk_core::time::rfc3339_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// When the Operation last changed.
+    #[serde(
+        rename = "updatedAt",
+        with = "::caitlyn_sdk_core::time::rfc3339_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// When the work ended. Present once `status` is final.
+    #[serde(
+        rename = "endedAt",
+        with = "::caitlyn_sdk_core::time::rfc3339_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub ended_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Who asked for the work.
+    #[serde(rename = "createdBy", skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<Actor>,
+    /// Why the work failed. Present only when `status` is `failed`.
+    #[serde(rename = "error", skip_serializing_if = "Option::is_none")]
+    pub error: Option<OperationError>,
+    /// Parts of the work that did not complete, at most the first 100. They never fail the whole.
+    #[serde(rename = "partialFailures", skip_serializing_if = "Option::is_none")]
+    pub partial_failures: Option<Vec<PartialFailure>>,
+    /// The response this thing was read from; see [`response_metadata`](Self::response_metadata).
+    #[serde(skip)]
+    pub(crate) response_metadata: rt::ThingMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for Operation {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        Operation::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Operation {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| Operation::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl Operation {
+    /// The response this Operation was read from (PROTOCOL.md 4.2): its HTTP status, request id and ETag. `Some` on a
+    /// thing from one response (get, update, create, `wait()`); `None` on a list item, a snapshot entry or a value
+    /// built in code. It is never serialised, and things compare equal whatever it holds.
+    pub fn response_metadata(&self) -> Option<&rt::ResponseMetadata> {
+        self.response_metadata.0.as_ref()
+    }
+
+    /// The JSON object this Operation was read from, unknown fields included (PROTOCOL.md 4.1).
+    pub fn raw(&self) -> &rt::Raw {
+        &self.raw
+    }
+}
+
 ///
 /// Header-bound members are filled from the response headers; `raw` holds the body as received.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
-pub struct Conversation {
-    /// The request's identifier. The same value is in every error body; quote it to support.
+pub struct DeleteKnowledgeBaseResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
     ///
     /// From the `Caitlyn-Request-Id` response header.
     #[serde(skip)]
@@ -1130,26 +7421,14 @@ pub struct Conversation {
     /// From the `Caitlyn-Api-Version` response header.
     #[serde(skip)]
     pub api_version: Option<String>,
-    /// The conversation, as `/api/v3/conversations/{conversationId}`.
+    /// The Operation, as `/api/v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}`.
     ///
     /// From the `Location` response header.
     #[serde(skip)]
     pub location: Option<String>,
-    /// The conversation's identifier.
-    #[serde(rename = "id")]
-    pub id: String,
-    /// The agent the conversation is with.
-    #[serde(rename = "agentId")]
-    pub agent_id: String,
-    /// The version of the agent that answers.
-    #[serde(rename = "version")]
-    pub version: String,
-    /// The conversation's title, when it has one yet.
-    #[serde(rename = "title", skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    /// When the conversation was created.
-    #[serde(rename = "createdAt", with = "::caitlyn_sdk_core::time::rfc3339")]
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// The Operation that tracks the deletion.
+    #[serde(rename = "operation")]
+    pub operation: Operation,
     /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
     /// The default on values you build yourself.
     #[serde(skip)]
@@ -1160,51 +7439,16 @@ pub struct Conversation {
     pub raw: rt::Raw,
 }
 
-impl Serialize for Conversation {
+impl Serialize for DeleteKnowledgeBaseResult {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        Conversation::serialize(self, s)
+        DeleteKnowledgeBaseResult::serialize(self, s)
     }
 }
 
-impl<'de> Deserialize<'de> for Conversation {
+impl<'de> Deserialize<'de> for DeleteKnowledgeBaseResult {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
-        rt::raw::with_raw(v, |v| Conversation::deserialize(v), |o, r| o.raw = r)
-    }
-}
-
-/// One item of structured context, for example the page or record the person is looking at.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self", default)]
-pub struct ContextItem {
-    /// What kind of thing the item describes, for example `page`.
-    #[serde(rename = "type")]
-    pub r#type: String,
-    /// A short label the agent can refer to.
-    #[serde(rename = "label")]
-    pub label: String,
-    /// Where the item lives, when it has an address.
-    #[serde(rename = "uri", skip_serializing_if = "Option::is_none")]
-    pub uri: Option<String>,
-    /// The item's data, as JSON. Counts towards the 16 KB limit.
-    #[serde(rename = "data", skip_serializing_if = "Option::is_none")]
-    pub data: Option<serde_json::Value>,
-    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
-    /// you build yourself.
-    #[serde(skip)]
-    pub raw: rt::Raw,
-}
-
-impl Serialize for ContextItem {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        ContextItem::serialize(self, s)
-    }
-}
-
-impl<'de> Deserialize<'de> for ContextItem {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let v = serde_json::Value::deserialize(d)?;
-        rt::raw::with_raw(v, |v| ContextItem::deserialize(v), |o, r| o.raw = r)
+        rt::raw::with_raw(v, |v| DeleteKnowledgeBaseResult::deserialize(v), |o, r| o.raw = r)
     }
 }
 
@@ -1220,6 +7464,8 @@ pub enum DocumentFailureCode {
     ProcessingInterrupted,
     /// `processing_failed`
     ProcessingFailed,
+    /// `cancelled`
+    Cancelled,
     /// A value this SDK does not know yet, as received.
     Unknown(String),
 }
@@ -1231,6 +7477,7 @@ impl DocumentFailureCode {
             DocumentFailureCode::FileUnreadable => "file_unreadable",
             DocumentFailureCode::ProcessingInterrupted => "processing_interrupted",
             DocumentFailureCode::ProcessingFailed => "processing_failed",
+            DocumentFailureCode::Cancelled => "cancelled",
             DocumentFailureCode::Unknown(s) => s,
         }
     }
@@ -1247,6 +7494,7 @@ impl From<&str> for DocumentFailureCode {
             "file_unreadable" => DocumentFailureCode::FileUnreadable,
             "processing_interrupted" => DocumentFailureCode::ProcessingInterrupted,
             "processing_failed" => DocumentFailureCode::ProcessingFailed,
+            "cancelled" => DocumentFailureCode::Cancelled,
             other => DocumentFailureCode::Unknown(other.to_owned()),
         }
     }
@@ -1312,40 +7560,8 @@ impl<'de> Deserialize<'de> for DocumentFailure {
     }
 }
 
-/// An enrichment that did not complete. It never fails the document.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self", default)]
-pub struct PartialFailure {
-    /// The part of the document the enrichment was for, where there is one.
-    #[serde(rename = "targetId", skip_serializing_if = "Option::is_none")]
-    pub target_id: Option<String>,
-    /// What went wrong, as a stable code.
-    #[serde(rename = "code")]
-    pub code: String,
-    /// What went wrong, written for the integrator.
-    #[serde(rename = "detail", skip_serializing_if = "Option::is_none")]
-    pub detail: Option<String>,
-    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
-    /// you build yourself.
-    #[serde(skip)]
-    pub raw: rt::Raw,
-}
-
-impl Serialize for PartialFailure {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        PartialFailure::serialize(self, s)
-    }
-}
-
-impl<'de> Deserialize<'de> for PartialFailure {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let v = serde_json::Value::deserialize(d)?;
-        rt::raw::with_raw(v, |v| PartialFailure::deserialize(v), |o, r| o.raw = r)
-    }
-}
-
-/// Where a document is in its lifecycle. Open: new values may be added. `indexed`,
-/// `partially_indexed` and `failed` are final.
+/// Where a document is in its lifecycle. Open: new values may be added. `indexed` and
+/// `partially_indexed` are final. `failed` is final too, until RetryDocument starts it again.
 ///
 /// Open: a value this SDK does not know yet is kept as [`DocumentStatus::Unknown`], never an error.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -1431,11 +7647,320 @@ impl<'de> Deserialize<'de> for DocumentStatus {
     }
 }
 
+/// The newest version of a document, when it is not the current one.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct LatestVersion {
+    /// The version's number.
+    #[serde(rename = "number")]
+    pub number: i32,
+    /// Where it is in its lifecycle.
+    #[serde(rename = "status")]
+    pub status: DocumentStatus,
+    /// While `processing`, what the server is doing, for display only.
+    #[serde(rename = "stage", skip_serializing_if = "Option::is_none")]
+    pub stage: Option<String>,
+    /// Why it failed. Present only when `status` is `failed`.
+    #[serde(rename = "failure", skip_serializing_if = "Option::is_none")]
+    pub failure: Option<DocumentFailure>,
+    /// When it was added.
+    #[serde(rename = "createdAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for LatestVersion {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        LatestVersion::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for LatestVersion {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| LatestVersion::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// What the work on a document was expected to take and cost.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ProcessingEstimate {
+    /// How long it was expected to take, in seconds.
+    #[serde(rename = "durationSeconds")]
+    pub duration_seconds: NumberRange,
+    /// What it was expected to cost. Absent for callers who may not see cost.
+    #[serde(rename = "cost", skip_serializing_if = "Option::is_none")]
+    pub cost: Option<Cost>,
+    /// True once refined from what ingestion measured of this document.
+    #[serde(rename = "refined")]
+    pub refined: bool,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ProcessingEstimate {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ProcessingEstimate::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ProcessingEstimate {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ProcessingEstimate::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// What kind of work runs on a document. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`ProcessingKind::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum ProcessingKind {
+    /// `ingest`
+    Ingest,
+    /// `fill_in`
+    FillIn,
+    /// `reprocess`
+    Reprocess,
+    /// `reembed`
+    Reembed,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl ProcessingKind {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            ProcessingKind::Ingest => "ingest",
+            ProcessingKind::FillIn => "fill_in",
+            ProcessingKind::Reprocess => "reprocess",
+            ProcessingKind::Reembed => "reembed",
+            ProcessingKind::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, ProcessingKind::Unknown(_))
+    }
+}
+
+impl From<&str> for ProcessingKind {
+    fn from(s: &str) -> Self {
+        match s {
+            "ingest" => ProcessingKind::Ingest,
+            "fill_in" => ProcessingKind::FillIn,
+            "reprocess" => ProcessingKind::Reprocess,
+            "reembed" => ProcessingKind::Reembed,
+            other => ProcessingKind::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for ProcessingKind {
+    fn from(s: String) -> Self {
+        ProcessingKind::from(s.as_str())
+    }
+}
+
+impl Default for ProcessingKind {
+    fn default() -> Self {
+        ProcessingKind::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for ProcessingKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ProcessingKind {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ProcessingKind {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(ProcessingKind::from(String::deserialize(d)?))
+    }
+}
+
+/// A stage of the work on a document. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`ProcessingStep::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum ProcessingStep {
+    /// `pages`
+    Pages,
+    /// `content`
+    Content,
+    /// `pictures`
+    Pictures,
+    /// `transcript`
+    Transcript,
+    /// `frames`
+    Frames,
+    /// `metadata`
+    Metadata,
+    /// `seams`
+    Seams,
+    /// `segments`
+    Segments,
+    /// `passages`
+    Passages,
+    /// `chunks`
+    Chunks,
+    /// `index`
+    Index,
+    /// `document`
+    Document,
+    /// `reembed`
+    Reembed,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl ProcessingStep {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            ProcessingStep::Pages => "pages",
+            ProcessingStep::Content => "content",
+            ProcessingStep::Pictures => "pictures",
+            ProcessingStep::Transcript => "transcript",
+            ProcessingStep::Frames => "frames",
+            ProcessingStep::Metadata => "metadata",
+            ProcessingStep::Seams => "seams",
+            ProcessingStep::Segments => "segments",
+            ProcessingStep::Passages => "passages",
+            ProcessingStep::Chunks => "chunks",
+            ProcessingStep::Index => "index",
+            ProcessingStep::Document => "document",
+            ProcessingStep::Reembed => "reembed",
+            ProcessingStep::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, ProcessingStep::Unknown(_))
+    }
+}
+
+impl From<&str> for ProcessingStep {
+    fn from(s: &str) -> Self {
+        match s {
+            "pages" => ProcessingStep::Pages,
+            "content" => ProcessingStep::Content,
+            "pictures" => ProcessingStep::Pictures,
+            "transcript" => ProcessingStep::Transcript,
+            "frames" => ProcessingStep::Frames,
+            "metadata" => ProcessingStep::Metadata,
+            "seams" => ProcessingStep::Seams,
+            "segments" => ProcessingStep::Segments,
+            "passages" => ProcessingStep::Passages,
+            "chunks" => ProcessingStep::Chunks,
+            "index" => ProcessingStep::Index,
+            "document" => ProcessingStep::Document,
+            "reembed" => ProcessingStep::Reembed,
+            other => ProcessingStep::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for ProcessingStep {
+    fn from(s: String) -> Self {
+        ProcessingStep::from(s.as_str())
+    }
+}
+
+impl Default for ProcessingStep {
+    fn default() -> Self {
+        ProcessingStep::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for ProcessingStep {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ProcessingStep {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ProcessingStep {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(ProcessingStep::from(String::deserialize(d)?))
+    }
+}
+
+/// The work running on one document.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct DocumentProcessing {
+    /// What the work running on the document is doing.
+    #[serde(rename = "kind")]
+    pub kind: ProcessingKind,
+    /// The stage the work is at, for display. Open: stages are added as ingestion changes.
+    #[serde(rename = "stage", skip_serializing_if = "Option::is_none")]
+    pub stage: Option<ProcessingStep>,
+    /// How far the work has got, from 0 to 100, as the server weights it by how long each stage takes:
+    /// never moving back, and 100 only once the document can be searched. Clients show this figure,
+    /// easing between reports, and never compute their own.
+    #[serde(rename = "percent")]
+    pub percent: i32,
+    /// How long is left, once the work has run long enough to say.
+    #[serde(rename = "eta", skip_serializing_if = "Option::is_none")]
+    pub eta: Option<Eta>,
+    /// What the work was expected to take and cost: first from the file, then refined from what
+    /// ingestion measured.
+    #[serde(rename = "estimate", skip_serializing_if = "Option::is_none")]
+    pub estimate: Option<ProcessingEstimate>,
+    /// When the work started.
+    #[serde(rename = "startedAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub started_at: chrono::DateTime<chrono::Utc>,
+    /// When the progress last changed.
+    #[serde(rename = "updatedAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for DocumentProcessing {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        DocumentProcessing::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for DocumentProcessing {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| DocumentProcessing::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
 /// One document in a knowledge base, stable across new uploads of new bytes.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
 pub struct Document {
-    /// The document's identifier.
+    /// The identifier every call about this document takes; it stays the same across new versions.
     #[serde(rename = "id")]
     pub id: String,
     /// The knowledge base the document is in.
@@ -1447,7 +7972,7 @@ pub struct Document {
     /// The folder the document is in.
     #[serde(rename = "folder")]
     pub folder: String,
-    /// Where the document is in its lifecycle.
+    /// Where the current version is in its lifecycle.
     #[serde(rename = "status")]
     pub status: DocumentStatus,
     /// While `processing`, what the server is doing, for display only.
@@ -1462,6 +7987,54 @@ pub struct Document {
     /// The base64-encoded SHA-256 of the current bytes.
     #[serde(rename = "sha256", skip_serializing_if = "Option::is_none")]
     pub sha256: Option<String>,
+    /// The current version's number. Absent until the first version is indexed.
+    #[serde(rename = "version", skip_serializing_if = "Option::is_none")]
+    pub version: Option<i32>,
+    /// How many versions the document has.
+    #[serde(rename = "versionCount", skip_serializing_if = "Option::is_none")]
+    pub version_count: Option<i32>,
+    /// The newest version, when it is not the current one: uploading, processing or failed. Shown only
+    /// to callers who may add versions.
+    #[serde(rename = "latestVersion", skip_serializing_if = "Option::is_none")]
+    pub latest_version: Option<LatestVersion>,
+    /// True when a newer version than the current one exists. Shown only to callers who may add
+    /// versions.
+    #[serde(rename = "superseded", skip_serializing_if = "Option::is_none")]
+    pub superseded: Option<bool>,
+    /// The address a citation of this document links to.
+    #[serde(rename = "sourceUrl", skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<String>,
+    /// The caller's own key for the document, unique within the knowledge base.
+    #[serde(rename = "externalId", skip_serializing_if = "Option::is_none")]
+    pub external_id: Option<String>,
+    /// Values for the metadata fields the knowledge base defines, including `title`, `summary`,
+    /// `keywords`, `author` and `publishedDate`.
+    #[serde(rename = "metadata", skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<std::collections::BTreeMap<String, serde_json::Value>>,
+    /// Keys the knowledge base does not define. Stored and returned, but never searched on or given to
+    /// an agent.
+    #[serde(rename = "extraMetadata", skip_serializing_if = "Option::is_none")]
+    pub extra_metadata: Option<std::collections::BTreeMap<String, serde_json::Value>>,
+    /// Who may read the document.
+    #[serde(rename = "readers", skip_serializing_if = "Option::is_none")]
+    pub readers: Option<Readers>,
+    /// When `readers` is `inherit`: the folder whose readers apply.
+    #[serde(rename = "inheritedFrom", skip_serializing_if = "Option::is_none")]
+    pub inherited_from: Option<String>,
+    /// True when a newer way of processing documents is available, and processing the document again
+    /// would use it.
+    #[serde(rename = "outOfDate", skip_serializing_if = "Option::is_none")]
+    pub out_of_date: Option<bool>,
+    /// The number of pages, for a paged document.
+    #[serde(rename = "pageCount", skip_serializing_if = "Option::is_none")]
+    pub page_count: Option<i32>,
+    /// How long it plays, in seconds, for audio and video.
+    #[serde(rename = "durationSeconds", skip_serializing_if = "Option::is_none")]
+    pub duration_seconds: Option<f64>,
+    /// The work running on the document, while there is some: what kind, which stage, how far it has
+    /// got and how long is left. Absent when nothing is running.
+    #[serde(rename = "processing", skip_serializing_if = "Option::is_none")]
+    pub processing: Option<DocumentProcessing>,
     /// When the document was created.
     #[serde(rename = "createdAt", with = "::caitlyn_sdk_core::time::rfc3339")]
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -1476,6 +8049,12 @@ pub struct Document {
     /// document that is searchable with gaps lists them in `partialFailures` instead.
     #[serde(rename = "failure", skip_serializing_if = "Option::is_none")]
     pub failure: Option<DocumentFailure>,
+    /// The document's ETag; send it as `If-Match` to change it.
+    #[serde(rename = "etag")]
+    pub etag: String,
+    /// The response this thing was read from; see [`response_metadata`](Self::response_metadata).
+    #[serde(skip)]
+    pub(crate) response_metadata: rt::ThingMetadata,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -1495,193 +8074,17 @@ impl<'de> Deserialize<'de> for Document {
     }
 }
 
-/// What kind of work an Operation is. Open: one value per kind of work, added as kinds are
-/// modelled.
-///
-/// Open: a value this SDK does not know yet is kept as [`OperationKind::Unknown`], never an error.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[non_exhaustive]
-pub enum OperationKind {
-    /// `document_ingestion`
-    DocumentIngestion,
-    /// A value this SDK does not know yet, as received.
-    Unknown(String),
-}
-
-impl OperationKind {
-    /// The value as sent on the wire.
-    pub fn as_str(&self) -> &str {
-        match self {
-            OperationKind::DocumentIngestion => "document_ingestion",
-            OperationKind::Unknown(s) => s,
-        }
+impl Document {
+    /// The response this Document was read from (PROTOCOL.md 4.2): its HTTP status, request id and ETag. `Some` on a
+    /// thing from one response (get, update, create, `wait()`); `None` on a list item, a snapshot entry or a value
+    /// built in code. It is never serialised, and things compare equal whatever it holds.
+    pub fn response_metadata(&self) -> Option<&rt::ResponseMetadata> {
+        self.response_metadata.0.as_ref()
     }
 
-    /// Whether this SDK knows the value.
-    pub fn is_known(&self) -> bool {
-        !matches!(self, OperationKind::Unknown(_))
-    }
-}
-
-impl From<&str> for OperationKind {
-    fn from(s: &str) -> Self {
-        match s {
-            "document_ingestion" => OperationKind::DocumentIngestion,
-            other => OperationKind::Unknown(other.to_owned()),
-        }
-    }
-}
-
-impl From<String> for OperationKind {
-    fn from(s: String) -> Self {
-        OperationKind::from(s.as_str())
-    }
-}
-
-impl Default for OperationKind {
-    fn default() -> Self {
-        OperationKind::Unknown(String::new())
-    }
-}
-
-impl std::fmt::Display for OperationKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl Serialize for OperationKind {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(self.as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for OperationKind {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        Ok(OperationKind::from(String::deserialize(d)?))
-    }
-}
-
-/// Where an Operation is. Open: new values may be added. `succeeded`, `succeeded_with_failures`,
-/// `failed` and `cancelled` are final.
-///
-/// Open: a value this SDK does not know yet is kept as [`OperationStatus::Unknown`], never an error.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[non_exhaustive]
-pub enum OperationStatus {
-    /// `queued`
-    Queued,
-    /// `running`
-    Running,
-    /// `succeeded`
-    Succeeded,
-    /// `succeeded_with_failures`
-    SucceededWithFailures,
-    /// `failed`
-    Failed,
-    /// `cancelled`
-    Cancelled,
-    /// A value this SDK does not know yet, as received.
-    Unknown(String),
-}
-
-impl OperationStatus {
-    /// The value as sent on the wire.
-    pub fn as_str(&self) -> &str {
-        match self {
-            OperationStatus::Queued => "queued",
-            OperationStatus::Running => "running",
-            OperationStatus::Succeeded => "succeeded",
-            OperationStatus::SucceededWithFailures => "succeeded_with_failures",
-            OperationStatus::Failed => "failed",
-            OperationStatus::Cancelled => "cancelled",
-            OperationStatus::Unknown(s) => s,
-        }
-    }
-
-    /// Whether this SDK knows the value.
-    pub fn is_known(&self) -> bool {
-        !matches!(self, OperationStatus::Unknown(_))
-    }
-}
-
-impl From<&str> for OperationStatus {
-    fn from(s: &str) -> Self {
-        match s {
-            "queued" => OperationStatus::Queued,
-            "running" => OperationStatus::Running,
-            "succeeded" => OperationStatus::Succeeded,
-            "succeeded_with_failures" => OperationStatus::SucceededWithFailures,
-            "failed" => OperationStatus::Failed,
-            "cancelled" => OperationStatus::Cancelled,
-            other => OperationStatus::Unknown(other.to_owned()),
-        }
-    }
-}
-
-impl From<String> for OperationStatus {
-    fn from(s: String) -> Self {
-        OperationStatus::from(s.as_str())
-    }
-}
-
-impl Default for OperationStatus {
-    fn default() -> Self {
-        OperationStatus::Unknown(String::new())
-    }
-}
-
-impl std::fmt::Display for OperationStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl Serialize for OperationStatus {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(self.as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for OperationStatus {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        Ok(OperationStatus::from(String::deserialize(d)?))
-    }
-}
-
-/// Background work that continues after the request that started it. Read it, wait on it or watch
-/// it; never start the work again to find out how it went.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self", default)]
-pub struct Operation {
-    /// The Operation's identifier.
-    #[serde(rename = "id")]
-    pub id: String,
-    /// What kind of work it is.
-    #[serde(rename = "kind")]
-    pub kind: OperationKind,
-    /// Where the work is.
-    #[serde(rename = "status")]
-    pub status: OperationStatus,
-    /// When the work was requested.
-    #[serde(rename = "createdAt", with = "::caitlyn_sdk_core::time::rfc3339")]
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
-    /// you build yourself.
-    #[serde(skip)]
-    pub raw: rt::Raw,
-}
-
-impl Serialize for Operation {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        Operation::serialize(self, s)
-    }
-}
-
-impl<'de> Deserialize<'de> for Operation {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let v = serde_json::Value::deserialize(d)?;
-        rt::raw::with_raw(v, |v| Operation::deserialize(v), |o, r| o.raw = r)
+    /// The JSON object this Document was read from, unknown fields included (PROTOCOL.md 4.1).
+    pub fn raw(&self) -> &rt::Raw {
+        &self.raw
     }
 }
 
@@ -1690,7 +8093,8 @@ impl<'de> Deserialize<'de> for Operation {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
 pub struct CreateDocumentResult {
-    /// The request's identifier. The same value is in every error body; quote it to support.
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
     ///
     /// From the `Caitlyn-Request-Id` response header.
     #[serde(skip)]
@@ -1706,6 +8110,11 @@ pub struct CreateDocumentResult {
     /// From the `Location` response header.
     #[serde(skip)]
     pub location: Option<String>,
+    /// The document's ETag; send it as `If-Match` to change it.
+    ///
+    /// From the `ETag` response header.
+    #[serde(skip)]
+    pub etag: String,
     /// The document in its initial state.
     #[serde(rename = "document")]
     pub document: Document,
@@ -1735,12 +8144,163 @@ impl<'de> Deserialize<'de> for CreateDocumentResult {
     }
 }
 
+/// What adding a version did. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`VersionResult::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum VersionResult {
+    /// `created`
+    Created,
+    /// `unchanged`
+    Unchanged,
+    /// `restored`
+    Restored,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl VersionResult {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            VersionResult::Created => "created",
+            VersionResult::Unchanged => "unchanged",
+            VersionResult::Restored => "restored",
+            VersionResult::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, VersionResult::Unknown(_))
+    }
+}
+
+impl From<&str> for VersionResult {
+    fn from(s: &str) -> Self {
+        match s {
+            "created" => VersionResult::Created,
+            "unchanged" => VersionResult::Unchanged,
+            "restored" => VersionResult::Restored,
+            other => VersionResult::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for VersionResult {
+    fn from(s: String) -> Self {
+        VersionResult::from(s.as_str())
+    }
+}
+
+impl Default for VersionResult {
+    fn default() -> Self {
+        VersionResult::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for VersionResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for VersionResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for VersionResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(VersionResult::from(String::deserialize(d)?))
+    }
+}
+
+/// One version of a document's bytes.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct DocumentVersion {
+    /// The version's number: `1` is the first.
+    #[serde(rename = "number")]
+    pub number: i32,
+    /// The document the version belongs to.
+    #[serde(rename = "documentId")]
+    pub document_id: String,
+    /// Where the version is in its lifecycle.
+    #[serde(rename = "status")]
+    pub status: DocumentStatus,
+    /// While `processing`, what the server is doing, for display only.
+    #[serde(rename = "stage", skip_serializing_if = "Option::is_none")]
+    pub stage: Option<String>,
+    /// The media type of the version's bytes.
+    #[serde(rename = "contentType", skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+    /// The size of the version's bytes, in bytes.
+    #[serde(rename = "byteSize", skip_serializing_if = "Option::is_none")]
+    pub byte_size: Option<i64>,
+    /// The base64-encoded SHA-256 of the version's bytes.
+    #[serde(rename = "sha256", skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    /// True when this is the version search uses.
+    #[serde(rename = "current")]
+    pub current: bool,
+    /// True when this is the newest version.
+    #[serde(rename = "latest")]
+    pub latest: bool,
+    /// The note written when the version was added.
+    #[serde(rename = "note", skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// Why the version failed. Present only when `status` is `failed`.
+    #[serde(rename = "failure", skip_serializing_if = "Option::is_none")]
+    pub failure: Option<DocumentFailure>,
+    /// When the version was added.
+    #[serde(rename = "createdAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// The response this thing was read from; see [`response_metadata`](Self::response_metadata).
+    #[serde(skip)]
+    pub(crate) response_metadata: rt::ThingMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for DocumentVersion {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        DocumentVersion::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for DocumentVersion {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| DocumentVersion::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl DocumentVersion {
+    /// The response this DocumentVersion was read from (PROTOCOL.md 4.2): its HTTP status, request id and ETag. `Some` on a
+    /// thing from one response (get, update, create, `wait()`); `None` on a list item, a snapshot entry or a value
+    /// built in code. It is never serialised, and things compare equal whatever it holds.
+    pub fn response_metadata(&self) -> Option<&rt::ResponseMetadata> {
+        self.response_metadata.0.as_ref()
+    }
+
+    /// The JSON object this DocumentVersion was read from, unknown fields included (PROTOCOL.md 4.1).
+    pub fn raw(&self) -> &rt::Raw {
+        &self.raw
+    }
+}
+
 ///
 /// Header-bound members are filled from the response headers; `raw` holds the body as received.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
-pub struct DeleteDocumentResult {
-    /// The request's identifier. The same value is in every error body; quote it to support.
+pub struct CreateDocumentVersionResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
     ///
     /// From the `Caitlyn-Request-Id` response header.
     #[serde(skip)]
@@ -1751,47 +8311,21 @@ pub struct DeleteDocumentResult {
     /// From the `Caitlyn-Api-Version` response header.
     #[serde(skip)]
     pub api_version: Option<String>,
-    /// The document's identifier.
-    #[serde(rename = "id")]
-    pub id: String,
-    /// The knowledge base the document is in.
-    #[serde(rename = "knowledgeBaseId")]
-    pub knowledge_base_id: String,
-    /// The document's name, as people see it.
-    #[serde(rename = "name")]
-    pub name: String,
-    /// The folder the document is in.
-    #[serde(rename = "folder")]
-    pub folder: String,
-    /// Where the document is in its lifecycle.
-    #[serde(rename = "status")]
-    pub status: DocumentStatus,
-    /// While `processing`, what the server is doing, for display only.
-    #[serde(rename = "stage", skip_serializing_if = "Option::is_none")]
-    pub stage: Option<String>,
-    /// The media type of the current bytes.
-    #[serde(rename = "contentType", skip_serializing_if = "Option::is_none")]
-    pub content_type: Option<String>,
-    /// The size of the current bytes, in bytes.
-    #[serde(rename = "byteSize", skip_serializing_if = "Option::is_none")]
-    pub byte_size: Option<i64>,
-    /// The base64-encoded SHA-256 of the current bytes.
-    #[serde(rename = "sha256", skip_serializing_if = "Option::is_none")]
-    pub sha256: Option<String>,
-    /// When the document was created.
-    #[serde(rename = "createdAt", with = "::caitlyn_sdk_core::time::rfc3339")]
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    /// When the document or its bytes last changed.
-    #[serde(rename = "updatedAt", with = "::caitlyn_sdk_core::time::rfc3339")]
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-    /// Enrichments that did not complete (a picture description, metadata extraction, a table).
-    /// They never fail the document. At most the first 100.
-    #[serde(rename = "partialFailures", skip_serializing_if = "Option::is_none")]
-    pub partial_failures: Option<Vec<PartialFailure>>,
-    /// Why the document could not be made searchable. Present only when `status` is `failed`; a
-    /// document that is searchable with gaps lists them in `partialFailures` instead.
-    #[serde(rename = "failure", skip_serializing_if = "Option::is_none")]
-    pub failure: Option<DocumentFailure>,
+    /// The version, as
+    /// `/api/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{number}`.
+    ///
+    /// From the `Location` response header.
+    #[serde(skip)]
+    pub location: Option<String>,
+    /// What adding the version did, given how its bytes compare with the document's versions.
+    #[serde(rename = "result")]
+    pub result: VersionResult,
+    /// The version that was made, matched or restored.
+    #[serde(rename = "version")]
+    pub version: DocumentVersion,
+    /// The Operation that tracks ingestion. Absent when `result` is `unchanged`.
+    #[serde(rename = "operation", skip_serializing_if = "Option::is_none")]
+    pub operation: Option<Operation>,
     /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
     /// The default on values you build yourself.
     #[serde(skip)]
@@ -1802,16 +8336,16 @@ pub struct DeleteDocumentResult {
     pub raw: rt::Raw,
 }
 
-impl Serialize for DeleteDocumentResult {
+impl Serialize for CreateDocumentVersionResult {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        DeleteDocumentResult::serialize(self, s)
+        CreateDocumentVersionResult::serialize(self, s)
     }
 }
 
-impl<'de> Deserialize<'de> for DeleteDocumentResult {
+impl<'de> Deserialize<'de> for CreateDocumentVersionResult {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
-        rt::raw::with_raw(v, |v| DeleteDocumentResult::deserialize(v), |o, r| o.raw = r)
+        rt::raw::with_raw(v, |v| CreateDocumentVersionResult::deserialize(v), |o, r| o.raw = r)
     }
 }
 
@@ -1819,8 +8353,9 @@ impl<'de> Deserialize<'de> for DeleteDocumentResult {
 /// Header-bound members are filled from the response headers; `raw` holds the body as received.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
-pub struct GetDocumentResult {
-    /// The request's identifier. The same value is in every error body; quote it to support.
+pub struct DeleteDocumentVersionResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
     ///
     /// From the `Caitlyn-Request-Id` response header.
     #[serde(skip)]
@@ -1831,47 +8366,6 @@ pub struct GetDocumentResult {
     /// From the `Caitlyn-Api-Version` response header.
     #[serde(skip)]
     pub api_version: Option<String>,
-    /// The document's identifier.
-    #[serde(rename = "id")]
-    pub id: String,
-    /// The knowledge base the document is in.
-    #[serde(rename = "knowledgeBaseId")]
-    pub knowledge_base_id: String,
-    /// The document's name, as people see it.
-    #[serde(rename = "name")]
-    pub name: String,
-    /// The folder the document is in.
-    #[serde(rename = "folder")]
-    pub folder: String,
-    /// Where the document is in its lifecycle.
-    #[serde(rename = "status")]
-    pub status: DocumentStatus,
-    /// While `processing`, what the server is doing, for display only.
-    #[serde(rename = "stage", skip_serializing_if = "Option::is_none")]
-    pub stage: Option<String>,
-    /// The media type of the current bytes.
-    #[serde(rename = "contentType", skip_serializing_if = "Option::is_none")]
-    pub content_type: Option<String>,
-    /// The size of the current bytes, in bytes.
-    #[serde(rename = "byteSize", skip_serializing_if = "Option::is_none")]
-    pub byte_size: Option<i64>,
-    /// The base64-encoded SHA-256 of the current bytes.
-    #[serde(rename = "sha256", skip_serializing_if = "Option::is_none")]
-    pub sha256: Option<String>,
-    /// When the document was created.
-    #[serde(rename = "createdAt", with = "::caitlyn_sdk_core::time::rfc3339")]
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    /// When the document or its bytes last changed.
-    #[serde(rename = "updatedAt", with = "::caitlyn_sdk_core::time::rfc3339")]
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-    /// Enrichments that did not complete (a picture description, metadata extraction, a table).
-    /// They never fail the document. At most the first 100.
-    #[serde(rename = "partialFailures", skip_serializing_if = "Option::is_none")]
-    pub partial_failures: Option<Vec<PartialFailure>>,
-    /// Why the document could not be made searchable. Present only when `status` is `failed`; a
-    /// document that is searchable with gaps lists them in `partialFailures` instead.
-    #[serde(rename = "failure", skip_serializing_if = "Option::is_none")]
-    pub failure: Option<DocumentFailure>,
     /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
     /// The default on values you build yourself.
     #[serde(skip)]
@@ -1882,16 +8376,364 @@ pub struct GetDocumentResult {
     pub raw: rt::Raw,
 }
 
-impl Serialize for GetDocumentResult {
+impl Serialize for DeleteDocumentVersionResult {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        GetDocumentResult::serialize(self, s)
+        DeleteDocumentVersionResult::serialize(self, s)
     }
 }
 
-impl<'de> Deserialize<'de> for GetDocumentResult {
+impl<'de> Deserialize<'de> for DeleteDocumentVersionResult {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
-        rt::raw::with_raw(v, |v| GetDocumentResult::deserialize(v), |o, r| o.raw = r)
+        rt::raw::with_raw(v, |v| DeleteDocumentVersionResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ListDocumentVersionsPage {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// This page of versions, newest first.
+    #[serde(rename = "items")]
+    pub items: Vec<DocumentVersion>,
+    /// The cursor for the next page. Absent on the last page.
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ListDocumentVersionsPage {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ListDocumentVersionsPage::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ListDocumentVersionsPage {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ListDocumentVersionsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// What a client read of a file before uploading it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct IngestionHints {
+    /// Pages, for a paged document.
+    #[serde(rename = "pages", skip_serializing_if = "Option::is_none")]
+    pub pages: Option<i64>,
+    /// Pages with a text layer.
+    #[serde(rename = "textPages", skip_serializing_if = "Option::is_none")]
+    pub text_pages: Option<i64>,
+    /// Pages that are mostly graphics.
+    #[serde(rename = "graphicPages", skip_serializing_if = "Option::is_none")]
+    pub graphic_pages: Option<i64>,
+    /// Pages with no text layer, read from the image.
+    #[serde(rename = "scannedPages", skip_serializing_if = "Option::is_none")]
+    pub scanned_pages: Option<i64>,
+    /// Pictures to describe.
+    #[serde(rename = "pictures", skip_serializing_if = "Option::is_none")]
+    pub pictures: Option<i64>,
+    /// Seconds of audio or video.
+    #[serde(rename = "mediaSeconds", skip_serializing_if = "Option::is_none")]
+    pub media_seconds: Option<i64>,
+    /// Characters, for a Markdown or Word document.
+    #[serde(rename = "characters", skip_serializing_if = "Option::is_none")]
+    pub characters: Option<i64>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for IngestionHints {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        IngestionHints::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for IngestionHints {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| IngestionHints::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// A file described for an estimate, before it is uploaded.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct UploadDescription {
+    /// The name the file will be uploaded with.
+    #[serde(rename = "name")]
+    pub name: String,
+    /// The file's media type.
+    #[serde(rename = "contentType")]
+    pub content_type: String,
+    /// The file's size in bytes.
+    #[serde(rename = "byteSize")]
+    pub byte_size: i64,
+    /// What the SDK could read of the file cheaply, which makes the estimate closer.
+    #[serde(rename = "hints", skip_serializing_if = "Option::is_none")]
+    pub hints: Option<IngestionHints>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for UploadDescription {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        UploadDescription::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for UploadDescription {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| UploadDescription::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct EstimateDocumentVersionResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The documents the job would work on.
+    #[serde(rename = "documents")]
+    pub documents: i64,
+    /// The pages in them, where known.
+    #[serde(rename = "pages", skip_serializing_if = "Option::is_none")]
+    pub pages: Option<i64>,
+    /// The seconds of audio and video in them, where known.
+    #[serde(rename = "mediaSeconds", skip_serializing_if = "Option::is_none")]
+    pub media_seconds: Option<i64>,
+    /// Documents whose length could not be told, priced as a typical file.
+    #[serde(rename = "documentsOfUnknownLength", skip_serializing_if = "Option::is_none")]
+    pub documents_of_unknown_length: Option<i64>,
+    /// How long the job would take, in seconds.
+    #[serde(rename = "durationSeconds")]
+    pub duration_seconds: NumberRange,
+    /// What the job would cost. Present only for callers who may see cost: those who may open the
+    /// knowledge base's settings. Every other caller still gets the documents, pages and time.
+    #[serde(rename = "cost", skip_serializing_if = "Option::is_none")]
+    pub cost: Option<Cost>,
+    /// What is particular to the job, for example a fill-in's passages to read, or the improvements
+    /// reprocessing would bring.
+    #[serde(rename = "details", skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for EstimateDocumentVersionResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        EstimateDocumentVersionResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for EstimateDocumentVersionResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| EstimateDocumentVersionResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct EstimateReprocessDocumentsResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The documents the job would work on.
+    #[serde(rename = "documents")]
+    pub documents: i64,
+    /// The pages in them, where known.
+    #[serde(rename = "pages", skip_serializing_if = "Option::is_none")]
+    pub pages: Option<i64>,
+    /// The seconds of audio and video in them, where known.
+    #[serde(rename = "mediaSeconds", skip_serializing_if = "Option::is_none")]
+    pub media_seconds: Option<i64>,
+    /// Documents whose length could not be told, priced as a typical file.
+    #[serde(rename = "documentsOfUnknownLength", skip_serializing_if = "Option::is_none")]
+    pub documents_of_unknown_length: Option<i64>,
+    /// How long the job would take, in seconds.
+    #[serde(rename = "durationSeconds")]
+    pub duration_seconds: NumberRange,
+    /// What the job would cost. Present only for callers who may see cost: those who may open the
+    /// knowledge base's settings. Every other caller still gets the documents, pages and time.
+    #[serde(rename = "cost", skip_serializing_if = "Option::is_none")]
+    pub cost: Option<Cost>,
+    /// What is particular to the job, for example a fill-in's passages to read, or the improvements
+    /// reprocessing would bring.
+    #[serde(rename = "details", skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for EstimateReprocessDocumentsResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        EstimateReprocessDocumentsResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for EstimateReprocessDocumentsResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| EstimateReprocessDocumentsResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct DocumentContent {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The address of the bytes, which the client follows.
+    ///
+    /// From the `Location` response header.
+    #[serde(skip)]
+    pub location: String,
+    /// The same address, for a client that does not follow redirects.
+    #[serde(rename = "url")]
+    pub url: String,
+    /// When the address stops working.
+    #[serde(rename = "expiresAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for DocumentContent {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        DocumentContent::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for DocumentContent {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| DocumentContent::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct DocumentDownload {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The address of the bytes. It needs no credential.
+    #[serde(rename = "url")]
+    pub url: String,
+    /// When the address stops working.
+    #[serde(rename = "expiresAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for DocumentDownload {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        DocumentDownload::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for DocumentDownload {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| DocumentDownload::deserialize(v), |o, r| o.raw = r)
     }
 }
 
@@ -1900,7 +8742,8 @@ impl<'de> Deserialize<'de> for GetDocumentResult {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
 pub struct ListDocumentsPage {
-    /// The request's identifier. The same value is in every error body; quote it to support.
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
     ///
     /// From the `Caitlyn-Request-Id` response header.
     #[serde(skip)]
@@ -1937,6 +8780,3207 @@ impl<'de> Deserialize<'de> for ListDocumentsPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListDocumentsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Work running on a knowledge base: ingesting documents, filling in fields, reprocessing, layout-aware
+/// search, a folder change or an access change. The building blocks call it an Operation. Each reports
+/// on the knowledge base's watch: ingests and fill-ins through the ingestion progress feed, and
+/// layout-aware search from its own record.
+///
+/// Deleting the thing a job works on stops the job, which ends `cancelled`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct Job {
+    /// The identifier GetOperation, WatchOperation and CancelOperation take.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// What kind of work it is.
+    #[serde(rename = "kind")]
+    pub kind: OperationKind,
+    /// Where the work is.
+    #[serde(rename = "status")]
+    pub status: OperationStatus,
+    /// What the work is on.
+    #[serde(rename = "target", skip_serializing_if = "Option::is_none")]
+    pub target: Option<OperationTarget>,
+    /// How far the work has got, where it can say.
+    #[serde(rename = "progress", skip_serializing_if = "Option::is_none")]
+    pub progress: Option<OperationProgress>,
+    /// How far the work has got, from 0 to 100, weighted by how long each part takes; never moves
+    /// back.
+    #[serde(rename = "percent", skip_serializing_if = "Option::is_none")]
+    pub percent: Option<i32>,
+    /// How long is left, once the work has run long enough to say.
+    #[serde(rename = "eta", skip_serializing_if = "Option::is_none")]
+    pub eta: Option<Eta>,
+    /// What the work has cost so far. Present only for callers who may see cost.
+    #[serde(rename = "costSoFar", skip_serializing_if = "Option::is_none")]
+    pub cost_so_far: Option<Cost>,
+    /// When the work was requested.
+    #[serde(rename = "createdAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// When the work started.
+    #[serde(
+        rename = "startedAt",
+        with = "::caitlyn_sdk_core::time::rfc3339_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// When the Operation last changed.
+    #[serde(
+        rename = "updatedAt",
+        with = "::caitlyn_sdk_core::time::rfc3339_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// When the work ended. Present once `status` is final.
+    #[serde(
+        rename = "endedAt",
+        with = "::caitlyn_sdk_core::time::rfc3339_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub ended_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Who asked for the work.
+    #[serde(rename = "createdBy", skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<Actor>,
+    /// Why the work failed. Present only when `status` is `failed`.
+    #[serde(rename = "error", skip_serializing_if = "Option::is_none")]
+    pub error: Option<OperationError>,
+    /// Parts of the work that did not complete, at most the first 100. They never fail the whole.
+    #[serde(rename = "partialFailures", skip_serializing_if = "Option::is_none")]
+    pub partial_failures: Option<Vec<PartialFailure>>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for Job {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        Job::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Job {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| Job::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ReprocessDocumentsResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The job that processes them.
+    #[serde(rename = "job")]
+    pub job: Job,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ReprocessDocumentsResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ReprocessDocumentsResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ReprocessDocumentsResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ReprocessDocumentsResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct RetryDocumentResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The document's new ETag.
+    ///
+    /// From the `ETag` response header.
+    #[serde(skip)]
+    pub etag: String,
+    /// The document in its new state.
+    #[serde(rename = "document")]
+    pub document: Document,
+    /// The Operation that tracks ingestion.
+    #[serde(rename = "operation")]
+    pub operation: Operation,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for RetryDocumentResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        RetryDocumentResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for RetryDocumentResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| RetryDocumentResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The document members that can be cleared. Open: `metadata.<key>` and `extraMetadata.<key>` remove
+/// one key, and an older SDK may send a newer value as a string.
+///
+/// Open: a value this SDK does not know yet is kept as [`ClearableDocumentField::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum ClearableDocumentField {
+    /// `sourceUrl`
+    SourceUrl,
+    /// `externalId`
+    ExternalId,
+    /// `metadata`
+    Metadata,
+    /// `extraMetadata`
+    ExtraMetadata,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl ClearableDocumentField {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            ClearableDocumentField::SourceUrl => "sourceUrl",
+            ClearableDocumentField::ExternalId => "externalId",
+            ClearableDocumentField::Metadata => "metadata",
+            ClearableDocumentField::ExtraMetadata => "extraMetadata",
+            ClearableDocumentField::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, ClearableDocumentField::Unknown(_))
+    }
+}
+
+impl From<&str> for ClearableDocumentField {
+    fn from(s: &str) -> Self {
+        match s {
+            "sourceUrl" => ClearableDocumentField::SourceUrl,
+            "externalId" => ClearableDocumentField::ExternalId,
+            "metadata" => ClearableDocumentField::Metadata,
+            "extraMetadata" => ClearableDocumentField::ExtraMetadata,
+            other => ClearableDocumentField::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for ClearableDocumentField {
+    fn from(s: String) -> Self {
+        ClearableDocumentField::from(s.as_str())
+    }
+}
+
+impl Default for ClearableDocumentField {
+    fn default() -> Self {
+        ClearableDocumentField::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for ClearableDocumentField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ClearableDocumentField {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ClearableDocumentField {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(ClearableDocumentField::from(String::deserialize(d)?))
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct UpdateDocumentResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The document's new ETag.
+    ///
+    /// From the `ETag` response header.
+    #[serde(skip)]
+    pub etag: String,
+    /// The document as it now reads.
+    #[serde(rename = "document")]
+    pub document: Document,
+    /// The Operation that applies the change to search, when it needs processing.
+    #[serde(rename = "operation", skip_serializing_if = "Option::is_none")]
+    pub operation: Option<Operation>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for UpdateDocumentResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        UpdateDocumentResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for UpdateDocumentResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| UpdateDocumentResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct EnableLayoutAwareSearchResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The Operation, as `/api/v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}`.
+    ///
+    /// From the `Location` response header.
+    #[serde(skip)]
+    pub location: Option<String>,
+    /// The Operation that rebuilds the knowledge base's search vectors.
+    #[serde(rename = "operation")]
+    pub operation: Operation,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for EnableLayoutAwareSearchResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        EnableLayoutAwareSearchResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for EnableLayoutAwareSearchResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| EnableLayoutAwareSearchResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct EstimateIngestionResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The documents the job would work on.
+    #[serde(rename = "documents")]
+    pub documents: i64,
+    /// The pages in them, where known.
+    #[serde(rename = "pages", skip_serializing_if = "Option::is_none")]
+    pub pages: Option<i64>,
+    /// The seconds of audio and video in them, where known.
+    #[serde(rename = "mediaSeconds", skip_serializing_if = "Option::is_none")]
+    pub media_seconds: Option<i64>,
+    /// Documents whose length could not be told, priced as a typical file.
+    #[serde(rename = "documentsOfUnknownLength", skip_serializing_if = "Option::is_none")]
+    pub documents_of_unknown_length: Option<i64>,
+    /// How long the job would take, in seconds.
+    #[serde(rename = "durationSeconds")]
+    pub duration_seconds: NumberRange,
+    /// What the job would cost. Present only for callers who may see cost: those who may open the
+    /// knowledge base's settings. Every other caller still gets the documents, pages and time.
+    #[serde(rename = "cost", skip_serializing_if = "Option::is_none")]
+    pub cost: Option<Cost>,
+    /// What is particular to the job, for example a fill-in's passages to read, or the improvements
+    /// reprocessing would bring.
+    #[serde(rename = "details", skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for EstimateIngestionResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        EstimateIngestionResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for EstimateIngestionResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| EstimateIngestionResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct EstimateLayoutAwareSearchResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The documents the job would work on.
+    #[serde(rename = "documents")]
+    pub documents: i64,
+    /// The pages in them, where known.
+    #[serde(rename = "pages", skip_serializing_if = "Option::is_none")]
+    pub pages: Option<i64>,
+    /// The seconds of audio and video in them, where known.
+    #[serde(rename = "mediaSeconds", skip_serializing_if = "Option::is_none")]
+    pub media_seconds: Option<i64>,
+    /// Documents whose length could not be told, priced as a typical file.
+    #[serde(rename = "documentsOfUnknownLength", skip_serializing_if = "Option::is_none")]
+    pub documents_of_unknown_length: Option<i64>,
+    /// How long the job would take, in seconds.
+    #[serde(rename = "durationSeconds")]
+    pub duration_seconds: NumberRange,
+    /// What the job would cost. Present only for callers who may see cost: those who may open the
+    /// knowledge base's settings. Every other caller still gets the documents, pages and time.
+    #[serde(rename = "cost", skip_serializing_if = "Option::is_none")]
+    pub cost: Option<Cost>,
+    /// What is particular to the job, for example a fill-in's passages to read, or the improvements
+    /// reprocessing would bring.
+    #[serde(rename = "details", skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for EstimateLayoutAwareSearchResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        EstimateLayoutAwareSearchResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for EstimateLayoutAwareSearchResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| EstimateLayoutAwareSearchResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// One choice of a list field.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct MetadataChoice {
+    /// The stored value.
+    #[serde(rename = "key")]
+    pub key: String,
+    /// What people see.
+    #[serde(rename = "value")]
+    pub value: String,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for MetadataChoice {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        MetadataChoice::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for MetadataChoice {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| MetadataChoice::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// How a metadata field is filled and used.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct FieldInstructions {
+    /// How ingestion works out the field's value from a document.
+    #[serde(rename = "howToFill", skip_serializing_if = "Option::is_none")]
+    pub how_to_fill: Option<String>,
+    /// How an agent should use the value when it reads it.
+    #[serde(rename = "whenToUse", skip_serializing_if = "Option::is_none")]
+    pub when_to_use: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for FieldInstructions {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        FieldInstructions::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for FieldInstructions {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| FieldInstructions::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// What a date field stores when a document gives only a month or a year. Open: new values may be
+/// added.
+///
+/// Open: a value this SDK does not know yet is kept as [`PartialDates::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum PartialDates {
+    /// `start`
+    Start,
+    /// `empty`
+    Empty,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl PartialDates {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            PartialDates::Start => "start",
+            PartialDates::Empty => "empty",
+            PartialDates::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, PartialDates::Unknown(_))
+    }
+}
+
+impl From<&str> for PartialDates {
+    fn from(s: &str) -> Self {
+        match s {
+            "start" => PartialDates::Start,
+            "empty" => PartialDates::Empty,
+            other => PartialDates::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for PartialDates {
+    fn from(s: String) -> Self {
+        PartialDates::from(s.as_str())
+    }
+}
+
+impl Default for PartialDates {
+    fn default() -> Self {
+        PartialDates::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for PartialDates {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for PartialDates {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for PartialDates {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(PartialDates::from(String::deserialize(d)?))
+    }
+}
+
+/// The level a field's value is kept at, which decides whether one value describes the whole
+/// document or each passage has its own. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`FieldLevel::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum FieldLevel {
+    /// `document`
+    Document,
+    /// `passage`
+    Passage,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl FieldLevel {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            FieldLevel::Document => "document",
+            FieldLevel::Passage => "passage",
+            FieldLevel::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, FieldLevel::Unknown(_))
+    }
+}
+
+impl From<&str> for FieldLevel {
+    fn from(s: &str) -> Self {
+        match s {
+            "document" => FieldLevel::Document,
+            "passage" => FieldLevel::Passage,
+            other => FieldLevel::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for FieldLevel {
+    fn from(s: String) -> Self {
+        FieldLevel::from(s.as_str())
+    }
+}
+
+impl Default for FieldLevel {
+    fn default() -> Self {
+        FieldLevel::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for FieldLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for FieldLevel {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for FieldLevel {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(FieldLevel::from(String::deserialize(d)?))
+    }
+}
+
+/// A metadata field's type. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`FieldType::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum FieldType {
+    /// `text`
+    Text,
+    /// `list`
+    List,
+    /// `date`
+    Date,
+    /// `number`
+    Number,
+    /// `boolean`
+    Boolean,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl FieldType {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            FieldType::Text => "text",
+            FieldType::List => "list",
+            FieldType::Date => "date",
+            FieldType::Number => "number",
+            FieldType::Boolean => "boolean",
+            FieldType::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, FieldType::Unknown(_))
+    }
+}
+
+impl From<&str> for FieldType {
+    fn from(s: &str) -> Self {
+        match s {
+            "text" => FieldType::Text,
+            "list" => FieldType::List,
+            "date" => FieldType::Date,
+            "number" => FieldType::Number,
+            "boolean" => FieldType::Boolean,
+            other => FieldType::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for FieldType {
+    fn from(s: String) -> Self {
+        FieldType::from(s.as_str())
+    }
+}
+
+impl Default for FieldType {
+    fn default() -> Self {
+        FieldType::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for FieldType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for FieldType {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for FieldType {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(FieldType::from(String::deserialize(d)?))
+    }
+}
+
+/// How many documents still need work for one field.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct FieldWork {
+    /// Documents with no value yet, which a fill-in would fill.
+    #[serde(rename = "values")]
+    pub values: i64,
+    /// Documents whose value is not yet written to the search index.
+    #[serde(rename = "index")]
+    pub index: i64,
+    /// Documents whose passages need new search vectors for the field.
+    #[serde(rename = "embed")]
+    pub embed: i64,
+    /// Documents needing any of these.
+    #[serde(rename = "documents")]
+    pub documents: i64,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for FieldWork {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        FieldWork::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for FieldWork {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| FieldWork::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// A metadata field: a value each document in the knowledge base can carry.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct Field {
+    /// The field's name, as people see it.
+    #[serde(rename = "name")]
+    pub name: String,
+    /// What the field holds, for people.
+    #[serde(rename = "description", skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// How the field's values are entered and checked; a list field offers its `choices`.
+    #[serde(rename = "type")]
+    pub r#type: FieldType,
+    /// Where the field's values belong. Defaults to `document`. A value that belongs to each
+    /// passage cannot be set on a document.
+    #[serde(rename = "scope", skip_serializing_if = "Option::is_none")]
+    pub scope: Option<FieldLevel>,
+    /// For `list`: the values it may take.
+    #[serde(rename = "choices", skip_serializing_if = "Option::is_none")]
+    pub choices: Option<Vec<MetadataChoice>>,
+    /// For a `date` field: what is stored when a document gives only a month or a year. Defaults to
+    /// `start`.
+    #[serde(rename = "partialDates", skip_serializing_if = "Option::is_none")]
+    pub partial_dates: Option<PartialDates>,
+    /// How ingestion fills the field, and how an agent uses it.
+    #[serde(rename = "instructions", skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<FieldInstructions>,
+    /// Whether searches can filter on the field. Defaults to false.
+    #[serde(rename = "filterable", skip_serializing_if = "Option::is_none")]
+    pub filterable: Option<bool>,
+    /// Whether the field's value is given to the agent with each passage. Defaults to false.
+    #[serde(rename = "givenToAgent", skip_serializing_if = "Option::is_none")]
+    pub given_to_agent: Option<bool>,
+    /// Whether the field is shown in a document's settings. Defaults to true.
+    #[serde(rename = "visibleOnDocuments", skip_serializing_if = "Option::is_none")]
+    pub visible_on_documents: Option<bool>,
+    /// The field's key, as documents' `metadata` names it.
+    #[serde(rename = "key")]
+    pub key: String,
+    /// How many documents still need work for this field: values to fill in, index writes and new
+    /// search vectors.
+    #[serde(rename = "needsWork", skip_serializing_if = "Option::is_none")]
+    pub needs_work: Option<FieldWork>,
+    /// The field's ETag; send it as `If-Match` to change it.
+    #[serde(rename = "etag")]
+    pub etag: String,
+    /// The response this thing was read from; see [`response_metadata`](Self::response_metadata).
+    #[serde(skip)]
+    pub(crate) response_metadata: rt::ThingMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for Field {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        Field::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Field {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| Field::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl Field {
+    /// The response this Field was read from (PROTOCOL.md 4.2): its HTTP status, request id and ETag. `Some` on a
+    /// thing from one response (get, update, create, `wait()`); `None` on a list item, a snapshot entry or a value
+    /// built in code. It is never serialised, and things compare equal whatever it holds.
+    pub fn response_metadata(&self) -> Option<&rt::ResponseMetadata> {
+        self.response_metadata.0.as_ref()
+    }
+
+    /// The JSON object this Field was read from, unknown fields included (PROTOCOL.md 4.1).
+    pub fn raw(&self) -> &rt::Raw {
+        &self.raw
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct DeleteFieldResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for DeleteFieldResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        DeleteFieldResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for DeleteFieldResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| DeleteFieldResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct EstimateFillInFieldsResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The documents the job would work on.
+    #[serde(rename = "documents")]
+    pub documents: i64,
+    /// The pages in them, where known.
+    #[serde(rename = "pages", skip_serializing_if = "Option::is_none")]
+    pub pages: Option<i64>,
+    /// The seconds of audio and video in them, where known.
+    #[serde(rename = "mediaSeconds", skip_serializing_if = "Option::is_none")]
+    pub media_seconds: Option<i64>,
+    /// Documents whose length could not be told, priced as a typical file.
+    #[serde(rename = "documentsOfUnknownLength", skip_serializing_if = "Option::is_none")]
+    pub documents_of_unknown_length: Option<i64>,
+    /// How long the job would take, in seconds.
+    #[serde(rename = "durationSeconds")]
+    pub duration_seconds: NumberRange,
+    /// What the job would cost. Present only for callers who may see cost: those who may open the
+    /// knowledge base's settings. Every other caller still gets the documents, pages and time.
+    #[serde(rename = "cost", skip_serializing_if = "Option::is_none")]
+    pub cost: Option<Cost>,
+    /// What is particular to the job, for example a fill-in's passages to read, or the improvements
+    /// reprocessing would bring.
+    #[serde(rename = "details", skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for EstimateFillInFieldsResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        EstimateFillInFieldsResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for EstimateFillInFieldsResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| EstimateFillInFieldsResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct FillInFieldsResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The job that fills them in.
+    #[serde(rename = "job")]
+    pub job: Job,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for FillInFieldsResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        FillInFieldsResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for FillInFieldsResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| FillInFieldsResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ListFieldsPage {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// This page of fields.
+    #[serde(rename = "items")]
+    pub items: Vec<Field>,
+    /// The cursor for the next page. Absent on the last page.
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ListFieldsPage {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ListFieldsPage::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ListFieldsPage {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ListFieldsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct CreateFolderResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The Operation, as `/api/v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}`.
+    ///
+    /// From the `Location` response header.
+    #[serde(skip)]
+    pub location: Option<String>,
+    /// The Operation that tracks the folder's creation.
+    #[serde(rename = "operation")]
+    pub operation: Operation,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for CreateFolderResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        CreateFolderResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for CreateFolderResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| CreateFolderResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct DeleteFolderResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The Operation, as `/api/v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}`.
+    ///
+    /// From the `Location` response header.
+    #[serde(skip)]
+    pub location: Option<String>,
+    /// The Operation that tracks the deletion.
+    #[serde(rename = "operation")]
+    pub operation: Operation,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for DeleteFolderResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        DeleteFolderResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for DeleteFolderResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| DeleteFolderResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// A folder in a knowledge base.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct Folder {
+    /// The folder's path, for example `/hr/leave/`.
+    #[serde(rename = "path")]
+    pub path: String,
+    /// The folder it is in.
+    #[serde(rename = "parent")]
+    pub parent: String,
+    /// The folder's own name, the last part of its path.
+    #[serde(rename = "name")]
+    pub name: String,
+    /// The folder's ETag; send it as `If-Match` to rename or move it.
+    #[serde(rename = "etag")]
+    pub etag: String,
+    /// Who may read the folder's documents.
+    #[serde(rename = "readers")]
+    pub readers: Readers,
+    /// When `readers` is `inherit`: the folder whose readers apply.
+    #[serde(rename = "inheritedFrom", skip_serializing_if = "Option::is_none")]
+    pub inherited_from: Option<String>,
+    /// How many folders are directly in it.
+    #[serde(rename = "folderCount")]
+    pub folder_count: i64,
+    /// How many documents are directly in it.
+    #[serde(rename = "documentCount")]
+    pub document_count: i64,
+    /// When the folder last changed.
+    #[serde(rename = "updatedAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for Folder {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        Folder::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Folder {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| Folder::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ListFoldersPage {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// This page of folders.
+    #[serde(rename = "items")]
+    pub items: Vec<Folder>,
+    /// The cursor for the next page. Absent on the last page.
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ListFoldersPage {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ListFoldersPage::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ListFoldersPage {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ListFoldersPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct UpdateFolderResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The folder's new ETag.
+    ///
+    /// From the `ETag` response header.
+    #[serde(skip)]
+    pub etag: String,
+    /// The Operation, as `/api/v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}`.
+    ///
+    /// From the `Location` response header.
+    #[serde(skip)]
+    pub location: Option<String>,
+    /// The Operation that tracks the move.
+    #[serde(rename = "operation")]
+    pub operation: Operation,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for UpdateFolderResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        UpdateFolderResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for UpdateFolderResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| UpdateFolderResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// How many of a batch's items have each outcome and status.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct IngestionBatchCounts {
+    /// Items by their planned outcome.
+    #[serde(rename = "byOutcome", skip_serializing_if = "Option::is_none")]
+    pub by_outcome: Option<std::collections::BTreeMap<IngestionItemOutcome, i64>>,
+    /// Items by their status after Start.
+    #[serde(rename = "byStatus", skip_serializing_if = "Option::is_none")]
+    pub by_status: Option<std::collections::BTreeMap<IngestionItemStatus, i64>>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for IngestionBatchCounts {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        IngestionBatchCounts::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for IngestionBatchCounts {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| IngestionBatchCounts::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Why an ingestion batch failed. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`IngestionBatchFailureCode::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum IngestionBatchFailureCode {
+    /// `conflict_policy_fail`
+    ConflictPolicyFail,
+    /// `planning_failed`
+    PlanningFailed,
+    /// `internal_error`
+    InternalError,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl IngestionBatchFailureCode {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            IngestionBatchFailureCode::ConflictPolicyFail => "conflict_policy_fail",
+            IngestionBatchFailureCode::PlanningFailed => "planning_failed",
+            IngestionBatchFailureCode::InternalError => "internal_error",
+            IngestionBatchFailureCode::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, IngestionBatchFailureCode::Unknown(_))
+    }
+}
+
+impl From<&str> for IngestionBatchFailureCode {
+    fn from(s: &str) -> Self {
+        match s {
+            "conflict_policy_fail" => IngestionBatchFailureCode::ConflictPolicyFail,
+            "planning_failed" => IngestionBatchFailureCode::PlanningFailed,
+            "internal_error" => IngestionBatchFailureCode::InternalError,
+            other => IngestionBatchFailureCode::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for IngestionBatchFailureCode {
+    fn from(s: String) -> Self {
+        IngestionBatchFailureCode::from(s.as_str())
+    }
+}
+
+impl Default for IngestionBatchFailureCode {
+    fn default() -> Self {
+        IngestionBatchFailureCode::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for IngestionBatchFailureCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for IngestionBatchFailureCode {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for IngestionBatchFailureCode {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(IngestionBatchFailureCode::from(String::deserialize(d)?))
+    }
+}
+
+/// Why an ingestion batch failed, as a stable code and a message telling the caller what to do.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct IngestionBatchFailure {
+    /// What went wrong.
+    #[serde(rename = "code")]
+    pub code: IngestionBatchFailureCode,
+    /// What went wrong and what to do, written for the integrator. The same for every batch with the
+    /// same code.
+    #[serde(rename = "message")]
+    pub message: String,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for IngestionBatchFailure {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        IngestionBatchFailure::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for IngestionBatchFailure {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| IngestionBatchFailure::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// What to do with a conflict. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`ConflictRule::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum ConflictRule {
+    /// `ask`
+    Ask,
+    /// `skip`
+    Skip,
+    /// `new_version`
+    NewVersion,
+    /// `overwrite`
+    Overwrite,
+    /// `fail`
+    Fail,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl ConflictRule {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            ConflictRule::Ask => "ask",
+            ConflictRule::Skip => "skip",
+            ConflictRule::NewVersion => "new_version",
+            ConflictRule::Overwrite => "overwrite",
+            ConflictRule::Fail => "fail",
+            ConflictRule::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, ConflictRule::Unknown(_))
+    }
+}
+
+impl From<&str> for ConflictRule {
+    fn from(s: &str) -> Self {
+        match s {
+            "ask" => ConflictRule::Ask,
+            "skip" => ConflictRule::Skip,
+            "new_version" => ConflictRule::NewVersion,
+            "overwrite" => ConflictRule::Overwrite,
+            "fail" => ConflictRule::Fail,
+            other => ConflictRule::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for ConflictRule {
+    fn from(s: String) -> Self {
+        ConflictRule::from(s.as_str())
+    }
+}
+
+impl Default for ConflictRule {
+    fn default() -> Self {
+        ConflictRule::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for ConflictRule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ConflictRule {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ConflictRule {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(ConflictRule::from(String::deserialize(d)?))
+    }
+}
+
+/// What to do with each kind of conflict. A kind with no rule uses `default`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ConflictRules {
+    /// The rule for a kind of conflict with no rule of its own. Defaults to `ask`.
+    #[serde(rename = "default", skip_serializing_if = "Option::is_none")]
+    pub default: Option<ConflictRule>,
+    /// The path and the `externalId` name different documents, or the path holds one the caller may
+    /// not read.
+    #[serde(rename = "pathTaken", skip_serializing_if = "Option::is_none")]
+    pub path_taken: Option<ConflictRule>,
+    /// No `externalId`, and several current documents have these bytes.
+    #[serde(rename = "ambiguousContent", skip_serializing_if = "Option::is_none")]
+    pub ambiguous_content: Option<ConflictRule>,
+    /// Two documents share the path.
+    #[serde(rename = "duplicatePath", skip_serializing_if = "Option::is_none")]
+    pub duplicate_path: Option<ConflictRule>,
+    /// Two documents share the `externalId` (reason `duplicate_external_id`). Named "key" because
+    /// a member ending "Id" must hold an identifier.
+    #[serde(rename = "duplicateExternalKey", skip_serializing_if = "Option::is_none")]
+    pub duplicate_external_key: Option<ConflictRule>,
+    /// Two items in the batch name the same document.
+    #[serde(rename = "duplicateInBatch", skip_serializing_if = "Option::is_none")]
+    pub duplicate_in_batch: Option<ConflictRule>,
+    /// The document changed between planning and Start.
+    #[serde(rename = "changedSincePlan", skip_serializing_if = "Option::is_none")]
+    pub changed_since_plan: Option<ConflictRule>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ConflictRules {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ConflictRules::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ConflictRules {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ConflictRules::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// What to do with content found at another path. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`MovedRule::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum MovedRule {
+    /// `move`
+    Move,
+    /// `copy`
+    Copy,
+    /// `skip`
+    Skip,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl MovedRule {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            MovedRule::Move => "move",
+            MovedRule::Copy => "copy",
+            MovedRule::Skip => "skip",
+            MovedRule::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, MovedRule::Unknown(_))
+    }
+}
+
+impl From<&str> for MovedRule {
+    fn from(s: &str) -> Self {
+        match s {
+            "move" => MovedRule::Move,
+            "copy" => MovedRule::Copy,
+            "skip" => MovedRule::Skip,
+            other => MovedRule::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for MovedRule {
+    fn from(s: String) -> Self {
+        MovedRule::from(s.as_str())
+    }
+}
+
+impl Default for MovedRule {
+    fn default() -> Self {
+        MovedRule::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for MovedRule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for MovedRule {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for MovedRule {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(MovedRule::from(String::deserialize(d)?))
+    }
+}
+
+/// What to do with a `remove` item. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`RemoveRule::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum RemoveRule {
+    /// `remove`
+    Remove,
+    /// `ask`
+    Ask,
+    /// `skip`
+    Skip,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl RemoveRule {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            RemoveRule::Remove => "remove",
+            RemoveRule::Ask => "ask",
+            RemoveRule::Skip => "skip",
+            RemoveRule::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, RemoveRule::Unknown(_))
+    }
+}
+
+impl From<&str> for RemoveRule {
+    fn from(s: &str) -> Self {
+        match s {
+            "remove" => RemoveRule::Remove,
+            "ask" => RemoveRule::Ask,
+            "skip" => RemoveRule::Skip,
+            other => RemoveRule::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for RemoveRule {
+    fn from(s: String) -> Self {
+        RemoveRule::from(s.as_str())
+    }
+}
+
+impl Default for RemoveRule {
+    fn default() -> Self {
+        RemoveRule::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for RemoveRule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for RemoveRule {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for RemoveRule {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(RemoveRule::from(String::deserialize(d)?))
+    }
+}
+
+/// What to do with unchanged bytes. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`UnchangedRule::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum UnchangedRule {
+    /// `skip`
+    Skip,
+    /// `reingest`
+    Reingest,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl UnchangedRule {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            UnchangedRule::Skip => "skip",
+            UnchangedRule::Reingest => "reingest",
+            UnchangedRule::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, UnchangedRule::Unknown(_))
+    }
+}
+
+impl From<&str> for UnchangedRule {
+    fn from(s: &str) -> Self {
+        match s {
+            "skip" => UnchangedRule::Skip,
+            "reingest" => UnchangedRule::Reingest,
+            other => UnchangedRule::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for UnchangedRule {
+    fn from(s: String) -> Self {
+        UnchangedRule::from(s.as_str())
+    }
+}
+
+impl Default for UnchangedRule {
+    fn default() -> Self {
+        UnchangedRule::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for UnchangedRule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for UnchangedRule {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for UnchangedRule {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(UnchangedRule::from(String::deserialize(d)?))
+    }
+}
+
+/// The rules that resolve each item's outcome. A rule applies to every item not resolved by hand.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct IngestionPolicy {
+    /// What to do with each kind of conflict. Defaults to `{default: "ask"}`.
+    #[serde(rename = "onConflict", skip_serializing_if = "Option::is_none")]
+    pub on_conflict: Option<ConflictRules>,
+    /// What to do with a `remove` item that matches a document. Defaults to `remove`.
+    #[serde(rename = "onRemove", skip_serializing_if = "Option::is_none")]
+    pub on_remove: Option<RemoveRule>,
+    /// What to do with an item whose bytes are the current version's. Defaults to `skip`. Supplied
+    /// metadata that differs is still updated without ingesting.
+    #[serde(rename = "onUnchanged", skip_serializing_if = "Option::is_none")]
+    pub on_unchanged: Option<UnchangedRule>,
+    /// What to do with content found at another path. Defaults to `move`, which keeps the document
+    /// and its history.
+    #[serde(rename = "onMoved", skip_serializing_if = "Option::is_none")]
+    pub on_moved: Option<MovedRule>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for IngestionPolicy {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        IngestionPolicy::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for IngestionPolicy {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| IngestionPolicy::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The folder a batch is kept inside, so that a batch cannot change documents anywhere else in the
+/// knowledge base.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct IngestionBoundary {
+    /// Every item must lie inside this folder; any other item is refused. The boundary only refuses
+    /// items: it never removes anything.
+    #[serde(rename = "folderPath")]
+    pub folder_path: String,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for IngestionBoundary {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        IngestionBoundary::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for IngestionBoundary {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| IngestionBoundary::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// When a planned ingestion batch starts. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`StartMode::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum StartMode {
+    /// `when_planned`
+    WhenPlanned,
+    /// `manual`
+    Manual,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl StartMode {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            StartMode::WhenPlanned => "when_planned",
+            StartMode::Manual => "manual",
+            StartMode::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, StartMode::Unknown(_))
+    }
+}
+
+impl From<&str> for StartMode {
+    fn from(s: &str) -> Self {
+        match s {
+            "when_planned" => StartMode::WhenPlanned,
+            "manual" => StartMode::Manual,
+            other => StartMode::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for StartMode {
+    fn from(s: String) -> Self {
+        StartMode::from(s.as_str())
+    }
+}
+
+impl Default for StartMode {
+    fn default() -> Self {
+        StartMode::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for StartMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for StartMode {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for StartMode {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(StartMode::from(String::deserialize(d)?))
+    }
+}
+
+/// Where an ingestion batch is. Open: new values may be added. `succeeded`,
+/// `completed_with_failures`, `failed`, `cancelled` and `expired` are final.
+///
+/// Open: a value this SDK does not know yet is kept as [`IngestionBatchStatus::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum IngestionBatchStatus {
+    /// `draft`
+    Draft,
+    /// `planning`
+    Planning,
+    /// `planned`
+    Planned,
+    /// `running`
+    Running,
+    /// `succeeded`
+    Succeeded,
+    /// `completed_with_failures`
+    CompletedWithFailures,
+    /// `failed`
+    Failed,
+    /// `cancelled`
+    Cancelled,
+    /// `expired`
+    Expired,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl IngestionBatchStatus {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            IngestionBatchStatus::Draft => "draft",
+            IngestionBatchStatus::Planning => "planning",
+            IngestionBatchStatus::Planned => "planned",
+            IngestionBatchStatus::Running => "running",
+            IngestionBatchStatus::Succeeded => "succeeded",
+            IngestionBatchStatus::CompletedWithFailures => "completed_with_failures",
+            IngestionBatchStatus::Failed => "failed",
+            IngestionBatchStatus::Cancelled => "cancelled",
+            IngestionBatchStatus::Expired => "expired",
+            IngestionBatchStatus::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, IngestionBatchStatus::Unknown(_))
+    }
+}
+
+impl From<&str> for IngestionBatchStatus {
+    fn from(s: &str) -> Self {
+        match s {
+            "draft" => IngestionBatchStatus::Draft,
+            "planning" => IngestionBatchStatus::Planning,
+            "planned" => IngestionBatchStatus::Planned,
+            "running" => IngestionBatchStatus::Running,
+            "succeeded" => IngestionBatchStatus::Succeeded,
+            "completed_with_failures" => IngestionBatchStatus::CompletedWithFailures,
+            "failed" => IngestionBatchStatus::Failed,
+            "cancelled" => IngestionBatchStatus::Cancelled,
+            "expired" => IngestionBatchStatus::Expired,
+            other => IngestionBatchStatus::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for IngestionBatchStatus {
+    fn from(s: String) -> Self {
+        IngestionBatchStatus::from(s.as_str())
+    }
+}
+
+impl Default for IngestionBatchStatus {
+    fn default() -> Self {
+        IngestionBatchStatus::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for IngestionBatchStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for IngestionBatchStatus {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for IngestionBatchStatus {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(IngestionBatchStatus::from(String::deserialize(d)?))
+    }
+}
+
+/// An ingestion batch: a planned set of document changes to a knowledge base, and their progress.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct IngestionBatch {
+    /// The identifier every call about this batch takes.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// The knowledge base the batch ingests into.
+    #[serde(rename = "knowledgeBaseId")]
+    pub knowledge_base_id: String,
+    /// Where the batch is in its lifecycle.
+    #[serde(rename = "status")]
+    pub status: IngestionBatchStatus,
+    /// When the batch starts once it is planned.
+    #[serde(rename = "start")]
+    pub start: StartMode,
+    /// While true, the batch stays `draft` and takes more items.
+    #[serde(rename = "awaitMoreItems")]
+    pub await_more_items: bool,
+    /// The rules that resolve each item's outcome.
+    #[serde(rename = "policy")]
+    pub policy: IngestionPolicy,
+    /// When set, every item must lie inside this folder.
+    #[serde(rename = "scope", skip_serializing_if = "Option::is_none")]
+    pub scope: Option<IngestionBoundary>,
+    /// How many items the batch holds.
+    #[serde(rename = "itemCount")]
+    pub item_count: i64,
+    /// Items by outcome after planning, and by status after Start.
+    #[serde(rename = "counts", skip_serializing_if = "Option::is_none")]
+    pub counts: Option<IngestionBatchCounts>,
+    /// How far the batch has got, from 0 to 100: its documents' progress, weighted by how long each
+    /// is expected to take. Never moves back.
+    #[serde(rename = "percent", skip_serializing_if = "Option::is_none")]
+    pub percent: Option<i32>,
+    /// How long is left: the longest of its documents' times left.
+    #[serde(rename = "eta", skip_serializing_if = "Option::is_none")]
+    pub eta: Option<Eta>,
+    /// When the plan goes stale, 5 minutes after planning. StartIngestionBatch on a stale plan plans
+    /// again first.
+    #[serde(
+        rename = "planExpiresAt",
+        with = "::caitlyn_sdk_core::time::rfc3339_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub plan_expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Who made the batch.
+    #[serde(rename = "createdBy", skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<Actor>,
+    /// When the batch was made.
+    #[serde(rename = "createdAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// When the batch last changed.
+    #[serde(rename = "updatedAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    /// When the batch was started.
+    #[serde(
+        rename = "startedAt",
+        with = "::caitlyn_sdk_core::time::rfc3339_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// When the batch reached a final state.
+    #[serde(
+        rename = "endedAt",
+        with = "::caitlyn_sdk_core::time::rfc3339_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub ended_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Why the batch failed, as a stable code and a fixed message. Present only when `status` is
+    /// `failed`.
+    #[serde(rename = "failure", skip_serializing_if = "Option::is_none")]
+    pub failure: Option<IngestionBatchFailure>,
+    /// The batch's ETag.
+    #[serde(rename = "etag")]
+    pub etag: String,
+    /// The response this thing was read from; see [`response_metadata`](Self::response_metadata).
+    #[serde(skip)]
+    pub(crate) response_metadata: rt::ThingMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for IngestionBatch {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        IngestionBatch::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for IngestionBatch {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| IngestionBatch::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl IngestionBatch {
+    /// The response this IngestionBatch was read from (PROTOCOL.md 4.2): its HTTP status, request id and ETag. `Some` on a
+    /// thing from one response (get, update, create, `wait()`); `None` on a list item, a snapshot entry or a value
+    /// built in code. It is never serialised, and things compare equal whatever it holds.
+    pub fn response_metadata(&self) -> Option<&rt::ResponseMetadata> {
+        self.response_metadata.0.as_ref()
+    }
+
+    /// The JSON object this IngestionBatch was read from, unknown fields included (PROTOCOL.md 4.1).
+    pub fn raw(&self) -> &rt::Raw {
+        &self.raw
+    }
+}
+
+/// Whether an item's upload was accepted. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`UploadCompletionStatus::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum UploadCompletionStatus {
+    /// `accepted`
+    Accepted,
+    /// `failed`
+    Failed,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl UploadCompletionStatus {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            UploadCompletionStatus::Accepted => "accepted",
+            UploadCompletionStatus::Failed => "failed",
+            UploadCompletionStatus::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, UploadCompletionStatus::Unknown(_))
+    }
+}
+
+impl From<&str> for UploadCompletionStatus {
+    fn from(s: &str) -> Self {
+        match s {
+            "accepted" => UploadCompletionStatus::Accepted,
+            "failed" => UploadCompletionStatus::Failed,
+            other => UploadCompletionStatus::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for UploadCompletionStatus {
+    fn from(s: String) -> Self {
+        UploadCompletionStatus::from(s.as_str())
+    }
+}
+
+impl Default for UploadCompletionStatus {
+    fn default() -> Self {
+        UploadCompletionStatus::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for UploadCompletionStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for UploadCompletionStatus {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for UploadCompletionStatus {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(UploadCompletionStatus::from(String::deserialize(d)?))
+    }
+}
+
+/// The result of reporting one item's upload.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct UploadCompletionResult {
+    /// The item the result is for.
+    #[serde(rename = "itemId")]
+    pub item_id: String,
+    /// Whether the upload was accepted for ingestion.
+    #[serde(rename = "status")]
+    pub status: UploadCompletionStatus,
+    /// Why it failed, as a stable code. Present only when `failed`.
+    #[serde(rename = "code", skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    /// What went wrong, written for the integrator. Present only when `failed`.
+    #[serde(rename = "detail", skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for UploadCompletionResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        UploadCompletionResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for UploadCompletionResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| UploadCompletionResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct CompleteIngestionBatchUploadsResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// One result per item, in request order.
+    #[serde(rename = "results")]
+    pub results: Vec<UploadCompletionResult>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for CompleteIngestionBatchUploadsResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        CompleteIngestionBatchUploadsResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for CompleteIngestionBatchUploadsResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| CompleteIngestionBatchUploadsResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// An upload policy: one signature that lets the caller upload every item of a batch that needs
+/// bytes, each as an HTML form POST.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct UploadPolicy {
+    /// Where to POST each file.
+    #[serde(rename = "uploadUrl")]
+    pub upload_url: String,
+    /// The form fields every upload sends first, in this order, before its own `key`,
+    /// `Content-Type`, `x-amz-checksum-algorithm` (`SHA256`), `x-amz-checksum-sha256` and the file.
+    #[serde(rename = "formFields")]
+    pub form_fields: std::collections::BTreeMap<String, String>,
+    /// The prefix every item's `objectKey` starts with.
+    #[serde(rename = "keyPrefix")]
+    pub key_prefix: String,
+    /// The largest file the policy accepts, in bytes.
+    #[serde(rename = "maxByteSize")]
+    pub max_byte_size: i64,
+    /// When the policy stops working. Renew it with CreateIngestionBatchUploadPolicy.
+    #[serde(rename = "expiresAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for UploadPolicy {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        UploadPolicy::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for UploadPolicy {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| UploadPolicy::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct IngestionBatchUploadPolicy {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The batch the policy is for, as
+    /// `/api/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}`. A policy
+    /// has no address of its own; the batch's items say which still need their bytes.
+    ///
+    /// From the `Location` response header.
+    #[serde(skip)]
+    pub location: Option<String>,
+    /// The new policy.
+    #[serde(rename = "uploadPolicy")]
+    pub upload_policy: UploadPolicy,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for IngestionBatchUploadPolicy {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        IngestionBatchUploadPolicy::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for IngestionBatchUploadPolicy {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| IngestionBatchUploadPolicy::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ListIngestionBatchItemsPage {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// This page of items.
+    #[serde(rename = "items")]
+    pub items: Vec<IngestionBatchItem>,
+    /// The cursor for the next page. Absent on the last page.
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ListIngestionBatchItemsPage {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ListIngestionBatchItemsPage::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ListIngestionBatchItemsPage {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ListIngestionBatchItemsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ListIngestionBatchesPage {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// This page of batches, newest first.
+    #[serde(rename = "items")]
+    pub items: Vec<IngestionBatch>,
+    /// The cursor for the next page. Absent on the last page.
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ListIngestionBatchesPage {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ListIngestionBatchesPage::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ListIngestionBatchesPage {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ListIngestionBatchesPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct StartIngestionBatchResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// The batch's new ETag.
+    ///
+    /// From the `ETag` response header.
+    #[serde(skip)]
+    pub etag: String,
+    /// The batch, now `running`.
+    #[serde(rename = "batch")]
+    pub batch: IngestionBatch,
+    /// The policy every item that needs bytes is uploaded with. Absent when no item needs bytes.
+    #[serde(rename = "uploadPolicy", skip_serializing_if = "Option::is_none")]
+    pub upload_policy: Option<UploadPolicy>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for StartIngestionBatchResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        StartIngestionBatchResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for StartIngestionBatchResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| StartIngestionBatchResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ListKnowledgeBasesPage {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// This page of knowledge bases.
+    #[serde(rename = "items")]
+    pub items: Vec<KnowledgeBase>,
+    /// The cursor for the next page. Absent on the last page.
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ListKnowledgeBasesPage {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ListKnowledgeBasesPage::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ListKnowledgeBasesPage {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ListKnowledgeBasesPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ListOperationsPage {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// This page of Operations, newest first.
+    #[serde(rename = "items")]
+    pub items: Vec<Operation>,
+    /// The cursor for the next page. Absent on the last page.
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ListOperationsPage {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ListOperationsPage::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ListOperationsPage {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ListOperationsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The knowledge base members that can be cleared. Open: an older SDK may send a newer value as a
+/// string.
+///
+/// Open: a value this SDK does not know yet is kept as [`ClearableKnowledgeBaseField::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum ClearableKnowledgeBaseField {
+    /// `description`
+    Description,
+    /// `agentDescription`
+    AgentDescription,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl ClearableKnowledgeBaseField {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            ClearableKnowledgeBaseField::Description => "description",
+            ClearableKnowledgeBaseField::AgentDescription => "agentDescription",
+            ClearableKnowledgeBaseField::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, ClearableKnowledgeBaseField::Unknown(_))
+    }
+}
+
+impl From<&str> for ClearableKnowledgeBaseField {
+    fn from(s: &str) -> Self {
+        match s {
+            "description" => ClearableKnowledgeBaseField::Description,
+            "agentDescription" => ClearableKnowledgeBaseField::AgentDescription,
+            other => ClearableKnowledgeBaseField::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for ClearableKnowledgeBaseField {
+    fn from(s: String) -> Self {
+        ClearableKnowledgeBaseField::from(s.as_str())
+    }
+}
+
+impl Default for ClearableKnowledgeBaseField {
+    fn default() -> Self {
+        ClearableKnowledgeBaseField::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for ClearableKnowledgeBaseField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ClearableKnowledgeBaseField {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ClearableKnowledgeBaseField {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(ClearableKnowledgeBaseField::from(String::deserialize(d)?))
+    }
+}
+
+/// A guardrail an agent version can screen attached documents with.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct GuardrailSummary {
+    /// The guardrail's identifier, as `contentSafety.guardrail` names it.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// The guardrail's name, as people see it.
+    #[serde(rename = "name")]
+    pub name: String,
+    /// The guardrail version that screens documents.
+    #[serde(rename = "version")]
+    pub version: String,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for GuardrailSummary {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        GuardrailSummary::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for GuardrailSummary {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| GuardrailSummary::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ListGuardrailsPage {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// This page of guardrails.
+    #[serde(rename = "items")]
+    pub items: Vec<GuardrailSummary>,
+    /// The cursor for the next page. Absent on the last page.
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ListGuardrailsPage {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ListGuardrailsPage::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ListGuardrailsPage {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ListGuardrailsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// A memory store an agent can remember people in.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct MemoryStoreSummary {
+    /// The memory store's identifier, as an agent configuration names it.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// The memory store's name, as people see it.
+    #[serde(rename = "name")]
+    pub name: String,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for MemoryStoreSummary {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        MemoryStoreSummary::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for MemoryStoreSummary {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| MemoryStoreSummary::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ListMemoryStoresPage {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// This page of memory stores.
+    #[serde(rename = "items")]
+    pub items: Vec<MemoryStoreSummary>,
+    /// The cursor for the next page. Absent on the last page.
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ListMemoryStoresPage {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ListMemoryStoresPage::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ListMemoryStoresPage {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ListMemoryStoresPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// Whether a model reasons before it answers. Open: new values may be added.
+///
+/// Open: a value this SDK does not know yet is kept as [`ModelReasoning::Unknown`], never an error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum ModelReasoning {
+    /// `none`
+    None,
+    /// `optional`
+    Optional,
+    /// `always`
+    Always,
+    /// A value this SDK does not know yet, as received.
+    Unknown(String),
+}
+
+impl ModelReasoning {
+    /// The value as sent on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            ModelReasoning::None => "none",
+            ModelReasoning::Optional => "optional",
+            ModelReasoning::Always => "always",
+            ModelReasoning::Unknown(s) => s,
+        }
+    }
+
+    /// Whether this SDK knows the value.
+    pub fn is_known(&self) -> bool {
+        !matches!(self, ModelReasoning::Unknown(_))
+    }
+}
+
+impl From<&str> for ModelReasoning {
+    fn from(s: &str) -> Self {
+        match s {
+            "none" => ModelReasoning::None,
+            "optional" => ModelReasoning::Optional,
+            "always" => ModelReasoning::Always,
+            other => ModelReasoning::Unknown(other.to_owned()),
+        }
+    }
+}
+
+impl From<String> for ModelReasoning {
+    fn from(s: String) -> Self {
+        ModelReasoning::from(s.as_str())
+    }
+}
+
+impl Default for ModelReasoning {
+    fn default() -> Self {
+        ModelReasoning::Unknown(String::new())
+    }
+}
+
+impl std::fmt::Display for ModelReasoning {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ModelReasoning {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ModelReasoning {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(ModelReasoning::from(String::deserialize(d)?))
+    }
+}
+
+/// A model an agent can use, and the settings it accepts.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ModelSummary {
+    /// The model's identifier, as an agent configuration names it.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// The model's name, as people see it.
+    #[serde(rename = "name")]
+    pub name: String,
+    /// Whether the model reasons before it answers, and whether an agent's `reasoning` setting can
+    /// change that.
+    #[serde(rename = "reasoning")]
+    pub reasoning: ModelReasoning,
+    /// The reasoning effort levels it offers. Empty when it offers none.
+    #[serde(rename = "effortLevels", skip_serializing_if = "Option::is_none")]
+    pub effort_levels: Option<Vec<ReasoningEffort>>,
+    /// Whether it accepts `temperature`.
+    #[serde(rename = "acceptsTemperature")]
+    pub accepts_temperature: bool,
+    /// Whether it accepts `topP`.
+    #[serde(rename = "acceptsTopP")]
+    pub accepts_top_p: bool,
+    /// Whether it accepts `topK`.
+    #[serde(rename = "acceptsTopK")]
+    pub accepts_top_k: bool,
+    /// The most tokens it can write in one answer.
+    #[serde(rename = "maxOutputTokens")]
+    pub max_output_tokens: i32,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ModelSummary {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ModelSummary::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ModelSummary {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ModelSummary::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ListModelsPage {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// This page of models.
+    #[serde(rename = "items")]
+    pub items: Vec<ModelSummary>,
+    /// The cursor for the next page. Absent on the last page.
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ListModelsPage {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ListModelsPage::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ListModelsPage {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ListModelsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// One of Caitlyn's own tools.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ToolSummary {
+    /// The tool's name, as a phase names it.
+    #[serde(rename = "name")]
+    pub name: String,
+    /// What the tool does, in the words the agent reads unless a phase gives its own.
+    #[serde(rename = "description")]
+    pub description: String,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ToolSummary {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ToolSummary::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ToolSummary {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ToolSummary::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ListToolsPage {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// This page of tools.
+    #[serde(rename = "items")]
+    pub items: Vec<ToolSummary>,
+    /// The cursor for the next page. Absent on the last page.
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ListToolsPage {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ListToolsPage::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ListToolsPage {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ListToolsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// A cloud voice an agent can speak in.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct VoiceSummary {
+    /// The voice's identifier, as an agent configuration names it.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// The voice's name, as people see it.
+    #[serde(rename = "name")]
+    pub name: String,
+    /// The language and accent it speaks, as a BCP 47 tag, for example `en-NZ`.
+    #[serde(rename = "language")]
+    pub language: String,
+    /// The qualities it comes in.
+    #[serde(rename = "qualities")]
+    pub qualities: Vec<VoiceQuality>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for VoiceSummary {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        VoiceSummary::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for VoiceSummary {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| VoiceSummary::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+///
+/// Header-bound members are filled from the response headers; `raw` holds the body as received.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct ListVoicesPage {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
+    ///
+    /// From the `Caitlyn-Request-Id` response header.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+    /// seen and refuse to call operations or send members newer than it.
+    ///
+    /// From the `Caitlyn-Api-Version` response header.
+    #[serde(skip)]
+    pub api_version: Option<String>,
+    /// This page of voices.
+    #[serde(rename = "items")]
+    pub items: Vec<VoiceSummary>,
+    /// The cursor for the next page. Absent on the last page.
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
+    /// The default on values you build yourself.
+    #[serde(skip)]
+    pub response_metadata: rt::ResponseMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for ListVoicesPage {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        ListVoicesPage::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ListVoicesPage {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| ListVoicesPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// What an upload is for. At most one member is set.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct UploadPurpose {
+    /// True when the file is an agent's avatar picture: a PNG, JPEG or WebP image of at most 1 MB,
+    /// checked when the upload is reserved. Use the upload as `avatar.mark.pictureUploadId` on
+    /// CreateAgent or UpdateAgent.
+    #[serde(rename = "agentAvatar", skip_serializing_if = "Option::is_none")]
+    pub agent_avatar: Option<bool>,
+    /// The conversation the file will be attached to. The caller must be able to send to it (its
+    /// update grant, as SendMessage needs); otherwise the call is refused with 404, as for a
+    /// conversation it may not see. Its agent's attachment settings (whether it takes attachments, how
+    /// many, how large and which types) are checked before the upload is reserved, and a file they
+    /// refuse is refused with 400 `ATTACHMENTS_NOT_ACCEPTED` or `VALIDATION_FAILED`.
+    #[serde(rename = "conversationId", skip_serializing_if = "Option::is_none")]
+    pub conversation_id: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for UploadPurpose {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        UploadPurpose::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for UploadPurpose {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| UploadPurpose::deserialize(v), |o, r| o.raw = r)
     }
 }
 
@@ -2023,8 +12067,9 @@ impl<'de> Deserialize<'de> for UploadStatus {
 /// Header-bound members are filled from the response headers; `raw` holds the body as received.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
-pub struct Upload {
-    /// The request's identifier. The same value is in every error body; quote it to support.
+pub struct CreateUploadResult {
+    /// The identifier support uses to find this request. The same value is in every error body;
+    /// quote it to support.
     ///
     /// From the `Caitlyn-Request-Id` response header.
     #[serde(skip)]
@@ -2068,6 +12113,42 @@ pub struct Upload {
     pub raw: rt::Raw,
 }
 
+impl Serialize for CreateUploadResult {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        CreateUploadResult::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for CreateUploadResult {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| CreateUploadResult::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// A short-lived slot for the bytes of one file.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct Upload {
+    /// The identifier the operation that uses the upload takes, for example CreateDocument's
+    /// `uploadId`.
+    #[serde(rename = "id")]
+    pub id: String,
+    /// Where the upload is in its lifecycle.
+    #[serde(rename = "status")]
+    pub status: UploadStatus,
+    /// When the upload URL stops working.
+    #[serde(rename = "expiresAt", with = "::caitlyn_sdk_core::time::rfc3339")]
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+    /// The response this thing was read from; see [`response_metadata`](Self::response_metadata).
+    #[serde(skip)]
+    pub(crate) response_metadata: rt::ThingMetadata,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
 impl Serialize for Upload {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         Upload::serialize(self, s)
@@ -2081,51 +12162,17 @@ impl<'de> Deserialize<'de> for Upload {
     }
 }
 
-///
-/// Header-bound members are filled from the response headers; `raw` holds the body as received.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self", default)]
-pub struct GetUploadResult {
-    /// The request's identifier. The same value is in every error body; quote it to support.
-    ///
-    /// From the `Caitlyn-Request-Id` response header.
-    #[serde(skip)]
-    pub request_id: Option<String>,
-    /// The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
-    /// seen and refuse to call operations or send members newer than it.
-    ///
-    /// From the `Caitlyn-Api-Version` response header.
-    #[serde(skip)]
-    pub api_version: Option<String>,
-    /// The upload's identifier.
-    #[serde(rename = "id")]
-    pub id: String,
-    /// Where the upload is in its lifecycle.
-    #[serde(rename = "status")]
-    pub status: UploadStatus,
-    /// When the upload URL stops working. An upload not used by then becomes `expired`.
-    #[serde(rename = "expiresAt", with = "::caitlyn_sdk_core::time::rfc3339")]
-    pub expires_at: chrono::DateTime<chrono::Utc>,
-    /// The HTTP status, request id and ETag of the response this result was read from (PROTOCOL.md 4.2).
-    /// The default on values you build yourself.
-    #[serde(skip)]
-    pub response_metadata: rt::ResponseMetadata,
-    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
-    /// you build yourself.
-    #[serde(skip)]
-    pub raw: rt::Raw,
-}
-
-impl Serialize for GetUploadResult {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        GetUploadResult::serialize(self, s)
+impl Upload {
+    /// The response this Upload was read from (PROTOCOL.md 4.2): its HTTP status, request id and ETag. `Some` on a
+    /// thing from one response (get, update, create, `wait()`); `None` on a list item, a snapshot entry or a value
+    /// built in code. It is never serialised, and things compare equal whatever it holds.
+    pub fn response_metadata(&self) -> Option<&rt::ResponseMetadata> {
+        self.response_metadata.0.as_ref()
     }
-}
 
-impl<'de> Deserialize<'de> for GetUploadResult {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let v = serde_json::Value::deserialize(d)?;
-        rt::raw::with_raw(v, |v| GetUploadResult::deserialize(v), |o, r| o.raw = r)
+    /// The JSON object this Upload was read from, unknown fields included (PROTOCOL.md 4.1).
+    pub fn raw(&self) -> &rt::Raw {
+        &self.raw
     }
 }
 
@@ -2203,44 +12250,6 @@ impl<'de> Deserialize<'de> for ActorType {
     }
 }
 
-/// A passage the answer cites.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self", default)]
-pub struct Citation {
-    /// The citation's number in the answer text, starting at 1.
-    #[serde(rename = "number")]
-    pub number: i32,
-    /// The cited document.
-    #[serde(rename = "documentId", skip_serializing_if = "Option::is_none")]
-    pub document_id: Option<String>,
-    /// The knowledge base the document is in.
-    #[serde(rename = "knowledgeBaseId", skip_serializing_if = "Option::is_none")]
-    pub knowledge_base_id: Option<String>,
-    /// The cited document's name.
-    #[serde(rename = "documentName", skip_serializing_if = "Option::is_none")]
-    pub document_name: Option<String>,
-    /// The page the passage is on, starting at 1, for paged documents.
-    #[serde(rename = "pageNumber", skip_serializing_if = "Option::is_none")]
-    pub page_number: Option<i32>,
-    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
-    /// you build yourself.
-    #[serde(skip)]
-    pub raw: rt::Raw,
-}
-
-impl Serialize for Citation {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        Citation::serialize(self, s)
-    }
-}
-
-impl<'de> Deserialize<'de> for Citation {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let v = serde_json::Value::deserialize(d)?;
-        rt::raw::with_raw(v, |v| Citation::deserialize(v), |o, r| o.raw = r)
-    }
-}
-
 /// The data of `citation.added`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
@@ -2274,7 +12283,7 @@ impl<'de> Deserialize<'de> for CitationAdded {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
 pub struct ConversationCreated {
-    /// The conversation's identifier.
+    /// The identifier every call about this conversation takes; it never changes.
     #[serde(rename = "id")]
     pub id: String,
     /// The agent it is with.
@@ -2341,7 +12350,7 @@ pub struct EventSubject {
     /// The kind of thing. Open: `conversation` today.
     #[serde(rename = "type")]
     pub r#type: String,
-    /// Its identifier.
+    /// The identifier of the thing the event is about, of the kind `type` names.
     #[serde(rename = "id")]
     pub id: String,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
@@ -2382,7 +12391,7 @@ pub struct ConversationCreatedEvent {
     /// Who caused it. Named only to the owner of the subject; everyone else sees only its type.
     #[serde(rename = "actor")]
     pub actor: EventActor,
-    /// The conversation.
+    /// The conversation that was started.
     #[serde(rename = "data")]
     pub data: ConversationCreated,
     /// The event's SSE `id:`. `None` when the value is not an event itself, such as another event's data.
@@ -2433,117 +12442,6 @@ impl<'de> Deserialize<'de> for InputRequested {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| InputRequested::deserialize(v), |o, r| o.raw = r)
-    }
-}
-
-/// Who wrote a message. Open: new values may be added.
-///
-/// Open: a value this SDK does not know yet is kept as [`MessageRole::Unknown`], never an error.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[non_exhaustive]
-pub enum MessageRole {
-    /// `user`
-    User,
-    /// `assistant`
-    Assistant,
-    /// A value this SDK does not know yet, as received.
-    Unknown(String),
-}
-
-impl MessageRole {
-    /// The value as sent on the wire.
-    pub fn as_str(&self) -> &str {
-        match self {
-            MessageRole::User => "user",
-            MessageRole::Assistant => "assistant",
-            MessageRole::Unknown(s) => s,
-        }
-    }
-
-    /// Whether this SDK knows the value.
-    pub fn is_known(&self) -> bool {
-        !matches!(self, MessageRole::Unknown(_))
-    }
-}
-
-impl From<&str> for MessageRole {
-    fn from(s: &str) -> Self {
-        match s {
-            "user" => MessageRole::User,
-            "assistant" => MessageRole::Assistant,
-            other => MessageRole::Unknown(other.to_owned()),
-        }
-    }
-}
-
-impl From<String> for MessageRole {
-    fn from(s: String) -> Self {
-        MessageRole::from(s.as_str())
-    }
-}
-
-impl Default for MessageRole {
-    fn default() -> Self {
-        MessageRole::Unknown(String::new())
-    }
-}
-
-impl std::fmt::Display for MessageRole {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl Serialize for MessageRole {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(self.as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for MessageRole {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        Ok(MessageRole::from(String::deserialize(d)?))
-    }
-}
-
-/// A message in a conversation.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(remote = "Self", default)]
-pub struct Message {
-    /// The message's identifier.
-    #[serde(rename = "id")]
-    pub id: String,
-    /// Who wrote the message.
-    #[serde(rename = "role")]
-    pub role: MessageRole,
-    /// The message text. For an answer, the whole text the deltas built up.
-    #[serde(rename = "text")]
-    pub text: String,
-    /// The agent version that wrote an answer.
-    #[serde(rename = "agentVersion", skip_serializing_if = "Option::is_none")]
-    pub agent_version: Option<String>,
-    /// The passages an answer cites, in citation number order.
-    #[serde(rename = "citations", skip_serializing_if = "Option::is_none")]
-    pub citations: Option<Vec<Citation>>,
-    /// When the message was written.
-    #[serde(rename = "createdAt", with = "::caitlyn_sdk_core::time::rfc3339")]
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
-    /// you build yourself.
-    #[serde(skip)]
-    pub raw: rt::Raw,
-}
-
-impl Serialize for Message {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        Message::serialize(self, s)
-    }
-}
-
-impl<'de> Deserialize<'de> for Message {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let v = serde_json::Value::deserialize(d)?;
-        rt::raw::with_raw(v, |v| Message::deserialize(v), |o, r| o.raw = r)
     }
 }
 
@@ -2603,7 +12501,7 @@ pub struct MessageFailed {
     #[serde(rename = "requestId")]
     pub request_id: String,
     /// Field-level problems, one per member or parameter at fault. Present only on 400
-    /// `VALIDATION_FAILED`.
+    /// `VALIDATION_FAILED` and on the 422 `METADATA_*` codes.
     #[serde(rename = "errors", skip_serializing_if = "Option::is_none")]
     pub errors: Option<Vec<FieldError>>,
     /// The event's SSE `id:`. `None` when the value is not an event itself, such as another event's data.
@@ -2942,7 +12840,7 @@ impl<'de> Deserialize<'de> for ToolStatus {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
 pub struct ToolFinished {
-    /// The tool call's identifier.
+    /// Matches the tool call's finish to its start.
     #[serde(rename = "toolCallId")]
     pub tool_call_id: String,
     /// The tool called.
@@ -2983,7 +12881,7 @@ impl<'de> Deserialize<'de> for ToolFinished {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
 pub struct ToolStarted {
-    /// The tool call's identifier.
+    /// Matches the tool call's start to its finish.
     #[serde(rename = "toolCallId")]
     pub tool_call_id: String,
     /// The tool called.
@@ -3106,6 +13004,16 @@ impl Serialize for ConversationEvent {
     }
 }
 
+/// The answer's text, for `stream.text()`.
+impl rt::TextDeltas for ConversationEvent {
+    fn text_delta(&self) -> Option<&str> {
+        match self {
+            ConversationEvent::TextDelta(v) => Some(&v.delta),
+            _ => None,
+        }
+    }
+}
+
 /// Decodes one SSE event of the ConversationEvent union.
 pub(crate) fn decode_conversation_event(
     name: &str,
@@ -3172,6 +13080,186 @@ pub(crate) fn decode_conversation_event(
     })
 }
 
+/// The data of `document.created` and `document.updated`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct DocumentChanged {
+    /// The document as it now is.
+    #[serde(rename = "document")]
+    pub document: Document,
+    /// The event's SSE `id:`. `None` when the value is not an event itself, such as another event's data.
+    #[serde(skip)]
+    pub event_id: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for DocumentChanged {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        DocumentChanged::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for DocumentChanged {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| DocumentChanged::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The data of `document.deleted`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct DocumentDeleted {
+    /// The document that was deleted.
+    #[serde(rename = "documentId")]
+    pub document_id: String,
+    /// The event's SSE `id:`. `None` when the value is not an event itself, such as another event's data.
+    #[serde(skip)]
+    pub event_id: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for DocumentDeleted {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        DocumentDeleted::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for DocumentDeleted {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| DocumentDeleted::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The data of `document.progress`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct DocumentProgress {
+    /// The document whose processing moved on.
+    #[serde(rename = "documentId")]
+    pub document_id: String,
+    /// How far the document's processing has got.
+    #[serde(rename = "processing")]
+    pub processing: DocumentProcessing,
+    /// The event's SSE `id:`. `None` when the value is not an event itself, such as another event's data.
+    #[serde(skip)]
+    pub event_id: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for DocumentProgress {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        DocumentProgress::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for DocumentProgress {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| DocumentProgress::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The data of `document_version.indexed`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct DocumentVersionIndexed {
+    /// The document whose new version became searchable.
+    #[serde(rename = "documentId")]
+    pub document_id: String,
+    /// The version that became searchable, now the current one.
+    #[serde(rename = "version")]
+    pub version: i32,
+    /// The event's SSE `id:`. `None` when the value is not an event itself, such as another event's data.
+    #[serde(skip)]
+    pub event_id: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for DocumentVersionIndexed {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        DocumentVersionIndexed::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for DocumentVersionIndexed {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| DocumentVersionIndexed::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The data of `folder.created` and `folder.updated`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct FolderChanged {
+    /// The folder as it now is.
+    #[serde(rename = "folder")]
+    pub folder: Folder,
+    /// The event's SSE `id:`. `None` when the value is not an event itself, such as another event's data.
+    #[serde(skip)]
+    pub event_id: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for FolderChanged {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        FolderChanged::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for FolderChanged {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| FolderChanged::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The data of `folder.deleted`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct FolderDeleted {
+    /// Where the deleted folder was.
+    #[serde(rename = "path")]
+    pub path: String,
+    /// The event's SSE `id:`. `None` when the value is not an event itself, such as another event's data.
+    #[serde(skip)]
+    pub event_id: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for FolderDeleted {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        FolderDeleted::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for FolderDeleted {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| FolderDeleted::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
 /// `input.requested`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
@@ -3214,6 +13302,276 @@ impl<'de> Deserialize<'de> for InputRequestedEvent {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| InputRequestedEvent::deserialize(v), |o, r| o.raw = r)
     }
+}
+
+/// The data of `job.progress` and `job.finished`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct JobChanged {
+    /// The job as it now is.
+    #[serde(rename = "job")]
+    pub job: Job,
+    /// The event's SSE `id:`. `None` when the value is not an event itself, such as another event's data.
+    #[serde(skip)]
+    pub event_id: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for JobChanged {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        JobChanged::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for JobChanged {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| JobChanged::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The data of `knowledge_base.updated`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct KnowledgeBaseChanged {
+    /// The knowledge base as it now is.
+    #[serde(rename = "knowledgeBase")]
+    pub knowledge_base: KnowledgeBase,
+    /// The event's SSE `id:`. `None` when the value is not an event itself, such as another event's data.
+    #[serde(skip)]
+    pub event_id: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for KnowledgeBaseChanged {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        KnowledgeBaseChanged::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for KnowledgeBaseChanged {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| KnowledgeBaseChanged::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The data of `snapshot`: the thing watched, its jobs, and its documents' progress.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct KnowledgeBaseSnapshot {
+    /// The knowledge base, when the whole knowledge base is watched.
+    #[serde(rename = "knowledgeBase", skip_serializing_if = "Option::is_none")]
+    pub knowledge_base: Option<KnowledgeBase>,
+    /// The document, when one document is watched.
+    #[serde(rename = "document", skip_serializing_if = "Option::is_none")]
+    pub document: Option<Document>,
+    /// The folder, when one folder is watched.
+    #[serde(rename = "folder", skip_serializing_if = "Option::is_none")]
+    pub folder: Option<Folder>,
+    /// The batch, when one batch is watched.
+    #[serde(rename = "batch", skip_serializing_if = "Option::is_none")]
+    pub batch: Option<IngestionBatch>,
+    /// The jobs running on what is watched, and those that ended in the last hour.
+    #[serde(rename = "jobs")]
+    pub jobs: Vec<Job>,
+    /// The progress of each document being processed, at most the first 1,000; each entry is what a
+    /// `document.progress` event carries.
+    #[serde(rename = "progress")]
+    pub progress: Vec<DocumentProgress>,
+    /// The event's SSE `id:`. `None` when the value is not an event itself, such as another event's data.
+    #[serde(skip)]
+    pub event_id: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for KnowledgeBaseSnapshot {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        KnowledgeBaseSnapshot::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for KnowledgeBaseSnapshot {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| KnowledgeBaseSnapshot::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The events on a knowledge base's watch.
+///
+/// Event names this SDK does not know are skipped. On a stream with a final event, a failure event ends the
+/// stream with a typed error instead; on a watch it is delivered like any other (PROTOCOL.md 5.5).
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum KnowledgeBaseEvent {
+    /// `snapshot`
+    Snapshot(KnowledgeBaseSnapshot),
+    /// `document.progress`
+    DocumentProgress(DocumentProgress),
+    /// `document.created`
+    DocumentCreated(DocumentChanged),
+    /// `document.updated`
+    DocumentUpdated(DocumentChanged),
+    /// `document.deleted`
+    DocumentDeleted(DocumentDeleted),
+    /// `document_version.indexed`
+    DocumentVersionIndexed(DocumentVersionIndexed),
+    /// `folder.created`
+    FolderCreated(FolderChanged),
+    /// `folder.updated`
+    FolderUpdated(FolderChanged),
+    /// `folder.deleted`
+    FolderDeleted(FolderDeleted),
+    /// `job.progress`
+    JobProgress(JobChanged),
+    /// `job.finished`
+    JobFinished(JobChanged),
+    /// `knowledge_base.updated`
+    KnowledgeBaseUpdated(KnowledgeBaseChanged),
+}
+
+impl KnowledgeBaseEvent {
+    /// The event's SSE `id:`.
+    pub fn event_id(&self) -> Option<&str> {
+        match self {
+            KnowledgeBaseEvent::Snapshot(v) => v.event_id.as_deref(),
+            KnowledgeBaseEvent::DocumentProgress(v) => v.event_id.as_deref(),
+            KnowledgeBaseEvent::DocumentCreated(v) => v.event_id.as_deref(),
+            KnowledgeBaseEvent::DocumentUpdated(v) => v.event_id.as_deref(),
+            KnowledgeBaseEvent::DocumentDeleted(v) => v.event_id.as_deref(),
+            KnowledgeBaseEvent::DocumentVersionIndexed(v) => v.event_id.as_deref(),
+            KnowledgeBaseEvent::FolderCreated(v) => v.event_id.as_deref(),
+            KnowledgeBaseEvent::FolderUpdated(v) => v.event_id.as_deref(),
+            KnowledgeBaseEvent::FolderDeleted(v) => v.event_id.as_deref(),
+            KnowledgeBaseEvent::JobProgress(v) => v.event_id.as_deref(),
+            KnowledgeBaseEvent::JobFinished(v) => v.event_id.as_deref(),
+            KnowledgeBaseEvent::KnowledgeBaseUpdated(v) => v.event_id.as_deref(),
+        }
+    }
+
+    /// The event's SSE `event:` name, for example `text.delta`.
+    pub fn event_type(&self) -> &'static str {
+        match self {
+            KnowledgeBaseEvent::Snapshot(_) => "snapshot",
+            KnowledgeBaseEvent::DocumentProgress(_) => "document.progress",
+            KnowledgeBaseEvent::DocumentCreated(_) => "document.created",
+            KnowledgeBaseEvent::DocumentUpdated(_) => "document.updated",
+            KnowledgeBaseEvent::DocumentDeleted(_) => "document.deleted",
+            KnowledgeBaseEvent::DocumentVersionIndexed(_) => "document_version.indexed",
+            KnowledgeBaseEvent::FolderCreated(_) => "folder.created",
+            KnowledgeBaseEvent::FolderUpdated(_) => "folder.updated",
+            KnowledgeBaseEvent::FolderDeleted(_) => "folder.deleted",
+            KnowledgeBaseEvent::JobProgress(_) => "job.progress",
+            KnowledgeBaseEvent::JobFinished(_) => "job.finished",
+            KnowledgeBaseEvent::KnowledgeBaseUpdated(_) => "knowledge_base.updated",
+        }
+    }
+}
+
+/// Serialises as the event's JSON object with `type`, its SSE event name, added.
+impl Serialize for KnowledgeBaseEvent {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let mut v = match self {
+            KnowledgeBaseEvent::Snapshot(e) => serde_json::to_value(e),
+            KnowledgeBaseEvent::DocumentProgress(e) => serde_json::to_value(e),
+            KnowledgeBaseEvent::DocumentCreated(e) => serde_json::to_value(e),
+            KnowledgeBaseEvent::DocumentUpdated(e) => serde_json::to_value(e),
+            KnowledgeBaseEvent::DocumentDeleted(e) => serde_json::to_value(e),
+            KnowledgeBaseEvent::DocumentVersionIndexed(e) => serde_json::to_value(e),
+            KnowledgeBaseEvent::FolderCreated(e) => serde_json::to_value(e),
+            KnowledgeBaseEvent::FolderUpdated(e) => serde_json::to_value(e),
+            KnowledgeBaseEvent::FolderDeleted(e) => serde_json::to_value(e),
+            KnowledgeBaseEvent::JobProgress(e) => serde_json::to_value(e),
+            KnowledgeBaseEvent::JobFinished(e) => serde_json::to_value(e),
+            KnowledgeBaseEvent::KnowledgeBaseUpdated(e) => serde_json::to_value(e),
+        }
+        .map_err(serde::ser::Error::custom)?;
+        if let serde_json::Value::Object(o) = &mut v {
+            o.insert("type".to_owned(), serde_json::Value::from(self.event_type()));
+        }
+        v.serialize(s)
+    }
+}
+
+/// Decodes one SSE event of the KnowledgeBaseEvent union.
+pub(crate) fn decode_knowledge_base_event(
+    name: &str,
+    id: Option<&str>,
+    data: &[u8],
+) -> Result<rt::Decoded<KnowledgeBaseEvent>, serde_json::Error> {
+    Ok(match name {
+        "snapshot" => {
+            let mut v: KnowledgeBaseSnapshot = serde_json::from_slice(data)?;
+            v.event_id = id.map(str::to_owned);
+            rt::Decoded::Event(KnowledgeBaseEvent::Snapshot(v))
+        }
+        "document.progress" => {
+            let mut v: DocumentProgress = serde_json::from_slice(data)?;
+            v.event_id = id.map(str::to_owned);
+            rt::Decoded::Event(KnowledgeBaseEvent::DocumentProgress(v))
+        }
+        "document.created" => {
+            let mut v: DocumentChanged = serde_json::from_slice(data)?;
+            v.event_id = id.map(str::to_owned);
+            rt::Decoded::Event(KnowledgeBaseEvent::DocumentCreated(v))
+        }
+        "document.updated" => {
+            let mut v: DocumentChanged = serde_json::from_slice(data)?;
+            v.event_id = id.map(str::to_owned);
+            rt::Decoded::Event(KnowledgeBaseEvent::DocumentUpdated(v))
+        }
+        "document.deleted" => {
+            let mut v: DocumentDeleted = serde_json::from_slice(data)?;
+            v.event_id = id.map(str::to_owned);
+            rt::Decoded::Event(KnowledgeBaseEvent::DocumentDeleted(v))
+        }
+        "document_version.indexed" => {
+            let mut v: DocumentVersionIndexed = serde_json::from_slice(data)?;
+            v.event_id = id.map(str::to_owned);
+            rt::Decoded::Event(KnowledgeBaseEvent::DocumentVersionIndexed(v))
+        }
+        "folder.created" => {
+            let mut v: FolderChanged = serde_json::from_slice(data)?;
+            v.event_id = id.map(str::to_owned);
+            rt::Decoded::Event(KnowledgeBaseEvent::FolderCreated(v))
+        }
+        "folder.updated" => {
+            let mut v: FolderChanged = serde_json::from_slice(data)?;
+            v.event_id = id.map(str::to_owned);
+            rt::Decoded::Event(KnowledgeBaseEvent::FolderUpdated(v))
+        }
+        "folder.deleted" => {
+            let mut v: FolderDeleted = serde_json::from_slice(data)?;
+            v.event_id = id.map(str::to_owned);
+            rt::Decoded::Event(KnowledgeBaseEvent::FolderDeleted(v))
+        }
+        "job.progress" => {
+            let mut v: JobChanged = serde_json::from_slice(data)?;
+            v.event_id = id.map(str::to_owned);
+            rt::Decoded::Event(KnowledgeBaseEvent::JobProgress(v))
+        }
+        "job.finished" => {
+            let mut v: JobChanged = serde_json::from_slice(data)?;
+            v.event_id = id.map(str::to_owned);
+            rt::Decoded::Event(KnowledgeBaseEvent::JobFinished(v))
+        }
+        "knowledge_base.updated" => {
+            let mut v: KnowledgeBaseChanged = serde_json::from_slice(data)?;
+            v.event_id = id.map(str::to_owned);
+            rt::Decoded::Event(KnowledgeBaseEvent::KnowledgeBaseUpdated(v))
+        }
+        _ => rt::Decoded::Skip,
+    })
 }
 
 /// `message.completed`.
@@ -3304,6 +13662,127 @@ impl<'de> Deserialize<'de> for MessageFailedEvent {
     }
 }
 
+/// The data of `operation.finished`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct OperationFinished {
+    /// The Operation as it ended.
+    #[serde(rename = "operation")]
+    pub operation: Operation,
+    /// The event's SSE `id:`. `None` when the value is not an event itself, such as another event's data.
+    #[serde(skip)]
+    pub event_id: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for OperationFinished {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        OperationFinished::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for OperationFinished {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| OperationFinished::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The data of `operation.updated`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self", default)]
+pub struct OperationUpdated {
+    /// The Operation as it now is.
+    #[serde(rename = "operation")]
+    pub operation: Operation,
+    /// The event's SSE `id:`. `None` when the value is not an event itself, such as another event's data.
+    #[serde(skip)]
+    pub event_id: Option<String>,
+    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
+    /// you build yourself.
+    #[serde(skip)]
+    pub raw: rt::Raw,
+}
+
+impl Serialize for OperationUpdated {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        OperationUpdated::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for OperationUpdated {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        rt::raw::with_raw(v, |v| OperationUpdated::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+/// The events on an Operation's stream.
+///
+/// Event names this SDK does not know are skipped. On a stream with a final event, a failure event ends the
+/// stream with a typed error instead; on a watch it is delivered like any other (PROTOCOL.md 5.5).
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum OperationEvent {
+    /// `operation.updated`
+    OperationUpdated(OperationUpdated),
+    /// `operation.finished`
+    OperationFinished(OperationFinished),
+}
+
+impl OperationEvent {
+    /// The event's SSE `id:`.
+    pub fn event_id(&self) -> Option<&str> {
+        match self {
+            OperationEvent::OperationUpdated(v) => v.event_id.as_deref(),
+            OperationEvent::OperationFinished(v) => v.event_id.as_deref(),
+        }
+    }
+
+    /// The event's SSE `event:` name, for example `text.delta`.
+    pub fn event_type(&self) -> &'static str {
+        match self {
+            OperationEvent::OperationUpdated(_) => "operation.updated",
+            OperationEvent::OperationFinished(_) => "operation.finished",
+        }
+    }
+}
+
+/// Serialises as the event's JSON object with `type`, its SSE event name, added.
+impl Serialize for OperationEvent {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let mut v = match self {
+            OperationEvent::OperationUpdated(e) => serde_json::to_value(e),
+            OperationEvent::OperationFinished(e) => serde_json::to_value(e),
+        }
+        .map_err(serde::ser::Error::custom)?;
+        if let serde_json::Value::Object(o) = &mut v {
+            o.insert("type".to_owned(), serde_json::Value::from(self.event_type()));
+        }
+        v.serialize(s)
+    }
+}
+
+/// Decodes one SSE event of the OperationEvent union.
+pub(crate) fn decode_operation_event(name: &str, id: Option<&str>, data: &[u8]) -> Result<rt::Decoded<OperationEvent>, serde_json::Error> {
+    Ok(match name {
+        "operation.updated" => {
+            let mut v: OperationUpdated = serde_json::from_slice(data)?;
+            v.event_id = id.map(str::to_owned);
+            rt::Decoded::Event(OperationEvent::OperationUpdated(v))
+        }
+        "operation.finished" => {
+            let mut v: OperationFinished = serde_json::from_slice(data)?;
+            v.event_id = id.map(str::to_owned);
+            rt::Decoded::Event(OperationEvent::OperationFinished(v))
+        }
+        _ => rt::Decoded::Skip,
+    })
+}
+
 /// `tool.finished`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
@@ -3357,15 +13836,15 @@ impl<'de> Deserialize<'de> for ToolFinishedEvent {
 #[non_exhaustive]
 pub enum WorkspaceEvent {
     /// `conversation.created`
-    ConversationCreatedEvent(ConversationCreatedEvent),
+    ConversationCreated(ConversationCreatedEvent),
     /// `message.completed`
-    MessageCompletedEvent(MessageCompletedEvent),
+    MessageCompleted(MessageCompletedEvent),
     /// `message.failed`
-    MessageFailedEvent(MessageFailedEvent),
+    MessageFailed(MessageFailedEvent),
     /// `tool.finished`
-    ToolFinishedEvent(ToolFinishedEvent),
+    ToolFinished(ToolFinishedEvent),
     /// `input.requested`
-    InputRequestedEvent(InputRequestedEvent),
+    InputRequested(InputRequestedEvent),
     /// `stream.reset`
     StreamReset(StreamReset),
 }
@@ -3374,11 +13853,11 @@ impl WorkspaceEvent {
     /// The event's SSE `id:`.
     pub fn event_id(&self) -> Option<&str> {
         match self {
-            WorkspaceEvent::ConversationCreatedEvent(v) => v.event_id.as_deref(),
-            WorkspaceEvent::MessageCompletedEvent(v) => v.event_id.as_deref(),
-            WorkspaceEvent::MessageFailedEvent(v) => v.event_id.as_deref(),
-            WorkspaceEvent::ToolFinishedEvent(v) => v.event_id.as_deref(),
-            WorkspaceEvent::InputRequestedEvent(v) => v.event_id.as_deref(),
+            WorkspaceEvent::ConversationCreated(v) => v.event_id.as_deref(),
+            WorkspaceEvent::MessageCompleted(v) => v.event_id.as_deref(),
+            WorkspaceEvent::MessageFailed(v) => v.event_id.as_deref(),
+            WorkspaceEvent::ToolFinished(v) => v.event_id.as_deref(),
+            WorkspaceEvent::InputRequested(v) => v.event_id.as_deref(),
             WorkspaceEvent::StreamReset(v) => v.event_id.as_deref(),
         }
     }
@@ -3386,11 +13865,11 @@ impl WorkspaceEvent {
     /// The event's SSE `event:` name, for example `text.delta`.
     pub fn event_type(&self) -> &'static str {
         match self {
-            WorkspaceEvent::ConversationCreatedEvent(_) => "conversation.created",
-            WorkspaceEvent::MessageCompletedEvent(_) => "message.completed",
-            WorkspaceEvent::MessageFailedEvent(_) => "message.failed",
-            WorkspaceEvent::ToolFinishedEvent(_) => "tool.finished",
-            WorkspaceEvent::InputRequestedEvent(_) => "input.requested",
+            WorkspaceEvent::ConversationCreated(_) => "conversation.created",
+            WorkspaceEvent::MessageCompleted(_) => "message.completed",
+            WorkspaceEvent::MessageFailed(_) => "message.failed",
+            WorkspaceEvent::ToolFinished(_) => "tool.finished",
+            WorkspaceEvent::InputRequested(_) => "input.requested",
             WorkspaceEvent::StreamReset(_) => "stream.reset",
         }
     }
@@ -3400,11 +13879,11 @@ impl WorkspaceEvent {
 impl Serialize for WorkspaceEvent {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let mut v = match self {
-            WorkspaceEvent::ConversationCreatedEvent(e) => serde_json::to_value(e),
-            WorkspaceEvent::MessageCompletedEvent(e) => serde_json::to_value(e),
-            WorkspaceEvent::MessageFailedEvent(e) => serde_json::to_value(e),
-            WorkspaceEvent::ToolFinishedEvent(e) => serde_json::to_value(e),
-            WorkspaceEvent::InputRequestedEvent(e) => serde_json::to_value(e),
+            WorkspaceEvent::ConversationCreated(e) => serde_json::to_value(e),
+            WorkspaceEvent::MessageCompleted(e) => serde_json::to_value(e),
+            WorkspaceEvent::MessageFailed(e) => serde_json::to_value(e),
+            WorkspaceEvent::ToolFinished(e) => serde_json::to_value(e),
+            WorkspaceEvent::InputRequested(e) => serde_json::to_value(e),
             WorkspaceEvent::StreamReset(e) => serde_json::to_value(e),
         }
         .map_err(serde::ser::Error::custom)?;
@@ -3421,27 +13900,27 @@ pub(crate) fn decode_workspace_event(name: &str, id: Option<&str>, data: &[u8]) 
         "conversation.created" => {
             let mut v: ConversationCreatedEvent = serde_json::from_slice(data)?;
             v.event_id = id.map(str::to_owned);
-            rt::Decoded::Event(WorkspaceEvent::ConversationCreatedEvent(v))
+            rt::Decoded::Event(WorkspaceEvent::ConversationCreated(v))
         }
         "message.completed" => {
             let mut v: MessageCompletedEvent = serde_json::from_slice(data)?;
             v.event_id = id.map(str::to_owned);
-            rt::Decoded::Event(WorkspaceEvent::MessageCompletedEvent(v))
+            rt::Decoded::Event(WorkspaceEvent::MessageCompleted(v))
         }
         "message.failed" => {
             let mut v: MessageFailedEvent = serde_json::from_slice(data)?;
             v.event_id = id.map(str::to_owned);
-            rt::Decoded::Event(WorkspaceEvent::MessageFailedEvent(v))
+            rt::Decoded::Event(WorkspaceEvent::MessageFailed(v))
         }
         "tool.finished" => {
             let mut v: ToolFinishedEvent = serde_json::from_slice(data)?;
             v.event_id = id.map(str::to_owned);
-            rt::Decoded::Event(WorkspaceEvent::ToolFinishedEvent(v))
+            rt::Decoded::Event(WorkspaceEvent::ToolFinished(v))
         }
         "input.requested" => {
             let mut v: InputRequestedEvent = serde_json::from_slice(data)?;
             v.event_id = id.map(str::to_owned);
-            rt::Decoded::Event(WorkspaceEvent::InputRequestedEvent(v))
+            rt::Decoded::Event(WorkspaceEvent::InputRequested(v))
         }
         "stream.reset" => {
             let mut v: StreamReset = serde_json::from_slice(data)?;

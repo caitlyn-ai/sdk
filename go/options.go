@@ -6,6 +6,7 @@ package caitlyn
 // option and error types so callers import only this package.
 
 import (
+	"io"
 	"time"
 
 	"go.opentelemetry.io/otel/propagation"
@@ -19,8 +20,8 @@ type (
 	Option = core.Option
 	// CallOption configures one call: WithIfMatch, WithIdempotencyKey.
 	CallOption = core.CallOption
-	// WaiterOption configures one WaitUntil… call: WithMaxWait, WithWaitDelays.
-	WaiterOption = core.WaiterOption
+	// WaitOption configures one Wait or Planned call: WithTimeLimit.
+	WaitOption = core.WaitOption
 	// Auth adds credentials to each request.
 	Auth = core.Auth
 	// Token is a static bearer token: caitlyn.Token("cait-pat-…").
@@ -69,16 +70,25 @@ type (
 	NotSupportedByServerError = core.NotSupportedByServerError
 	// InputError is returned, before anything is sent, when a required input is missing.
 	InputError = core.InputError
-	// WaiterError is returned by a WaitUntil… method that reached a failure state or its time limit.
-	WaiterError = core.WaiterError
-	// UploadFile is a file for Uploads.Create and Documents.Upload.
+	// File is what a call that takes a file accepts: a Path, an *UploadFile (FileFromPath, FileFromBytes,
+	// FileFromReader) or an UploadID, as in kb.Documents.Create(ctx, caitlyn.Path("./leave-policy.pdf"), in).
+	File = core.File
+	// Path is a file on disk by its path, wherever a File is taken: caitlyn.Path("./leave-policy.pdf").
+	Path = core.Path
+	// UploadID is an upload already sent with Core.Uploads.Send, wherever a File is taken: its id is used as it is.
+	UploadID = core.UploadID
+	// UploadFile is a file to upload, from a path, bytes or a stream: FileFromPath, FileFromBytes, FileFromReader. Pass
+	// it wherever a File is taken, or send it with Core.Uploads.Send.
 	UploadFile = core.UploadFile
+	// FileOption sets a property of an UploadFile: WithContentType, WithSize.
+	FileOption = core.FileOption
 )
 
 // WithEndpoint sends requests to endpoint instead of https://<workspace>.
 func WithEndpoint(endpoint string) Option { return core.WithEndpoint(endpoint) }
 
-// WithHTTPClient replaces the default *http.Client.
+// WithHTTPClient replaces the default *http.Client. An *http.Client is used as a copy that does not follow redirects
+// (a 302 is an operation's result, never a hop); any other HTTPDoer must not follow them itself.
 func WithHTTPClient(c core.HTTPDoer) Option { return core.WithHTTPClient(c) }
 
 // WithMaxAttempts sets the attempts for a retry-safe operation, the first included (default 3).
@@ -105,20 +115,35 @@ func WithIfMatch(etag string) CallOption { return core.WithIfMatch(etag) }
 // WithIdempotencyKey sends this Idempotency-Key instead of a generated one (kept across retries either way).
 func WithIdempotencyKey(key string) CallOption { return core.WithIdempotencyKey(key) }
 
-// DefaultMaxWait is the time limit of a waiter the model gives no limit of its own: 5 minutes.
-const DefaultMaxWait = core.DefaultMaxWait
+// WithTimeLimit bounds a Wait or Planned call: past d it ends with an *Error whose Code is WAIT_TIMEOUT, for which
+// errors.Is(err, context.DeadlineExceeded) holds, and the watch is closed. There is no default limit.
+func WithTimeLimit(d time.Duration) WaitOption { return core.WithTimeLimit(d) }
 
-// WithMaxWait bounds a WaitUntil… call, in place of the waiter's own limit (its method's documentation
-// gives it; 5 minutes unless the model sets another).
-func WithMaxWait(d time.Duration) WaiterOption { return core.WithMaxWait(d) }
-
-// WithWaitDelays overrides the model's polling delays for a WaitUntil… call.
-func WithWaitDelays(minDelay, maxDelay time.Duration) WaiterOption {
-	return core.WithWaitDelays(minDelay, maxDelay)
+// FileFromPath is the file at path, for upload. Its name is the path's last element and its content type comes from
+// the extension unless WithContentType sets one. The bytes are read when a call uses the file, and its size and
+// modification time are checked again before they are sent: a file changed in between fails with FILE_CHANGED.
+func FileFromPath(path string, opts ...FileOption) (*UploadFile, error) {
+	return core.FileFromPath(path, opts...)
 }
 
-// FileFromPath reads a file for upload, taking its content type from the extension.
-func FileFromPath(path string) (*UploadFile, error) { return core.FileFromPath(path) }
+// FileFromBytes is a file named name holding data, for upload. The name gives the content type unless
+// WithContentType sets one.
+func FileFromBytes(name string, data []byte, opts ...FileOption) *UploadFile {
+	return core.FileFromBytes(name, data, opts...)
+}
+
+// FileFromReader is a file named name read from r, for upload. The stream is read once, by the first call that uses
+// the file, and copied aside while it is hashed (in memory up to 8 MiB, past that to a temporary file only its owner
+// can read, removed when the call ends). WithSize gives its length when it is known.
+func FileFromReader(name string, r io.Reader, opts ...FileOption) *UploadFile {
+	return core.FileFromReader(name, r, opts...)
+}
+
+// WithContentType sets a file's media type, in place of the one its name's extension gives.
+func WithContentType(contentType string) FileOption { return core.WithContentType(contentType) }
+
+// WithSize gives a stream's length when it is known, such as an HTTP response's ContentLength (-1 means unknown).
+func WithSize(size int64) FileOption { return core.WithSize(size) }
 
 // Ptr returns a pointer to v, for optional input fields: Limit: caitlyn.Ptr[int32](50).
 func Ptr[T any](v T) *T { return &v }

@@ -1,7 +1,6 @@
 package ai.caitlyn.codegen.go;
 
 import ai.caitlyn.codegen.model.CaitlynTraits;
-import ai.caitlyn.codegen.model.ClientMethod;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -26,7 +25,7 @@ import software.amazon.smithy.model.traits.IdempotencyTokenTrait;
 import software.amazon.smithy.model.traits.IdempotentTrait;
 import software.amazon.smithy.model.traits.ReadonlyTrait;
 
-/** One operation as the Go client sees it: its namespace, method, parameters and call options (PROTOCOL.md 10). */
+/** One operation as the Go client sees it: its HTTP bindings, Go fields and call options. Where it is placed comes from the scope tree. */
 final class OperationInfo {
     enum Kind { UNARY, PAGINATED, STREAM }
 
@@ -43,28 +42,16 @@ final class OperationInfo {
 
     final OperationShape op;
     final String name;
-    /**
-     * The namespace's Go segments, outermost first: [Documents], or [Agents, Versions] for the dotted namespace
-     * agents.versions (PROTOCOL.md 10). namespace is the path from Client, Documents or Agents.Versions, and
-     * namespaceType the client type that holds the method, DocumentsClient or AgentsVersionsClient.
-     */
-    final List<String> path;
-    final String namespace;
-    final String namespaceType;
-    /** Exported method name, for example List or UpdateDraft. */
-    final String method;
     final Kind kind;
     final HttpTrait http;
     final StructureShape input;
     final StructureShape output;
-    /** Input members that stay fields of the Input type, in model order. */
+    /** Input members other than the idempotency key and If-Match, in model order. */
     final List<Param> fields = new ArrayList<>();
     final List<Param> all = new ArrayList<>();
     final Optional<PaginationInfo> pagination;
     final Optional<ObjectNode> sse;
     final boolean retrySafe;
-    /** The identifier passed positionally (Conversations.Send(ctx, conversationID, in)), if any. */
-    final Optional<Param> positional;
     /** The @idempotencyToken member (a call option, not a field), if any. */
     final Optional<Param> idempotency;
     /** The If-Match header member (a call option, not a field), if any. */
@@ -85,25 +72,14 @@ final class OperationInfo {
         this.stability = CaitlynTraits.stability(op);
         this.since = CaitlynTraits.since(op);
 
-        // Naming, shared with the TypeScript and Python generators (model-support's ClientMethod).
-        ClientMethod cm = ClientMethod.of(model, op);
-        String positionalMember = cm.positionalMember().orElse(null);
-        this.path = cm.path().stream().map(Names::exported).toList();
-        this.namespace = String.join(".", path);
-        this.namespaceType = String.join("", path) + "Client";
-        this.method = Names.exported(cm.method());
-
         Map<String, HttpBinding> bindings = HttpBindingIndex.of(model).getRequestBindings(op);
-        Param pos = null;
         Param idem = null;
         Param match = null;
         for (MemberShape m : input.getAllMembers().values()) {
             HttpBinding b = bindings.get(m.getMemberName());
             Param p = new Param(m, b, Names.exported(m.getMemberName()));
             all.add(p);
-            if (m.getMemberName().equals(positionalMember)) {
-                pos = p;
-            } else if (m.hasTrait(IdempotencyTokenTrait.class)) {
+            if (m.hasTrait(IdempotencyTokenTrait.class)) {
                 idem = p;
             } else if (b.getLocation() == HttpBinding.Location.HEADER && b.getLocationName().equalsIgnoreCase("If-Match")) {
                 match = p;
@@ -111,7 +87,6 @@ final class OperationInfo {
                 fields.add(p);
             }
         }
-        this.positional = Optional.ofNullable(pos);
         this.idempotency = Optional.ofNullable(idem);
         this.ifMatch = Optional.ofNullable(match);
         if (idem != null && idem.location() != HttpBinding.Location.HEADER) {
@@ -122,11 +97,6 @@ final class OperationInfo {
 
     String inputType() {
         return name + "Input";
-    }
-
-    /** The builder's parameters after the input: the positional identifier, as a Go parameter name. */
-    Optional<String> positionalParam() {
-        return positional.map(p -> Names.unexported(p.member().getMemberName()));
     }
 
     Optional<Param> param(String memberName) {

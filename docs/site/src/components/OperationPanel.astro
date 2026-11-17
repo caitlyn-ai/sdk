@@ -3,7 +3,9 @@
 // workspace (ServerBlock.astro), the examples to choose from, the example in the chosen code language (the panel's
 // menu, LanguageSelect.astro; the API reference's offers curl too), what comes back, then the page's contents. The SDK
 // reference shows what the call returns (the result's JSON or the error's details); the API reference shows the HTTP
-// response. A stream shows a sample sequence of events. From 1249px it is the right column, beside the page as it
+// response. Beside each status, in the reader's SDK language, is what the call returns (a success) or the error class
+// it raises (an error), with the code when the body names one; the curl view has the HTTP response alone. A stream
+// shows a sample sequence of events. From 1249px it is the right column, beside the page as it
 // scrolls; below, src/scripts/operation-panel.ts moves it into the page after the opening, where Starlight's "On this
 // page" menu does the contents' job.
 import { Code } from '@astrojs/starlight/components';
@@ -30,9 +32,27 @@ interface Response {
 interface Props {
   panel: Example[];
   responses?: Response[];
+  /** What the call returns in each SDK language, as HTML with its types linked (scripts/docs-api.mjs sdkReturns) */
+  returns?: Record<string, string>;
+  /** The error class each SDK language raises, by status */
+  errorClasses?: Record<string, Record<string, string>>;
   kind?: 'sdk' | 'api';
 }
-const { panel, kind = 'sdk' } = Astro.props;
+const { panel, kind = 'sdk', returns = {}, errorClasses = {} } = Astro.props;
+const SDK_LANGS = ['typescript', 'python', 'go', 'rust'];
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+/** The error code a response names: the illustration's, or the body's own `code` */
+const codeOf = (r: Response) => r.code ?? /"code":\s*"([A-Z][A-Z0-9_]*)"/.exec(r.result ?? r.response ?? '')?.[1];
+/** The line beside a status in one language: what the call returns, or the class it raises */
+const sdkLine = (r: Response, lang: string) => {
+  if (r.status < 400) return returns[lang] ?? '';
+  const cls = errorClasses[String(r.status)]?.[lang];
+  if (!cls) return '';
+  const code = codeOf(r);
+  // Each class's entry in the SDK types area (scripts/docs-api.mjs sdkTypeAnchor)
+  const anchor = `${lang}-${cls.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase()}`;
+  return `raises <a href="/sdk/sdk-types/error-classes/#${anchor}"><code>${esc(cls)}</code></a>${code ? ` with the code <a href="/errors/${code}/"><code>${code}</code></a>` : ''}`;
+};
 // Every status the operation documents; an older page without the list has its examples' statuses
 const responses: Response[] = Astro.props.responses?.length ? Astro.props.responses : [...new Map(panel.map((ex) => [ex.status, { status: ex.status, result: ex.result, response: ex.response, events: ex.events, sample: false }])).values()];
 const first = panel[0]?.status ?? responses[0]?.status;
@@ -112,6 +132,10 @@ const STATUS: Record<number, string> = { 200: 'OK', 201: 'Created', 202: 'Accept
           <div data-response data-response-example={example} data-status={String(r.status)} hidden={example !== '0'}>
             <p class="caitlyn-op-response-status">
               {r.status} {STATUS[r.status] ?? ''}
+              <span class="caitlyn-op-returns">
+                {SDK_LANGS.map((l) => sdkLine(r, l) && <span data-lang-only={l} set:html={` · ${sdkLine(r, l)}`} />)}
+                {api && <span data-lang-only="curl" />}
+              </span>
               {r.sample && r.code && <span class="caitlyn-op-panel-note"> · an illustration: the error shape, with the code {r.code}</span>}
             </p>
             {r.response && <Code code={r.response} lang="http" frame="none" wrap={false} />}

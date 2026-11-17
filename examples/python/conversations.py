@@ -3,11 +3,12 @@
 # scripts/examples-live/python.sh runs each function against a real Caitlyn server.
 import os
 from collections.abc import Callable
+from pathlib import Path
 
 from caitlyn import (
     Caitlyn,
     Caller,
-    Conversation,
+    CreatedConversationScope,
     MessageCompletedEvent,
     MessageFailedEvent,
     StreamResetEvent,
@@ -24,7 +25,7 @@ def client() -> Caitlyn:
 
 def get_caller(caitlyn: Caitlyn) -> Caller:
     # #region get-caller
-    me = caitlyn.callers.get()
+    me = caitlyn.me()
     print(me.display_name, me.credential, me.scopes)  # who this credential belongs to, and what it may do
     # #endregion
     return me
@@ -32,15 +33,16 @@ def get_caller(caitlyn: Caitlyn) -> Caller:
 
 def get_agent_version(caitlyn: Caitlyn, agent_id: str) -> str:
     # #region get-agent-version
-    draft = caitlyn.agents.versions.get(agent_id=agent_id, version="draft")
-    print(draft.configuration.instructions)
+    draft = caitlyn.agents(agent_id).draft.get()
+    print(draft.configuration.guidance.instructions if draft.configuration and draft.configuration.guidance else "")
     # #endregion
     return draft.name
 
 
-def create_conversation(caitlyn: Caitlyn, agent_id: str) -> Conversation:
+def create_conversation(caitlyn: Caitlyn, agent_id: str) -> CreatedConversationScope:
     # #region create-conversation
-    conversation = caitlyn.conversations.create(agent_id=agent_id, version="draft", title="Leave questions")
+    # A conversation is with one version of an agent: start it from that version (here the draft, to test it).
+    conversation = caitlyn.agents(agent_id).draft.conversations.create(title="Leave questions")
     print(conversation.id)
     # #endregion
     return conversation
@@ -48,7 +50,8 @@ def create_conversation(caitlyn: Caitlyn, agent_id: str) -> Conversation:
 
 def send_message(caitlyn: Caitlyn, conversation_id: str) -> str:
     # #region send-message
-    with caitlyn.conversations.send(conversation_id, message="How many days of annual leave do staff get?") as stream:
+    # The message is sent when send() is called; the stream may be read or dropped.
+    with caitlyn.conversations(conversation_id).send("How many days of annual leave do staff get?") as stream:
         for event in stream:
             if isinstance(event, TextDeltaEvent):
                 print(event.delta, end="", flush=True)  # the answer as it is written
@@ -58,11 +61,21 @@ def send_message(caitlyn: Caitlyn, conversation_id: str) -> str:
     return answer.text
 
 
-def watch_conversation(caitlyn: Caitlyn, conversation_id: str) -> str:
+def list_messages(caitlyn: Caitlyn, conversation_id: str) -> list[str]:
+    ids: list[str] = []
+    # #region list-messages
+    # The conversation's earlier turns.
+    for message in caitlyn.conversations(conversation_id).messages.list():
+        ids.append(message.id)
+    # #endregion
+    return ids
+
+
+def watch_conversation_events(caitlyn: Caitlyn, conversation_id: str) -> str:
     # #region watch-conversation
     # The answer being written now, from its start, then every answer after it, until you close the stream.
     text = ""
-    with caitlyn.conversations.watch(conversation_id) as stream:
+    with caitlyn.conversations(conversation_id).watch() as stream:
         for event in stream:
             if isinstance(event, TextDeltaEvent):
                 text += event.delta
@@ -72,12 +85,22 @@ def watch_conversation(caitlyn: Caitlyn, conversation_id: str) -> str:
     return text
 
 
+def send_attachments(caitlyn: Caitlyn, conversation_id: str, form: Path) -> str:
+    # #region send-attachments
+    # Documents the message carries: each file is uploaded first, for this conversation, then the message names them
+    # in your order. An upload already sent goes as UploadId("…"). If a file fails to upload, no message is sent.
+    with caitlyn.conversations(conversation_id).send("Does this leave form match our policy?", attachments=[form]) as stream:
+        answer = "".join(stream.text())
+    # #endregion
+    return answer
+
+
 def workspace_events(caitlyn: Caitlyn, agent_id: str) -> tuple[WorkspaceEvent | None, str]:
     event: WorkspaceEvent | None = None
     # #region watch-workspace-events
     # Open the stream first, then make the call whose events you want: the stream starts from now.
-    with caitlyn.events.subscribe(types=["conversation.created"]) as stream:
-        conversation_id = caitlyn.conversations.create(agent_id=agent_id, version="draft").id
+    with caitlyn.events.watch(types=["conversation.created"]) as stream:
+        conversation_id = caitlyn.agents(agent_id).draft.conversations.create().id
         for event in stream:
             if isinstance(event, WorkspaceConversationCreatedEvent) and event.subject.id == conversation_id:
                 print("created", event.subject.id, "by", event.actor.type)
@@ -97,7 +120,7 @@ def stream_reset(
     # #region stream-reset
     # A cursor more than a day old (or too far behind) is answered with stream.reset, not an error, and the
     # stream carries on from there. The events in between are never sent.
-    with caitlyn.events.subscribe(types=["conversation.created"], after=cursor) as stream:
+    with caitlyn.events.watch(types=["conversation.created"], after=cursor) as stream:
         for event in stream:
             if isinstance(event, StreamResetEvent):
                 refresh()  # read again, with the List and Get operations, what you depend on

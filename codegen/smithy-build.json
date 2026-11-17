@@ -46,7 +46,8 @@
           "module": "github.com/caitlyn-ai/sdk/go",
           "package": "caitlyn",
           "version": "0.8.2",
-          "coreModule": "github.com/caitlyn-ai/sdk/go/core"
+          "coreModule": "github.com/caitlyn-ai/sdk/go/core",
+          "handWritten": ["SendMessage"]
         }
       }
     },

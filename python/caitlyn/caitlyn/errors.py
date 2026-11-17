@@ -5,16 +5,6 @@ from typing import ClassVar
 
 from caitlyn_core import CaitlynError
 
-class ConflictError(CaitlynError):
-    """The resource's state does not allow the request, a unique name is taken, or a request with the
-    same idempotency key is still in progress.
-
-    Raised for HTTP 409.
-    """
-
-    http_status: ClassVar[int | None] = 409
-
-
 class InternalError(CaitlynError):
     """An unexpected server failure. Not retried by the SDKs.
 
@@ -43,15 +33,6 @@ class PermissionDeniedError(CaitlynError):
     """
 
     http_status: ClassVar[int | None] = 403
-
-
-class PreconditionFailedError(CaitlynError):
-    """`If-Match` does not match the resource's current ETag: it changed since the caller read it.
-
-    Raised for HTTP 412.
-    """
-
-    http_status: ClassVar[int | None] = 412
 
 
 class ServiceUnavailableError(CaitlynError):
@@ -85,24 +66,54 @@ class UnauthenticatedError(CaitlynError):
     http_status: ClassVar[int | None] = 401
 
 
-class UnprocessableContentError(CaitlynError):
-    """The idempotency key was already used with a different request body.
-
-    Raised for HTTP 422.
-    """
-
-    http_status: ClassVar[int | None] = 422
-
-
 class ValidationError(CaitlynError):
     """The request is malformed: a member is missing, the wrong type or out of range; it has a member,
-    filter or sort field the operation does not define; its cursor is not valid for this list; or it
-    asks to delete `draft` or `production`, which every agent keeps.
+    filter or sort field the operation does not define; its cursor is not valid for this list; it
+    asks to delete `draft` or `live`, which every agent keeps; an agent configuration would be
+    larger than 256 KiB; or a file is meant for a conversation whose agent takes no attachments.
 
     Raised for HTTP 400.
     """
 
     http_status: ClassVar[int | None] = 400
+
+
+class PreconditionFailedError(CaitlynError):
+    """`If-Match` does not match the resource's current ETag: it changed since the caller read it.
+
+    Raised for HTTP 412.
+    """
+
+    http_status: ClassVar[int | None] = 412
+
+
+class ConflictError(CaitlynError):
+    """The resource's state does not allow the request, a unique name is taken, or a request with the
+    same idempotency key is still in progress. An agent version that live points at
+    (`VERSION_IN_USE`) or that live history names (`VERSION_IN_HISTORY`) cannot be deleted. A
+    document still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an
+    ingestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document
+    an ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry
+    `Retry-After`.
+
+    Raised for HTTP 409.
+    """
+
+    http_status: ClassVar[int | None] = 409
+
+
+class UnprocessableContentError(CaitlynError):
+    """The idempotency key was already used with a different request body; supplied metadata does not
+    fit the knowledge base's field definitions or limits (`METADATA_FIELD_UNDEFINED`,
+    `METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one
+    entry per field in `errors`; an ingestion batch item gives both or neither of its content's
+    description and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused
+    a file (`CONTENT_REJECTED`).
+
+    Raised for HTTP 422.
+    """
+
+    http_status: ClassVar[int | None] = 422
 
 
 class PreconditionRequiredError(CaitlynError):

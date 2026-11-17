@@ -63,6 +63,8 @@ export function clientConfig(opts: CaitlynOptions, auth: AuthSession = createAut
     token: tokenIdentityProvider(auth),
     /** The tracer upload helpers record the byte transfer with (PROTOCOL.md 13); absent with telemetry off. */
     caitlynTracer: opts.telemetry?.enabled === false ? undefined : caitlynTracer(opts.telemetry?.tracerProvider),
+    /** How file helpers retry the bytes they send to storage (PROTOCOL.md 14): the client's own limits. */
+    caitlynStorage: { maxAttempts: opts.maxAttempts, maxRetryDelayMs: opts.maxRetryDelayMs },
     ...(opts.requestHandler !== undefined ? { requestHandler: opts.requestHandler } : {}),
     ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
     ...(opts.maxRetryDelayMs !== undefined || opts.retryBudget !== undefined

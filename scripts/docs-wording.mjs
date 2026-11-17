@@ -1,8 +1,9 @@
 // The public-wording check: nothing on the developer site points readers at how Caitlyn is built (the protocol
-// document, the model and its traits, the generators, CI, repository paths, merge requests, internal hosts or release
-// plans). scripts/docs-build.mjs runs it over every page and over the OpenAPI document the site publishes at
-// /api/openapi.json; docs/site/test/api-reference.test.mjs runs it over that document too. Prose is checked outside
-// code; hosts and merge request links are checked everywhere.
+// document, the model and its traits, the generators, CI, repository paths, merge requests, internal hosts, release
+// plans, or areas and tools only Caitlyn's own staff have). scripts/docs-build.mjs runs it over every page and over
+// the OpenAPI document the site publishes at /api/openapi.json; docs/site/test/api-reference.test.mjs runs it over that
+// document too, and docs/site/test/wording.test.mjs over every hand-written page. Prose is checked outside code; hosts
+// and merge request links are checked everywhere.
 export const INTERNAL_PROSE = [
   [/PROTOCOL\.md/, 'PROTOCOL.md'],
   [/\bsmithy\b/i, 'Smithy'],
@@ -13,6 +14,22 @@ export const INTERNAL_PROSE = [
   [/\bexamples:live\b/, 'a CI job of this repository'],
   [/(?:^|[\s(`])(?:scripts|codegen|conformance|model)\/[\w.-]/, 'a repository path'],
   [/\bnext release\b|\bnot in a release\b|\bno Caitlyn release\b|\breleased yet\b/i, 'release plans'],
+  // Areas, permissions and tools only Caitlyn's own staff have (Caitlyn Support's tooling); a customer never sees them
+  [
+    new RegExp(
+      [
+        String.raw`\*\*Developer tools\*\*`,
+        String.raw`\bDeveloper tools area\b`,
+        String.raw`\bdeveloper[-_]tools\b`,
+        String.raw`\bswitch(?:es|ing)? off document access control\b`,
+        String.raw`\b(?:support|operator|staff|internal)[- ]only\b`,
+        String.raw`\b(?:support|operator) (?:console|tooling|tools)\b`,
+        String.raw`\bbreak[- ]?glass\b`,
+      ].join('|'),
+      'i',
+    ),
+    'an internal-only area or tool',
+  ],
 ];
 export const INTERNAL_ANYWHERE = [
   [/merge_requests\/\d+|\b[\w-]+![0-9]{2,}\b/, 'a merge request'],
