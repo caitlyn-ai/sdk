@@ -7,15 +7,28 @@
 //     pre-release case, a model built from a branch of the app: the SDKs say "Since Caitlyn <stampNext>" and the
 //     docs, reading the raw snapshot, say "Not available yet: arrives in Caitlyn <stampNext>" (docs/README.md).
 // Usage: node scripts/prepare-model.mjs
+//
+// The app's local loop (scripts/dev-sdk.sh) uses its dev mode instead, for a model the app has just built:
+//   node scripts/prepare-model.mjs --dev <input model.json> <output model.json>
+// It reads <input>, not the snapshot, so it skips the lock's SHA-256 check (the input is not the locked model); it
+// still stamps @since("next") with the lock's stampNext, and it writes <output>, never build/model/model.json, which
+// `make generate` reads. Committed generated code comes only from the locked snapshot.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
-const raw = fs.readFileSync(path.join(root, 'model/model.json'));
+const dev = process.argv[2] === '--dev';
+if (dev && process.argv.length !== 5) {
+  console.error('usage: node scripts/prepare-model.mjs --dev <input model.json> <output model.json>');
+  process.exit(2);
+}
+const input = dev ? path.resolve(process.argv[3]) : path.join(root, 'model/model.json');
+const output = dev ? path.resolve(process.argv[4]) : path.join(root, 'build/model/model.json');
+const raw = fs.readFileSync(input);
 const lock = JSON.parse(fs.readFileSync(path.join(root, 'model/model.lock.json'), 'utf8'));
 const sha = crypto.createHash('sha256').update(raw).digest('hex');
-if (sha !== lock.sha256) {
+if (!dev && sha !== lock.sha256) {
   console.error(`prepare-model: model/model.json has SHA-256 ${sha}, but model/model.lock.json says ${lock.sha256}.`);
   console.error('Update the model with scripts/model-pull.sh, which writes both files; never edit the snapshot by hand.');
   process.exit(1);
@@ -40,7 +53,8 @@ for (const shape of Object.values(ast.shapes)) {
   stamp(shape.traits);
   for (const member of Object.values(shape.members ?? {})) stamp(member.traits);
 }
-fs.mkdirSync(path.join(root, 'build/model'), { recursive: true });
-fs.writeFileSync(path.join(root, 'build/model/model.json'), JSON.stringify(ast, null, 2));
-console.log(`prepare-model: build/model/model.json from ${lock.version ?? 'an unpublished model'} (${sha.slice(0, 12)})` +
+fs.mkdirSync(path.dirname(output), { recursive: true });
+fs.writeFileSync(output, JSON.stringify(ast, null, 2));
+const from = dev ? `the dev model ${path.relative(root, input)}` : (lock.version ?? 'an unpublished model');
+console.log(`prepare-model: ${path.relative(root, output)} from ${from} (${sha.slice(0, 12)})` +
   (stamped ? `, ${stamped} @since("next") stamped as ${lock.stampNext}` : ''));

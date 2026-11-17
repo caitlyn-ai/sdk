@@ -17,6 +17,10 @@ for you. CI runs the same scripts in the same image, so a local run and CI agree
   `model/` without pulling a model ("The model snapshot", below).
 - **Every protocol behaviour has a conformance case** in `conformance/cases/protocol.json`, and every harness
   runs it. Adding a case there fails the other languages until they implement it, which is the point.
+- **Committed generated code comes only from the locked model**, by `make generate`. The `generate` CI job and the
+  snapshot check (`model:snapshot-only`) enforce it. `build/dev-sdk/` is the app's local loop ("The app's local
+  loop", below): an SDK built from a model that is not locked, for one app worktree. It is gitignored; never copy
+  anything from it into the tracked tree, and never commit it.
 
 ## Regenerating
 
@@ -46,6 +50,29 @@ make generate
 The generators share their model-reading rules through `codegen/model-support`: how operations become client
 methods (PROTOCOL.md section 10), how outputs are named, which SSE union member is the failure event, which
 error members the runtimes already carry. Change a naming rule there and every SDK changes together.
+
+## The app's local loop
+
+`scripts/dev-sdk.sh` builds the TypeScript SDK from a model the Caitlyn app has just built, so the app can run against
+a model change before it is published. The app drives it (`pnpm sdk:local`, and its watcher); you don't run it by hand
+here, and `make generate` does not use it.
+
+```bash
+scripts/docker.sh scripts/dev-sdk.sh build/dev-sdk/<name>/model/source.json <name>
+CAITLYN_DOCKER_NAME=caitlyn-sdk-dev scripts/docker.sh   # a long-lived container, for `docker exec … scripts/dev-sdk.sh`
+```
+
+- **Its input** is the app's `smithy` build output, which the app copies to `build/dev-sdk/<name>/model/source.json`;
+  `<name>` is the app worktree's name.
+- **Everything it writes** is under the gitignored `build/dev-sdk/<name>/`: the model the generators read
+  (`scripts/prepare-model.mjs --dev`, which skips the lock check and keeps the lock's `stampNext`), the Smithy output,
+  and a TypeScript workspace whose `packages/sdk` and `packages/sdk-core` are built as published. It never writes a
+  tracked file, `model/`, the lock or `conformance/`.
+- **It is quick on purpose:** the generators are recompiled only when one changed (`gradle publish -x test`, its
+  daemon kept warm in the long-lived container), and only the TypeScript projection is built. A model change takes
+  about 5 s in a warm container.
+- **Its last line on stdout** is a JSON summary with the SDK's commit, the model's SHA-256 and the packages' paths. A
+  failed build exits non-zero and leaves the previous build in place.
 
 ## Running conformance
 

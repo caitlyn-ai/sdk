@@ -4,7 +4,12 @@
 // replaces every consumer (requestHandler, retryMode); this removes the dead lines and their imports.
 // Every edit must match exactly once, or the script fails: a generator upgrade that changes the template is caught.
 import fs from 'node:fs';
-const dir = new URL('../typescript/packages/sdk/src/', import.meta.url);
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+// The TypeScript workspace to edit: the checkout's typescript/ (the default, for scripts/generate.sh), or another one
+// laid out the same way (scripts/dev-sdk.sh's, under build/dev-sdk/<name>/typescript).
+const tsRoot = process.argv[2] ? pathToFileURL(`${path.resolve(process.argv[2])}/`) : new URL('../typescript/', import.meta.url);
+const dir = new URL('packages/sdk/src/', tsRoot);
 const edits = {
   'runtimeConfig.ts': [
     ['import { emitWarningIfUnsupportedVersion, loadConfigsForDefaultMode } from "@smithy/core/client";\n', 'import { emitWarningIfUnsupportedVersion } from "@smithy/core/client";\n'],
@@ -61,9 +66,9 @@ console.log('postgen-ts: removed defaults-mode resolution from runtimeConfig.ts 
 // browser pages (the browser build, also as the explicit `@caitlyn-ai/sdk/browser`), types, and the files
 // typescript/scripts/build-packages.mjs writes. The edge conditions come before `browser`, so a bundler that sets
 // both (Cloudflare's, or webpack for a web worker) takes the edge build, which has every sign-in mode.
-const pkgUrl = new URL('../typescript/packages/sdk/package.json', import.meta.url);
+const pkgUrl = new URL('packages/sdk/package.json', tsRoot);
 const pkg = JSON.parse(fs.readFileSync(pkgUrl, 'utf8'));
-const corePkg = JSON.parse(fs.readFileSync(new URL('../typescript/packages/sdk-core/package.json', import.meta.url), 'utf8'));
+const corePkg = JSON.parse(fs.readFileSync(new URL('packages/sdk-core/package.json', tsRoot), 'utf8'));
 const entry = (name) => ({
   types: `./dist-types/${name}.d.ts`,
   workerd: `./dist-edge/${name}.mjs`,
@@ -163,7 +168,7 @@ const shared = fs.readFileSync(sharedUrl, 'utf8');
 const sdkVersion = /caitlynSdkVersion: config\?\.caitlynSdkVersion \?\? "[^"]*"/g;
 if ((shared.match(sdkVersion) ?? []).length !== 1) throw new Error('postgen-ts: expected exactly one caitlynSdkVersion default in runtimeConfig.shared.ts');
 fs.writeFileSync(sharedUrl, shared.replace(sdkVersion, `caitlynSdkVersion: config?.caitlynSdkVersion ?? ${JSON.stringify(corePkg.version)}`));
-const telemetry = fs.readFileSync(new URL('../typescript/packages/sdk-core/src/telemetry.ts', import.meta.url), 'utf8');
+const telemetry = fs.readFileSync(new URL('packages/sdk-core/src/telemetry.ts', tsRoot), 'utf8');
 if (!telemetry.includes(`getTracer('@caitlyn-ai/sdk', '${corePkg.version}')`))
   throw new Error(`postgen-ts: typescript/packages/sdk-core/src/telemetry.ts names a tracer version other than ${corePkg.version}`);
 console.log(`postgen-ts: the User-Agent and tracer version is ${corePkg.version}`);
