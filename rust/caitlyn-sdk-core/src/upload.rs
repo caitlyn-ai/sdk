@@ -559,7 +559,65 @@ pub(crate) enum ExternalFailure {
     Status(Box<reqwest::Response>),
     /// No response arrived.
     NoResponse(reqwest::Error),
+    /// The attempt sent and received nothing for the storage stall timeout (PROTOCOL.md 14).
+    Stalled(Duration),
     Other(Error),
+}
+
+/// "300 ms", "1.5 s", "60 s": a timeout as the SDKs' messages write it.
+pub(crate) fn format_timeout(d: Duration) -> String {
+    if d < Duration::from_secs(1) {
+        format!("{} ms", d.as_millis())
+    } else {
+        format!("{} s", d.as_secs_f64())
+    }
+}
+
+/// The stall timer's clock (PROTOCOL.md 14): when an attempt to storage last sent a chunk of its body.
+#[derive(Clone)]
+pub(crate) struct Touch(Arc<std::sync::Mutex<tokio::time::Instant>>);
+
+impl Touch {
+    fn new() -> Self {
+        Touch(Arc::new(std::sync::Mutex::new(tokio::time::Instant::now())))
+    }
+
+    fn touch(&self) {
+        if let Ok(mut t) = self.0.lock() {
+            *t = tokio::time::Instant::now();
+        }
+    }
+
+    /// A body from these chunks, each of which touches the clock as it is sent.
+    pub(crate) fn counted<S>(&self, chunks: S) -> reqwest::Body
+    where
+        S: futures_util::Stream<Item = std::io::Result<Bytes>> + Send + 'static,
+    {
+        use futures_util::StreamExt;
+        let t = self.clone();
+        // Sent 64 KiB at a time, each piece only as the connection takes it: a file in memory is one chunk, which would
+        // touch the clock once at the start and never again.
+        let pieces = chunks.flat_map(|chunk| {
+            futures_util::stream::iter(match chunk {
+                Ok(b) => (0..b.len().div_ceil(CHUNK).max(1))
+                    .map(|i| Ok(b.slice(i * CHUNK..((i + 1) * CHUNK).min(b.len()))))
+                    .collect::<Vec<_>>(),
+                Err(e) => vec![Err(e)],
+            })
+        });
+        reqwest::Body::wrap_stream(pieces.inspect(move |_| t.touch()))
+    }
+
+    /// Returns once nothing has been sent for `after`.
+    async fn stalled(&self, after: Duration) {
+        loop {
+            let due = self.0.lock().map(|t| *t).unwrap_or_else(|_| tokio::time::Instant::now()) + after;
+            if tokio::time::Instant::now() >= due {
+                return;
+            }
+            tokio::time::sleep_until(due).await;
+        }
+    }
 }
 
 /// What an estimate is told of a file (PROTOCOL.md 10): its name, content type and size. Nothing is hashed.
@@ -650,34 +708,50 @@ impl Client {
     /// (PROTOCOL.md 6.4, 14): at most `max_attempts`, on 429, 503 or no response, after `Retry-After` or the backoff,
     /// paid from the retry budget. `build` makes each attempt's request. A non-success response is returned for the
     /// caller to judge.
+    /// Each attempt has the client's storage stall timer: `build` is given the attempt's [`Touch`], to make its body
+    /// with [`Touch::counted`], and the attempt is abandoned as a failure with no response when it has sent nothing for
+    /// the stall timeout and its response has not arrived.
     pub(crate) async fn send_to_storage<F, Fut>(&self, build: F, opts: &CallOptions) -> Result<reqwest::Response, ExternalFailure>
     where
-        F: Fn() -> Fut,
+        F: Fn(Touch) -> Fut,
         Fut: std::future::Future<Output = Result<reqwest::RequestBuilder, Error>>,
     {
         let mut attempt = 0u32;
         let mut last_retry_cost = None;
         loop {
-            let rb = build().await.map_err(ExternalFailure::Other)?;
+            let touch = Touch::new();
+            let rb = build(touch.clone()).await.map_err(ExternalFailure::Other)?;
+            touch.touch();
+            let stall = self.storage_stall_timeout();
+            let stalled = async {
+                match stall {
+                    Some(d) => touch.stalled(d).await,
+                    None => std::future::pending().await,
+                }
+            };
             let sent = tokio::select! {
                 biased;
                 _ = opts.cancelled() => return Err(ExternalFailure::Other(Error::Cancelled)),
-                r = rb.send() => r,
+                r = rb.send() => Ok(r),
+                _ = stalled => Err(stall.unwrap_or_default()),
             };
             let (failure, cost, retry_after) = match sent {
-                Ok(resp) if resp.status().is_success() => {
-                    self.budget().release(last_retry_cost);
-                    return Ok(resp);
-                }
-                Ok(resp) => {
-                    let s = resp.status().as_u16();
-                    if s != 429 && s != 503 {
-                        return Err(ExternalFailure::Status(Box::new(resp)));
+                Err(after) => (ExternalFailure::Stalled(after), crate::budget::NO_RESPONSE_RETRY_COST, None),
+                Ok(sent) => match sent {
+                    Ok(resp) if resp.status().is_success() => {
+                        self.budget().release(last_retry_cost);
+                        return Ok(resp);
                     }
-                    let ra = crate::error::header(resp.headers(), "retry-after").and_then(|v| v.trim().parse::<u64>().ok());
-                    (ExternalFailure::Status(Box::new(resp)), crate::budget::RETRY_COST, ra)
-                }
-                Err(e) => (ExternalFailure::NoResponse(e), crate::budget::NO_RESPONSE_RETRY_COST, None),
+                    Ok(resp) => {
+                        let s = resp.status().as_u16();
+                        if s != 429 && s != 503 {
+                            return Err(ExternalFailure::Status(Box::new(resp)));
+                        }
+                        let ra = crate::error::header(resp.headers(), "retry-after").and_then(|v| v.trim().parse::<u64>().ok());
+                        (ExternalFailure::Status(Box::new(resp)), crate::budget::RETRY_COST, ra)
+                    }
+                    Err(e) => (ExternalFailure::NoResponse(e), crate::budget::NO_RESPONSE_RETRY_COST, None),
+                },
             };
             if attempt + 1 >= self.max_attempts() {
                 return Err(failure);
@@ -731,18 +805,21 @@ impl Client {
         );
         let record = span.clone();
         let send = async {
-            let build = || async {
-                file.check_unchanged().await?;
-                let mut rb = self.http().request(method.clone(), url).body(file.body().await?);
-                let mut has_length = false;
-                for (k, v) in headers {
-                    has_length |= k.eq_ignore_ascii_case("content-length");
-                    rb = rb.header(k, v);
+            let build = |touch: Touch| {
+                let method = method.clone();
+                async move {
+                    file.check_unchanged().await?;
+                    let mut rb = self.http().request(method, url).body(touch.counted(file.stream().await?));
+                    let mut has_length = false;
+                    for (k, v) in headers {
+                        has_length |= k.eq_ignore_ascii_case("content-length");
+                        rb = rb.header(k, v);
+                    }
+                    if !has_length {
+                        rb = rb.header(http::header::CONTENT_LENGTH, file.size());
+                    }
+                    Ok(rb)
                 }
-                if !has_length {
-                    rb = rb.header(http::header::CONTENT_LENGTH, file.size());
-                }
-                Ok(rb)
             };
             match self.send_to_storage(build, opts).await {
                 Ok(resp) => {
@@ -757,6 +834,10 @@ impl Client {
                     ))
                 }
                 Err(ExternalFailure::NoResponse(e)) => Err(fail("The bytes could not be sent", Some(Box::new(e)))),
+                Err(ExternalFailure::Stalled(after)) => Err(fail(
+                    &format!("The bytes could not be sent: storage sent nothing for {}", format_timeout(after)),
+                    None,
+                )),
                 Err(ExternalFailure::Other(e)) => Err(e),
             }
         };

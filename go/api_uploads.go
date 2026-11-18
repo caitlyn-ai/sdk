@@ -39,6 +39,7 @@ func (s *Uploads) Reserve(ctx context.Context, in *CreateUploadInput, opts ...Ca
 		p.ByteSize = in.ByteSize
 		p.SHA256 = in.SHA256
 		p.Purpose = in.Purpose
+		p.ExpiresInSeconds = in.ExpiresInSeconds
 	}
 	return s.c.callCreateUpload(ctx, p, opts)
 }
@@ -58,15 +59,20 @@ type CreateUploadInput struct {
 	// What the upload is for, when that decides whether it is accepted. Absent means a document.
 	// Since Caitlyn 5.115.0: refused before sending to an older server.
 	Purpose *UploadPurpose `json:"purpose,omitempty"`
+	// How long the upload URL works: from a minute to an hour, and 15 minutes when absent. A short
+	// lifetime lets a test reach an expired upload within seconds.
+	// Since Caitlyn 5.115.0: refused before sending to an older server.
+	ExpiresInSeconds *int32 `json:"expiresInSeconds,omitempty"`
 }
 
 // createUploadParams is every member of CreateUpload's input: the caller's, and those the scope fills.
 type createUploadParams struct {
-	FileName    string         `json:"fileName"`
-	ContentType string         `json:"contentType"`
-	ByteSize    int64          `json:"byteSize"`
-	SHA256      string         `json:"sha256"`
-	Purpose     *UploadPurpose `json:"purpose,omitempty"`
+	FileName         string         `json:"fileName"`
+	ContentType      string         `json:"contentType"`
+	ByteSize         int64          `json:"byteSize"`
+	SHA256           string         `json:"sha256"`
+	Purpose          *UploadPurpose `json:"purpose,omitempty"`
+	ExpiresInSeconds *int32         `json:"expiresInSeconds,omitempty"`
 }
 
 var opCreateUpload = &core.Operation{

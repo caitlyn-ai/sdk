@@ -77,7 +77,8 @@ func (s *AgentScope) Get(ctx context.Context, opts ...CallOption) (*Agent, error
 // to remove it.
 //
 // Pass caitlyn.WithIfMatch(etag), the ETag you last read: it is required, and a call without it fails
-// with an input error before anything is sent.
+// with an input error before anything is sent. WithIfMatch("*") (any version) is sent only when you
+// pass it yourself: no helper fills it in.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *AgentScope) Update(ctx context.Context, in *UpdateAgentInput, opts ...CallOption) (*Agent, error) {

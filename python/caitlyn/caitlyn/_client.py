@@ -560,6 +560,8 @@ class AgentScope:
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         picture_file = file_at(avatar, ("mark", "picture_upload_id"))
         if picture_file is not None:
@@ -781,6 +783,8 @@ class DraftScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return self._core.request(
             _operations.REPLACE_DRAFT_VERSION,
@@ -812,6 +816,8 @@ class DraftScope:
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return self._core.request(
             _operations.RESET_DRAFT_VERSION,
@@ -857,6 +863,8 @@ class DraftScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return self._core.request(
             _operations.SAVE_DRAFT_VERSION,
@@ -936,6 +944,8 @@ class DraftScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return self._core.request(
             _operations.UPDATE_DRAFT_VERSION,
@@ -1046,6 +1056,8 @@ class DraftScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return self._core.request(
             _operations.PUBLISH_AGENT_VERSION,
@@ -1414,6 +1426,8 @@ class AgentVersionScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return self._core.request(
             _operations.PUBLISH_AGENT_VERSION,
@@ -2140,6 +2154,8 @@ class KnowledgeBaseScope:
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return self._core.request(
             _operations.UPDATE_KNOWLEDGE_BASE,
@@ -2494,6 +2510,8 @@ class AccessScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return self._core.request(
             _operations.PUT_ACCESS,
@@ -2959,6 +2977,8 @@ class DocumentScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns the response with `.wait()`, which waits for the work the call started, and `.watch()`.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         out = self._core.request(
             _operations.UPDATE_DOCUMENT,
@@ -3224,6 +3244,8 @@ class DocumentReplaceMethod:
         Returns the response with `.wait()`, which waits for the work the call started, and `.watch()`.
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         if (file is None) == (upload_id is None):
             raise TypeError("pass a file or upload_id, not both")
@@ -3494,6 +3516,8 @@ class DocumentAccessNamespace:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return self._core.request(
             _operations.PUT_ACCESS,
@@ -3789,6 +3813,8 @@ class FieldScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return self._core.request(
             _operations.UPDATE_FIELD,
@@ -4058,6 +4084,8 @@ class FolderScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns the response with `.wait()`, which waits for the work the call started, and `.watch()`.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         out = self._core.request(
             _operations.UPDATE_FOLDER,
@@ -4228,6 +4256,8 @@ class FolderAccessNamespace:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return self._core.request(
             _operations.PUT_ACCESS,
@@ -4270,6 +4300,7 @@ class IngestionSyncMethod:
         source_url: Callable[[SyncFile], str | None] | None = None,
         metadata: Callable[[SyncFile], Mapping[str, object] | None] | None = None,
         remove_missing: bool = False,
+        upload_window_seconds: int | None = None,
         confirm: Callable[[SyncPlan[IngestionBatch, IngestionBatchItem, EstimateIngestionResult]], bool] | None = None,
         resolver: Callable[[list[IngestionBatchItem]], Mapping[str, str]] | None = None,
         on_progress: Callable[[IngestionProgress[IngestionBatchItem]], object] | None = None,
@@ -4291,6 +4322,8 @@ class IngestionSyncMethod:
             key: a function of each file giving its item's `externalId`; by default its relative path.
             source_url, metadata: functions of each file giving its item's `sourceUrl` and `metadata`.
             remove_missing: also remove each document under `folder` that no file names.
+            upload_window_seconds: how long the batch waits for its files once it starts, in seconds: each upload policy
+                lasts this long. The server's default (30 minutes) when not given.
             confirm: called with the plan and its estimate before anything is uploaded; returning False cancels the batch
                 and raises CaitlynError with code CANCELLED (status 0) and the report so far as its report.
             resolver: called with the items the policy left `unresolved`; returns a resolution (`add`,
@@ -4320,6 +4353,7 @@ class IngestionSyncMethod:
             source_url=source_url,
             metadata=metadata,
             remove_missing=remove_missing,
+            upload_window_seconds=upload_window_seconds,
             confirm=confirm,
             resolver=resolver,
             on_progress=on_progress,
@@ -4340,6 +4374,7 @@ class IngestionSyncMethod:
         source_url: Callable[[SyncFile], str | None] | None = None,
         metadata: Callable[[SyncFile], Mapping[str, object] | None] | None = None,
         remove_missing: bool = False,
+        upload_window_seconds: int | None = None,
     ) -> SyncPlan[IngestionBatch, IngestionBatchItem, EstimateIngestionResult]:
         """What `sync` with the same arguments would do and cost: steps 1 to 3 (hash, create the batch, wait until it is planned)
         and the price of the items that need bytes. Uploads nothing; the batch is left planned: its plan goes stale after 5 minutes (starting it plans it again), and a batch never started is cleared after 7 days.
@@ -4356,6 +4391,7 @@ class IngestionSyncMethod:
             source_url=source_url,
             metadata=metadata,
             remove_missing=remove_missing,
+            upload_window_seconds=upload_window_seconds,
         ))
 
 
@@ -4418,6 +4454,7 @@ class BatchesCollection:
         policy: IngestionPolicy | Mapping[str, object] | None = None,
         scope: IngestionBoundary | Mapping[str, object] | None = None,
         items: Sequence[IngestionItemInput] | None = None,
+        upload_window_seconds: int | None = None,
     ) -> CreatedBatchScope:
         """Makes an ingestion batch for one knowledge base, and plans it unless more items will follow.
 
@@ -4439,6 +4476,11 @@ class BatchesCollection:
             policy: The rules that resolve each item's outcome.
             scope: When set, every item must lie inside this folder.
             items: The first items, at most 10,000.
+            upload_window_seconds: How long each upload policy the batch hands out lasts, renewals included: from a minute to
+                an hour, and 30 minutes when absent. A short window lets a test reach the upload deadline,
+                and an expired policy, within seconds.
+
+                Added in Caitlyn 5.115.0.
 
         Raises:
             ConflictError: HTTP 409.
@@ -4456,7 +4498,7 @@ class BatchesCollection:
         """
         out = self._core.request(
             _operations.CREATE_INGESTION_BATCH,
-            {"knowledge_base_id": self._ids["knowledgeBaseId"], "idempotency_key": idempotency_key, "start": start, "await_more_items": await_more_items, "policy": policy, "scope": scope, "items": items},
+            {"knowledge_base_id": self._ids["knowledgeBaseId"], "idempotency_key": idempotency_key, "start": start, "await_more_items": await_more_items, "policy": policy, "scope": scope, "items": items, "upload_window_seconds": upload_window_seconds},
             IngestionBatch,
         )
         return CreatedBatchScope(self._core, {**self._ids, "ingestionBatchId": out.id}, out)
@@ -4546,6 +4588,8 @@ class BatchScope:
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return self._core.request(
             _operations.UPDATE_INGESTION_BATCH,
@@ -4622,6 +4666,8 @@ class BatchScope:
         Returns the response with `.wait()`, which waits for the work the call started, and `.watch()`.
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         out = self._core.request(
             _operations.START_INGESTION_BATCH,
@@ -4725,7 +4771,8 @@ class CreatedBatchScope(BatchScope):
 
     @property
     def uploads_expire_at(self) -> datetime | None:
-        """When uploads must arrive by: at or after the upload policy's `expiresAt`. An item whose bytes
+        """When uploads must arrive by: the upload policy's `expiresAt` plus a grace of 5 minutes, or of
+        `uploadWindowSeconds` when that is shorter. An item whose bytes
         have not arrived by then fails with `UPLOAD_EXPIRED`; bytes that arrived in time are accepted
         when they are reported, however late. A caller watching the batch can read it again after this
         time to see which items failed. Renewing the upload policy moves it later. Absent when no item
@@ -4768,6 +4815,15 @@ class CreatedBatchScope(BatchScope):
         Added in Caitlyn 5.115.0.
         """
         return self.result.failure
+
+    @property
+    def upload_window_seconds(self) -> int | None:
+        """How long each upload policy the batch hands out lasts, renewals included, as set when the
+        batch was made.
+
+        Added in Caitlyn 5.115.0.
+        """
+        return self.result.upload_window_seconds
 
     @property
     def etag(self) -> str:
@@ -5000,10 +5056,50 @@ class ItemScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return self._core.request(
             _operations.UPDATE_INGESTION_BATCH_ITEM,
             {"knowledge_base_id": self._ids["knowledgeBaseId"], "ingestion_batch_id": self._ids["ingestionBatchId"], "item_id": self._ids["itemId"], "resolution": resolution, "if_match": if_match},
+            IngestionBatchItem,
+        )
+
+    def cancel(self, *, if_match: str | None = None) -> IngestionBatchItem:
+        """Cancels one item of a running batch that is still waiting for its upload.
+
+        The item becomes `cancelled`, and the document the batch reserved for it is released: a new
+        document's placeholder is removed, and an existing document is no longer held for a new version.
+        Bytes already uploaded for it are never ingested. The rest of the batch carries on; if this was the
+        last item not yet finished, the batch ends. An item that is not `awaiting_upload` (being ingested,
+        already finished, or in a batch not yet started) is refused with 409 `CONFLICT`. Needs the same
+        permission as cancelling the batch, and the caller must be able to see the item's folder (404
+        otherwise).
+
+        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}/cancel` (CancelIngestionBatchItem).
+
+        Args:
+            if_match: The item's ETag. When given, an item that changed since is refused with 412.
+
+        Raises:
+            ConflictError: HTTP 409.
+            NotFoundError: HTTP 404.
+            PreconditionFailedError: HTTP 412.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+
+        `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
+        """
+        return self._core.request(
+            _operations.CANCEL_INGESTION_BATCH_ITEM,
+            {"knowledge_base_id": self._ids["knowledgeBaseId"], "ingestion_batch_id": self._ids["ingestionBatchId"], "item_id": self._ids["itemId"], "if_match": if_match},
             IngestionBatchItem,
         )
 
@@ -5121,7 +5217,9 @@ class CoreIngestionNamespace:
 
         Returns a new policy for the same key prefix while the batch is `running` and has items awaiting
         upload; anything else is refused with 409 `CONFLICT`. Each renewal also extends how long the
-        batch's new documents stay reserved. The SDKs renew when less than 5 minutes are left.
+        batch's new documents stay reserved. A renewed policy lasts the batch's `uploadWindowSeconds`, as the
+        first did. The SDKs renew when less than 5 minutes, or half the policy's lifetime when that is
+        shorter, are left.
 
         Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/upload-policies` (CreateIngestionBatchUploadPolicy).
 
@@ -5391,6 +5489,7 @@ class UploadsCollection:
         sha256: str,
         idempotency_key: str | None = None,
         purpose: UploadPurpose | Mapping[str, object] | None = None,
+        expires_in_seconds: int | None = None,
     ) -> CreateUploadResult:
         """Reserves a short-lived slot for a file's bytes and returns a presigned URL bound to their
         checksum.
@@ -5413,6 +5512,10 @@ class UploadsCollection:
             idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
                 supply one.
             purpose: What the upload is for, when that decides whether it is accepted. Absent means a document. Added in Caitlyn 5.115.0.
+            expires_in_seconds: How long the upload URL works: from a minute to an hour, and 15 minutes when absent. A short
+                lifetime lets a test reach an expired upload within seconds.
+
+                Added in Caitlyn 5.115.0.
 
         Raises:
             ConflictError: HTTP 409.
@@ -5428,7 +5531,7 @@ class UploadsCollection:
         """
         return self._core.request(
             _operations.CREATE_UPLOAD,
-            {"file_name": file_name, "content_type": content_type, "byte_size": byte_size, "sha256": sha256, "idempotency_key": idempotency_key, "purpose": purpose},
+            {"file_name": file_name, "content_type": content_type, "byte_size": byte_size, "sha256": sha256, "idempotency_key": idempotency_key, "purpose": purpose, "expires_in_seconds": expires_in_seconds},
             CreateUploadResult,
         )
 
@@ -5438,6 +5541,7 @@ class UploadsCollection:
         *,
         idempotency_key: str | None = None,
         purpose: UploadPurpose | None = None,
+        expires_in_seconds: int | None = None,
     ) -> CreateUploadResult:
         """Uploads a file: hashes it (SHA-256), reserves the upload with `reserve`, then sends the bytes to
         its presigned URL with exactly the headers it names, and returns the upload.
@@ -5457,6 +5561,7 @@ class UploadsCollection:
                 sha256=f.sha256,
                 idempotency_key=idempotency_key,
                 purpose=purpose,
+                expires_in_seconds=expires_in_seconds,
             )
             self._core.put_file(upload.upload_method, upload.upload_url, upload.required_headers, f)
         return upload
@@ -5875,6 +5980,8 @@ class AsyncAgentScope:
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         picture_file = file_at(avatar, ("mark", "picture_upload_id"))
         if picture_file is not None:
@@ -6096,6 +6203,8 @@ class AsyncDraftScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return await self._core.request(
             _operations.REPLACE_DRAFT_VERSION,
@@ -6127,6 +6236,8 @@ class AsyncDraftScope:
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return await self._core.request(
             _operations.RESET_DRAFT_VERSION,
@@ -6172,6 +6283,8 @@ class AsyncDraftScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return await self._core.request(
             _operations.SAVE_DRAFT_VERSION,
@@ -6251,6 +6364,8 @@ class AsyncDraftScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return await self._core.request(
             _operations.UPDATE_DRAFT_VERSION,
@@ -6361,6 +6476,8 @@ class AsyncDraftScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return await self._core.request(
             _operations.PUBLISH_AGENT_VERSION,
@@ -6734,6 +6851,8 @@ class AsyncAgentVersionScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return await self._core.request(
             _operations.PUBLISH_AGENT_VERSION,
@@ -7475,6 +7594,8 @@ class AsyncKnowledgeBaseScope:
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return await self._core.request(
             _operations.UPDATE_KNOWLEDGE_BASE,
@@ -7829,6 +7950,8 @@ class AsyncAccessScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return await self._core.request(
             _operations.PUT_ACCESS,
@@ -8294,6 +8417,8 @@ class AsyncDocumentScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns the response with `.wait()`, which waits for the work the call started, and `.watch()`.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         out = await self._core.request(
             _operations.UPDATE_DOCUMENT,
@@ -8559,6 +8684,8 @@ class AsyncDocumentReplaceMethod:
         Returns the response with `.wait()`, which waits for the work the call started, and `.watch()`.
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         if (file is None) == (upload_id is None):
             raise TypeError("pass a file or upload_id, not both")
@@ -8829,6 +8956,8 @@ class AsyncDocumentAccessNamespace:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return await self._core.request(
             _operations.PUT_ACCESS,
@@ -9124,6 +9253,8 @@ class AsyncFieldScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return await self._core.request(
             _operations.UPDATE_FIELD,
@@ -9393,6 +9524,8 @@ class AsyncFolderScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns the response with `.wait()`, which waits for the work the call started, and `.watch()`.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         out = await self._core.request(
             _operations.UPDATE_FOLDER,
@@ -9573,6 +9706,8 @@ class AsyncFolderAccessNamespace:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return await self._core.request(
             _operations.PUT_ACCESS,
@@ -9615,6 +9750,7 @@ class AsyncIngestionSyncMethod:
         source_url: Callable[[SyncFile], str | None] | None = None,
         metadata: Callable[[SyncFile], Mapping[str, object] | None] | None = None,
         remove_missing: bool = False,
+        upload_window_seconds: int | None = None,
         confirm: Callable[[SyncPlan[IngestionBatch, IngestionBatchItem, EstimateIngestionResult]], bool | Awaitable[bool]] | None = None,
         resolver: Callable[[list[IngestionBatchItem]], Mapping[str, str] | Awaitable[Mapping[str, str]]] | None = None,
         on_progress: Callable[[IngestionProgress[IngestionBatchItem]], object] | None = None,
@@ -9636,6 +9772,8 @@ class AsyncIngestionSyncMethod:
             key: a function of each file giving its item's `externalId`; by default its relative path.
             source_url, metadata: functions of each file giving its item's `sourceUrl` and `metadata`.
             remove_missing: also remove each document under `folder` that no file names.
+            upload_window_seconds: how long the batch waits for its files once it starts, in seconds: each upload policy
+                lasts this long. The server's default (30 minutes) when not given.
             confirm: called with the plan and its estimate before anything is uploaded; returning False cancels the batch
                 and raises CaitlynError with code CANCELLED (status 0) and the report so far as its report.
             resolver: called with the items the policy left `unresolved`; returns a resolution (`add`,
@@ -9665,6 +9803,7 @@ class AsyncIngestionSyncMethod:
             source_url=source_url,
             metadata=metadata,
             remove_missing=remove_missing,
+            upload_window_seconds=upload_window_seconds,
             confirm=confirm,
             resolver=resolver,
             on_progress=on_progress,
@@ -9685,6 +9824,7 @@ class AsyncIngestionSyncMethod:
         source_url: Callable[[SyncFile], str | None] | None = None,
         metadata: Callable[[SyncFile], Mapping[str, object] | None] | None = None,
         remove_missing: bool = False,
+        upload_window_seconds: int | None = None,
     ) -> SyncPlan[IngestionBatch, IngestionBatchItem, EstimateIngestionResult]:
         """What `sync` with the same arguments would do and cost: steps 1 to 3 (hash, create the batch, wait until it is planned)
         and the price of the items that need bytes. Uploads nothing; the batch is left planned: its plan goes stale after 5 minutes (starting it plans it again), and a batch never started is cleared after 7 days.
@@ -9701,6 +9841,7 @@ class AsyncIngestionSyncMethod:
             source_url=source_url,
             metadata=metadata,
             remove_missing=remove_missing,
+            upload_window_seconds=upload_window_seconds,
         )
 
 
@@ -9763,6 +9904,7 @@ class AsyncBatchesCollection:
         policy: IngestionPolicy | Mapping[str, object] | None = None,
         scope: IngestionBoundary | Mapping[str, object] | None = None,
         items: Sequence[IngestionItemInput] | None = None,
+        upload_window_seconds: int | None = None,
     ) -> AsyncCreatedBatchScope:
         """Makes an ingestion batch for one knowledge base, and plans it unless more items will follow.
 
@@ -9784,6 +9926,11 @@ class AsyncBatchesCollection:
             policy: The rules that resolve each item's outcome.
             scope: When set, every item must lie inside this folder.
             items: The first items, at most 10,000.
+            upload_window_seconds: How long each upload policy the batch hands out lasts, renewals included: from a minute to
+                an hour, and 30 minutes when absent. A short window lets a test reach the upload deadline,
+                and an expired policy, within seconds.
+
+                Added in Caitlyn 5.115.0.
 
         Raises:
             ConflictError: HTTP 409.
@@ -9801,7 +9948,7 @@ class AsyncBatchesCollection:
         """
         out = await self._core.request(
             _operations.CREATE_INGESTION_BATCH,
-            {"knowledge_base_id": self._ids["knowledgeBaseId"], "idempotency_key": idempotency_key, "start": start, "await_more_items": await_more_items, "policy": policy, "scope": scope, "items": items},
+            {"knowledge_base_id": self._ids["knowledgeBaseId"], "idempotency_key": idempotency_key, "start": start, "await_more_items": await_more_items, "policy": policy, "scope": scope, "items": items, "upload_window_seconds": upload_window_seconds},
             IngestionBatch,
         )
         return AsyncCreatedBatchScope(self._core, {**self._ids, "ingestionBatchId": out.id}, out)
@@ -9891,6 +10038,8 @@ class AsyncBatchScope:
             UnauthenticatedError: HTTP 401.
             ValidationError: HTTP 400.
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return await self._core.request(
             _operations.UPDATE_INGESTION_BATCH,
@@ -9971,6 +10120,8 @@ class AsyncBatchScope:
         Returns the response with `.wait()`, which waits for the work the call started, and `.watch()`.
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         out = await self._core.request(
             _operations.START_INGESTION_BATCH,
@@ -10074,7 +10225,8 @@ class AsyncCreatedBatchScope(AsyncBatchScope):
 
     @property
     def uploads_expire_at(self) -> datetime | None:
-        """When uploads must arrive by: at or after the upload policy's `expiresAt`. An item whose bytes
+        """When uploads must arrive by: the upload policy's `expiresAt` plus a grace of 5 minutes, or of
+        `uploadWindowSeconds` when that is shorter. An item whose bytes
         have not arrived by then fails with `UPLOAD_EXPIRED`; bytes that arrived in time are accepted
         when they are reported, however late. A caller watching the batch can read it again after this
         time to see which items failed. Renewing the upload policy moves it later. Absent when no item
@@ -10117,6 +10269,15 @@ class AsyncCreatedBatchScope(AsyncBatchScope):
         Added in Caitlyn 5.115.0.
         """
         return self.result.failure
+
+    @property
+    def upload_window_seconds(self) -> int | None:
+        """How long each upload policy the batch hands out lasts, renewals included, as set when the
+        batch was made.
+
+        Added in Caitlyn 5.115.0.
+        """
+        return self.result.upload_window_seconds
 
     @property
     def etag(self) -> str:
@@ -10349,10 +10510,50 @@ class AsyncItemScope:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
         """
         return await self._core.request(
             _operations.UPDATE_INGESTION_BATCH_ITEM,
             {"knowledge_base_id": self._ids["knowledgeBaseId"], "ingestion_batch_id": self._ids["ingestionBatchId"], "item_id": self._ids["itemId"], "resolution": resolution, "if_match": if_match},
+            IngestionBatchItem,
+        )
+
+    async def cancel(self, *, if_match: str | None = None) -> IngestionBatchItem:
+        """Cancels one item of a running batch that is still waiting for its upload.
+
+        The item becomes `cancelled`, and the document the batch reserved for it is released: a new
+        document's placeholder is removed, and an existing document is no longer held for a new version.
+        Bytes already uploaded for it are never ingested. The rest of the batch carries on; if this was the
+        last item not yet finished, the batch ends. An item that is not `awaiting_upload` (being ingested,
+        already finished, or in a batch not yet started) is refused with 409 `CONFLICT`. Needs the same
+        permission as cancelling the batch, and the caller must be able to see the item's folder (404
+        otherwise).
+
+        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}/cancel` (CancelIngestionBatchItem).
+
+        Args:
+            if_match: The item's ETag. When given, an item that changed since is refused with 412.
+
+        Raises:
+            ConflictError: HTTP 409.
+            NotFoundError: HTTP 404.
+            PreconditionFailedError: HTTP 412.
+            InternalError: HTTP 500.
+            PermissionDeniedError: HTTP 403.
+            ServiceUnavailableError: HTTP 503.
+            TooManyRequestsError: HTTP 429.
+            UnauthenticatedError: HTTP 401.
+            ValidationError: HTTP 400.
+            CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
+
+        `if_match` is optional here: without it, the change applies to the resource as it is.
+
+        `if_match="*"` (any version) is sent only when you pass it yourself: no helper fills it in.
+        """
+        return await self._core.request(
+            _operations.CANCEL_INGESTION_BATCH_ITEM,
+            {"knowledge_base_id": self._ids["knowledgeBaseId"], "ingestion_batch_id": self._ids["ingestionBatchId"], "item_id": self._ids["itemId"], "if_match": if_match},
             IngestionBatchItem,
         )
 
@@ -10476,7 +10677,9 @@ class AsyncCoreIngestionNamespace:
 
         Returns a new policy for the same key prefix while the batch is `running` and has items awaiting
         upload; anything else is refused with 409 `CONFLICT`. Each renewal also extends how long the
-        batch's new documents stay reserved. The SDKs renew when less than 5 minutes are left.
+        batch's new documents stay reserved. A renewed policy lasts the batch's `uploadWindowSeconds`, as the
+        first did. The SDKs renew when less than 5 minutes, or half the policy's lifetime when that is
+        shorter, are left.
 
         Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/upload-policies` (CreateIngestionBatchUploadPolicy).
 
@@ -10746,6 +10949,7 @@ class AsyncUploadsCollection:
         sha256: str,
         idempotency_key: str | None = None,
         purpose: UploadPurpose | Mapping[str, object] | None = None,
+        expires_in_seconds: int | None = None,
     ) -> CreateUploadResult:
         """Reserves a short-lived slot for a file's bytes and returns a presigned URL bound to their
         checksum.
@@ -10768,6 +10972,10 @@ class AsyncUploadsCollection:
             idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
                 supply one.
             purpose: What the upload is for, when that decides whether it is accepted. Absent means a document. Added in Caitlyn 5.115.0.
+            expires_in_seconds: How long the upload URL works: from a minute to an hour, and 15 minutes when absent. A short
+                lifetime lets a test reach an expired upload within seconds.
+
+                Added in Caitlyn 5.115.0.
 
         Raises:
             ConflictError: HTTP 409.
@@ -10783,7 +10991,7 @@ class AsyncUploadsCollection:
         """
         return await self._core.request(
             _operations.CREATE_UPLOAD,
-            {"file_name": file_name, "content_type": content_type, "byte_size": byte_size, "sha256": sha256, "idempotency_key": idempotency_key, "purpose": purpose},
+            {"file_name": file_name, "content_type": content_type, "byte_size": byte_size, "sha256": sha256, "idempotency_key": idempotency_key, "purpose": purpose, "expires_in_seconds": expires_in_seconds},
             CreateUploadResult,
         )
 
@@ -10793,6 +11001,7 @@ class AsyncUploadsCollection:
         *,
         idempotency_key: str | None = None,
         purpose: UploadPurpose | None = None,
+        expires_in_seconds: int | None = None,
     ) -> CreateUploadResult:
         """Uploads a file: hashes it (SHA-256), reserves the upload with `reserve`, then sends the bytes to
         its presigned URL with exactly the headers it names, and returns the upload.
@@ -10812,6 +11021,7 @@ class AsyncUploadsCollection:
                 sha256=f.sha256,
                 idempotency_key=idempotency_key,
                 purpose=purpose,
+                expires_in_seconds=expires_in_seconds,
             )
             await self._core.put_file(upload.upload_method, upload.upload_url, upload.required_headers, f)
         return upload
@@ -10878,12 +11088,17 @@ class Caitlyn:
         retry_budget: the retry tokens this client's calls share (default 500; a retry costs 5, or 10 after no response;
             a success gives back 1, or its last retry's cost). When it is spent, calls fail without retrying. 0 turns retries off.
         retry: the full retry policy.
+        timeout: how long an API call waits to connect, and for each read and write, in seconds or as an `httpx.Timeout`
+            (default 120). A call whose response has not started by then fails and is retried; streams stay open while
+            their keep-alives arrive. `None` waits as long as it takes.
+        storage_stall_timeout: how long a send to storage (an upload's bytes) may send and receive nothing, in seconds,
+            before that attempt is abandoned and retried (default 60). Not a limit on the whole upload. `None` never gives up.
         tracer_provider: OpenTelemetry tracer provider (default: the global one).
         interceptors: hooks run around every call and attempt.
         app_id: your application's name, sent in the user agent as `app/<app_id>`.
         http_client: your own httpx client, for its transport, proxy or TLS settings. Requests go to the workspace or `endpoint`; its `base_url` is not used.
             With your own httpx.Client, Ctrl-C stops an upload still sending at once, but one that has finished sending waits for
-            storage's answer, up to your client's timeout.
+            storage's answer, up to `storage_stall_timeout`.
     """
 
     auth: SyncAuthSession
@@ -10904,7 +11119,8 @@ class Caitlyn:
         max_retry_delay: float | None = None,
         retry_budget: int | None = None,
         retry: RetryPolicy | None = None,
-        timeout: float | httpx.Timeout = 60.0,
+        timeout: float | httpx.Timeout = 120.0,
+        storage_stall_timeout: float | None = 60.0,
         tracer_provider: TracerProvider | None = None,
         interceptors: Sequence[Interceptor] = (),
         app_id: str | None = None,
@@ -10921,6 +11137,7 @@ class Caitlyn:
             retry_budget=retry_budget,
             retry=retry,
             timeout=timeout,
+            storage_stall_timeout=storage_stall_timeout,
             tracer_provider=tracer_provider,
             interceptors=interceptors,
             app_id=app_id,
@@ -10990,6 +11207,11 @@ class AsyncCaitlyn:
         retry_budget: the retry tokens this client's calls share (default 500; a retry costs 5, or 10 after no response;
             a success gives back 1, or its last retry's cost). When it is spent, calls fail without retrying. 0 turns retries off.
         retry: the full retry policy.
+        timeout: how long an API call waits to connect, and for each read and write, in seconds or as an `httpx.Timeout`
+            (default 120). A call whose response has not started by then fails and is retried; streams stay open while
+            their keep-alives arrive. `None` waits as long as it takes.
+        storage_stall_timeout: how long a send to storage (an upload's bytes) may send and receive nothing, in seconds,
+            before that attempt is abandoned and retried (default 60). Not a limit on the whole upload. `None` never gives up.
         tracer_provider: OpenTelemetry tracer provider (default: the global one).
         interceptors: hooks run around every call and attempt.
         app_id: your application's name, sent in the user agent as `app/<app_id>`.
@@ -11014,7 +11236,8 @@ class AsyncCaitlyn:
         max_retry_delay: float | None = None,
         retry_budget: int | None = None,
         retry: RetryPolicy | None = None,
-        timeout: float | httpx.Timeout = 60.0,
+        timeout: float | httpx.Timeout = 120.0,
+        storage_stall_timeout: float | None = 60.0,
         tracer_provider: TracerProvider | None = None,
         interceptors: Sequence[Interceptor] = (),
         app_id: str | None = None,
@@ -11031,6 +11254,7 @@ class AsyncCaitlyn:
             retry_budget=retry_budget,
             retry=retry,
             timeout=timeout,
+            storage_stall_timeout=storage_stall_timeout,
             tracer_provider=tracer_provider,
             interceptors=interceptors,
             app_id=app_id,

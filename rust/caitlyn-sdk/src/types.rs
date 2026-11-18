@@ -11046,7 +11046,8 @@ pub struct IngestionBatch {
         skip_serializing_if = "Option::is_none"
     )]
     pub plan_expires_at: Option<chrono::DateTime<chrono::Utc>>,
-    /// When uploads must arrive by: at or after the upload policy's `expiresAt`. An item whose bytes
+    /// When uploads must arrive by: the upload policy's `expiresAt` plus a grace of 5 minutes, or of
+    /// `uploadWindowSeconds` when that is shorter. An item whose bytes
     /// have not arrived by then fails with `UPLOAD_EXPIRED`; bytes that arrived in time are accepted
     /// when they are reported, however late. A caller watching the batch can read it again after this
     /// time to see which items failed. Renewing the upload policy moves it later. Absent when no item
@@ -11084,6 +11085,10 @@ pub struct IngestionBatch {
     /// `failed`.
     #[serde(rename = "failure", skip_serializing_if = "Option::is_none")]
     pub failure: Option<IngestionBatchFailure>,
+    /// How long each upload policy the batch hands out lasts, renewals included, as set when the
+    /// batch was made.
+    #[serde(rename = "uploadWindowSeconds", skip_serializing_if = "Option::is_none")]
+    pub upload_window_seconds: Option<i32>,
     /// The batch's ETag.
     #[serde(rename = "etag")]
     pub etag: String,
@@ -11292,7 +11297,8 @@ pub struct UploadPolicy {
     /// The largest file the policy accepts, in bytes.
     #[serde(rename = "maxByteSize")]
     pub max_byte_size: i64,
-    /// When the policy stops working. Renew it with CreateIngestionBatchUploadPolicy.
+    /// When the policy stops working, the batch's `uploadWindowSeconds` after it was issued. Renew it
+    /// with CreateIngestionBatchUploadPolicy.
     #[serde(rename = "expiresAt", with = "::caitlyn_sdk_core::time::rfc3339")]
     pub expires_at: chrono::DateTime<chrono::Utc>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values

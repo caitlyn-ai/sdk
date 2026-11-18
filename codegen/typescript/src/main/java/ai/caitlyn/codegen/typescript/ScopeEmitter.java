@@ -300,9 +300,12 @@ final class ScopeEmitter {
             return rest.stream().anyMatch(x -> x.hasTrait(RequiredTrait.class));
         }
 
-        String optionsType(boolean estimate) {
+        /** The ifMatch option's doc: `*` is the caller's explicit choice only (PROTOCOL.md 8). */
+    static final String IF_MATCH_DOC = "/** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ";
+
+    String optionsType(boolean estimate) {
             if (estimate || options.isEmpty()) return "CallOptions";
-            return "CallOptions & { " + options.stream().map(o -> o.getMemberName() + (o.hasTrait(RequiredTrait.class) ? ": string" : "?: string"))
+            return "CallOptions & { " + options.stream().map(o -> (o.getMemberName().equals("ifMatch") ? IF_MATCH_DOC : "") + o.getMemberName() + (o.hasTrait(RequiredTrait.class) ? ": string" : "?: string"))
                 .collect(Collectors.joining("; ")) + " }";
         }
 
@@ -753,7 +756,7 @@ final class ScopeEmitter {
             .append("  const batch = (id: string) => spec").append(nameOf(batch)).append("(c, { ...ids, ").append(own).append(": id });\n")
             .append("  return {\n")
             .append("    call: async (operation, input, signal) => {\n      const out = await c.send(new SYNC_COMMANDS[operation](input), { abortSignal: signal });\n      return SYNC_THINGS[operation] ? thingOf(out, SYNC_THINGS[operation]) : out;\n    },\n")
-            .append("    toError,\n    tracer: s.tracer,\n    maxAttempts: s.maxAttempts,\n    maxRetryDelayMs: s.maxRetryDelayMs,\n")
+            .append("    toError,\n    tracer: s.tracer,\n    maxAttempts: s.maxAttempts,\n    maxRetryDelayMs: s.maxRetryDelayMs,\n    stallTimeoutMs: s.stallTimeoutMs,\n")
             .append("    planned: async (id, o) => (await waitFor({ ...batch(id), until: \"planned\" }, o)) as Record<string, any>,\n")
             .append("    finished: async (id, onBatch, o) => (await waitFor({ ...batch(id), onThing: onBatch }, o)) as Record<string, any>,\n")
             .append("    describe: (file) => describeFile(file, toError) as Promise<Record<string, any>>,\n")

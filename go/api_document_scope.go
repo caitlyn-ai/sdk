@@ -68,7 +68,8 @@ func (s *DocumentScope) Get(ctx context.Context, opts ...CallOption) (*Document,
 // It returns the response, as Result, with Wait, which follows the work the call started.
 //
 // Pass caitlyn.WithIfMatch(etag), the ETag you last read: it is required, and a call without it fails
-// with an input error before anything is sent.
+// with an input error before anything is sent. WithIfMatch("*") (any version) is sent only when you
+// pass it yourself: no helper fills it in.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *DocumentScope) Update(ctx context.Context, in *UpdateDocumentInput, opts ...CallOption) (*UpdateDocumentStarted, error) {
@@ -228,7 +229,8 @@ func (r *CancelDocumentProcessingStarted) Wait(ctx context.Context, opts ...Wait
 // It returns the response, as Result, with Wait, which follows the work the call started.
 //
 // caitlyn.WithIfMatch(etag) is optional: without it the change applies to the thing as it stands; with
-// it, a stale ETag is refused with 412.
+// it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
+// yourself: no helper fills it in.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *DocumentScope) Replace(ctx context.Context, file File, in *CreateDocumentVersionInput, opts ...CallOption) (*CreateDocumentVersionStarted, error) {

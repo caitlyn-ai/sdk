@@ -156,6 +156,21 @@ impl ClientBuilder {
         ClientBuilder(self.0.retry_budget(tokens))
     }
 
+    /// How long the client waits to connect, and for each read of a response, before an attempt fails as a
+    /// connection failure with no response (default 120 s; `None` waits as long as it takes). Each read, not the
+    /// whole exchange, so streams and waits are not cut while their keep-alives arrive. It sets the default HTTP
+    /// client's timeouts; an [`http_client`](Self::http_client) of your own keeps its own.
+    pub fn request_timeout(self, timeout: Option<Duration>) -> Self {
+        ClientBuilder(self.0.request_timeout(timeout))
+    }
+
+    /// How long a send to storage (an upload's bytes) may send and receive nothing before that attempt is abandoned
+    /// and retried (default 60 s; `None` never gives up). Not an overall limit: a large file on a slow link
+    /// carries on while its bytes keep moving.
+    pub fn storage_stall_timeout(self, timeout: Option<Duration>) -> Self {
+        ClientBuilder(self.0.storage_stall_timeout(timeout))
+    }
+
     /// Adds `app/<id>` to the user agent.
     pub fn app_id(self, id: impl Into<String>) -> Self {
         ClientBuilder(self.0.app_id(id))
@@ -3533,6 +3548,39 @@ impl ItemScope {
             ],
         )
     }
+
+    /// Cancels one item of a running batch that is still waiting for its upload.
+    ///
+    /// The item becomes `cancelled`, and the document the batch reserved for it is released: a new
+    /// document's placeholder is removed, and an existing document is no longer held for a new version.
+    /// Bytes already uploaded for it are never ingested. The rest of the batch carries on; if this was the
+    /// last item not yet finished, the batch ends. An item that is not `awaiting_upload` (being ingested,
+    /// already finished, or in a batch not yet started) is refused with 409 `CONFLICT`. Needs the same
+    /// permission as cancelling the batch, and the caller must be able to see the item's folder (404
+    /// otherwise).
+    ///
+    /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
+    /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]
+    /// (400), [`Error::Conflict`] (409), [`Error::NotFound`] (404), [`Error::PreconditionFailed`] (412);
+    /// another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other
+    /// status is [`Error::Api`].
+    ///
+    /// Since Caitlyn 5.115.0; beta.
+    pub fn cancel(&self) -> CancelIngestionBatchItemRequest {
+        let mut input = CancelIngestionBatchItemInput::default();
+        input.knowledge_base_id = self.knowledge_base_id.clone();
+        input.ingestion_batch_id = self.ingestion_batch_id.clone();
+        input.item_id = self.item_id.clone();
+        CancelIngestionBatchItemRequest::new(
+            self.core.clone(),
+            input,
+            vec![
+                self.knowledge_base_id.clone(),
+                self.ingestion_batch_id.clone(),
+                self.item_id.clone(),
+            ],
+        )
+    }
 }
 
 /// The calls under `caitlyn.core`.
@@ -3669,7 +3717,10 @@ impl CoreIngestion {
     ///
     /// Returns a new policy for the same key prefix while the batch is `running` and has items awaiting
     /// upload; anything else is refused with 409 `CONFLICT`. Each renewal also extends how long the
-    /// batch's new documents stay reserved. The SDKs renew when less than 5 minutes are left.
+    /// batch's new documents stay reserved. A renewed policy lasts the batch's `uploadWindowSeconds`, as
+    /// the
+    /// first did. The SDKs renew when less than 5 minutes, or half the policy's lifetime when that is
+    /// shorter, are left.
     ///
     /// Errors: [`Error::Internal`] (500), [`Error::PermissionDenied`] (403), [`Error::ServiceUnavailable`]
     /// (503), [`Error::TooManyRequests`] (429), [`Error::Unauthenticated`] (401), [`Error::Validation`]

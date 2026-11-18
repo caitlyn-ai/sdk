@@ -128,7 +128,8 @@ pub struct ApiError {
     pub r#type: Option<String>,
     /// From the body, else the `Caitlyn-Request-Id` header. Quote it to support.
     pub request_id: Option<String>,
-    /// `Retry-After`, in whole seconds, on 429 and 503.
+    /// `Retry-After`, in whole seconds, on 409, 429 and 503. A 409's says when `TARGET_IN_USE` or
+    /// `DOCUMENT_INGESTION_IN_PROGRESS` may clear; the SDK never retries a 409 itself.
     pub retry_after_seconds: Option<u64>,
     /// Field problems on a 400 `VALIDATION_FAILED`.
     pub errors: Vec<FieldError>,
@@ -211,7 +212,7 @@ pub(crate) fn problem_from_response(status: u16, headers: &HeaderMap, body: &[u8
     if e.code.is_empty() {
         e.code = format!("HTTP_{status}");
     }
-    if status == 429 || status == 503 {
+    if status == 409 || status == 429 || status == 503 {
         e.retry_after_seconds = header(headers, "retry-after").and_then(|v| parse_retry_after(&v));
     }
     e

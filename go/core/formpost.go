@@ -78,6 +78,21 @@ func (c *Client) PostForm(ctx context.Context, url string, fields []FormField, p
 	})
 }
 
+// ownFields are the form fields an upload sends itself after the policy's (PROTOCOL.md 15, step 6), lower-cased.
+var ownFields = map[string]bool{"key": true, "content-type": true, "x-amz-checksum-algorithm": true, "x-amz-checksum-sha256": true, "file": true}
+
+// WithoutOwnFields returns a policy's form fields less any the upload sends itself, compared without regard to case as
+// storage compares form field names, so that no field is sent twice: storage refuses a form that repeats one.
+func WithoutOwnFields(fields []FormField) []FormField {
+	out := make([]FormField, 0, len(fields))
+	for _, f := range fields {
+		if !ownFields[strings.ToLower(f.Name)] {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 var quoteEscaper = strings.NewReplacer("\\", "\\\\", `"`, "\\\"")
 
 type readCloser struct {

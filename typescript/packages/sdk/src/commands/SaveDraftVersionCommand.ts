@@ -454,10 +454,15 @@ export interface SaveDraftVersionCommandOutput extends SaveDraftVersionOutput, _
  *  The resource's state does not allow the request, a unique name is taken, or a request with the
  * same idempotency key is still in progress. An agent version that live points at
  * (`VERSION_IN_USE`) or that live history names (`VERSION_IN_HISTORY`) cannot be deleted. A
- * document still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an
- * ingestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document
- * an ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry
- * `Retry-After`. A document whose versions are not numbered yet cannot have one deleted by number
+ * document still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), and an
+ * ingestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`).
+ * `TARGET_IN_USE` refuses a write to a path an ingestion batch has reserved for a new document
+ * (CreateDocument, or UpdateDocument renaming or moving a document onto it) while the batch holds
+ * the path; once the batch's reservation has lapsed, the path is free and the write goes ahead. It
+ * is also an ingestion batch item's failure when the document its plan found changed, or something
+ * else took it, before the batch could act on it. `DOCUMENT_INGESTION_IN_PROGRESS` and
+ * `TARGET_IN_USE` answers carry `Retry-After`: for `TARGET_IN_USE`, the seconds left on the batch's
+ * reservation. A document whose versions are not numbered yet cannot have one deleted by number
  * (`VERSIONS_NOT_NUMBERED`).
  *
  * @throws {@link NotFoundError} (client fault)

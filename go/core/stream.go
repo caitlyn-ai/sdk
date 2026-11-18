@@ -68,12 +68,15 @@ type Stream[E any, F any] struct {
 	// attempts counts the reconnects since the last event: at most maxReconnects in a row (PROTOCOL.md 5.6).
 	attempts int
 	// openedAt is when the current connection's response arrived (StreamClock), zero between connections.
-	openedAt   time.Time
-	final      *F
-	done       bool
-	err        error
-	requestID  string
-	apiVersion string
+	openedAt time.Time
+	// onConnection counts the events read on the current connection: on a Fresh watch the first, its snapshot, is
+	// not progress towards STREAM_LOST, whatever its id (PROTOCOL.md 5.6).
+	onConnection int
+	final        *F
+	done         bool
+	err          error
+	requestID    string
+	apiVersion   string
 	// inter adds events of the SDK's own between the server's (Interject); cancel ends the context the stream was
 	// opened with, so that its reader stops.
 	inter  Interjector[E]
@@ -109,6 +112,7 @@ func OpenStream[E any, F any](ctx context.Context, resp *Response, spec StreamSp
 
 func (s *Stream[E, F]) attach(resp *Response) {
 	s.openedAt = StreamClock()
+	s.onConnection = 0
 	s.resp = resp
 	s.r = bufio.NewReaderSize(resp.Body, 64<<10)
 }
@@ -303,6 +307,8 @@ func (s *Stream[E, F]) next() (E, error) {
 			}
 			continue
 		}
+		first := s.onConnection == 0
+		s.onConnection++
 		if id != "" {
 			if _, dup := s.seen[id]; dup {
 				continue
@@ -313,7 +319,9 @@ func (s *Stream[E, F]) next() (E, error) {
 			// a replay, so it does not count; every event on the conversation and workspace streams has one.
 			if _, old := s.ever[id]; !old {
 				s.ever[id] = struct{}{}
-				s.attempts = 0
+				if !(s.spec.Fresh && first) {
+					s.attempts = 0
+				}
 			}
 		}
 		if name == "" {

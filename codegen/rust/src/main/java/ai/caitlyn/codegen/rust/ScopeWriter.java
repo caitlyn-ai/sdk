@@ -562,6 +562,15 @@ final class ScopeWriter {
                 + "    /// got no response; a call that succeeds gives back 1, or its last retry's cost. When the budget cannot pay\n"
                 + "    /// for a retry, the call fails at once with its error. 0 turns retries off.\n"
                 + "    pub fn retry_budget(self, tokens: u32) -> Self {\n        ClientBuilder(self.0.retry_budget(tokens))\n    }\n\n");
+        w.l("    /// How long the client waits to connect, and for each read of a response, before an attempt fails as a\n"
+                + "    /// connection failure with no response (default 120 s; `None` waits as long as it takes). Each read, not the\n"
+                + "    /// whole exchange, so streams and waits are not cut while their keep-alives arrive. It sets the default HTTP\n"
+                + "    /// client's timeouts; an [`http_client`](Self::http_client) of your own keeps its own.\n"
+                + "    pub fn request_timeout(self, timeout: Option<Duration>) -> Self {\n        ClientBuilder(self.0.request_timeout(timeout))\n    }\n\n");
+        w.l("    /// How long a send to storage (an upload's bytes) may send and receive nothing before that attempt is abandoned\n"
+                + "    /// and retried (default 60 s; `None` never gives up). Not an overall limit: a large file on a slow link\n"
+                + "    /// carries on while its bytes keep moving.\n"
+                + "    pub fn storage_stall_timeout(self, timeout: Option<Duration>) -> Self {\n        ClientBuilder(self.0.storage_stall_timeout(timeout))\n    }\n\n");
         w.l("    /// Adds `app/<id>` to the user agent.\n    pub fn app_id(self, id: impl Into<String>) -> Self {\n        ClientBuilder(self.0.app_id(id))\n    }\n\n");
         w.l("    /// Writes trace context into each attempt's headers (see [`Propagator`](rt::Propagator)).\n"
                 + "    pub fn propagator(self, p: impl rt::Propagator + 'static) -> Self {\n        ClientBuilder(self.0.propagator(p))\n    }\n\n");

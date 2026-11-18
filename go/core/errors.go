@@ -23,7 +23,8 @@ type APIError struct {
 	Type string
 	// RequestID is the body's requestId, else the Caitlyn-Request-Id header.
 	RequestID string
-	// RetryAfterSeconds is Retry-After on 429 and 503 responses.
+	// RetryAfterSeconds is Retry-After on 409, 429 and 503 responses (a 409's says when TARGET_IN_USE or
+	// DOCUMENT_INGESTION_IN_PROGRESS may clear; the SDK never retries a 409 itself).
 	RetryAfterSeconds *int
 	// Errors lists the field-level problems of a 400 VALIDATION_FAILED.
 	Errors []FieldError
@@ -144,7 +145,7 @@ func problemFromBody(status int, header http.Header, body []byte) *APIError {
 	if e.Code == "" {
 		e.Code = "HTTP_" + strconv.Itoa(status)
 	}
-	if header != nil && (status == http.StatusTooManyRequests || status == http.StatusServiceUnavailable) {
+	if header != nil && (status == http.StatusConflict || status == http.StatusTooManyRequests || status == http.StatusServiceUnavailable) {
 		if d, ok := parseRetryAfter(header.Get("Retry-After"), time.Now()); ok {
 			secs := int((d + time.Second - 1) / time.Second)
 			e.RetryAfterSeconds = &secs

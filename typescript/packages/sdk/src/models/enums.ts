@@ -848,7 +848,8 @@ export const IngestionItemStatus = {
    */
   AWAITING_UPLOAD: "awaiting_upload",
   /**
-   * Its document was deleted while it was being ingested; the delete stopped it. Final.
+   * Stopped: its document was deleted while it was being ingested, or the item was cancelled
+   * (CancelIngestionBatchItem) while it waited for its upload. Final.
    */
   CANCELLED: "cancelled",
   /**

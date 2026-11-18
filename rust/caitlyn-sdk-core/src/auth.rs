@@ -818,7 +818,7 @@ mod tests {
             Auth::oauth("c").redirect_uri("https://app.example.com/cb").into(),
             "https://w.example/api",
             "w.example",
-            crate::client::default_http_client().unwrap(),
+            crate::client::http_client_with(Some(crate::client::DEFAULT_REQUEST_TIMEOUT)).unwrap(),
         );
         let a = s.authorization_url(None, None, None).unwrap();
         let u = url::Url::parse(&a.url).unwrap();

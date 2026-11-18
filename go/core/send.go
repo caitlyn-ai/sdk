@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -55,8 +56,17 @@ func (c *Client) SendRaw(ctx context.Context, method, url string, build func() (
 		if err != nil {
 			return 0, nil, err
 		}
-		req, err := http.NewRequestWithContext(ctx, method, url, rc)
+		// The stall timer (PROTOCOL.md 14): the attempt's own context is cancelled when it has sent no bytes and received
+		// no response for the client's storage stall timeout; each read of the body as it is sent starts the wait again.
+		actx, cancel := context.WithCancelCause(ctx)
+		var stall *time.Timer
+		if d := c.s.storageStallTimeout; d > 0 {
+			stall = time.AfterFunc(d, func() { cancel(&storageStallError{after: d}) })
+			rc = &touchingReader{ReadCloser: rc, touch: func() { stall.Reset(d) }}
+		}
+		req, err := http.NewRequestWithContext(actx, method, url, rc)
 		if err != nil {
+			cancel(nil)
 			rc.Close()
 			return 0, nil, err
 		}
@@ -67,9 +77,20 @@ func (c *Client) SendRaw(ctx context.Context, method, url string, build func() (
 			req.Header.Set(k, v)
 		}
 		resp, err := c.s.httpClient.Do(req)
+		if stall != nil && !stall.Stop() && err == nil {
+			resp.Body.Close()
+			resp, err = nil, context.Cause(actx)
+		}
+		if err != nil {
+			var stalled *storageStallError
+			if errors.As(context.Cause(actx), &stalled) {
+				err = stalled
+			}
+		}
 		var delay time.Duration
 		cost := retryCost
 		if err != nil {
+			cancel(nil)
 			if ctx.Err() != nil {
 				return 0, nil, ctx.Err()
 			}
@@ -81,6 +102,7 @@ func (c *Client) SendRaw(ctx context.Context, method, url string, build func() (
 			status = resp.StatusCode
 			body, _ = io.ReadAll(io.LimitReader(resp.Body, uploadBodyLimit))
 			resp.Body.Close()
+			cancel(nil)
 			span.SetAttributes(attribute.Int("http.response.status_code", status))
 			if status != http.StatusTooManyRequests && status != http.StatusServiceUnavailable || attempt+1 >= c.s.maxAttempts {
 				if status >= 200 && status < 300 {
@@ -111,4 +133,28 @@ func (c *Client) SendRaw(ctx context.Context, method, url string, build func() (
 			return 0, nil, ctx.Err()
 		}
 	}
+}
+
+// storageStallError is a send to storage that sent and received nothing for the stall timeout.
+type storageStallError struct{ after time.Duration }
+
+func (e *storageStallError) Error() string {
+	return "storage sent nothing for " + FormatTimeout(e.after)
+}
+
+// Timeout reports true, as net.Error's does.
+func (e *storageStallError) Timeout() bool { return true }
+
+// touchingReader calls touch each time the transport reads a chunk of the body to send.
+type touchingReader struct {
+	io.ReadCloser
+	touch func()
+}
+
+func (r *touchingReader) Read(p []byte) (int, error) {
+	n, err := r.ReadCloser.Read(p)
+	if n > 0 {
+		r.touch()
+	}
+	return n, err
 }

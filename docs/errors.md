@@ -136,7 +136,7 @@ Every thing you read carries an `etag`. A write that changes a thing takes it ba
 | `code` | The stable code, for example `NOT_FOUND`, or `HTTP_<status>` when the body is not a Caitlyn error. Each code the API documents has a constant: `ErrorCode.NOT_FOUND` in TypeScript and Python, `caitlyn.ErrorCodeNotFound` in Go, `ErrorCode::NOT_FOUND` in Rust. A constant is the code itself, so comparing with the string works the same, and a code your SDK version does not know yet is still a string. |
 | `title`, `detail`, `type` | A short summary, what went wrong this time, and the code's page here. |
 | `requestId` | The request's identifier. |
-| `retryAfterSeconds` | On 429 and 503: how long to wait, from `Retry-After`. |
+| `retryAfterSeconds` | On 429 and 503: how long to wait, from `Retry-After`. On a 409 `TARGET_IN_USE` or `DOCUMENT_INGESTION_IN_PROGRESS`: when to try again (the SDKs never retry a 409 themselves). |
 | `errors` | On 400 `VALIDATION_FAILED`: one entry per member or parameter at fault. |
 | `rawBody` | The response body as received, as text, at most its first 8 KiB (Python and Rust `raw_body`, Go `RawBody`). |
 | `rawBodyTruncated` | True when the body was longer than 8 KiB and `rawBody` holds only its start. |

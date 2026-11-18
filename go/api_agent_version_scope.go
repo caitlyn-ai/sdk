@@ -99,7 +99,8 @@ func (s *AgentVersionScope) Compare(ctx context.Context, in *CompareAgentVersion
 // it is. Returns live, the version published, and the history entry the publish wrote.
 //
 // caitlyn.WithIfMatch(etag) is optional: without it the change applies to the thing as it stands; with
-// it, a stale ETag is refused with 412.
+// it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
+// yourself: no helper fills it in.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *AgentVersionScope) Publish(ctx context.Context, in *PublishAgentVersionInput, opts ...CallOption) (*PublishAgentVersionResult, error) {

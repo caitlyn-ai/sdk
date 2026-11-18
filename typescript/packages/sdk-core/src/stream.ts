@@ -78,7 +78,13 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
     private readonly maxReconnects = 3,
   ) {
     if (signal?.aborted) this.controller.abort(signal.reason);
-    else signal?.addEventListener('abort', () => this.controller.abort(signal.reason), { once: true });
+    else if (signal) {
+      // Forwarded until the stream's own controller aborts (it ends, or is closed), then removed: a signal reused for
+      // many streams keeps no listener from the streams that have finished.
+      const forward = () => this.controller.abort(signal.reason);
+      signal.addEventListener('abort', forward, { once: true });
+      this.controller.signal.addEventListener('abort', () => signal.removeEventListener('abort', forward), { once: true });
+    }
     // `await using stream = conversation.send(...)`: leaving the block closes the stream as close() does.
     Object.defineProperty(this, asyncDispose, { value: () => this.close(), configurable: true });
   }
@@ -169,15 +175,19 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
     let body = opened.events as Body;
     for (;;) {
       let ended = false;
+      // Events on this connection so far: on a watch that starts each connection with a snapshot (spec.fresh), the
+      // snapshot, its first, is not progress towards STREAM_LOST, whatever its id (PROTOCOL.md 5.6).
+      let onConnection = 0;
       try {
         for await (const msg of parseSse(body)) {
           // WebKit can keep delivering a body after its fetch was aborted: cancelling ends the stream here regardless.
           if (this.signal?.aborted) throw this.aborted();
+          const first = onConnection++ === 0;
           if (msg.id) {
             if (this.seen.has(msg.id)) continue;
             this.seen.add(msg.id);
             this.lastEventId = msg.id;
-            this.attempts = 0; // only a new event counts as progress (PROTOCOL.md 5.6)
+            if (!(this.spec.fresh && first)) this.attempts = 0; // only a new event counts as progress (PROTOCOL.md 5.6)
           }
           if (!this.spec.known.has(msg.event)) continue;
           let data: Record<string, any>;

@@ -3427,6 +3427,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 ensure!(
                     names
                         == [
+                            "bucket",
                             "x-amz-algorithm",
                             "x-amz-credential",
                             "x-amz-date",
@@ -4186,14 +4187,14 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             Ok(())
         }),
         "batch-upload.keep-alive" => Box::pin(async move {
-            // A compressed clock: each policy is due for renewal 2 s after it is issued, and the batch stops waiting for
-            // bytes 4 s after the latest one. The one file takes 6 s to arrive.
+            // A compressed clock: each policy lasts 4 s, so it is due for renewal 2 s after it arrives (half its life), and
+            // the batch stops waiting for bytes 4 s after the latest one. The one file takes 6 s to arrive.
             let renewals = || async {
                 m.matching(|r| str_at(r, "method") == "POST" && str_at(r, "path").ends_with("/upload-policies"))
                     .await
                     .len()
             };
-            let faults = json!({"uploadReservation": {"policySeconds": 302, "reservationSeconds": 4}, "uploadDelayMs": 6000});
+            let faults = json!({"uploadReservation": {"policySeconds": 4, "reservationSeconds": 4}, "uploadDelayMs": 6000});
             m.faults(faults.clone()).await;
             let c = client(m);
             let data = b"Staff receive 20 days of annual leave.";
@@ -4228,6 +4229,82 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let at_cancel = renewals().await;
             tokio::time::sleep(Duration::from_millis(2500)).await;
             ensure!(renewals().await == at_cancel, "a renewal after the cancellation");
+            Ok(())
+        }),
+        "batch-upload.short-window" => Box::pin(async move {
+            // A 4-second window (under the server's 60-second least: the mock's test mode) and one file that takes 5 s
+            // to arrive. Each policy lasts 4 s, so its renewal margin is 2 s, not 5 minutes: renewals about 2 s apart.
+            m.faults(json!({"shortWindows": true, "uploadDelayMs": 5000})).await;
+            let c = client(m);
+            let input = SyncInput::items(vec![SyncItem::file(
+                "/window/annual-leave.pdf",
+                pdf("annual-leave.pdf", b"%PDF annual"),
+            )])
+            .upload_window_seconds(4);
+            let report = c.knowledge_base(KB).ingestion().sync(input).await.map_err(s)?;
+            ensure!(report.batch.status.as_str() == "succeeded", "batch {:?}", report.batch.status);
+            let created = m
+                .matching(|r| str_at(r, "method") == "POST" && str_at(r, "path").ends_with("/ingestion-batches"))
+                .await;
+            let body: Value = serde_json::from_str(created.first().map(|r| str_at(r, "body")).unwrap_or("{}")).unwrap_or_default();
+            ensure!(body["uploadWindowSeconds"] == json!(4), "CreateIngestionBatch sent {body}");
+            let at: Vec<i64> = m
+                .matching(|r| str_at(r, "method") == "POST" && str_at(r, "path").ends_with("/upload-policies"))
+                .await
+                .iter()
+                .filter_map(|r| r["at"].as_i64())
+                .collect();
+            ensure!(
+                (1..=3).contains(&at.len()),
+                "{} renewals in a 5 s upload under 4 s policies",
+                at.len()
+            );
+            let gaps: Vec<i64> = at.windows(2).map(|w| w[1] - w[0]).collect();
+            ensure!(gaps.iter().all(|g| *g >= 1500), "renewals {gaps:?} ms apart");
+            // expires_in_seconds on a single file's upload, as given.
+            let before = chrono::Utc::now();
+            let up = c
+                .core()
+                .uploads()
+                .reserve("a.pdf", "application/pdf", 1, "x")
+                .expires_in_seconds(60)
+                .await
+                .map_err(s)?;
+            let life = (up.expires_at - before).num_seconds();
+            ensure!((55..=65).contains(&life), "the upload lasts {life} s");
+            Ok(())
+        }),
+        "batch-upload.keep-alive-floor" => Box::pin(async move {
+            // Every policy lasts a second, so it is due half a second after it arrives; the one file takes 4 s to arrive.
+            // The first ask is upload()'s own policy; the rest are the timer's, the first half a second on and the
+            // others a second apart: about five in all, where half-second renewals would be about nine.
+            m.faults(json!({"uploadReservation": {"policySeconds": 1, "reservationSeconds": 30}, "uploadDelayMs": 4000}))
+                .await;
+            let c = client(m);
+            let data = b"Staff receive 20 days of annual leave.";
+            let batch = hand_batch(&c, vec![ingest_item("/new/annual-leave.pdf", data)], true).await?;
+            let done = batch
+                .upload(BatchFiles::by_path([(
+                    "/new/annual-leave.pdf".to_owned(),
+                    pdf("annual-leave.pdf", data),
+                )]))
+                .await
+                .map_err(s)?;
+            let items = &done.result().items;
+            ensure!(items.len() == 1 && items[0].status.as_str() == "ingesting", "items {items:?}");
+            let at: Vec<i64> = m
+                .matching(|r| str_at(r, "method") == "POST" && str_at(r, "path").ends_with("/upload-policies"))
+                .await
+                .iter()
+                .filter_map(|r| r["at"].as_i64())
+                .collect();
+            ensure!(
+                (4..=6).contains(&at.len()),
+                "{} policies asked for in 4 s: want the timer's renewals, at most one a second",
+                at.len()
+            );
+            let gaps: Vec<i64> = at.windows(2).skip(1).map(|w| w[1] - w[0]).collect();
+            ensure!(gaps.iter().all(|g| *g >= 900), "renewals {gaps:?} ms apart");
             Ok(())
         }),
         "batch-upload.sends" => Box::pin(async move {
@@ -4438,15 +4515,25 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             Ok(())
         }),
         "batch-upload.policy-renewal" => Box::pin(async move {
-            // A policy with less than five minutes left is renewed before the next upload.
-            m.faults(json!({"renewedPolicySeconds": 120})).await;
+            // The call's own policy lasts a second, so its renewal margin is half a second; each file takes a second to
+            // arrive, one at a time. The first goes with that policy; it is renewed before the second goes.
+            m.faults(json!({"renewedPolicySeconds": 1, "uploadDelayMs": 1000})).await;
             let c = client(m);
-            let batch = hand_batch(&c, vec![ingest_item("/new/a.pdf", b"alpha")], true).await?;
-            batch.upload([("/new/a.pdf", pdf("a.pdf", b"alpha"))]).await.map_err(s)?;
-            let policies = m.matching(|r| str_at(r, "path").ends_with("/upload-policies")).await.len();
+            let batch = hand_batch(
+                &c,
+                vec![ingest_item("/new/a.pdf", b"alpha"), ingest_item("/new/b.pdf", b"bravo")],
+                true,
+            )
+            .await?;
+            batch
+                .upload([("/new/a.pdf", pdf("a.pdf", b"alpha")), ("/new/b.pdf", pdf("b.pdf", b"bravo"))])
+                .concurrency(1)
+                .await
+                .map_err(s)?;
+            let order = upload_order(&m.requests().await);
             ensure!(
-                policies == 2,
-                "{policies} CreateIngestionBatchUploadPolicy calls: the first, then its renewal"
+                order == ["policy", "upload", "policy", "upload"],
+                "POSTs {order:?}: the call's own policy, then its renewal between the uploads"
             );
             // A 403 that says the policy expired: renewed once, and that file sent again.
             m.reset().await;
@@ -4634,19 +4721,24 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             Ok(())
         }),
         "sync.policy-renewal" => Box::pin(async move {
-            // A policy with two minutes left is renewed before the first upload.
-            m.faults(json!({"policySeconds": 120})).await;
-            let items = vec![SyncItem::file("/new/r1.pdf", pdf("r1.pdf", b"renew one"))];
+            // Start's policy lasts a second, so its renewal margin is half a second; each file takes a second to arrive,
+            // one at a time. The first goes with Start's policy; it is renewed before the second goes.
+            m.faults(json!({"policySeconds": 1, "uploadDelayMs": 1000})).await;
+            let items = vec![
+                SyncItem::file("/new/r1.pdf", pdf("r1.pdf", b"renew one")),
+                SyncItem::file("/new/r2.pdf", pdf("r2.pdf", b"renew two")),
+            ];
             client(m)
                 .knowledge_base(KB)
                 .ingestion()
-                .sync(SyncInput::items(items))
+                .sync(SyncInput::items(items).concurrency(1))
                 .await
                 .map_err(s)?;
-            let all = m.requests().await;
-            let renew = all.iter().position(|r| str_at(r, "path").ends_with("/upload-policies"));
-            let post = all.iter().position(|r| str_at(r, "path") == "/__s3/");
-            ensure!(renew.is_some() && renew < post, "renewal {renew:?}, first upload {post:?}");
+            let order = upload_order(&m.requests().await);
+            ensure!(
+                order == ["upload", "policy", "upload"],
+                "POSTs {order:?}: the renewal between the uploads"
+            );
             // A 403 saying the policy expired renews it once, and the file is sent again.
             m.reset().await;
             m.faults(json!({"startPolicyExpired": true})).await;
@@ -5038,8 +5130,476 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             }
             Ok(())
         }),
+        // ------------------------------------------------------------------ 0.10.1
+        "client.request-timeout" => Box::pin(async move {
+            // Rust's request timeout is the default HTTP client's connect and read timeouts: each read waits at most this
+            // long, which covers the wait for the headers.
+            let c = Client::builder(WORKSPACE, Auth::token(PAT))
+                .endpoint(&m.base)
+                .request_timeout(Some(Duration::from_millis(300)))
+                .build()
+                .map_err(s)?;
+            m.faults(held("GetKnowledgeBase", 3)).await;
+            let t0 = Instant::now();
+            let e = c.knowledge_base(KB).get().await.err().ok_or("no error")?;
+            ensure!(
+                matches!(e, Error::Connection(_)) && e.code() == Some("CONNECTION_ERROR") && e.status() == Some(0),
+                "got {e:?}"
+            );
+            let chain = error_chain(&e);
+            ensure!(
+                chain.contains("GetKnowledgeBase") && chain.contains("timed out"),
+                "the message names neither the operation nor the timeout: {chain}"
+            );
+            let attempts = m.matching(|r| str_at(r, "path") == format!("/v3/knowledge-bases/{KB}")).await.len();
+            ensure!(attempts == 3, "{attempts} attempts; want 3, retried as a read is");
+            ensure!(t0.elapsed() < Duration::from_secs(10), "took too long");
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            let closed = mock_events(m, "request-aborted", "GetKnowledgeBase").await;
+            ensure!(closed == 3, "{closed} attempts closed; want each of the 3");
+            // A watch whose stream has only keep-alives for longer than the timeout is not cut.
+            m.reset().await;
+            m.faults(json!({"watchKeepAliveMs": 100})).await;
+            let mut watch = c.knowledge_base(KB).watch().await.map_err(s)?;
+            let changer = c.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(1200)).await;
+                if let Ok(current) = changer.knowledge_base(KB).get().await {
+                    let _ = changer
+                        .knowledge_base(KB)
+                        .update()
+                        .description("Still watching")
+                        .if_match(&current.etag)
+                        .await;
+                }
+            });
+            let events = tokio::time::timeout(
+                Duration::from_secs(10),
+                take(&mut watch, |e| matches!(e, KnowledgeBaseEvent::KnowledgeBaseUpdated(_))),
+            )
+            .await
+            .map_err(s)?
+            .map_err(s)?;
+            ensure!(
+                events.len() == 2 && matches!(events[0], KnowledgeBaseEvent::Snapshot(_)),
+                "events {events:?}"
+            );
+            let connections = m
+                .matching(|r| str_at(r, "path") == format!("/v3/knowledge-bases/{KB}/events"))
+                .await
+                .len();
+            ensure!(connections == 1, "{connections} watch connections; want one, never cut");
+            Ok(())
+        }),
+        "files.storage-stall" => Box::pin(async move {
+            let c = Client::builder(WORKSPACE, Auth::token(PAT))
+                .endpoint(&m.base)
+                .storage_stall_timeout(Some(Duration::from_millis(300)))
+                .build()
+                .map_err(s)?;
+            let data = b"Staff receive 20 days of annual leave.";
+            let batch = hand_batch(&c, vec![ingest_item("/new/a.pdf", data)], true).await?;
+            m.faults(held("PostObject", 3)).await;
+            let up = batch
+                .upload(BatchFiles::by_path([("/new/a.pdf".to_owned(), pdf("a.pdf", data))]))
+                .await
+                .map_err(s)?;
+            let items = &up.result().items;
+            ensure!(
+                items.len() == 1 && items[0].status.as_str() == "failed" && items[0].failure_code.as_deref() == Some("UPLOAD_FAILED"),
+                "items {items:?}"
+            );
+            let detail = items[0].failure_detail.clone().unwrap_or_default();
+            ensure!(detail.contains("storage sent nothing for 300 ms"), "detail {detail}");
+            let posts = form_posts(m).await.len();
+            ensure!(posts == 3, "{posts} form POSTs; want 3, retried as a send with no response is");
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            let closed = mock_events(m, "request-aborted", "PostObject").await;
+            ensure!(closed == 3, "{closed} stalled attempts closed; want 3");
+            Ok(())
+        }),
+        "files.slow-not-stalled" => Box::pin(async move {
+            let c = Client::builder(WORKSPACE, Auth::token(PAT))
+                .endpoint(&m.base)
+                .storage_stall_timeout(Some(Duration::from_millis(2500)))
+                .build()
+                .map_err(s)?;
+            let big: Vec<u8> = (0..32 * 1024 * 1024).map(|i| (i % 251) as u8).collect();
+            let batch = hand_batch(&c, vec![ingest_item("/hand/large.pdf", &big)], true).await?;
+            m.faults(json!({"uploadReadBytesPerSecond": 8 * 1024 * 1024})).await;
+            let t0 = Instant::now();
+            let up = batch
+                .upload(BatchFiles::by_path([("/hand/large.pdf".to_owned(), pdf("large.pdf", &big))]))
+                .await
+                .map_err(s)?;
+            let items = &up.result().items;
+            ensure!(items.len() == 1 && items[0].status.as_str() == "ingesting", "items {items:?}");
+            ensure!(
+                t0.elapsed() > Duration::from_millis(2500),
+                "took {:?}: not longer than the stall timeout in all",
+                t0.elapsed()
+            );
+            let posts = form_posts(m).await.len();
+            ensure!(posts == 1, "{posts} form POSTs; want one attempt");
+            Ok(())
+        }),
+        "batch-upload.unreadable-expiry" => Box::pin(async move {
+            // Start's policy is short, so the first upload renews it; every renewal then has no expiresAt.
+            m.faults(json!({"policySeconds": 1, "policyExpiresAt": null})).await;
+            let c = client(m);
+            let files: Vec<(String, Vec<u8>)> = (0..3)
+                .map(|n| (format!("/new/f{n}.pdf"), format!("file {n}").into_bytes()))
+                .collect();
+            let upload = |batch: &scope::BatchScope| {
+                batch
+                    .upload(BatchFiles::by_path(files.iter().map(|(p, d)| (p.clone(), pdf("f.pdf", d)))))
+                    .concurrency(1)
+            };
+            let batch = hand_batch(&c, files.iter().map(|(p, d)| ingest_item(p, d)).collect(), true).await?;
+            let before = policies_asked(m).await;
+            let up = upload(&batch).await.map_err(s)?;
+            let items = &up.result().items;
+            ensure!(
+                items.len() == 3 && items.iter().all(|i| i.status.as_str() == "ingesting"),
+                "items {items:?}"
+            );
+            let asked = policies_asked(m).await - before;
+            ensure!(asked >= 3, "{asked} policies asked for; want one before each of 3 uploads");
+            let after = policies_asked(m).await;
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            ensure!(policies_asked(m).await == after, "a renewal after the call returned");
+            // An expiresAt that is not a time fails the call that returned it, clearly: never a silent loss of renewal.
+            m.reset().await;
+            m.faults(json!({"policySeconds": 1, "policyExpiresAt": "not a date"})).await;
+            let batch = hand_batch(&c, files.iter().map(|(p, d)| ingest_item(p, d)).collect(), true).await?;
+            let e = upload(&batch).await.err().ok_or("the upload went on")?;
+            ensure!(e.code() == Some("DECODE_FAILED"), "got {e:?}");
+            Ok(())
+        }),
+        "sync.no-confirm-no-estimate" => Box::pin(async move {
+            m.faults(status("EstimateIngestion", &[(503, 0), (503, 0), (503, 0)])).await;
+            let input = SyncInput::items(vec![
+                SyncItem::file("/new/a.pdf", pdf("a.pdf", b"a")),
+                SyncItem::file("/new/b.pdf", pdf("b.pdf", b"b")),
+            ]);
+            let report = client(m).knowledge_base(KB).ingestion().sync(input).await.map_err(s)?;
+            ensure!(
+                report.batch.status.as_str() == "succeeded",
+                "batch {}",
+                report.batch.status.as_str()
+            );
+            let priced = m.matching(|r| str_at(r, "path").ends_with("/ingestions:estimate")).await.len();
+            ensure!(priced == 0, "{priced} EstimateIngestion calls; want none");
+            Ok(())
+        }),
+        "sync.confirm-estimate-unavailable" => Box::pin(async move {
+            m.faults(status("EstimateIngestion", &[(400, 0)])).await;
+            let saw = Arc::new(Mutex::new(Vec::new()));
+            let seen = saw.clone();
+            let items = || {
+                vec![
+                    SyncItem::file("/new/a.pdf", pdf("a.pdf", b"a")),
+                    SyncItem::file("/new/b.pdf", pdf("b.pdf", b"b")),
+                ]
+            };
+            let input = SyncInput::items(items()).confirm(move |plan: &SyncPlan| {
+                seen.lock().unwrap().push((
+                    plan.estimate.is_none(),
+                    plan.estimate_error.as_ref().and_then(|e| e.status()),
+                    plan.items.len(),
+                ));
+                true
+            });
+            let report = client(m).knowledge_base(KB).ingestion().sync(input).await.map_err(s)?;
+            ensure!(
+                report.batch.status.as_str() == "succeeded",
+                "batch {}",
+                report.batch.status.as_str()
+            );
+            ensure!(
+                *saw.lock().unwrap() == [(true, Some(400), 2)],
+                "confirm saw {:?}; want no estimate and the 400 as estimate_error",
+                saw.lock().unwrap()
+            );
+            m.reset().await;
+            m.faults(status("EstimateIngestion", &[(400, 0)])).await;
+            let e = client(m)
+                .knowledge_base(KB)
+                .ingestion()
+                .estimate_sync(SyncInput::items(items()))
+                .await
+                .err()
+                .ok_or("sync.estimate went on")?;
+            ensure!(e.status() == Some(400), "sync.estimate got {e:?}");
+            Ok(())
+        }),
+        "if-match.never-wildcard" => Box::pin(async move {
+            let c = client(m);
+            let e = c
+                .knowledge_base(KB)
+                .update()
+                .description("Any version")
+                .if_match("*")
+                .await
+                .err()
+                .ok_or("the mock took an unasked *")?;
+            ensure!(e.code() == Some("IF_MATCH_WILDCARD_NOT_ASKED"), "got {e:?}");
+            m.faults(json!({"allowIfMatchWildcard": true})).await;
+            c.knowledge_base(KB)
+                .update()
+                .description("Any version")
+                .if_match("*")
+                .await
+                .map_err(s)?;
+            let (patch, _) = last_patch(m).await;
+            ensure!(header(&patch, "if-match") == Some("*"), "sent {:?}", header(&patch, "if-match"));
+            // A sync, which sends If-Match on Start, sends the plan's own ETag.
+            m.reset().await;
+            let report = client(m)
+                .knowledge_base(KB)
+                .ingestion()
+                .sync(SyncInput::items(vec![SyncItem::file("/new/a.pdf", pdf("a.pdf", b"a"))]))
+                .await
+                .map_err(s)?;
+            ensure!(
+                report.batch.status.as_str() == "succeeded",
+                "batch {}",
+                report.batch.status.as_str()
+            );
+            let starts = m.matching(|r| str_at(r, "path").ends_with("/start")).await;
+            let sent = starts.first().and_then(|r| header(r, "if-match")).unwrap_or_default().to_owned();
+            ensure!(starts.len() == 1 && !sent.is_empty() && sent != "*", "Start sent If-Match {sent:?}");
+            Ok(())
+        }),
+        "watch.snapshot-not-progress" => Box::pin(async move {
+            let path = format!("/v3/knowledge-bases/{KB}/events");
+            let watches = || async {
+                m.matching(|r| str_at(r, "method") == "GET" && str_at(r, "path") == path)
+                    .await
+                    .len()
+            };
+            // Four connections in a row that each end after their snapshot (a fresh id every time): STREAM_LOST.
+            m.faults(json!({"watchDrops": {"count": 4, "afterEvents": 1}})).await;
+            let c = client(m);
+            let mut watch = c.knowledge_base(KB).watch().await.map_err(s)?;
+            let mut seen = 0;
+            let failed = loop {
+                match watch.next().await {
+                    Some(Ok(KnowledgeBaseEvent::Snapshot(_))) => seen += 1,
+                    Some(Ok(other)) => return Err(format!("unexpected event {other:?}")),
+                    Some(Err(e)) => break Some(e),
+                    None => break None,
+                }
+            };
+            ensure!(
+                matches!(&failed, Some(e) if e.code() == Some("STREAM_LOST")) && seen == 4 && watches().await == 4,
+                "{seen} snapshots, error {failed:?}, {} connections; want four snapshots, then STREAM_LOST",
+                watches().await
+            );
+            // Three such connections, then one that stays open and brings a change: the watch carries on to it.
+            m.reset().await;
+            m.faults(json!({"watchDrops": {"count": 3, "afterEvents": 1}})).await;
+            let mut watch = c.knowledge_base(KB).watch().await.map_err(s)?;
+            let changer = c.clone();
+            let (base, http) = (m.base.clone(), m.http.clone());
+            tokio::spawn(async move {
+                let path = format!("/v3/knowledge-bases/{KB}/events");
+                for _ in 0..200 {
+                    let logged: Vec<Value> = match http.get(format!("{base}/__mock/requests")).send().await {
+                        Ok(r) => r.json().await.unwrap_or_default(),
+                        Err(_) => Vec::new(),
+                    };
+                    let n = logged
+                        .iter()
+                        .filter(|r| str_at(r, "method") == "GET" && str_at(r, "path") == path)
+                        .count();
+                    if n >= 4 {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                if let Ok(current) = changer.knowledge_base(KB).get().await {
+                    let _ = changer
+                        .knowledge_base(KB)
+                        .update()
+                        .description("Still watching")
+                        .if_match(&current.etag)
+                        .await;
+                }
+            });
+            let events = tokio::time::timeout(
+                Duration::from_secs(20),
+                take(&mut watch, |e| matches!(e, KnowledgeBaseEvent::KnowledgeBaseUpdated(_))),
+            )
+            .await
+            .map_err(s)?
+            .map_err(s)?;
+            ensure!(
+                events.len() == 5 && events[..4].iter().all(|e| matches!(e, KnowledgeBaseEvent::Snapshot(_))),
+                "events {events:?}"
+            );
+            Ok(())
+        }),
+        "batch-upload.policy-sets-key" => Box::pin(async move {
+            // The mock's policy has its own `key`, as createPresignedPost makes it, and refuses a form that repeats a field.
+            let c = client(m);
+            let files: Vec<(String, Vec<u8>)> = (1..=2)
+                .map(|n| (format!("/hand/file-{n}.pdf"), format!("%PDF hand {n}").into_bytes()))
+                .collect();
+            let batch = hand_batch(&c, files.iter().map(|(p, d)| ingest_item(p, d)).collect(), true).await?;
+            let up = batch
+                .upload(BatchFiles::by_path(files.iter().map(|(p, d)| (p.clone(), pdf("f.pdf", d)))))
+                .await
+                .map_err(s)?;
+            let items = &up.result().items;
+            ensure!(
+                items.len() == 2 && items.iter().all(|i| i.status.as_str() == "ingesting"),
+                "items {items:?}"
+            );
+            let object_keys: Vec<String> = batch
+                .items()
+                .list()
+                .collect()
+                .await
+                .map_err(s)?
+                .into_iter()
+                .filter_map(|i| i.object_key)
+                .collect();
+            let sent = m.matching(|r| str_at(r, "method") == "POST" && str_at(r, "path") == "/__s3/").await;
+            ensure!(sent.len() == 2, "{} forms for 2 files", sent.len());
+            for f in &sent {
+                let keys: Vec<&str> = f["form"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|p| str_at(p, "name").eq_ignore_ascii_case("key"))
+                    .map(|p| str_at(p, "value"))
+                    .collect();
+                ensure!(keys.len() == 1 && object_keys.iter().any(|k| k == keys[0]), "key fields {keys:?}");
+            }
+            let refused = m.matching(|r| str_at(r, "event") == "storage-refused-repeated-field").await;
+            ensure!(refused.is_empty(), "storage refused {refused:?}");
+            Ok(())
+        }),
+        "errors.409-retry-after" => Box::pin(async move {
+            let c = client(m);
+            // A new document's path, which the started batch reserves until its upload arrives.
+            hand_batch(&c, vec![ingest_item("/reserved/file-1.pdf", b"%PDF hand 1")], true).await?;
+            let kb = c.knowledge_base(KB);
+            let is_409 = |r: &Result<_, Error>| matches!(r, Err(Error::Conflict(e)) if e.code == ErrorCode::TARGET_IN_USE && e.retry_after_seconds == Some(30));
+            let created = kb
+                .documents()
+                .create(pdf("file-1.pdf", b"%PDF another"))
+                .folder("/reserved/")
+                .await
+                .map(|_| ());
+            ensure!(is_409(&created), "CreateDocument: {created:?}");
+            let sent = m
+                .matching(|r| str_at(r, "method") == "POST" && str_at(r, "path") == format!("/v3/knowledge-bases/{KB}/documents"))
+                .await;
+            ensure!(sent.len() == 1, "CreateDocument sent {} times; a 409 is not retried", sent.len());
+            let other = kb
+                .documents()
+                .create(pdf("other.pdf", b"%PDF other"))
+                .folder("/reserved/")
+                .await
+                .map_err(s)?;
+            let current = kb.document(other.id()).get().await.map_err(s)?;
+            let renamed = kb
+                .document(other.id())
+                .update()
+                .name("file-1.pdf")
+                .if_match(current.etag.clone())
+                .await
+                .map(|_| ());
+            ensure!(is_409(&renamed), "rename: {renamed:?}");
+            Ok(())
+        }),
+        "telemetry.batch-item" => Box::pin(async move {
+            use tracing_subscriber::layer::SubscriberExt;
+            let capture = Capture::default();
+            let _guard = tracing::subscriber::set_default(tracing_subscriber::registry().with(capture.clone()));
+            let c = client(m);
+            let files = [
+                ("/new/a.pdf", &b"a"[..]),
+                ("/new/b.pdf", &b"b"[..]),
+                ("/new/broken.pdf", &b"broken"[..]),
+            ];
+            let batch = hand_batch(&c, files.iter().map(|(p, d)| ingest_item(p, d)).collect(), true).await?;
+            m.faults(json!({"failUploads": {"/new/broken.pdf": true}})).await;
+            batch
+                .upload(BatchFiles::by_path(files.iter().map(|(p, d)| ((*p).to_owned(), pdf("f.pdf", d)))))
+                .await
+                .map_err(s)?;
+            let spans = capture.0.lock().unwrap().clone();
+            let items: Vec<&SpanRec> = spans.iter().filter(|r| r.name == "caitlyn.batch.item").collect();
+            ensure!(items.len() == 3, "{} caitlyn.batch.item spans; want 3", items.len());
+            for r in items {
+                let field = |k: &str| r.fields.get(k).cloned().unwrap_or_default();
+                ensure!(
+                    field("caitlyn.ingestion_batch.id") == batch.ingestion_batch_id()
+                        && !field("caitlyn.ingestion_batch.item.id").is_empty(),
+                    "fields {:?}",
+                    r.fields
+                );
+                let events: Vec<String> = r.events.iter().map(|e| e.get("message").cloned().unwrap_or_default()).collect();
+                if field("caitlyn.ingestion_batch.item.path") == "/new/broken.pdf" {
+                    ensure!(
+                        events.starts_with(&["opened".to_owned(), "checked".to_owned(), "sending".to_owned()])
+                            && events.last().map(String::as_str) == Some("failed"),
+                        "broken.pdf: events {events:?}"
+                    );
+                    let last = r.events.last().cloned().unwrap_or_default();
+                    ensure!(
+                        last.get("caitlyn.error.code").map(String::as_str) == Some("UPLOAD_FAILED"),
+                        "failed event {last:?}"
+                    );
+                    ensure!(field("otel.status_code") == "ERROR", "status {:?}", field("otel.status_code"));
+                } else {
+                    ensure!(
+                        events == ["opened", "checked", "sending", "sent", "completed"],
+                        "{}: events {events:?}",
+                        field("caitlyn.ingestion_batch.item.path")
+                    );
+                }
+            }
+            Ok(())
+        }),
         _ => return None,
     })
+}
+
+/// n hold faults for an operation: requests the mock never answers.
+fn held(op: &str, n: usize) -> Value {
+    json!({"status": {op: vec![json!({"hold": true}); n]}})
+}
+
+/// The mock's own log entries of this kind (request-aborted, request-held) for this operation.
+async fn mock_events(m: &Mock, event: &str, op: &str) -> usize {
+    m.requests()
+        .await
+        .iter()
+        .filter(|r| str_at(r, "event") == event && str_at(r, "op") == op)
+        .count()
+}
+
+async fn policies_asked(m: &Mock) -> usize {
+    m.matching(|r| str_at(r, "method") == "POST" && str_at(r, "path").ends_with("/upload-policies"))
+        .await
+        .len()
+}
+
+/// An error and its sources, as one string.
+fn error_chain(e: &(dyn std::error::Error + 'static)) -> String {
+    let mut out = e.to_string();
+    let mut next = e.source();
+    while let Some(c) = next {
+        out.push_str(" <- ");
+        out.push_str(&c.to_string());
+        next = c.source();
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------------------------- files and ingest
@@ -5049,6 +5609,18 @@ fn pdf(name: &str, data: &[u8]) -> UploadFile {
 }
 
 /// A batch item that ingests these bytes at `path`, as a caller builds it by hand: its SHA-256, size and type.
+/// The order of the storage form POSTs ("upload") and upload policy requests ("policy") among the logged requests.
+fn upload_order(requests: &[Value]) -> Vec<&'static str> {
+    requests
+        .iter()
+        .filter_map(|r| match (str_at(r, "method"), str_at(r, "path")) {
+            ("POST", "/__s3/") => Some("upload"),
+            ("POST", p) if p.ends_with("/upload-policies") => Some("policy"),
+            _ => None,
+        })
+        .collect()
+}
+
 fn ingest_item(path: &str, data: &[u8]) -> IngestionItemInput {
     let dir = std::env::temp_dir();
     let sha = futures_util::FutureExt::now_or_never(caitlyn_sdk_core::PreparedFile::read(&pdf("x.pdf", data), &dir))
@@ -6684,6 +7256,22 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
                 .ingestion()
                 .batch(field::<String>(input, "ingestionBatchId"))
                 .update()
+                .input(i)
+                .options(options(input))
+                .send()
+                .await
+                .map(|o| with_headers(&o, &[("etag", Some(o.etag.as_str()))]))
+        }
+        "CancelIngestionBatchItem" => {
+            let mut i: CancelIngestionBatchItemInput = serde_json::from_value(input.clone()).ok()?;
+            i.knowledge_base_id = field(input, "knowledgeBaseId");
+            i.ingestion_batch_id = field(input, "ingestionBatchId");
+            i.item_id = field(input, "itemId");
+            c.knowledge_base(field::<String>(input, "knowledgeBaseId"))
+                .ingestion()
+                .batch(field::<String>(input, "ingestionBatchId"))
+                .item(field::<String>(input, "itemId"))
+                .cancel()
                 .input(i)
                 .options(options(input))
                 .send()

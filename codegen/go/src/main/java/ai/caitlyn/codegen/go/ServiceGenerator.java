@@ -982,7 +982,8 @@ final class ServiceGenerator {
         }
         op.ifMatch.ifPresent(p -> text.append("\n\n").append(ifMatchRequired(op)
                 ? "Pass caitlyn.WithIfMatch(etag), the ETag you last read: it is required, and a call without it fails with an input error before anything is sent."
-                : "caitlyn.WithIfMatch(etag) is optional: without it the change applies to the thing as it stands; with it, a stale ETag is refused with 412."));
+                : "caitlyn.WithIfMatch(etag) is optional: without it the change applies to the thing as it stands; with it, a stale ETag is refused with 412.")
+                .append(" WithIfMatch(\"*\") (any version) is sent only when you pass it yourself: no helper fills it in."));
         op.since.ifPresent(s -> text.append("\n\nSince Caitlyn ").append(s).append(op.stability.equals("ga") ? "." : "; " + op.stability + "."));
         return Names.doc(methodName, text.toString(), true, "");
     }

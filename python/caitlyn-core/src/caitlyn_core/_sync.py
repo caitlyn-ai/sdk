@@ -19,6 +19,7 @@ import asyncio
 import contextlib
 import fnmatch
 import inspect
+import math
 import os
 import threading
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping, Sequence
@@ -29,11 +30,13 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Final, Literal, Protocol, cast
 
 import httpx
+from opentelemetry.trace import Span, Status, StatusCode
 
 from ._errors import CaitlynConnectionError, CaitlynError
 from ._files import FileInput, PreparedFile, UploadFile, file_error
+from ._hooks import Telemetry
 from ._models import CaitlynEvent, CaitlynModel, CaitlynResult
-from ._retry import RETRY_COST, RetryPolicy, backoff, parse_retry_after
+from ._retry import RETRY_COST, RetryPolicy, backoff, parse_retry_after, storage_stall_message
 from ._scopes import AsyncFollow, Follow, WaitTimeoutError, Watched, WaitTracker
 from ._spec import OperationSpec
 
@@ -51,6 +54,9 @@ COULD_TAKE_BYTES: Final = frozenset({"new", "changed", "conflict"})
 """Outcomes whose items, while still unresolved, could yet be resolved to an upload: an estimate prices them too."""
 COMPLETE_LIMIT: Final = 100
 """Item identifiers a CompleteIngestionBatchUploads call takes."""
+OWN_FORM_FIELDS = frozenset({"key", "content-type", "x-amz-checksum-algorithm", "x-amz-checksum-sha256", "file"})
+"""The form fields an upload sends itself after the policy's (PROTOCOL.md 15, step 6), lower-cased."""
+
 RENEW_BEFORE_SECONDS: Final = 300.0
 """The upload policy is renewed before an upload when it has less than this left."""
 KEEP_ALIVE_FLOOR_SECONDS: Final = 1.0
@@ -122,6 +128,9 @@ class SyncPlan[B, I, E]:
     batch: B
     items: list[I]
     estimate: E | None
+    estimate_error: CaitlynError | None = None
+    """Why ``estimate`` is None when EstimateIngestion failed: the error it raised. Only ``confirm`` sees it, and decides
+    whether to go on without an estimate; ``sync.estimate`` raises the error instead (PROTOCOL.md 15)."""
 
 
 @dataclass(slots=True)
@@ -185,6 +194,8 @@ class _Core(Protocol):
     def cancel_uploads(self) -> None: ...
     async def uploads_done(self) -> None: ...
     async def post_form(self, url: str, fields: Sequence[tuple[str, str]], file: PreparedFile) -> httpx.Response: ...
+    @property
+    def telemetry(self) -> Telemetry: ...
     @property
     def max_attempts(self) -> int: ...
     def take_retry(self) -> bool: ...
@@ -290,6 +301,8 @@ class _Uploads[I]:
         self.api = api
         self.ids = ids
         self.policy = policy
+        self.policy_received = _now()
+        """When the policy in hand arrived: its lifetime, for the renewal margin, runs from here to its expiresAt."""
         self.semaphore = asyncio.Semaphore(max(1, concurrency))
         self.renew_lock = asyncio.Lock()
         self.complete_lock = asyncio.Lock()
@@ -309,31 +322,76 @@ class _Uploads[I]:
         self.last_renewal = -KEEP_ALIVE_FLOOR_SECONDS
         """When the last renewal ended (the loop's clock), whoever asked for it: the keep-alive's floor counts from it."""
         self.keep_alive: asyncio.Task[None] | None = None
+        self.spans: dict[str, Span] = {}
+        """Each item's ``caitlyn.batch.item`` span while it is under way (PROTOCOL.md 13)."""
+
+    def step(self, item_id: str, name: str, attributes: Mapping[str, str | int] | None = None) -> None:
+        """An item's step, as an event on its span (opened, checked, sending, sent, completed or failed). The span ends
+        when the item is completed or fails."""
+        span = self.spans.get(item_id)
+        if span is None:
+            item = self.jobs[item_id].item if item_id in self.jobs else None
+            path = str(getattr(item, "path", "") or "")
+            span = self.spans[item_id] = self.core.telemetry.start_item(str(self.ids["ingestion_batch_id"]), item_id, path)
+        span.add_event(name, dict(attributes or {}))
+        if name in ("completed", "failed"):
+            if name == "failed":
+                span.set_status(Status(StatusCode.ERROR, str((attributes or {}).get("caitlyn.error.code", ""))))
+            span.end()
+            del self.spans[item_id]
+
+    def end_spans(self) -> None:
+        """Ends the spans of items the call left unfinished."""
+        for span in self.spans.values():
+            span.end()
+        self.spans.clear()
 
     def _expires_in(self) -> float:
-        expires = datetime.fromisoformat(str(self.policy["expiresAt"]).replace("Z", "+00:00"))
+        """Seconds the policy has left; minus infinity when it has no ``expiresAt`` (PROTOCOL.md 15): such a policy
+        counts as due now, so it is renewed before each upload starts, and the keep-alive leaves it alone. One whose
+        ``expiresAt`` is not a time never gets here: ``_policy`` refuses it with DECODE_FAILED."""
+        expires_at = self.policy.get("expiresAt")
+        if expires_at is None:
+            return -math.inf
+        expires = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
         return (expires - _now()).total_seconds()
+
+    def _margin(self) -> float:
+        """How long before its expiresAt the policy is renewed (PROTOCOL.md 15): 5 minutes, or half its lifetime (from
+        when it arrived to its expiresAt) when that is shorter, so a batch with a short upload window renews partway
+        through each policy rather than at once and then once a second."""
+        left = self._expires_in()
+        if left == -math.inf:
+            return RENEW_BEFORE_SECONDS
+        lifetime = left + (_now() - self.policy_received).total_seconds()
+        return min(RENEW_BEFORE_SECONDS, max(0.0, lifetime) / 2)
 
     async def renew(self, stale: dict[str, Any] | None = None) -> None:
         """A fresh policy, once for all the uploads waiting on it."""
         async with self.renew_lock:
             if stale is not None and self.policy is not stale:
                 return  # another upload renewed it already
-            if stale is None and self._expires_in() >= RENEW_BEFORE_SECONDS:
+            if stale is None and self._expires_in() >= self._margin():
                 return
             try:
                 self.policy = _policy(await self.core.request(self.api.renew_policy, self.ids, _Json))
+                self.policy_received = _now()
             finally:
                 self.last_renewal = asyncio.get_running_loop().time()
 
     async def _keep_alive(self) -> None:
-        """The keep-alive (PROTOCOL.md 15): while any upload is in flight, the policy is renewed once it has less than 5
-        minutes left, at most once a second. The server judges each file by when its bytes arrive against the batch's
+        """The keep-alive (PROTOCOL.md 15): while any upload is in flight, the policy is renewed once it has less than its
+        renewal margin left, at most once a second. The server judges each file by when its bytes arrive against the batch's
         uploadsExpireAt, which a renewal moves on. A renewal that fails leaves the uploads in flight on the policy they
         have, and is tried again at the next tick."""
         loop = asyncio.get_running_loop()
         while True:
-            await asyncio.sleep(max(self._expires_in() - RENEW_BEFORE_SECONDS, self.last_renewal + KEEP_ALIVE_FLOOR_SECONDS - loop.time(), 0.0))
+            if self._expires_in() == -math.inf:
+                # No time to keep it alive by: each upload renews it before it starts instead. Look again later, in case
+                # a renewal brings a policy with a readable expiresAt; nothing is sent meanwhile.
+                await asyncio.sleep(KEEP_ALIVE_FLOOR_SECONDS)
+                continue
+            await asyncio.sleep(max(self._expires_in() - self._margin(), self.last_renewal + KEEP_ALIVE_FLOOR_SECONDS - loop.time(), 0.0))
             # A renewal in flight, or one that ended less than a second ago, whoever asked for it, is this tick's: it
             # waits again from the policy as it then stands.
             if self.renew_lock.locked():
@@ -372,26 +430,35 @@ class _Uploads[I]:
                 raise _ItemFailed(file_error("FILE_CHANGED", f"{name} is {job.file.byte_size} bytes, but its item says {job.byte_size}; nothing was sent"))
         return job.file
 
-    async def send(self, key: str, file: PreparedFile) -> None:
+    async def send(self, key: str, file: PreparedFile, item_id: str = "") -> None:
         """One file, retried as a call safe to repeat; a 403 saying the policy expired renews it once and resends."""
         renewed = False
         attempt = 0
         while True:
-            if self._expires_in() < RENEW_BEFORE_SECONDS:
+            if self._expires_in() < self._margin():
                 await self.renew()
             policy = self.policy
-            fields: list[tuple[str, str]] = [(str(k), str(v)) for k, v in cast(dict[str, Any], policy["formFields"]).items()]
+            # The policy's fields, less any sent below: storage refuses a form that repeats a field (PROTOCOL.md 15).
+            fields: list[tuple[str, str]] = [(str(k), str(v)) for k, v in cast(dict[str, Any], policy["formFields"]).items()
+                                             if str(k).lower() not in OWN_FORM_FIELDS]
             fields += [("key", key), ("Content-Type", file.content_type), ("x-amz-checksum-algorithm", "SHA256"),
                        ("x-amz-checksum-sha256", file.sha256)]
             try:
                 file.check_unchanged()
             except CaitlynError as e:
                 raise _ItemFailed(e) from e
+            if item_id:
+                self.step(item_id, "checked")
+                self.step(item_id, "sending", {"server.address": httpx.URL(str(policy["uploadUrl"])).host})
             try:
                 response = await self.core.post_form(str(policy["uploadUrl"]), fields, file)
+                if item_id:
+                    self.step(item_id, "sent", {"http.response.status_code": response.status_code})
             except httpx.TransportError as e:
                 if attempt + 1 >= self.core.max_attempts or not self.core.take_retry():
-                    failure = CaitlynConnectionError(f"UPLOAD_FAILED: {file.name}: {e}", status=0, code="UPLOAD_FAILED", title=f"Uploading {file.name} failed")
+                    said = storage_stall_message(e)
+                    failure = CaitlynConnectionError(f"UPLOAD_FAILED: {file.name}: {said}", status=0, code="UPLOAD_FAILED",
+                                                     title=f"Uploading {file.name} failed: {said}")
                     raise _ItemFailed(failure) from e
                 await asyncio.sleep(backoff_delay(attempt))
                 attempt += 1
@@ -419,16 +486,18 @@ class _Uploads[I]:
         try:
             async with self.semaphore:
                 file = await self._file(job)
+                self.step(item_id, "opened", {"caitlyn.file.byte_size": file.byte_size})
                 self.sending += 1
                 if self.keep_alive is None:
                     self.keep_alive = asyncio.create_task(self._keep_alive())
                 try:
-                    await self.send(job.key, file)
+                    await self.send(job.key, file, item_id)
                 finally:
                     self.sending -= 1
                     if self.sending == 0:
                         await self.stop_keep_alive()
         except _ItemFailed as e:
+            self.step(item_id, "failed", {"caitlyn.error.code": e.error.code or "UPLOAD_FAILED"})
             await self.item_failed(item_id, e.error)  # that item only: the other uploads carry on
             return
         self.uploaded += 1
@@ -449,12 +518,15 @@ class _Uploads[I]:
                 for r in cast(list[dict[str, Any]], out.raw.get("results") or []):
                     item_id = str(r.get("itemId"))
                     if r.get("status") == "accepted":
+                        self.step(item_id, "completed", {"caitlyn.ingestion_batch.item.status": "accepted"})
                         self.accepted.append(item_id)
                     elif r.get("code") == "CHECKSUM_MISMATCH" and item_id in self.jobs:
                         if item_id not in self.retried:
+                            self.step(item_id, "retrying", {"caitlyn.error.code": "CHECKSUM_MISMATCH"})
                             self.retried.add(item_id)
                             again.append(item_id)
                         else:
+                            self.step(item_id, "failed", {"caitlyn.error.code": "CHECKSUM_MISMATCH"})
                             await self.item_failed(item_id, CaitlynError(
                                 f"CHECKSUM_MISMATCH: {r.get('detail') or item_id}", status=0, code="CHECKSUM_MISMATCH",
                                 title="The stored object did not match the item twice", detail=cast(str | None, r.get("detail"))))
@@ -464,8 +536,9 @@ class _Uploads[I]:
                     job = self.jobs[item_id]
                     try:
                         async with self.semaphore:
-                            await self.send(job.key, await self._file(job))
+                            await self.send(job.key, await self._file(job), item_id)
                     except _ItemFailed as e:
+                        self.step(item_id, "failed", {"caitlyn.error.code": e.error.code or "UPLOAD_FAILED"})
                         await self.item_failed(item_id, e.error)
                         continue
                     self.pending.append(item_id)
@@ -483,6 +556,13 @@ def _policy(out: _Json) -> dict[str, Any]:
     if not isinstance(policy, dict):
         raise CaitlynError("CreateIngestionBatchUploadPolicy returned no upload policy", status=0, code="UPLOAD_POLICY_MISSING",
                            title="No upload policy")
+    expires_at = cast(dict[str, Any], policy).get("expiresAt")
+    if expires_at is not None:
+        try:
+            datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+        except ValueError as e:
+            raise CaitlynError(f"DECODE_FAILED: the upload policy's expiresAt is not a time: {expires_at!r}", status=0, code="DECODE_FAILED",
+                               title="The response could not be decoded") from e
     return cast(dict[str, Any], policy)
 
 
@@ -510,6 +590,7 @@ async def _send[I](core: _Core, api: SyncApi, ids: dict[str, object], jobs: dict
         raise
     finally:
         await uploads.stop_keep_alive()
+        uploads.end_spans()
         uploads.close()
         await core.uploads_done()
     return uploads
@@ -549,7 +630,10 @@ async def _prepare[B: CaitlynModel, I: CaitlynModel, E: CaitlynResult](
     remove_missing: bool,
     progress: Callable[[IngestionProgress[I]], Awaitable[None]],
     created: Callable[[str], None],
+    upload_window_seconds: int | None = None,
     estimate_per_call: int,
+    price: bool = True,
+    plan_only: bool = False,
 ) -> _Prepared[B, I, E]:
     folder = _folder(folder)
     files = walk(source, include=include, exclude=exclude) if isinstance(source, (str, PathLike)) else list(source)
@@ -587,6 +671,8 @@ async def _prepare[B: CaitlynModel, I: CaitlynModel, E: CaitlynResult](
             create["await_more_items"] = True
         if policy is not None:
             create["policy"] = policy
+        if upload_window_seconds is not None:
+            create["upload_window_seconds"] = upload_window_seconds
         if folder != "/":
             create["scope"] = {"folderPath": folder}
         batch = await core.request(api.create, create, _Json)
@@ -611,8 +697,19 @@ async def _prepare[B: CaitlynModel, I: CaitlynModel, E: CaitlynResult](
             described[path] = {"name": p.name, "contentType": p.content_type, "byteSize": p.byte_size}
             if path in hints:
                 described[path]["hints"] = dict(hints[path])  # what the caller read of the file, as it gave it
-        estimate = await _price(core, api, estimate_type, knowledge_base_id, _documents(_priceable(all_items), described), estimate_per_call)
-        return _Prepared(ids, items, prepared, SyncPlan(planned, all_items, estimate))
+        # Priced only when someone will see it: sync.estimate, and sync with a confirm (PROTOCOL.md 15). For confirm, an
+        # estimate that could not be made is the caller's to judge: the plan carries the error in its place.
+        # sync.estimate has nothing else to give, and a cancellation is never caught.
+        estimate: E | None = None
+        estimate_error: CaitlynError | None = None
+        if price:
+            try:
+                estimate = await _price(core, api, estimate_type, knowledge_base_id, _documents(_priceable(all_items), described), estimate_per_call)
+            except CaitlynError as e:
+                if plan_only:
+                    raise
+                estimate_error = e
+        return _Prepared(ids, items, prepared, SyncPlan(planned, all_items, estimate, estimate_error))
     except BaseException:
         for p in prepared.values():
             p.close()
@@ -691,6 +788,7 @@ async def sync_estimate_async[B: CaitlynModel, I: CaitlynModel, E: CaitlynResult
     source_url: Callable[[SyncFile], str | None] | None = None,
     metadata: Callable[[SyncFile], Mapping[str, object] | None] | None = None,
     remove_missing: bool = False,
+    upload_window_seconds: int | None = None,
     _estimate_per_call: int = ESTIMATE_PER_CALL,
 ) -> SyncPlan[B, I, E]:
     """``sync.estimate``: steps 1 to 3 of PROTOCOL.md 15, uploading nothing. The batch is left planned: its plan goes stale after 5 minutes, and a batch never started is cleared after 7 days."""
@@ -700,8 +798,8 @@ async def sync_estimate_async[B: CaitlynModel, I: CaitlynModel, E: CaitlynResult
 
     done = await _prepare(core, api, batch_type, item_type, estimate_type, knowledge_base_id, source, folder=folder, policy=policy,
                           include=include, exclude=exclude, key=key, source_url=source_url, metadata=metadata,
-                          remove_missing=remove_missing, progress=progress, created=lambda _: None,
-                          estimate_per_call=_estimate_per_call)
+                          remove_missing=remove_missing, upload_window_seconds=upload_window_seconds, progress=progress, created=lambda _: None,
+                          estimate_per_call=_estimate_per_call, plan_only=True)
     for p in done.prepared.values():
         p.close()
     return done.plan
@@ -724,6 +822,7 @@ async def sync_async[B: CaitlynModel, I: CaitlynModel, E: CaitlynResult](
     source_url: Callable[[SyncFile], str | None] | None = None,
     metadata: Callable[[SyncFile], Mapping[str, object] | None] | None = None,
     remove_missing: bool = False,
+    upload_window_seconds: int | None = None,
     confirm: Callable[[SyncPlan[B, I, E]], bool | Awaitable[bool]] | None = None,
     resolver: Callable[[list[I]], Mapping[str, str] | Awaitable[Mapping[str, str]]] | None = None,
     on_progress: Callable[[IngestionProgress[I]], object] | None = None,
@@ -747,9 +846,9 @@ async def sync_async[B: CaitlynModel, I: CaitlynModel, E: CaitlynResult](
         # 1 to 3: hash, create, plan and price
         done = await _prepare(core, api, batch_type, item_type, estimate_type, knowledge_base_id, source, folder=folder, policy=policy,
                               include=include, exclude=exclude, key=key, source_url=source_url, metadata=metadata,
-                              remove_missing=remove_missing, progress=progress,
+                              remove_missing=remove_missing, upload_window_seconds=upload_window_seconds, progress=progress,
                               created=lambda batch_id: batch_ids.append({"knowledge_base_id": knowledge_base_id, "ingestion_batch_id": batch_id}),
-                              estimate_per_call=_estimate_per_call)
+                              estimate_per_call=_estimate_per_call, price=confirm is not None)
         ids, items, prepared, plan = done.ids, done.items, done.prepared, done.plan
         planned, all_items = plan.batch, plan.items
 
@@ -1119,6 +1218,10 @@ class AsyncHelperCore:
         return await self.core.post_form(url, fields, file)
 
     @property
+    def telemetry(self) -> Telemetry:
+        return self.core.telemetry
+
+    @property
     def max_attempts(self) -> int:
         return self.core.config.retry.max_attempts
 
@@ -1166,7 +1269,7 @@ class SyncHelperCore:
     async def post_form(self, url: str, fields: Sequence[tuple[str, str]], file: PreparedFile) -> httpx.Response:
         if self.core.owns_http:
             if self.uploads_http is None:
-                self.uploads_http = httpx.AsyncClient(timeout=self.core.config.timeout)
+                self.uploads_http = httpx.AsyncClient(timeout=self.core.storage_timeout)
             return await self.core.post_form_async(self.uploads_http, url, fields, file)
         # A caller's own httpx.Client, in a worker thread: the form goes in chunks, each after a look at `cancelled`.
         return await asyncio.to_thread(self.core.post_form, url, fields, file, self.cancelled)
@@ -1178,6 +1281,10 @@ class SyncHelperCore:
         http, self.uploads_http = self.uploads_http, None
         if http is not None:
             await http.aclose()
+
+    @property
+    def telemetry(self) -> Telemetry:
+        return self.core.telemetry
 
     @property
     def max_attempts(self) -> int:

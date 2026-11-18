@@ -1245,7 +1245,7 @@ export async function ifMatchTypes(c: Caitlyn, file: UploadFile) {
 test('[if-match.optional-set] ifMatch is optional exactly on the model’s @ifMatchOptional operations, and a call without it sends no If-Match; elsewhere it is required', async () => {
   const sets = ifMatchSets();
   // The compile-time half (ifMatchTypes above) names these sets; a re-lock that moves an operation fails here.
-  assert.deepEqual(sets.optional, ['CreateDocumentVersion', 'PublishAgentVersion', 'PutAccess', 'ReplaceDraftVersion', 'SaveDraftVersion', 'StartIngestionBatch', 'UpdateDraftVersion', 'UpdateField', 'UpdateIngestionBatchItem']);
+  assert.deepEqual(sets.optional, ['CancelIngestionBatchItem', 'CreateDocumentVersion', 'PublishAgentVersion', 'PutAccess', 'ReplaceDraftVersion', 'SaveDraftVersion', 'StartIngestionBatch', 'UpdateDraftVersion', 'UpdateField', 'UpdateIngestionBatchItem']);
   assert.deepEqual(sets.required, ['ResetDraftVersion', 'UpdateAgent', 'UpdateDocument', 'UpdateFolder', 'UpdateIngestionBatch', 'UpdateKnowledgeBase']);
   const kb = client().knowledgeBases(KB);
   const agent = client().agents('GHT7YRWXPL');
@@ -1256,7 +1256,13 @@ test('[if-match.optional-set] ifMatch is optional exactly on the model’s @ifMa
   const [item] = await itemsOf(unresolved);
   const plain = await handBatch(handFiles(1));
   await plain.planned();
+  // A started batch's item still waiting for its upload: for cancel().
+  const waiting = await handBatch(handFiles(1, '/cancel/'));
+  await waiting.planned();
+  await waiting.start();
+  const [waitingItem] = await itemsOf(waiting);
   const calls: Record<string, () => Promise<unknown>> = {
+    CancelIngestionBatchItem: () => waiting.items(waitingItem.id).cancel(),
     CreateDocumentVersion: () => kb.documents('doc-0001').replace(UploadFile.fromBytes(enc('%PDF 2027'), { name: 'policy-1.pdf' })),
     PublishAgentVersion: () => agent.versions('v12').publish(),
     PutAccess: () => kb.folders('/hr/').access.set({ readers: 'everyone' }),
@@ -2749,13 +2755,15 @@ const forms = async () => (await requests()).filter((r) => r.method === 'POST' &
 const KB_PATH = '/v3/knowledge-bases/KB4T7YQ2WL';
 const BATCHES = `${KB_PATH}/ingestion-batches`;
 const opsSent = async () => (await api()).map((r) => `${r.method} ${r.path.replace(/\/ingestion-batches\/[^/]+/, '/ingestion-batches/{id}')}`);
-const POLICY_FIELDS = ['x-amz-algorithm', 'x-amz-credential', 'x-amz-date', 'policy', 'x-amz-signature'];
+// The policy's fields as sent: the mock's policy has its own `key` too, which a client leaves out (PROTOCOL.md 15).
+const POLICY_FIELDS = ['bucket', 'x-amz-algorithm', 'x-amz-credential', 'x-amz-date', 'policy', 'x-amz-signature'];
 const kbScope = () => client().knowledgeBases('KB4T7YQ2WL');
 const batchIdSent = async () => (await api()).find((r) => r.method === 'POST' && r.path === BATCHES && r.body)!;
 
 test('[sync.flow] kb.ingestion.sync of a folder hashes, creates, plans, prices, starts, uploads each file as a form, completes, waits and reports', async () => {
   const files = { 'annual-leave.pdf': enc('%PDF annual'), 'guides/parental-leave.md': enc('# Parental leave\n'), 'forms/claim.docx': enc('PK docx bytes') };
-  const report = await kbScope().ingestion.sync(await syncSource(files), { folder: '/hr/' });
+  // With a confirm, so the plan is priced (sync.no-confirm-no-estimate: without one it is not).
+  const report = await kbScope().ingestion.sync(await syncSource(files), { folder: '/hr/', confirm: () => true });
   // The steps, in PROTOCOL.md 15's order.
   const all = await api();
   const sent = await opsSent();
@@ -2871,16 +2879,17 @@ test('[sync.complete-groups] CompleteIngestionBatchUploads names at most 100 ite
   assert.equal(report.items.filter((i) => i.status === 'indexed').length, 150);
 });
 
-test('[sync.policy-renewal] a policy with under 5 minutes left is renewed before the next upload; a 403 saying it expired renews it once and resends', async () => {
+test('[sync.policy-renewal] a policy past its renewal margin is renewed before it is used again; a 403 saying it expired renews it once and resends', async () => {
   const generation = (f: any) => JSON.parse(atob(f.form.find((p: any) => p.name === 'policy').value)).generation;
-  // Four minutes left: renewed before the first upload.
-  await faults({ policySeconds: 240 });
-  await kbScope().ingestion.sync(await syncSource(someFiles(3)), { folder: '/hr/' });
+  // Start's policy lasts a second, so its renewal margin is half a second; each file takes a second to arrive, one at a
+  // time. The first goes with Start's policy; it is renewed before the second goes.
+  await faults({ policySeconds: 1, uploadDelayMs: 1000 });
+  await kbScope().ingestion.sync(await syncSource(someFiles(2)), { folder: '/hr/', concurrency: 1 });
   let sent = await opsSent();
   assert.equal(sent.filter((s) => s.endsWith('/upload-policies')).length, 1);
-  const renewedAt = (await requests()).findIndex((r) => r.path?.endsWith('/upload-policies'));
-  assert.ok(renewedAt < (await requests()).findIndex((r) => r.path === '/__s3/'), 'before the first upload');
-  assert.deepEqual((await forms()).map(generation), [2, 2, 2]);
+  const order = (await requests()).filter((r) => r.method === 'POST').map((r) => (r.path === '/__s3/' ? 'upload' : r.path?.endsWith('/upload-policies') ? 'renew' : '')).filter(Boolean);
+  assert.deepEqual(order, ['upload', 'renew', 'upload'], 'renewed between the uploads');
+  assert.deepEqual((await forms()).map(generation), [1, 2]);
   // A policy storage says has expired: one renewal, and the file sent again.
   await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
   await faults({ startPolicyExpired: true });
@@ -3303,11 +3312,11 @@ test('[batch-upload.not-started] upload() on a batch not started raises INGESTIO
 });
 
 test('[batch-upload.keep-alive] while an upload is in flight the policy is renewed on a timer, so a long final upload is accepted; no renewal after the call returns or is cancelled', async () => {
-  // A compressed clock: each policy is due for renewal 2 s after it is issued, and the batch stops waiting for bytes
-  // 4 s after the latest one. The one file takes 6 s to arrive.
+  // A compressed clock: each policy lasts 4 s, so it is due for renewal 2 s after it arrives (half its life), and the
+  // batch stops waiting for bytes 4 s after the latest one. The one file takes 6 s to arrive.
   const renewals = async () => (await api()).filter((r) => r.method === 'POST' && r.path.endsWith('/upload-policies')).length;
   const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
-  await faults({ uploadReservation: { policySeconds: 302, reservationSeconds: 4 }, uploadDelayMs: 6000 });
+  await faults({ uploadReservation: { policySeconds: 4, reservationSeconds: 4 }, uploadDelayMs: 6000 });
   const files = handFiles(1);
   const batch = await startedBatch(files);
   const uploaded = await batch.upload(asUploads(files));
@@ -3318,7 +3327,7 @@ test('[batch-upload.keep-alive] while an upload is in flight the policy is renew
   assert.equal(await renewals(), sent, 'no renewal after the call returned');
   // Cancelled during a slow upload: no renewal after the cancellation is raised.
   await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
-  await faults({ uploadReservation: { policySeconds: 302, reservationSeconds: 4 }, uploadDelayMs: 6000 });
+  await faults({ uploadReservation: { policySeconds: 4, reservationSeconds: 4 }, uploadDelayMs: 6000 });
   const again = await startedBatch(files);
   const controller = new AbortController();
   setTimeout(() => controller.abort(), 2500);
@@ -3327,6 +3336,43 @@ test('[batch-upload.keep-alive] while an upload is in flight the policy is renew
   const atCancel = await renewals();
   await pause(2500);
   assert.equal(await renewals(), atCancel, 'no renewal after the cancellation');
+});
+
+test('[batch-upload.keep-alive-floor] a policy due every half second is renewed on the keep-alive timer at most once a second while the upload is in flight', async () => {
+  // Every policy lasts a second, so it is due half a second after it arrives; the one file takes 4 s to arrive. The first
+  // ask is upload()'s own policy; the rest are the timer's, the first half a second on and the others a second apart:
+  // about five in all, where half-second renewals would be about nine.
+  await faults({ uploadReservation: { policySeconds: 1, reservationSeconds: 30 }, uploadDelayMs: 4000 });
+  const files = handFiles(1);
+  const batch = await startedBatch(files);
+  const uploaded = await batch.upload(asUploads(files));
+  assert.deepEqual(uploaded.items.map((i) => [i.status, i.failureCode]), [['ingesting', undefined]]);
+  const at = (await api()).filter((r) => r.method === 'POST' && r.path.endsWith('/upload-policies')).map((r) => r.at as number);
+  assert.ok(at.length >= 4, `${at.length} policies asked for: the timer renewed fewer than three times in 4 s`);
+  assert.ok(at.length <= 6, `${at.length} policies asked for in 4 s: more than once a second`);
+  for (let i = 2; i < at.length; i++) assert.ok(at[i] - at[i - 1] >= 900, `renewals ${at[i] - at[i - 1]} ms apart`);
+});
+
+test('[batch-upload.short-window] uploadWindowSeconds and expiresInSeconds pass straight through, and a short policy is renewed once half its life has passed', async () => {
+  // A 4-second window (under the server's 60-second least: the mock's test mode) and one file that takes 5 s to
+  // arrive. Each policy lasts 4 s, so its renewal margin is 2 s, not 5 minutes: renewals about 2 s apart, not at once
+  // and then once a second.
+  await faults({ shortWindows: true, uploadDelayMs: 5000 });
+  const t0 = Date.now();
+  const report = await kbScope().ingestion.sync(await syncSource({ 'annual-leave.pdf': enc('%PDF annual') }), { folder: '/window/', uploadWindowSeconds: 4 });
+  assert.equal(report.batch.status, 'succeeded');
+  const created = (await api()).find((r) => r.method === 'POST' && r.path === BATCHES)!;
+  assert.equal(JSON.parse(created.body).uploadWindowSeconds, 4, 'sent as given');
+  const at = (await api()).filter((r) => r.method === 'POST' && r.path.endsWith('/upload-policies')).map((r) => (r.at as number) - t0);
+  assert.ok(at.length >= 1 && at.length <= 3, `${at.length} renewals in a 5 s upload under 4 s policies (at ${at.join(', ')} ms)`);
+  for (let i = 1; i < at.length; i++) assert.ok(at[i] - at[i - 1] >= 1500, `renewals ${at[i] - at[i - 1]} ms apart`);
+  // expiresInSeconds on a single file's upload, as given.
+  const before = Date.now();
+  const up = await client().core.uploads.reserve({ fileName: 'a.pdf', contentType: 'application/pdf', byteSize: 1, sha256: await sha256(enc('a')), expiresInSeconds: 60 });
+  const sent = (await api()).filter((r) => r.method === 'POST' && r.path === '/v3/uploads').at(-1)!;
+  assert.equal(JSON.parse(sent.body).expiresInSeconds, 60);
+  const life = (up.expiresAt as Date).getTime() - before;
+  assert.ok(life > 55_000 && life < 65_000, `the upload lasts ${life} ms`);
 });
 
 test('[batch-upload.sends] only awaiting items that have a file are sent: at most 6 at once, the form’s fields in order, Complete in groups of at most 100', async () => {
@@ -3430,16 +3476,17 @@ test('[batch-upload.upload-failed] an upload that fails after its retries is UPL
   assert.ok(!(await completed()).includes(by[b].id));
 });
 
-test('[batch-upload.policy-renewal] the policy is renewed when under 5 minutes remain, and once after a 403 saying it expired, sending that file again', async () => {
+test('[batch-upload.policy-renewal] the policy is renewed once it is past its renewal margin, and once after a 403 saying it expired, sending that file again', async () => {
   const generation = (f: any) => JSON.parse(atob(f.form.find((p: any) => p.name === 'policy').value)).generation;
   const policies = async () => (await opsSent()).filter((s) => s.endsWith('/upload-policies')).length;
-  // The policy upload() asks for has four minutes left: renewed before the upload.
-  await faults({ renewedPolicySeconds: 240 });
-  const one = handFiles(1);
-  const first = await startedBatch(one);
-  await first.upload(asUploads(one));
+  // The policy upload() asks for lasts a second, so its renewal margin is half a second; each file takes a second to
+  // arrive, one at a time. The first goes with that policy; it is renewed before the second goes.
+  await faults({ renewedPolicySeconds: 1, uploadDelayMs: 1000 });
+  const two = handFiles(2);
+  const first = await startedBatch(two);
+  await first.upload(asUploads(two), { concurrency: 1 });
   assert.equal(await policies(), 2, 'the policy, then its renewal');
-  assert.deepEqual((await forms()).map(generation), [3], 'sent with the renewed policy (Start’s was the first)');
+  assert.deepEqual((await forms()).map(generation), [2, 3], 'the second sent with the renewed policy (Start’s was the first)');
   // A policy storage says has expired: one renewal, and the file sent again.
   await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
   await faults({ firstCreatedPolicyExpired: true });
@@ -3867,3 +3914,229 @@ for (const ex of EXAMPLES) {
     }
   });
 }
+
+// ---------------------------------------------------------------- 0.10.1: timeouts, unreadable expiry, sync estimates, If-Match: *
+
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const mockLog = async (event: string) => (await requests()).filter((r) => r.event === event);
+/**
+ * The attempts the mock saw closed (request-aborted, for op if given), once three are in or 2 s have passed: a browser
+ * closes an aborted request's connection in its own time (WebKit's can take several hundred milliseconds under load).
+ */
+async function abortsSeen(op?: string): Promise<number> {
+  const count = async () => (await mockLog('request-aborted')).filter((e) => !op || e.op === op).length;
+  for (const until = Date.now() + 2000; Date.now() < until && (await count()) < 3; ) await pause(50);
+  return count();
+}
+/** A planned and started batch of these files, through the given client. */
+async function startedWith(c: Caitlyn, files: Record<string, Uint8Array>) {
+  const items = await Promise.all(Object.entries(files).map(async ([p, bytes]) => ({ path: p, sha256: await sha256(bytes), byteSize: bytes.length, contentType: 'application/pdf' })));
+  const batch = await c.knowledgeBases(KB).ingestion.batches.create({ start: 'manual', items } as never);
+  await batch.planned();
+  await batch.start();
+  return batch;
+}
+const policiesAsked = async () => (await api()).filter((r) => r.method === 'POST' && r.path.endsWith('/upload-policies')).length;
+
+test('[client.request-timeout] a call with no response headers within the request timeout fails with CONNECTION_ERROR after its retries, each attempt closed; a watch with only keep-alives stays open', async () => {
+  const c = client({ requestHandler: { requestTimeout: 300 } });
+  await faults({ status: { GetKnowledgeBase: [{ hold: true }, { hold: true }, { hold: true }] } });
+  const started = Date.now();
+  const err = await expectError(c.knowledgeBases(KB).get());
+  assert.equal(err.code, 'CONNECTION_ERROR');
+  assert.equal(err.status, 0);
+  assert.match(err.message, /GetKnowledgeBase/, 'the message names the operation');
+  assert.match(err.message, /300 ms/, 'and the timeout');
+  assert.equal((await api()).filter((r) => r.path === KB_PATH).length, 3, 'retried as a read is');
+  assert.ok(Date.now() - started < 10_000);
+  assert.equal(await abortsSeen(), 3, 'each timed-out attempt was closed, not left open');
+  // A watch whose stream goes quiet but for keep-alives, for longer than the timeout, is not cut: only the headers are timed.
+  await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
+  await faults({ watchKeepAliveMs: 100 });
+  const kb = c.knowledgeBases(KB);
+  const seen: string[] = [];
+  const watching = (async () => {
+    for await (const event of kb.watch()) {
+      seen.push(event.type);
+      if (event.type === 'knowledge_base.updated') return;
+    }
+  })();
+  await pause(1200);
+  const current = await kb.get();
+  await kb.update({ description: 'Still watching' }, { ifMatch: current.etag! });
+  await watching;
+  assert.deepEqual(seen, ['snapshot', 'knowledge_base.updated']);
+  assert.equal((await api()).filter((r) => r.path === `${KB_PATH}/events`).length, 1, 'one connection, never cut');
+});
+
+test('[files.storage-stall] a storage request that sends and receives nothing for the stall timeout is closed and retried, then the item fails UPLOAD_FAILED', async () => {
+  const c = client({ storageStallTimeoutMs: 300 });
+  const files = handFiles(1);
+  const batch = await startedWith(c, files);
+  await faults({ status: { PostObject: [{ hold: true }, { hold: true }, { hold: true }] } });
+  const up = await batch.upload(asUploads(files));
+  assert.deepEqual(up.items.map((i) => [i.status, i.failureCode]), [['failed', 'UPLOAD_FAILED']]);
+  assert.match(String(up.items[0].failureDetail), /storage sent nothing for 300 ms/);
+  assert.equal((await forms()).length, 3, 'retried as a send with no response is');
+  assert.equal(await abortsSeen('PostObject'), 3, 'each stalled attempt was closed');
+});
+
+test('[files.slow-not-stalled] a large upload storage reads slowly but steadily is not abandoned, though it takes longer than the stall timeout', async () => {
+  const c = client({ storageStallTimeoutMs: 2500 });
+  const big = new Uint8Array(32 * 1024 * 1024).map((_, i) => i % 251);
+  const files = { '/hand/large.pdf': big };
+  const batch = await startedWith(c, files);
+  await faults({ uploadReadBytesPerSecond: 8 * 1024 * 1024 });
+  const started = Date.now();
+  const up = await batch.upload(asUploads(files));
+  assert.deepEqual(up.items.map((i) => [i.status, i.failureCode]), [['ingesting', undefined]]);
+  assert.ok(Date.now() - started > 2500, `took ${Date.now() - started} ms: longer than the stall timeout in all`);
+  assert.equal((await forms()).length, 1, 'one attempt');
+});
+
+test('[batch-upload.unreadable-expiry] a policy with no expiresAt is renewed before each upload, every upload is accepted and no keep-alive runs; one that is not a time fails with DECODE_FAILED', async () => {
+  // Start's policy is short, so the first upload renews it; every renewal then has no expiresAt.
+  await faults({ policySeconds: 1, policyExpiresAt: null });
+  const files = handFiles(3);
+  const batch = await startedWith(client(), files);
+  const before = await policiesAsked();
+  const up = await batch.upload(asUploads(files), { concurrency: 1 });
+  assert.deepEqual(up.items.map((i) => i.status), ['ingesting', 'ingesting', 'ingesting']);
+  assert.ok((await policiesAsked()) - before >= 3, `${(await policiesAsked()) - before} policies asked for: one before each of 3 uploads`);
+  // No keep-alive timer runs for such a policy: nothing more is asked for once the call has returned.
+  const after = await policiesAsked();
+  await pause(1500);
+  assert.equal(await policiesAsked(), after);
+  // An expiresAt that is not a time fails the call that returned it, clearly: never a silent loss of renewal.
+  await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
+  await faults({ policySeconds: 1, policyExpiresAt: 'not a date' });
+  const again = await startedWith(client(), files);
+  assert.equal((await expectError(again.upload(asUploads(files), { concurrency: 1 }))).code, 'DECODE_FAILED');
+});
+
+test('[sync.no-confirm-no-estimate] a sync with no confirm never calls EstimateIngestion, and completes when it would fail', async () => {
+  await faults({ status: { EstimateIngestion: [{ status: 503 }, { status: 503 }, { status: 503 }] } });
+  const report = await kbScope().ingestion.sync(await syncSource(someFiles(2)), { folder: '/hr/' });
+  assert.equal(report.batch.status, 'succeeded');
+  assert.deepEqual(await estimatesSent(), [], 'nothing was priced');
+});
+
+test('[sync.confirm-estimate-unavailable] confirm gets the plan with estimateError and no estimate when EstimateIngestion fails, and true carries on; sync.estimate raises the error', async () => {
+  await faults({ status: { EstimateIngestion: [{ status: 400 }] } });
+  let seen: SyncPlan | undefined;
+  const report = await kbScope().ingestion.sync(await syncSource(someFiles(2)), { folder: '/hr/', confirm: (plan) => ((seen = plan), true) });
+  assert.equal(report.batch.status, 'succeeded');
+  assert.equal(seen?.estimate, undefined);
+  assert.ok(seen?.estimateError instanceof CaitlynError, `estimateError ${seen?.estimateError}`);
+  assert.equal((seen?.estimateError as Err).status, 400);
+  assert.equal(seen?.items.length, 2);
+  await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
+  await faults({ status: { EstimateIngestion: [{ status: 400 }] } });
+  const err = await expectError(kbScope().ingestion.sync.estimate(await syncSource(someFiles(2)), { folder: '/hr/' }));
+  assert.equal(err.status, 400);
+});
+
+test('[if-match.never-wildcard] If-Match: * is sent as given when the caller passes it and matches any version; no helper sends it on its own', async () => {
+  const kb = client().knowledgeBases(KB);
+  // Unasked, the mock refuses it: every other case is a guard that no helper sends it.
+  assert.equal((await expectError(kb.update({ description: 'Any version' }, { ifMatch: '*' }))).code, 'IF_MATCH_WILDCARD_NOT_ASKED');
+  await faults({ allowIfMatchWildcard: true });
+  const updated = await kb.update({ description: 'Any version' }, { ifMatch: '*' });
+  assert.equal(updated.description, 'Any version');
+  const sent = (await api()).filter((r) => r.method === 'PATCH' && r.path === KB_PATH);
+  assert.equal(sent.at(-1).headers['if-match'], '*');
+  // A sync, which sends If-Match on Start, sends the plan's own ETag.
+  await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
+  const report = await kbScope().ingestion.sync(await syncSource(someFiles(1)), { folder: '/hr/' });
+  assert.equal(report.batch.status, 'succeeded');
+  const start = (await api()).find((r) => r.path.endsWith('/start'));
+  assert.ok(start.headers['if-match'] && start.headers['if-match'] !== '*', `Start sent If-Match ${start.headers['if-match']}`);
+});
+
+test('[watch.snapshot-not-progress] a watch whose connections bring only their snapshot ends in STREAM_LOST after three reconnects; an event after a snapshot is progress', async () => {
+  const kb = client().knowledgeBases(KB);
+  const watches = async () => (await api()).filter((r) => r.method === 'GET' && r.path === `/v3/knowledge-bases/${KB}/events`).length;
+  // Four connections in a row that each end after their snapshot (a fresh id every time): STREAM_LOST.
+  await faults({ watchDrops: { count: 4, afterEvents: 1 } });
+  const seen: string[] = [];
+  const err = await expectError((async () => { for await (const e of kb.watch()) seen.push(e.type); })());
+  assert.equal(err.code, 'STREAM_LOST');
+  assert.deepEqual(seen, ['snapshot', 'snapshot', 'snapshot', 'snapshot']);
+  assert.equal(await watches(), 4, 'the first connection and three reconnects');
+  // Three such connections, then one that stays open and brings a change: the watch carries on to it.
+  await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
+  await faults({ watchDrops: { count: 3, afterEvents: 1 } });
+  const changing = (async () => {
+    while ((await watches()) < 4) await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 100));
+    const current = await kb.get();
+    await kb.update({ description: 'Still watching' }, { ifMatch: current.etag! });
+  })();
+  const types: string[] = [];
+  for await (const e of kb.watch()) {
+    types.push(e.type);
+    if (e.type === 'knowledge_base.updated') break;
+  }
+  await changing;
+  assert.deepEqual(types, ['snapshot', 'snapshot', 'snapshot', 'snapshot', 'knowledge_base.updated']);
+});
+
+test('[batch-upload.policy-sets-key] a policy whose formFields have their own key, as createPresignedPost makes them, uploads each item with one key, the item\'s objectKey (the mock refuses a repeated field)', async () => {
+  const c = client();
+  const files = handFiles(2);
+  const batch = await startedWith(c, files);
+  const up = await batch.upload(asUploads(files));
+  assert.deepEqual(up.items.map((i) => [i.status, i.failureCode ?? null]), [['ingesting', null], ['ingesting', null]]);
+  const objectKeys = new Set((await collect(batch.items.list())).map((i) => i.objectKey));
+  const sent = await forms();
+  assert.equal(sent.length, 2);
+  for (const f of sent) {
+    const keys = f.form.filter((p: any) => p.name.toLowerCase() === 'key');
+    assert.equal(keys.length, 1, `one key field: ${JSON.stringify(f.form.map((p: any) => p.name))}`);
+    assert.ok(objectKeys.has(keys[0].value), `the item's objectKey, not the policy's ${keys[0].value}`);
+  }
+  assert.deepEqual(await mockLog('storage-refused-repeated-field'), []);
+});
+
+test('[errors.409-retry-after] a 409 carries retryAfterSeconds from its Retry-After and is not retried: CreateDocument and a rename onto a path a started batch has reserved (TARGET_IN_USE)', async () => {
+  const c = client();
+  await startedWith(c, handFiles(1, '/reserved/'));
+  const kb = c.knowledgeBases(KB);
+  const created = await expectError(kb.documents.create(UploadFile.fromBytes(enc('%PDF another'), { name: 'file-1.pdf' }), { folder: '/reserved/' }));
+  assert.ok(created instanceof ConflictError, created.name);
+  assert.equal(created.code, 'TARGET_IN_USE');
+  assert.equal(created.retryAfterSeconds, 30);
+  assert.equal((await api()).filter((r) => r.method === 'POST' && r.path === `/v3/knowledge-bases/${KB}/documents`).length, 1, 'a 409 is not retried');
+  const other = await kb.documents.create(UploadFile.fromBytes(enc('%PDF other'), { name: 'other.pdf' }), { folder: '/reserved/' });
+  const current = await kb.documents(other.id).get();
+  const renamed = await expectError(kb.documents(other.id).update({ name: 'file-1.pdf' }, { ifMatch: current.etag! }));
+  assert.ok(renamed instanceof ConflictError, renamed.name);
+  assert.equal(renamed.code, 'TARGET_IN_USE');
+  assert.equal(renamed.retryAfterSeconds, 30);
+});
+
+test('[telemetry.batch-item] each item an upload helper sends has a caitlyn.batch.item span with its steps as events', async () => {
+  const exporter = new InMemorySpanExporter();
+  const provider = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] });
+  const c = client({ telemetry: { tracerProvider: provider } });
+  const files = { ...handFiles(2), '/hand/broken.pdf': enc('%PDF broken') };
+  const batch = await startedWith(c, files);
+  await faults({ failUploads: { '/hand/broken.pdf': true } });
+  await batch.upload(asUploads(files));
+  const items = exporter.getFinishedSpans().filter((s) => s.name === 'caitlyn.batch.item');
+  assert.equal(items.length, 3);
+  for (const s of items) {
+    assert.equal(s.attributes['caitlyn.ingestion_batch.id'], batch.id);
+    assert.ok(s.attributes['caitlyn.ingestion_batch.item.id']);
+    const p = String(s.attributes['caitlyn.ingestion_batch.item.path']);
+    const events = s.events.map((e) => e.name);
+    if (p === '/hand/broken.pdf') {
+      assert.deepEqual(events.slice(0, 3), ['opened', 'checked', 'sending']);
+      assert.equal(events.at(-1), 'failed');
+      assert.equal(s.events.at(-1)!.attributes!['caitlyn.error.code'], 'UPLOAD_FAILED');
+      assert.equal(s.status.code, SpanStatusCode.ERROR);
+    } else {
+      assert.deepEqual(events, ['opened', 'checked', 'sending', 'sent', 'completed'], `${p}: ${events.join(', ')}`);
+    }
+  }
+});

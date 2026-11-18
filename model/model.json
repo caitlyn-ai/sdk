@@ -4414,6 +4414,167 @@
                 "smithy.api#input": {}
             }
         },
+        "ai.caitlyn.v3#CancelIngestionBatchItem": {
+            "type": "operation",
+            "input": {
+                "target": "ai.caitlyn.v3#CancelIngestionBatchItemInput"
+            },
+            "output": {
+                "target": "ai.caitlyn.v3#CancelIngestionBatchItemOutput"
+            },
+            "errors": [
+                {
+                    "target": "ai.caitlyn.v3#ConflictError"
+                },
+                {
+                    "target": "ai.caitlyn.v3#NotFoundError"
+                },
+                {
+                    "target": "ai.caitlyn.v3#PreconditionFailedError"
+                }
+            ],
+            "traits": {
+                "ai.caitlyn.traits#clientMethod": {
+                    "name": "cancel"
+                },
+                "ai.caitlyn.traits#ifMatchOptional": {
+                    "reason": "Cancelling an item that is waiting for its upload stops it whatever its version; with If-Match it stops only the item as read."
+                },
+                "ai.caitlyn.traits#permission": {
+                    "action": "knowledge-bases.ingestions.create",
+                    "entity": {
+                        "type": "knowledge-bases",
+                        "from": "knowledgeBaseId",
+                        "level": "read"
+                    },
+                    "callers": [
+                        "person",
+                        "api_client"
+                    ]
+                },
+                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#stability": "beta",
+                "smithy.api#documentation": "Cancels one item of a running batch that is still waiting for its upload.\n\nThe item becomes `cancelled`, and the document the batch reserved for it is released: a new\ndocument's placeholder is removed, and an existing document is no longer held for a new version.\nBytes already uploaded for it are never ingested. The rest of the batch carries on; if this was the\nlast item not yet finished, the batch ends. An item that is not `awaiting_upload` (being ingested,\nalready finished, or in a batch not yet started) is refused with 409 `CONFLICT`. Needs the same\npermission as cancelling the batch, and the caller must be able to see the item's folder (404\notherwise).",
+                "smithy.api#examples": [
+                    {
+                        "title": "Cancel a file still waiting for its upload",
+                        "input": {
+                            "knowledgeBaseId": "KB4T7YQ2WL",
+                            "ingestionBatchId": "0193a6f3-0001-7a2b-8c3d-4e5f60718293",
+                            "itemId": "item-0002"
+                        },
+                        "output": {
+                            "etag": "\"5\"",
+                            "item": {
+                                "etag": "\"5\"",
+                                "id": "item-0002",
+                                "action": "ingest",
+                                "path": "/hr/travel-policy.pdf",
+                                "sha256": "Zx2nQ7bV1cR8mW4kT0yH5sJ9gL3dF6aP2eU8iO1qXcA=",
+                                "byteSize": 214558,
+                                "contentType": "application/pdf",
+                                "outcome": "new",
+                                "resolution": "add",
+                                "status": "cancelled"
+                            }
+                        }
+                    },
+                    {
+                        "title": "An item already being ingested",
+                        "input": {
+                            "knowledgeBaseId": "KB4T7YQ2WL",
+                            "ingestionBatchId": "0193a6f3-0001-7a2b-8c3d-4e5f60718293",
+                            "itemId": "item-0001"
+                        },
+                        "error": {
+                            "shapeId": "ai.caitlyn.v3#ConflictError",
+                            "content": {
+                                "type": "https://build.caitlyn.ai/errors/CONFLICT",
+                                "title": "Conflict",
+                                "status": 409,
+                                "code": "CONFLICT",
+                                "detail": "Item item-0001 is ingesting; only an item waiting for its upload can be cancelled. Delete its document instead.",
+                                "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BG2"
+                            }
+                        }
+                    }
+                ],
+                "smithy.api#http": {
+                    "method": "POST",
+                    "uri": "/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}/cancel"
+                },
+                "smithy.api#idempotent": {},
+                "smithy.api#title": "Cancel a batch item"
+            }
+        },
+        "ai.caitlyn.v3#CancelIngestionBatchItemInput": {
+            "type": "structure",
+            "members": {
+                "knowledgeBaseId": {
+                    "target": "ai.caitlyn.v3#KnowledgeBaseId",
+                    "traits": {
+                        "smithy.api#documentation": "The knowledge base the batch belongs to.",
+                        "smithy.api#httpLabel": {},
+                        "smithy.api#required": {}
+                    }
+                },
+                "ingestionBatchId": {
+                    "target": "ai.caitlyn.v3#IngestionBatchId",
+                    "traits": {
+                        "smithy.api#documentation": "The batch the item is in.",
+                        "smithy.api#httpLabel": {},
+                        "smithy.api#required": {}
+                    }
+                },
+                "itemId": {
+                    "target": "ai.caitlyn.v3#IngestionBatchItemId",
+                    "traits": {
+                        "smithy.api#documentation": "The item to cancel.",
+                        "smithy.api#httpLabel": {},
+                        "smithy.api#required": {}
+                    }
+                },
+                "ifMatch": {
+                    "target": "ai.caitlyn.v3#EntityTagCondition",
+                    "traits": {
+                        "smithy.api#documentation": "The item's ETag. When given, an item that changed since is refused with 412.",
+                        "smithy.api#httpHeader": "If-Match"
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#input": {}
+            }
+        },
+        "ai.caitlyn.v3#CancelIngestionBatchItemOutput": {
+            "type": "structure",
+            "mixins": [
+                {
+                    "target": "ai.caitlyn.v3#ResponseHeaders"
+                }
+            ],
+            "members": {
+                "etag": {
+                    "target": "ai.caitlyn.v3#EntityTag",
+                    "traits": {
+                        "smithy.api#documentation": "The item's new ETag.",
+                        "smithy.api#httpHeader": "ETag",
+                        "smithy.api#required": {}
+                    }
+                },
+                "item": {
+                    "target": "ai.caitlyn.v3#IngestionBatchItem",
+                    "traits": {
+                        "smithy.api#documentation": "The item, cancelled. It is the whole response body.",
+                        "smithy.api#httpPayload": {},
+                        "smithy.api#required": {}
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#output": {}
+            }
+        },
         "ai.caitlyn.v3#CancelIngestionBatchOutput": {
             "type": "structure",
             "mixins": [
@@ -5306,7 +5467,7 @@
                 "retryAfterSeconds": {
                     "target": "ai.caitlyn.v3#RetryAfterSeconds",
                     "traits": {
-                        "smithy.api#documentation": "Seconds to wait before trying again, from the `Retry-After` header. Present on\n`DOCUMENT_INGESTION_IN_PROGRESS` and `TARGET_IN_USE`. The SDKs do not retry a 409 on their own.",
+                        "smithy.api#documentation": "Seconds to wait before trying again, from the `Retry-After` header. Present on\n`DOCUMENT_INGESTION_IN_PROGRESS` and `TARGET_IN_USE` answers; a batch item that failed with\n`TARGET_IN_USE` has none. The SDKs do not retry a 409 on their own.",
                         "smithy.api#httpHeader": "Retry-After"
                     }
                 }
@@ -5324,7 +5485,7 @@
                     "TARGET_IN_USE",
                     "VERSIONS_NOT_NUMBERED"
                 ],
-                "smithy.api#documentation": "The resource's state does not allow the request, a unique name is taken, or a request with the\nsame idempotency key is still in progress. An agent version that live points at\n(`VERSION_IN_USE`) or that live history names (`VERSION_IN_HISTORY`) cannot be deleted. A\ndocument still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), an\ningestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`), and a document\nan ingestion batch is working on refuses other writes (`TARGET_IN_USE`); the first and last carry\n`Retry-After`. A document whose versions are not numbered yet cannot have one deleted by number\n(`VERSIONS_NOT_NUMBERED`).",
+                "smithy.api#documentation": "The resource's state does not allow the request, a unique name is taken, or a request with the\nsame idempotency key is still in progress. An agent version that live points at\n(`VERSION_IN_USE`) or that live history names (`VERSION_IN_HISTORY`) cannot be deleted. A\ndocument still being ingested takes no new version (`DOCUMENT_INGESTION_IN_PROGRESS`), and an\ningestion batch with unresolved items cannot start (`INGESTION_BATCH_UNRESOLVED`).\n`TARGET_IN_USE` refuses a write to a path an ingestion batch has reserved for a new document\n(CreateDocument, or UpdateDocument renaming or moving a document onto it) while the batch holds\nthe path; once the batch's reservation has lapsed, the path is free and the write goes ahead. It\nis also an ingestion batch item's failure when the document its plan found changed, or something\nelse took it, before the batch could act on it. `DOCUMENT_INGESTION_IN_PROGRESS` and\n`TARGET_IN_USE` answers carry `Retry-After`: for `TARGET_IN_USE`, the seconds left on the batch's\nreservation. A document whose versions are not numbered yet cannot have one deleted by number\n(`VERSIONS_NOT_NUMBERED`).",
                 "smithy.api#error": "client",
                 "smithy.api#httpError": 409
             }
@@ -6671,7 +6832,7 @@
                     }
                 },
                 "ifMatch": {
-                    "target": "ai.caitlyn.v3#EntityTag",
+                    "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
                         "smithy.api#documentation": "The document's ETag. When given, a document that has changed since is refused with 412.",
                         "smithy.api#httpHeader": "If-Match"
@@ -7239,6 +7400,18 @@
                     "traits": {
                         "smithy.api#documentation": "The first items, at most 10,000."
                     }
+                },
+                "uploadWindowSeconds": {
+                    "target": "smithy.api#Integer",
+                    "traits": {
+                        "ai.caitlyn.traits#since": "next",
+                        "smithy.api#default": 1800,
+                        "smithy.api#documentation": "How long each upload policy the batch hands out lasts, renewals included: from a minute to\nan hour, and 30 minutes when absent. A short window lets a test reach the upload deadline,\nand an expired policy, within seconds.",
+                        "smithy.api#range": {
+                            "min": 60,
+                            "max": 3600
+                        }
+                    }
                 }
             },
             "traits": {
@@ -7323,7 +7496,7 @@
                 },
                 "ai.caitlyn.traits#since": "next",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Renews a running batch's upload policy before it expires.\n\nReturns a new policy for the same key prefix while the batch is `running` and has items awaiting\nupload; anything else is refused with 409 `CONFLICT`. Each renewal also extends how long the\nbatch's new documents stay reserved. The SDKs renew when less than 5 minutes are left.",
+                "smithy.api#documentation": "Renews a running batch's upload policy before it expires.\n\nReturns a new policy for the same key prefix while the batch is `running` and has items awaiting\nupload; anything else is refused with 409 `CONFLICT`. Each renewal also extends how long the\nbatch's new documents stay reserved. A renewed policy lasts the batch's `uploadWindowSeconds`, as the\nfirst did. The SDKs renew when less than 5 minutes, or half the policy's lifetime when that is\nshorter, are left.",
                 "smithy.api#examples": [
                     {
                         "title": "Renew the upload policy",
@@ -7729,6 +7902,18 @@
                     "traits": {
                         "ai.caitlyn.traits#since": "next",
                         "smithy.api#documentation": "What the upload is for, when that decides whether it is accepted. Absent means a document."
+                    }
+                },
+                "expiresInSeconds": {
+                    "target": "smithy.api#Integer",
+                    "traits": {
+                        "ai.caitlyn.traits#since": "next",
+                        "smithy.api#default": 900,
+                        "smithy.api#documentation": "How long the upload URL works: from a minute to an hour, and 15 minutes when absent. A short\nlifetime lets a test reach an expired upload within seconds.",
+                        "smithy.api#range": {
+                            "min": 60,
+                            "max": 3600
+                        }
                     }
                 }
             },
@@ -14408,7 +14593,7 @@
                     "target": "ai.caitlyn.v3#DateTime",
                     "traits": {
                         "ai.caitlyn.traits#since": "next",
-                        "smithy.api#documentation": "When uploads must arrive by: at or after the upload policy's `expiresAt`. An item whose bytes\nhave not arrived by then fails with `UPLOAD_EXPIRED`; bytes that arrived in time are accepted\nwhen they are reported, however late. A caller watching the batch can read it again after this\ntime to see which items failed. Renewing the upload policy moves it later. Absent when no item\nis awaiting upload."
+                        "smithy.api#documentation": "When uploads must arrive by: the upload policy's `expiresAt` plus a grace of 5 minutes, or of\n`uploadWindowSeconds` when that is shorter. An item whose bytes\nhave not arrived by then fails with `UPLOAD_EXPIRED`; bytes that arrived in time are accepted\nwhen they are reported, however late. A caller watching the batch can read it again after this\ntime to see which items failed. Renewing the upload policy moves it later. Absent when no item\nis awaiting upload."
                     }
                 },
                 "createdBy": {
@@ -14448,6 +14633,17 @@
                     "traits": {
                         "ai.caitlyn.traits#since": "next",
                         "smithy.api#documentation": "Why the batch failed, as a stable code and a fixed message. Present only when `status` is\n`failed`."
+                    }
+                },
+                "uploadWindowSeconds": {
+                    "target": "smithy.api#Integer",
+                    "traits": {
+                        "ai.caitlyn.traits#since": "next",
+                        "smithy.api#documentation": "How long each upload policy the batch hands out lasts, renewals included, as set when the\nbatch was made.",
+                        "smithy.api#range": {
+                            "min": 60,
+                            "max": 3600
+                        }
                     }
                 }
             },
@@ -14711,6 +14907,11 @@
             "list": {
                 "target": "ai.caitlyn.v3#ListIngestionBatchItems"
             },
+            "operations": [
+                {
+                    "target": "ai.caitlyn.v3#CancelIngestionBatchItem"
+                }
+            ],
             "collectionOperations": [
                 {
                     "target": "ai.caitlyn.v3#BatchCreateIngestionBatchItems"
@@ -15344,7 +15545,7 @@
                 "CANCELLED": {
                     "target": "smithy.api#Unit",
                     "traits": {
-                        "smithy.api#documentation": "Its document was deleted while it was being ingested; the delete stopped it. Final.",
+                        "smithy.api#documentation": "Stopped: its document was deleted while it was being ingested, or the item was cancelled\n(CancelIngestionBatchItem) while it waited for its upload. Final.",
                         "smithy.api#enumValue": "cancelled"
                     }
                 },
@@ -22678,7 +22879,7 @@
                     }
                 },
                 "ifMatch": {
-                    "target": "ai.caitlyn.v3#EntityTag",
+                    "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
                         "smithy.api#documentation": "The access's ETag. When given, access that changed since is refused with 412; when absent,\nthe write is unconditional.",
                         "smithy.api#httpHeader": "If-Match"
@@ -23048,7 +23249,7 @@
                     }
                 },
                 "ifMatch": {
-                    "target": "ai.caitlyn.v3#EntityTag",
+                    "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
                         "smithy.api#documentation": "The draft's current ETag. When given, a draft that changed since is refused with 412;\nwithout it, the draft is replaced as it is.",
                         "smithy.api#httpHeader": "If-Match"
@@ -23355,7 +23556,7 @@
                     }
                 },
                 "ifMatch": {
-                    "target": "ai.caitlyn.v3#EntityTag",
+                    "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
                         "smithy.api#documentation": "The draft's current ETag. A stale value is refused with 412; a missing one with 428.",
                         "smithy.api#httpHeader": "If-Match",
@@ -23913,7 +24114,7 @@
                     }
                 },
                 "ifMatch": {
-                    "target": "ai.caitlyn.v3#EntityTag",
+                    "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
                         "smithy.api#documentation": "The draft's ETag. When given, a draft that has changed since is refused with 412.",
                         "smithy.api#httpHeader": "If-Match"
@@ -24491,7 +24692,7 @@
                     }
                 },
                 "ifMatch": {
-                    "target": "ai.caitlyn.v3#EntityTag",
+                    "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
                         "smithy.api#documentation": "The batch's ETag, as read after planning. When given, a batch that changed since is\nrefused with 412; when absent, the batch starts as it stands.",
                         "smithy.api#httpHeader": "If-Match"
@@ -25216,7 +25417,7 @@
                     }
                 },
                 "ifMatch": {
-                    "target": "ai.caitlyn.v3#EntityTag",
+                    "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
                         "smithy.api#documentation": "The agent's current ETag. A stale value is refused with 412; a missing one with 428.",
                         "smithy.api#httpHeader": "If-Match",
@@ -25423,7 +25624,7 @@
                     }
                 },
                 "ifMatch": {
-                    "target": "ai.caitlyn.v3#EntityTag",
+                    "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
                         "smithy.api#documentation": "The document's current ETag. A stale value is refused with 412; a missing one with 428.",
                         "smithy.api#httpHeader": "If-Match",
@@ -25657,7 +25858,7 @@
                     }
                 },
                 "ifMatch": {
-                    "target": "ai.caitlyn.v3#EntityTag",
+                    "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
                         "smithy.api#documentation": "The draft's current ETag, from a Get or an earlier update. When given, a draft that changed\nsince is refused with 412; without it, the change applies to the draft as it is.",
                         "smithy.api#httpHeader": "If-Match"
@@ -25848,7 +26049,7 @@
                     }
                 },
                 "ifMatch": {
-                    "target": "ai.caitlyn.v3#EntityTag",
+                    "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
                         "smithy.api#documentation": "The field's ETag. When given, a field that changed since is refused with 412.",
                         "smithy.api#httpHeader": "If-Match"
@@ -26003,7 +26204,7 @@
                     }
                 },
                 "ifMatch": {
-                    "target": "ai.caitlyn.v3#EntityTag",
+                    "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
                         "smithy.api#documentation": "The folder's current ETag. A stale value is refused with 412; a missing one with 428.",
                         "smithy.api#httpHeader": "If-Match",
@@ -26185,7 +26386,7 @@
                     }
                 },
                 "ifMatch": {
-                    "target": "ai.caitlyn.v3#EntityTag",
+                    "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
                         "smithy.api#documentation": "The batch's current ETag. A stale value is refused with 412; a missing one with 428.",
                         "smithy.api#httpHeader": "If-Match",
@@ -26329,7 +26530,7 @@
                     }
                 },
                 "ifMatch": {
-                    "target": "ai.caitlyn.v3#EntityTag",
+                    "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
                         "smithy.api#documentation": "The item's ETag. When given, an item that changed since is refused with 412.",
                         "smithy.api#httpHeader": "If-Match"
@@ -26507,7 +26708,7 @@
                     }
                 },
                 "ifMatch": {
-                    "target": "ai.caitlyn.v3#EntityTag",
+                    "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
                         "smithy.api#documentation": "The knowledge base's current ETag. A stale value is refused with 412; a missing one with\n428.",
                         "smithy.api#httpHeader": "If-Match",
@@ -26761,7 +26962,7 @@
                 "expiresAt": {
                     "target": "ai.caitlyn.v3#DateTime",
                     "traits": {
-                        "smithy.api#documentation": "When the policy stops working. Renew it with CreateIngestionBatchUploadPolicy.",
+                        "smithy.api#documentation": "When the policy stops working, the batch's `uploadWindowSeconds` after it was issued. Renew it\nwith CreateIngestionBatchUploadPolicy.",
                         "smithy.api#required": {}
                     }
                 }

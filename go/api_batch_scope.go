@@ -67,7 +67,8 @@ func (s *BatchScope) Get(ctx context.Context, opts ...CallOption) (*IngestionBat
 // `draft`, are added with BatchCreateIngestionBatchItems and `last: true`.
 //
 // Pass caitlyn.WithIfMatch(etag), the ETag you last read: it is required, and a call without it fails
-// with an input error before anything is sent.
+// with an input error before anything is sent. WithIfMatch("*") (any version) is sent only when you
+// pass it yourself: no helper fills it in.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *BatchScope) Update(ctx context.Context, in *UpdateIngestionBatchInput, opts ...CallOption) (*IngestionBatch, error) {
@@ -145,7 +146,8 @@ func (r *CancelIngestionBatchStarted) Wait(ctx context.Context, opts ...WaitOpti
 // It returns the response, as Result, with Wait, which follows the work the call started.
 //
 // caitlyn.WithIfMatch(etag) is optional: without it the change applies to the thing as it stands; with
-// it, a stale ETag is refused with 412.
+// it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
+// yourself: no helper fills it in.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *BatchScope) Start(ctx context.Context, opts ...CallOption) (*StartIngestionBatchStarted, error) {

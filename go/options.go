@@ -100,6 +100,14 @@ func WithMaxRetryDelay(d time.Duration) Option { return core.WithMaxRetryDelay(d
 // WithRetryBudget sets the size of the client's retry budget, in tokens (default 500); 0 turns retries off.
 func WithRetryBudget(tokens int) Option { return core.WithRetryBudget(tokens) }
 
+// WithRequestTimeout sets how long each attempt of an API call waits for its response's headers (default 120 s); 0
+// waits as long as it takes. It never limits reading a body, so streams, watches and waits are not cut by it.
+func WithRequestTimeout(d time.Duration) Option { return core.WithRequestTimeout(d) }
+
+// WithStorageStallTimeout sets how long a send to storage (an upload's bytes) may send and receive nothing before that
+// attempt is abandoned and retried (default 60 s); 0 never gives up. It is not an overall limit (PROTOCOL.md 14).
+func WithStorageStallTimeout(d time.Duration) Option { return core.WithStorageStallTimeout(d) }
+
 // WithTracerProvider sets the OpenTelemetry tracer provider (default: the global one).
 func WithTracerProvider(tp trace.TracerProvider) Option { return core.WithTracerProvider(tp) }
 

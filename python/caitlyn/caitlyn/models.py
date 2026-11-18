@@ -1842,7 +1842,9 @@ class IngestionItemStatus(OpenEnum):
     REMOVED = "removed"
     """Its document was removed. Final."""
     CANCELLED = "cancelled"
-    """Its document was deleted while it was being ingested; the delete stopped it. Final."""
+    """Stopped: its document was deleted while it was being ingested, or the item was cancelled
+    (CancelIngestionBatchItem) while it waited for its upload. Final.
+    """
     FAILED = "failed"
     """Failed; `failureCode` says why. Final."""
 
@@ -3984,7 +3986,8 @@ class IngestionBatch(CaitlynModel):
     StartIngestionBatch on a stale plan plans again first.
     """
     uploads_expire_at: datetime | None = None
-    """When uploads must arrive by: at or after the upload policy's `expiresAt`. An item whose bytes
+    """When uploads must arrive by: the upload policy's `expiresAt` plus a grace of 5 minutes, or of
+    `uploadWindowSeconds` when that is shorter. An item whose bytes
     have not arrived by then fails with `UPLOAD_EXPIRED`; bytes that arrived in time are accepted
     when they are reported, however late. A caller watching the batch can read it again after this
     time to see which items failed. Renewing the upload policy moves it later. Absent when no item
@@ -4005,6 +4008,12 @@ class IngestionBatch(CaitlynModel):
     failure: IngestionBatchFailure | None = None
     """Why the batch failed, as a stable code and a fixed message. Present only when `status` is
     `failed`.
+
+    Added in Caitlyn 5.115.0.
+    """
+    upload_window_seconds: int | None = None
+    """How long each upload policy the batch hands out lasts, renewals included, as set when the
+    batch was made.
 
     Added in Caitlyn 5.115.0.
     """
@@ -4083,7 +4092,9 @@ class UploadPolicy(CaitlynModel):
     max_byte_size: int
     """The largest file the policy accepts, in bytes."""
     expires_at: datetime
-    """When the policy stops working. Renew it with CreateIngestionBatchUploadPolicy."""
+    """When the policy stops working, the batch's `uploadWindowSeconds` after it was issued. Renew it
+    with CreateIngestionBatchUploadPolicy.
+    """
 
 
 class IngestionBatchUploadPolicy(CaitlynResult):
@@ -4091,7 +4102,9 @@ class IngestionBatchUploadPolicy(CaitlynResult):
 
     Returns a new policy for the same key prefix while the batch is `running` and has items awaiting
     upload; anything else is refused with 409 `CONFLICT`. Each renewal also extends how long the
-    batch's new documents stay reserved. The SDKs renew when less than 5 minutes are left.
+    batch's new documents stay reserved. A renewed policy lasts the batch's `uploadWindowSeconds`, as the
+    first did. The SDKs renew when less than 5 minutes, or half the policy's lifetime when that is
+    shorter, are left.
     """
 
     upload_policy: UploadPolicy

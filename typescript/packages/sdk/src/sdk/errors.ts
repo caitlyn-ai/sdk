@@ -28,7 +28,7 @@ export interface CaitlynError extends CaitlynServiceException {
   /** Field-level problems, one per member or parameter at fault. Present only on 400
    * `VALIDATION_FAILED` and on the 422 `METADATA_*` codes. */
   errors?: FieldError[];
-  /** `Retry-After` in seconds, on 429 and 503 responses. */
+  /** `Retry-After` in seconds, on 409, 429 and 503 responses. */
   retryAfterSeconds?: number;
   /** The response body as received, as text, at most its first 8 KiB: the only view of a body that is not problem details. */
   rawBody?: string;

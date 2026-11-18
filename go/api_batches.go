@@ -68,6 +68,7 @@ func (s *Batches) Create(ctx context.Context, in *CreateIngestionBatchInput, opt
 		p.Policy = in.Policy
 		p.Scope = in.Scope
 		p.Items = in.Items
+		p.UploadWindowSeconds = in.UploadWindowSeconds
 	}
 	p.KnowledgeBaseID = s.knowledgeBaseID
 	out, err := s.c.callCreateIngestionBatch(ctx, p, opts)
@@ -91,16 +92,22 @@ type CreateIngestionBatchInput struct {
 	Scope *IngestionBoundary `json:"scope,omitempty"`
 	// The first items, at most 10,000.
 	Items []IngestionItemInput `json:"items,omitzero"`
+	// How long each upload policy the batch hands out lasts, renewals included: from a minute to
+	// an hour, and 30 minutes when absent. A short window lets a test reach the upload deadline,
+	// and an expired policy, within seconds.
+	// Since Caitlyn 5.115.0: refused before sending to an older server.
+	UploadWindowSeconds *int32 `json:"uploadWindowSeconds,omitempty"`
 }
 
 // createIngestionBatchParams is every member of CreateIngestionBatch's input: the caller's, and those the scope fills.
 type createIngestionBatchParams struct {
-	KnowledgeBaseID string               `json:"-"`
-	Start           *StartMode           `json:"start,omitempty"`
-	AwaitMoreItems  *bool                `json:"awaitMoreItems,omitempty"`
-	Policy          *IngestionPolicy     `json:"policy,omitempty"`
-	Scope           *IngestionBoundary   `json:"scope,omitempty"`
-	Items           []IngestionItemInput `json:"items,omitzero"`
+	KnowledgeBaseID     string               `json:"-"`
+	Start               *StartMode           `json:"start,omitempty"`
+	AwaitMoreItems      *bool                `json:"awaitMoreItems,omitempty"`
+	Policy              *IngestionPolicy     `json:"policy,omitempty"`
+	Scope               *IngestionBoundary   `json:"scope,omitempty"`
+	Items               []IngestionItemInput `json:"items,omitzero"`
+	UploadWindowSeconds *int32               `json:"uploadWindowSeconds,omitempty"`
 }
 
 var opCreateIngestionBatch = &core.Operation{

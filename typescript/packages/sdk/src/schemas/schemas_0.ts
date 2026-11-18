@@ -59,6 +59,9 @@ const _CFr = "CreateFolder";
 const _CI = "ContextItem";
 const _CIB = "CancelIngestionBatch";
 const _CIBI = "CancelIngestionBatchInput";
+const _CIBII = "CancelIngestionBatchItemInput";
+const _CIBIO = "CancelIngestionBatchItemOutput";
+const _CIBIa = "CancelIngestionBatchItem";
 const _CIBIr = "CreateIngestionBatchInput";
 const _CIBO = "CancelIngestionBatchOutput";
 const _CIBOr = "CreateIngestionBatchOutput";
@@ -534,6 +537,7 @@ const _e = "error";
 const _eA = "expiresAt";
 const _eAn = "endedAt";
 const _eI = "externalId";
+const _eIS = "expiresInSeconds";
 const _eL = "effortLevels";
 const _eLx = "expectedLive";
 const _eM = "extraMetadata";
@@ -606,8 +610,8 @@ const _i = "id";
 const _iBI = "ingestionBatchId";
 const _iC = "itemCount";
 const _iF = "inheritedFrom";
-const _iI = "itemIds";
-const _iIt = "itemId";
+const _iI = "itemId";
+const _iIt = "itemIds";
 const _iK = "idempotencyKey";
 const _iM = "ifMatch";
 const _iMn = "intervalMs";
@@ -839,6 +843,7 @@ const _uM = "userMessages";
 const _uMp = "uploadMethod";
 const _uP = "uploadPolicy";
 const _uU = "uploadUrl";
+const _uWS = "uploadWindowSeconds";
 const _un = "unit";
 const _una = "unattended";
 const _up = "upload";
@@ -1104,6 +1109,16 @@ export var CancelIngestionBatchInput$: StaticStructureSchema = [3, n0, _CIBI,
   [_kBI, _iBI, _sR],
   [[0, 1], [0, 1], 2], 2
 ];
+export var CancelIngestionBatchItemInput$: StaticStructureSchema = [3, n0, _CIBII,
+  0,
+  [_kBI, _iBI, _iI, _iM],
+  [[0, 1], [0, 1], [0, 1], [0, { [_hH]: _IM }]], 3
+];
+export var CancelIngestionBatchItemOutput$: StaticStructureSchema = [3, n0, _CIBIO,
+  0,
+  [_et, _ite, _rI, _aV],
+  [[0, { [_hH]: _ET }], [() => IngestionBatchItem$, 16], [0, { [_hH]: _CRI }], [0, { [_hH]: _CAV }]], 2
+];
 export var CancelIngestionBatchOutput$: StaticStructureSchema = [3, n0, _CIBO,
   0,
   [_et, _ba, _rI, _aV],
@@ -1146,7 +1161,7 @@ export var CompareAgentVersionsOutput$: StaticStructureSchema = [3, n0, _CAVO,
 ];
 export var CompleteIngestionBatchUploadsInput$: StaticStructureSchema = [3, n0, _CIBUI,
   0,
-  [_kBI, _iBI, _iI],
+  [_kBI, _iBI, _iIt],
   [[0, 1], [0, 1], 64 | 0], 3
 ];
 export var CompleteIngestionBatchUploadsOutput$: StaticStructureSchema = [3, n0, _CIBUO,
@@ -1251,8 +1266,8 @@ export var CreateFolderOutput$: StaticStructureSchema = [3, n0, _CFOr,
 ];
 export var CreateIngestionBatchInput$: StaticStructureSchema = [3, n0, _CIBIr,
   0,
-  [_kBI, _iK, _star, _aMI, _po, _sc, _it],
-  [[0, 1], [0, { [_hH]: _IK, [_iT]: 1 }], 0, 2, () => IngestionPolicy$, () => IngestionBoundary$, () => IngestionItemInputList], 1
+  [_kBI, _iK, _star, _aMI, _po, _sc, _it, _uWS],
+  [[0, 1], [0, { [_hH]: _IK, [_iT]: 1 }], 0, 2, () => IngestionPolicy$, () => IngestionBoundary$, () => IngestionItemInputList, 1], 1
 ];
 export var CreateIngestionBatchOutput$: StaticStructureSchema = [3, n0, _CIBOr,
   0,
@@ -1281,8 +1296,8 @@ export var CreateKnowledgeBaseOutput$: StaticStructureSchema = [3, n0, _CKBO,
 ];
 export var CreateUploadInput$: StaticStructureSchema = [3, n0, _CUI,
   0,
-  [_fN, _cT, _bS, _sh, _iK, _pu],
-  [0, 0, 1, 0, [0, { [_hH]: _IK, [_iT]: 1 }], () => UploadPurpose$], 4
+  [_fN, _cT, _bS, _sh, _iK, _pu, _eIS],
+  [0, 0, 1, 0, [0, { [_hH]: _IK, [_iT]: 1 }], () => UploadPurpose$, 1], 4
 ];
 export var CreateUploadOutput$: StaticStructureSchema = [3, n0, _CUO,
   0,
@@ -1616,7 +1631,7 @@ export var GetIngestionBatchInput$: StaticStructureSchema = [3, n0, _GIBI,
 ];
 export var GetIngestionBatchItemInput$: StaticStructureSchema = [3, n0, _GIBII,
   0,
-  [_kBI, _iBI, _iIt],
+  [_kBI, _iBI, _iI],
   [[0, 1], [0, 1], [0, 1]], 3
 ];
 export var GetIngestionBatchItemOutput$: StaticStructureSchema = [3, n0, _GIBIO,
@@ -1676,8 +1691,8 @@ export var HoldingPhrases$: StaticStructureSchema = [3, n0, _HP,
 ];
 export var IngestionBatch$: StaticStructureSchema = [3, n0, _IB,
   0,
-  [_i, _kBI, _st, _star, _aMI, _po, _iC, _cA, _uA, _et, _sc, _cou, _pe, _eta, _pEA, _uEA, _cB, _sA, _eAn, _fa],
-  [0, 0, 0, 0, 2, () => IngestionPolicy$, 1, 5, 5, 0, () => IngestionBoundary$, () => IngestionBatchCounts$, 1, () => Eta$, 5, 5, () => Actor$, 5, 5, () => IngestionBatchFailure$], 10
+  [_i, _kBI, _st, _star, _aMI, _po, _iC, _cA, _uA, _et, _sc, _cou, _pe, _eta, _pEA, _uEA, _cB, _sA, _eAn, _fa, _uWS],
+  [0, 0, 0, 0, 2, () => IngestionPolicy$, 1, 5, 5, 0, () => IngestionBoundary$, () => IngestionBatchCounts$, 1, () => Eta$, 5, 5, () => Actor$, 5, 5, () => IngestionBatchFailure$, 1], 10
 ];
 export var IngestionBatchCounts$: StaticStructureSchema = [3, n0, _IBC,
   0,
@@ -2306,7 +2321,7 @@ export var UpdateIngestionBatchInput$: StaticStructureSchema = [3, n0, _UIBI,
 ];
 export var UpdateIngestionBatchItemInput$: StaticStructureSchema = [3, n0, _UIBII,
   0,
-  [_kBI, _iBI, _iIt, _reso, _iM],
+  [_kBI, _iBI, _iI, _reso, _iM],
   [[0, 1], [0, 1], [0, 1], 0, [0, { [_hH]: _IM }]], 4
 ];
 export var UpdateIngestionBatchItemOutput$: StaticStructureSchema = [3, n0, _UIBIO,
@@ -2336,7 +2351,7 @@ export var Upload$: StaticStructureSchema = [3, n0, _U,
 ];
 export var UploadCompletionResult$: StaticStructureSchema = [3, n0, _UCR,
   0,
-  [_iIt, _st, _co, _d],
+  [_iI, _st, _co, _d],
   [0, 0, 0, 0], 2
 ];
 export var UploadDescription$: StaticStructureSchema = [3, n0, _UD,
@@ -2578,6 +2593,9 @@ export var CancelDocumentProcessing$: StaticOperationSchema = [9, n0, _CDP,
 ];
 export var CancelIngestionBatch$: StaticOperationSchema = [9, n0, _CIB,
   { [_ht]: ["POST", "/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/cancel", 202] }, () => CancelIngestionBatchInput$, () => CancelIngestionBatchOutput$
+];
+export var CancelIngestionBatchItem$: StaticOperationSchema = [9, n0, _CIBIa,
+  { [_ht]: ["POST", "/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}/cancel", 200] }, () => CancelIngestionBatchItemInput$, () => CancelIngestionBatchItemOutput$
 ];
 export var CancelOperation$: StaticOperationSchema = [9, n0, _CO,
   { [_ht]: ["POST", "/v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}/cancel", 202] }, () => CancelOperationInput$, () => CancelOperationOutput$

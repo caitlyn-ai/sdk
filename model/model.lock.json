@@ -2,7 +2,7 @@
   "package": "caitlyn-v3-model",
   "registryProject": "custom-d/caitlyn/platform/caitlyn",
   "version": null,
-  "source": "local build of custom-d/caitlyn/platform/caitlyn!2061 (v3/gate-1-model) at aa08481ceb: the upload keep-alive in PROTOCOL.md 15, one set of SDK-raised codes in 6.3, the upload-deadline re-read, no expired batch status, IngestionBatch.uploadsExpireAt, the public readers kind and VERSIONS_NOT_NUMBERED (not published)",
-  "sha256": "421adfa73cd5da5525d981275e5b451fce58d5424c4952f4dccc4529598b9014",
+  "source": "local build of custom-d/caitlyn/platform/caitlyn v3/gate-1-model at 4078b418a3: the 0.10.1 PROTOCOL.md texts (timeouts, the repeated form field, Retry-After on a 409, the renewal margin, a watch's snapshot not progress), CancelIngestionBatchItem, and the caller-set upload window (not published)",
+  "sha256": "fa978b4c0abc08868face249d57c19a1253fa7d3628a9db7c2669e144256ef38",
   "stampNext": "5.115.0"
 }

@@ -260,8 +260,17 @@ func (c *Client) attempt(ctx context.Context, op *Operation, req *Request, cs *c
 	if req.Body != nil {
 		body = bytes.NewReader(req.Body)
 	}
-	hr, err := http.NewRequestWithContext(ctx, op.Method, u, body)
+	// The request timeout (PROTOCOL.md 6.4): the attempt's own context is cancelled when its response's headers have
+	// not arrived in time, which aborts the request and closes its connection. Once the headers are in, the timer is
+	// stopped and the context lives until the body is closed, so a stream is never cut by it.
+	actx, cancel := context.WithCancelCause(ctx)
+	var timer *time.Timer
+	if t := c.s.requestTimeout; t > 0 {
+		timer = time.AfterFunc(t, func() { cancel(&requestTimeoutError{after: t}) })
+	}
+	hr, err := http.NewRequestWithContext(actx, op.Method, u, body)
 	if err != nil {
+		cancel(nil)
 		return nil, sdkError("HTTP_CLIENT_FAILED", "The HTTP client could not make the "+op.Name+" request", err)
 	}
 	for k, vs := range req.Header {
@@ -282,6 +291,7 @@ func (c *Client) attempt(ctx context.Context, op *Operation, req *Request, cs *c
 		hr.Header.Set("If-Match", *cs.ifMatch)
 	}
 	if err := c.auth.Authorize(ctx, hr); err != nil {
+		cancel(nil)
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
@@ -295,7 +305,17 @@ func (c *Client) attempt(ctx context.Context, op *Operation, req *Request, cs *c
 	c.s.propagator.Inject(ctx, propagation.HeaderCarrier(hr.Header))
 
 	resp, err := c.s.httpClient.Do(hr)
+	if timer != nil && !timer.Stop() && err == nil {
+		// The timeout fired as the headers arrived: the body's context is cancelled, so the attempt failed all the same.
+		resp.Body.Close()
+		resp, err = nil, context.Cause(actx)
+	}
 	if err != nil {
+		var timedOut *requestTimeoutError
+		if errors.As(context.Cause(actx), &timedOut) {
+			err = timedOut
+		}
+		cancel(nil)
 		if ctx.Err() != nil {
 			recordFailure(span, ctx.Err())
 			return nil, ctx.Err()
@@ -312,6 +332,7 @@ func (c *Client) attempt(ctx context.Context, op *Operation, req *Request, cs *c
 		span.SetAttributes(attribute.String("caitlyn.server.api_version", v))
 	}
 	c.noteServerVersion(resp.Header.Get("Caitlyn-Api-Version"))
+	resp.Body = &cancelOnClose{ReadCloser: resp.Body, cancel: cancel}
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 || op.Redirect != 0 && resp.StatusCode == op.Redirect {
 		return &Response{Response: resp, op: op.Name}, nil
 	}
@@ -435,3 +456,25 @@ func GreedyPathLabel(v string) string {
 
 // FormatTime formats a timestamp as RFC 3339 with milliseconds and Z (PROTOCOL.md 3).
 func FormatTime(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000Z") }
+
+// requestTimeoutError is an attempt whose response headers did not arrive within the request timeout.
+type requestTimeoutError struct{ after time.Duration }
+
+func (e *requestTimeoutError) Error() string {
+	return "no response headers within " + FormatTimeout(e.after)
+}
+
+// Timeout reports true, as net.Error's does.
+func (e *requestTimeoutError) Timeout() bool { return true }
+
+// cancelOnClose ends an attempt's context when its response body is closed.
+type cancelOnClose struct {
+	io.ReadCloser
+	cancel context.CancelCauseFunc
+}
+
+func (b *cancelOnClose) Close() error {
+	err := b.ReadCloser.Close()
+	b.cancel(nil)
+	return err
+}

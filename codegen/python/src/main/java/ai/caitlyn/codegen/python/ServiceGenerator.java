@@ -984,7 +984,8 @@ final class ServiceGenerator {
                         + "'s scope (`" + pyPath(s) + "`), with the response's fields" + (s.watch.isPresent() && m.longRunning.isPresent()
                         ? "; `.wait()` waits for the work the call started." : ".")).orElse("")
                         + thing.map(t -> "\n\nReturns the response with `.wait()`, which waits for the work the call started, and `.watch()`.").orElse("")
-                        + (m.ifMatchOptional ? "\n\n`if_match` is optional here: without it, the change applies to the resource as it is." : "");
+                        + (m.ifMatchOptional ? "\n\n`if_match` is optional here: without it, the change applies to the resource as it is." : "")
+                        + (c.params.stream().anyMatch(x -> x.startsWith("if_match:")) ? "\n\n`if_match=\"*\"` (any version) is sent only when you pass it yourself: no helper fills it in." : "");
                 w.write("$D", methodDocs(o, c) + extra);
                 c.setup.forEach(line -> w.write("$L", line));
                 if (created.isPresent()) {
@@ -1413,7 +1414,8 @@ final class ServiceGenerator {
                 "key: Callable[[SyncFile], str | None] | None = None",
                 "source_url: Callable[[SyncFile], str | None] | None = None",
                 "metadata: Callable[[SyncFile], Mapping[str, object] | None] | None = None",
-                "remove_missing: bool = False");
+                "remove_missing: bool = False",
+                "upload_window_seconds: int | None = None");
         List<String> sig = new ArrayList<>(common);
         sig.addAll(List.of(
                 "confirm: Callable[[" + plan + "], bool" + maybe.formatted("bool") + "] | None = None",
@@ -1443,6 +1445,8 @@ final class ServiceGenerator {
                 + "    key: a function of each file giving its item's `externalId`; by default its relative path.\n"
                 + "    source_url, metadata: functions of each file giving its item's `sourceUrl` and `metadata`.\n"
                 + "    remove_missing: also remove each document under `folder` that no file names.\n"
+                + "    upload_window_seconds: how long the batch waits for its files once it starts, in seconds: each upload policy\n"
+                + "        lasts this long. The server's default (30 minutes) when not given.\n"
                 + "    confirm: called with the plan and its estimate before anything is uploaded; returning False cancels the batch\n"
                 + "        and raises CaitlynError with code CANCELLED (status 0) and the report so far as its report.\n"
                 + "    resolver: called with the items the policy left `unresolved`; returns a resolution (`add`,\n"
@@ -1461,7 +1465,8 @@ final class ServiceGenerator {
                          + "`SyncInterrupted`, a `KeyboardInterrupt` whose `report` is the report so far."));
         String coreExpr = (async ? "AsyncHelperCore" : "SyncHelperCore") + "(self._core), _operations.SYNC_API, " + batch + ", " + item + ", " + estimate;
         List<String> args = new ArrayList<>(List.of(coreExpr, "self._ids[\"knowledgeBaseId\"]", "source", "folder=folder", "policy=policy",
-                "include=include", "exclude=exclude", "key=key", "source_url=source_url", "metadata=metadata", "remove_missing=remove_missing"));
+                "include=include", "exclude=exclude", "key=key", "source_url=source_url", "metadata=metadata", "remove_missing=remove_missing",
+                "upload_window_seconds=upload_window_seconds"));
         args.addAll(List.of("confirm=confirm", "resolver=resolver", "on_progress=on_progress", "on_item=on_item", "concurrency=concurrency",
                 "cancel_ingestion=cancel_ingestion"));
         writeRunner(w, async, "sync_async", args);
@@ -1472,7 +1477,8 @@ final class ServiceGenerator {
         w.write("$D", "What `sync` with the same arguments would do and cost: steps 1 to 3 (hash, create the batch, wait until it is planned)\n"
                 + "and the price of the items that need bytes. Uploads nothing; the batch is left planned: its plan goes stale after 5 minutes (starting it plans it again), and a batch never started is cleared after 7 days.");
         List<String> eargs = new ArrayList<>(List.of(coreExpr, "self._ids[\"knowledgeBaseId\"]", "source", "folder=folder", "policy=policy",
-                "include=include", "exclude=exclude", "key=key", "source_url=source_url", "metadata=metadata", "remove_missing=remove_missing"));
+                "include=include", "exclude=exclude", "key=key", "source_url=source_url", "metadata=metadata", "remove_missing=remove_missing",
+                "upload_window_seconds=upload_window_seconds"));
         writeRunner(w, async, "sync_estimate_async", eargs);
         w.dedent();
         w.dedent();
@@ -1680,12 +1686,17 @@ final class ServiceGenerator {
                 + "    retry_budget: the retry tokens this client's calls share (default 500; a retry costs 5, or 10 after no response;\n"
                 + "        a success gives back 1, or its last retry's cost). When it is spent, calls fail without retrying. 0 turns retries off.\n"
                 + "    retry: the full retry policy.\n"
+                + "    timeout: how long an API call waits to connect, and for each read and write, in seconds or as an `httpx.Timeout`\n"
+                + "        (default 120). A call whose response has not started by then fails and is retried; streams stay open while\n"
+                + "        their keep-alives arrive. `None` waits as long as it takes.\n"
+                + "    storage_stall_timeout: how long a send to storage (an upload's bytes) may send and receive nothing, in seconds,\n"
+                + "        before that attempt is abandoned and retried (default 60). Not a limit on the whole upload. `None` never gives up.\n"
                 + "    tracer_provider: OpenTelemetry tracer provider (default: the global one).\n"
                 + "    interceptors: hooks run around every call and attempt.\n"
                 + "    app_id: your application's name, sent in the user agent as `app/<app_id>`.\n"
                 + "    http_client: your own httpx client, for its transport, proxy or TLS settings. Requests go to the workspace or `endpoint`; its `base_url` is not used."
                 + (async ? "" : "\n        With your own httpx.Client, Ctrl-C stops an upload still sending at once, but one that has finished sending waits for\n"
-                        + "        storage's answer, up to your client's timeout.");
+                        + "        storage's answer, up to `storage_stall_timeout`.");
         w.write("$D\n", doc);
         w.write("auth: $L", async ? "AsyncAuthSession" : "SyncAuthSession");
         w.write("$D", "The client's sign-in: the `OAuth` mode's `authorization_url`, `handle_callback` and `sign_out`, and the current token.");
@@ -1704,7 +1715,8 @@ final class ServiceGenerator {
         w.write("max_retry_delay: float | None = None,");
         w.write("retry_budget: int | None = None,");
         w.write("retry: RetryPolicy | None = None,");
-        w.write("timeout: float | httpx.Timeout = 60.0,");
+        w.write("timeout: float | httpx.Timeout = 120.0,");
+        w.write("storage_stall_timeout: float | None = 60.0,");
         w.write("tracer_provider: TracerProvider | None = None,");
         w.write("interceptors: Sequence[Interceptor] = (),");
         w.write("app_id: str | None = None,");
@@ -1724,6 +1736,7 @@ final class ServiceGenerator {
         w.write("retry_budget=retry_budget,");
         w.write("retry=retry,");
         w.write("timeout=timeout,");
+        w.write("storage_stall_timeout=storage_stall_timeout,");
         w.write("tracer_provider=tracer_provider,");
         w.write("interceptors=interceptors,");
         w.write("app_id=app_id,");

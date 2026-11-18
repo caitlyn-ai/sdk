@@ -39,7 +39,8 @@ func newDraftScope(c *Client, agentID string) *DraftScope {
 // draft and its new ETag.
 //
 // caitlyn.WithIfMatch(etag) is optional: without it the change applies to the thing as it stands; with
-// it, a stale ETag is refused with 412.
+// it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
+// yourself: no helper fills it in.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *DraftScope) Replace(ctx context.Context, in *ReplaceDraftVersionInput, opts ...CallOption) (*AgentVersion, error) {
@@ -73,7 +74,8 @@ func (s *DraftScope) Replace(ctx context.Context, in *ReplaceDraftVersionInput, 
 // new ETag.
 //
 // Pass caitlyn.WithIfMatch(etag), the ETag you last read: it is required, and a call without it fails
-// with an input error before anything is sent.
+// with an input error before anything is sent. WithIfMatch("*") (any version) is sent only when you
+// pass it yourself: no helper fills it in.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *DraftScope) Reset(ctx context.Context, in *ResetDraftVersionInput, opts ...CallOption) (*AgentVersion, error) {
@@ -92,7 +94,8 @@ func (s *DraftScope) Reset(ctx context.Context, in *ResetDraftVersionInput, opts
 // it is now. Returns the new version, and `Location` names it.
 //
 // caitlyn.WithIfMatch(etag) is optional: without it the change applies to the thing as it stands; with
-// it, a stale ETag is refused with 412.
+// it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
+// yourself: no helper fills it in.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *DraftScope) Save(ctx context.Context, in *SaveDraftVersionInput, opts ...CallOption) (*AgentVersion, error) {
@@ -114,7 +117,8 @@ func (s *DraftScope) Save(ctx context.Context, in *SaveDraftVersionInput, opts .
 // with 400 `CONFIGURATION_TOO_LARGE`. Returns the whole draft and its new ETag.
 //
 // caitlyn.WithIfMatch(etag) is optional: without it the change applies to the thing as it stands; with
-// it, a stale ETag is refused with 412.
+// it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
+// yourself: no helper fills it in.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *DraftScope) Update(ctx context.Context, in *UpdateDraftVersionInput, opts ...CallOption) (*AgentVersion, error) {
@@ -190,7 +194,8 @@ func (s *DraftScope) Compare(ctx context.Context, in *CompareAgentVersionsInput,
 // it is. Returns live, the version published, and the history entry the publish wrote.
 //
 // caitlyn.WithIfMatch(etag) is optional: without it the change applies to the thing as it stands; with
-// it, a stale ETag is refused with 412.
+// it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
+// yourself: no helper fills it in.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *DraftScope) Publish(ctx context.Context, in *PublishAgentVersionInput, opts ...CallOption) (*PublishAgentVersionResult, error) {

@@ -3040,11 +3040,13 @@ async def test_sync_complete_groups(mock: Mock, case_id: str) -> None:
 @case("sync.policy-renewal")
 async def test_sync_policy_renewal(mock: Mock, tmp_path: Path, case_id: str) -> None:
     root = folder_of(tmp_path, {"a.md": b"a", "b.md": b"b"})
-    mock.faults(policySeconds=120)  # under 5 minutes: renewed before the first upload
-    await client(mock).knowledge_bases(KB).ingestion.sync(root, folder="/hr/")
-    order = [str(r.get("path")) for r in mock.requests() if r.get("method") == "POST"]
-    renewals = [i for i, p in enumerate(order) if p.endswith("/upload-policies")]
-    assert len(renewals) == 1 and renewals[0] < order.index("/__s3/")
+    # Start's policy lasts a second, so its renewal margin is half a second; each file takes a second to arrive, one at a
+    # time. The first goes with Start's policy; it is renewed before the second goes.
+    mock.faults(policySeconds=1, uploadDelayMs=1000)
+    await client(mock).knowledge_bases(KB).ingestion.sync(root, folder="/hr/", concurrency=1)
+    order = [("upload" if r.get("path") == "/__s3/" else "renew") for r in mock.requests()
+             if r.get("method") == "POST" and (r.get("path") == "/__s3/" or str(r.get("path")).endswith("/upload-policies"))]
+    assert order == ["upload", "renew", "upload"], f"{order}: renewed between the uploads"
     mock.reset()
     mock.faults(startPolicyExpired=True)  # 403 "Policy expired": renewed once, and that file sent again
     report = await client(mock).knowledge_bases(KB).ingestion.sync(root, folder="/hr/", concurrency=1)
@@ -3651,12 +3653,12 @@ async def test_batch_upload_not_started(mock: Mock, case_id: str) -> None:
 
 @case("batch-upload.keep-alive")
 async def test_batch_upload_keep_alive(mock: Mock, case_id: str) -> None:
-    # A compressed clock: each policy is due for renewal 2 s after it is issued, and the batch stops waiting for bytes
-    # 4 s after the latest one. The one file takes 6 s to arrive.
+    # A compressed clock: each policy lasts 4 s, so it is due for renewal 2 s after it arrives (half its life), and the
+    # batch stops waiting for bytes 4 s after the latest one. The one file takes 6 s to arrive.
     def renewals() -> int:
         return len(calls(mock, "/upload-policies"))
 
-    reservation = {"policySeconds": 302, "reservationSeconds": 4}
+    reservation = {"policySeconds": 4, "reservationSeconds": 4}
     contents = {"/hr/annual-leave.md": b"Staff receive 20 days of annual leave."}
     mock.faults(uploadReservation=reservation, uploadDelayMs=6000)
     c = client(mock)
@@ -3678,6 +3680,46 @@ async def test_batch_upload_keep_alive(mock: Mock, case_id: str) -> None:
     at_cancel = renewals()
     await asyncio.sleep(2.5)
     assert renewals() == at_cancel, "no renewal after the cancellation"
+
+
+@case("batch-upload.short-window")
+async def test_batch_upload_short_window(mock: Mock, case_id: str) -> None:
+    # A 4-second window (under the server's 60-second least: the mock's test mode) and one file that takes 5 s to arrive.
+    # Each policy lasts 4 s, so its renewal margin is 2 s, not 5 minutes: renewals about 2 s apart, not at once and then
+    # once a second.
+    mock.faults(shortWindows=True, uploadDelayMs=5000)
+    c = client(mock)
+    files = [SyncFile("annual-leave.pdf", UploadFile.from_bytes(b"%PDF annual", name="annual-leave.pdf"))]
+    report = await c.knowledge_bases(KB).ingestion.sync(files, folder="/window/", upload_window_seconds=4)
+    assert str(report.batch.status) == "succeeded"
+    created = [r for r in mock.api() if r["method"] == "POST" and str(r["path"]).endswith("/ingestion-batches")][0]
+    assert json.loads(created["body"])["uploadWindowSeconds"] == 4, "sent as given"
+    at = [int(r["at"]) for r in calls(mock, "/upload-policies")]
+    assert 1 <= len(at) <= 3, f"{len(at)} renewals in a 5 s upload under 4 s policies"
+    gaps = [b - a for a, b in zip(at, at[1:])]
+    assert all(g >= 1500 for g in gaps), f"renewals {gaps} ms apart"
+    # expires_in_seconds on a single file's upload, as given.
+    before = time.time()
+    up = await c.core.uploads.reserve(file_name="a.pdf", content_type="application/pdf", byte_size=1, sha256=sha_b64(b"a"), expires_in_seconds=60)
+    sent = [r for r in mock.api() if r["method"] == "POST" and r["path"] == "/v3/uploads"][-1]
+    assert json.loads(sent["body"])["expiresInSeconds"] == 60
+    life = up.expires_at.timestamp() - before
+    assert 55 < life < 65, f"the upload lasts {life:.1f} s"
+
+
+@case("batch-upload.keep-alive-floor")
+async def test_batch_upload_keep_alive_floor(mock: Mock, case_id: str) -> None:
+    # Every policy lasts a second, so it is due half a second after it arrives; the one file takes 4 s to arrive. The first
+    # ask is upload()'s own policy; the rest are the timer's, the first half a second on and the others a second apart:
+    # about five in all, where half-second renewals would be about nine.
+    mock.faults(uploadReservation={"policySeconds": 1, "reservationSeconds": 30}, uploadDelayMs=4000)
+    contents = {"/hr/annual-leave.md": b"Staff receive 20 days of annual leave."}
+    uploaded = await (await built_batch(client(mock), contents)).upload(by_path(contents))
+    assert [(str(i.status), i.failure_code) for i in uploaded.items] == [("ingesting", None)]
+    at = [int(r["at"]) for r in calls(mock, "/upload-policies")]
+    assert 4 <= len(at) <= 6, f"{len(at)} policies asked for in 4 s: want the timer's renewals, at most one a second"
+    gaps = [b - a for a, b in zip(at[1:], at[2:])]
+    assert all(g >= 900 for g in gaps), f"renewals {gaps} ms apart"
 
 
 @case("batch-upload.sends")
@@ -3708,7 +3750,7 @@ async def test_batch_upload_sends(mock: Mock, case_id: str) -> None:
     assert len(queued) == len(calls(mock, "/complete-uploads")) and queued[-1] == (130, 130)
     for p in forms(mock):
         names = [x["name"] for x in p["form"]]
-        assert names == ["x-amz-algorithm", "x-amz-credential", "x-amz-date", "policy", "x-amz-signature", "key", "Content-Type",
+        assert names == ["bucket", "x-amz-algorithm", "x-amz-credential", "x-amz-date", "policy", "x-amz-signature", "key", "Content-Type",
                          "x-amz-checksum-algorithm", "x-amz-checksum-sha256", "file"]
     sizes = [len(json.loads(r["body"])["itemIds"]) for r in calls(mock, "/complete-uploads")]
     assert max(sizes) <= 100 and sum(sizes) == 130
@@ -3768,15 +3810,16 @@ async def test_batch_upload_upload_failed(mock: Mock, case_id: str) -> None:
 
 @case("batch-upload.policy-renewal")
 async def test_batch_upload_policy_renewal(mock: Mock, case_id: str) -> None:
-    # A policy with under 5 minutes left is renewed before the next upload starts.
+    # The policy upload() asks for lasts a second, so its renewal margin is half a second; each file takes a second to
+    # arrive, one at a time. The first goes with that policy; it is renewed before the second goes.
     contents = {"/hr/a.md": b"a", "/hr/b.md": b"b"}
     c = client(mock)
     batch = await built_batch(c, contents)
-    mock.faults(renewedPolicySeconds=120)
+    mock.faults(renewedPolicySeconds=1, uploadDelayMs=1000)
     await batch.upload(by_path(contents), concurrency=1)
-    order = [str(r.get("path")) for r in mock.requests() if r.get("method") == "POST"]
-    policies = [i for i, p in enumerate(order) if p.endswith("/upload-policies")]
-    assert len(policies) >= 2 and policies[1] < order.index("/__s3/"), "the policy asked for, then renewed before the first upload"
+    order = [("upload" if r.get("path") == "/__s3/" else "policy") for r in mock.requests()
+             if r.get("method") == "POST" and (r.get("path") == "/__s3/" or str(r.get("path")).endswith("/upload-policies"))]
+    assert order == ["policy", "upload", "policy", "upload"], f"{order}: the policy asked for, then renewed between the uploads"
     # A 403 saying the policy expired: renewed once, and that file sent again. The mock refuses the first policy
     # CreateIngestionBatchUploadPolicy gives the batch (firstCreatedPolicyExpired), once.
     mock.reset()
@@ -4003,3 +4046,253 @@ async def test_wait_cancel_returns(mock: Mock, case_id: str) -> None:
         mock.faults(busyDocuments={"doc-0001": True}, jobOutcomes={"doc-0001": "cancelled"})
         err = await expect_error(client(mock).knowledge_bases(KB).documents("doc-0001").wait(timeout=10))
         assert (err.status, err.code) == (0, "CANCELLED")
+
+
+# ------------------------------------------------------------------ 0.10.1: timeouts, unreadable expiry, sync estimates, If-Match: *
+
+
+def held(op: str, n: int) -> dict[str, list[dict[str, bool]]]:
+    """n hold faults for an operation: requests the mock never answers."""
+    return {op: [{"hold": True}] * n}
+
+
+def mock_events(mock: Mock, event: str, op: str = "") -> list[dict[str, Any]]:
+    return [r for r in mock.requests() if r.get("event") == event and (not op or r.get("op") == op)]
+
+
+def policies_asked(mock: Mock) -> int:
+    return len(calls(mock, "/upload-policies"))
+
+
+@case("client.request-timeout")
+async def test_request_timeout(mock: Mock, case_id: str) -> None:
+    # Python's `timeout` (default 120 s) is httpx's: each read waits at most this long, which covers the wait for the headers.
+    c = client(mock, timeout=0.3)
+    mock.faults(status=held("GetKnowledgeBase", 3))
+    started = time.monotonic()
+    err = await expect_error(c.knowledge_bases(KB).get())
+    assert type(err) is CaitlynConnectionError and (err.status, err.code) == (0, "CONNECTION_ERROR")
+    assert "GetKnowledgeBase" in str(err) and "300 ms" in str(err), f"the message names the operation and the timeout: {err}"
+    assert len([r for r in mock.api() if r["path"] == f"/v3/knowledge-bases/{KB}"]) == 3, "retried as a read is"
+    assert time.monotonic() - started < 10
+    await asyncio.sleep(0.2)
+    assert len(mock_events(mock, "request-aborted", "GetKnowledgeBase")) == 3, "each timed-out attempt was closed"
+    # A watch whose stream has only keep-alives for longer than the timeout is not cut.
+    mock.reset()
+    mock.faults(watchKeepAliveMs=100)
+    kb = c.knowledge_bases(KB)
+    seen: list[str] = []
+
+    async def change() -> None:
+        await asyncio.sleep(1.2)
+        current = await kb.get()
+        await kb.update(description="Still watching", if_match=str(current.etag))
+
+    changing = asyncio.create_task(change())
+    async with kb.watch() as watch:
+        async for event in watch:
+            seen.append(str(event.type))
+            if event.type == "knowledge_base.updated":
+                break
+    await changing
+    assert seen == ["snapshot", "knowledge_base.updated"]
+    assert len([r for r in mock.api() if r["path"] == f"/v3/knowledge-bases/{KB}/events"]) == 1, "one connection, never cut"
+
+
+@case("files.storage-stall")
+async def test_storage_stall(mock: Mock, case_id: str) -> None:
+    # Python's storage stall timer is httpx's timeout on each send to storage: each write and each read waits at most this
+    # long. API calls keep their own 120 s, so only `storage_stall_timeout` can end this.
+    c = client(mock, storage_stall_timeout=0.3)
+    defaults = inspect.signature(AsyncCaitlyn.__init__).parameters
+    assert (defaults["timeout"].default, defaults["storage_stall_timeout"].default) == (120.0, 60.0)
+    contents = {"/hr/a.md": b"Staff receive 20 days of annual leave."}
+    batch = await built_batch(c, contents)
+    mock.faults(status=held("PostObject", 3))
+    up = await batch.upload(by_path(contents))
+    assert [(str(i.status), i.failure_code) for i in up.items] == [("failed", "UPLOAD_FAILED")]
+    assert "storage sent nothing for 300 ms" in str(up.items[0].failure_detail), up.items[0].failure_detail
+    assert len(forms(mock)) == 3, "retried as a send with no response is"
+    await asyncio.sleep(0.2)
+    assert len(mock_events(mock, "request-aborted", "PostObject")) == 3, "each stalled attempt was closed"
+
+
+@case("files.slow-not-stalled")
+async def test_slow_not_stalled(mock: Mock, case_id: str) -> None:
+    c = client(mock, storage_stall_timeout=2.5)
+    big = bytes(i % 251 for i in range(32 * 1024 * 1024))
+    contents = {"/hand/large.pdf": big}
+    batch = await built_batch(c, contents)
+    mock.faults(uploadReadBytesPerSecond=8 * 1024 * 1024)
+    started = time.monotonic()
+    up = await batch.upload(by_path(contents))
+    assert [(str(i.status), i.failure_code) for i in up.items] == [("ingesting", None)]
+    assert time.monotonic() - started > 2.5, "longer than the stall timeout in all"
+    assert len(forms(mock)) == 1, "one attempt"
+
+
+@case("batch-upload.unreadable-expiry")
+async def test_unreadable_expiry(mock: Mock, case_id: str) -> None:
+    # Start's policy is short, so the first upload renews it; every renewal then has no expiresAt.
+    mock.faults(policySeconds=1, policyExpiresAt=None)
+    c = client(mock)
+    contents = {f"/hr/f{n}.md": f"file {n}".encode() for n in range(3)}
+    batch = await built_batch(c, contents)
+    before = policies_asked(mock)
+    up = await batch.upload(by_path(contents), concurrency=1)
+    assert [str(i.status) for i in up.items] == ["ingesting"] * 3
+    assert policies_asked(mock) - before >= 3, "one policy before each of 3 uploads"
+    after = policies_asked(mock)
+    await asyncio.sleep(1.5)
+    assert policies_asked(mock) == after, "no renewal after the call returned"
+    # An expiresAt that is not a time fails the call that returned it, clearly: never a silent loss of renewal.
+    mock.reset()
+    mock.faults(policySeconds=1, policyExpiresAt="not a date")
+    again = await built_batch(c, contents)
+    err = await expect_error(again.upload(by_path(contents), concurrency=1))
+    assert err.code == "DECODE_FAILED"
+
+
+@case("sync.no-confirm-no-estimate")
+async def test_sync_no_confirm_no_estimate(mock: Mock, tmp_path: Path, case_id: str) -> None:
+    mock.faults(status={"EstimateIngestion": [{"status": 503, "retryAfter": 0}] * 3})
+    root = folder_of(tmp_path, {"a.md": b"a", "b.md": b"b"})
+    report = await client(mock).knowledge_bases(KB).ingestion.sync(root, folder="/hr/")
+    assert str(report.batch.status) == "succeeded"
+    assert not calls(mock, "/ingestions:estimate"), "nothing was priced"
+
+
+@case("sync.confirm-estimate-unavailable")
+async def test_sync_confirm_estimate_unavailable(mock: Mock, tmp_path: Path, case_id: str) -> None:
+    mock.faults(status={"EstimateIngestion": [{"status": 400}]})
+    root = folder_of(tmp_path, {"a.md": b"a", "b.md": b"b"})
+    plans: list[Any] = []
+
+    def confirm(plan: Any) -> bool:
+        plans.append(plan)
+        return True
+
+    report = await client(mock).knowledge_bases(KB).ingestion.sync(root, folder="/hr/", confirm=confirm)
+    assert str(report.batch.status) == "succeeded"
+    [plan] = plans
+    assert plan.estimate is None and isinstance(plan.estimate_error, CaitlynError) and plan.estimate_error.status == 400
+    assert len(plan.items) == 2
+    mock.reset()
+    mock.faults(status={"EstimateIngestion": [{"status": 400}]})
+    err = await expect_error(client(mock).knowledge_bases(KB).ingestion.sync.estimate(root, folder="/hr/"))
+    assert err.status == 400
+
+
+@case("if-match.never-wildcard")
+async def test_if_match_never_wildcard(mock: Mock, tmp_path: Path, case_id: str) -> None:
+    kb = client(mock).knowledge_bases(KB)
+    err = await expect_error(kb.update(description="Any version", if_match="*"))
+    assert err.code == "IF_MATCH_WILDCARD_NOT_ASKED", "unasked, the mock refuses it"
+    mock.faults(allowIfMatchWildcard=True)
+    updated = await kb.update(description="Any version", if_match="*")
+    assert updated.description == "Any version"
+    patches = [r for r in mock.api() if r["method"] == "PATCH" and r["path"] == f"/v3/knowledge-bases/{KB}"]
+    assert patches[-1]["headers"]["if-match"] == "*"
+    # A sync, which sends If-Match on Start, sends the plan's own ETag.
+    mock.reset()
+    report = await client(mock).knowledge_bases(KB).ingestion.sync(folder_of(tmp_path, {"a.md": b"a"}), folder="/hr/")
+    assert str(report.batch.status) == "succeeded"
+    [start] = calls(mock, "/start")
+    assert start["headers"].get("if-match") not in (None, "", "*")
+
+
+@case("watch.snapshot-not-progress")
+async def test_watch_snapshot_not_progress(mock: Mock, case_id: str) -> None:
+    kb = client(mock).knowledge_bases(KB)
+
+    def watches() -> int:
+        return len([r for r in mock.api() if r["method"] == "GET" and r["path"] == f"/v3/knowledge-bases/{KB}/events"])
+
+    # Four connections in a row that each end after their snapshot (a fresh id every time): STREAM_LOST.
+    mock.faults(watchDrops={"count": 4, "afterEvents": 1})
+    seen: list[str] = []
+
+    async def watch_all() -> None:
+        async with kb.watch() as watch:
+            async for event in watch:
+                seen.append(str(event.type))
+
+    err = await expect_error(watch_all())
+    assert err.code == "STREAM_LOST", err
+    assert seen == ["snapshot"] * 4, seen
+    assert watches() == 4, "the first connection and three reconnects"
+    # Three such connections, then one that stays open and brings a change: the watch carries on to it.
+    mock.reset()
+    mock.faults(watchDrops={"count": 3, "afterEvents": 1})
+
+    async def change() -> None:
+        while watches() < 4:
+            await asyncio.sleep(0.05)
+        await asyncio.sleep(0.1)
+        current = await kb.get()
+        await kb.update(description="Still watching", if_match=str(current.etag))
+
+    changing = asyncio.create_task(change())
+    types: list[str] = []
+    async with kb.watch() as watch:
+        async for event in watch:
+            types.append(str(event.type))
+            if event.type == "knowledge_base.updated":
+                break
+    await changing
+    assert types == ["snapshot"] * 4 + ["knowledge_base.updated"], types
+
+
+@case("batch-upload.policy-sets-key")
+async def test_policy_sets_key(mock: Mock, case_id: str) -> None:
+    # The mock's policy has its own `key`, as createPresignedPost makes it, and refuses a form that repeats a field.
+    c = client(mock)
+    contents = {"/hand/file-1.pdf": b"%PDF hand 1", "/hand/file-2.pdf": b"%PDF hand 2"}
+    batch = await built_batch(c, contents)
+    up = await batch.upload(by_path(contents))
+    assert [(str(i.status), i.failure_code) for i in up.items] == [("ingesting", None)] * 2
+    object_keys = {i.object_key async for i in batch.items.list()}
+    sent = forms(mock)
+    assert len(sent) == 2
+    for f in sent:
+        keys = [p for p in f["form"] if str(p["name"]).lower() == "key"]
+        assert len(keys) == 1 and keys[0]["value"] in object_keys, f["form"]
+    assert mock_events(mock, "storage-refused-repeated-field") == []
+
+
+@case("errors.409-retry-after")
+async def test_409_retry_after(mock: Mock, case_id: str) -> None:
+    c = client(mock)
+    await built_batch(c, {"/reserved/file-1.pdf": b"%PDF hand 1"})
+    kb = c.knowledge_bases(KB)
+    created = await expect_error(kb.documents.create(UploadFile.from_bytes(b"%PDF another", name="file-1.pdf"), folder="/reserved/"))
+    assert isinstance(created, ConflictError) and (created.code, created.retry_after_seconds) == ("TARGET_IN_USE", 30), created
+    assert len([r for r in mock.api() if r["method"] == "POST" and r["path"] == f"/v3/knowledge-bases/{KB}/documents"]) == 1, "a 409 is not retried"
+    other = await kb.documents.create(UploadFile.from_bytes(b"%PDF other", name="other.pdf"), folder="/reserved/")
+    current = await kb.documents(other.id).get()
+    renamed = await expect_error(kb.documents(other.id).update(name="file-1.pdf", if_match=current.etag))
+    assert isinstance(renamed, ConflictError) and (renamed.code, renamed.retry_after_seconds) == ("TARGET_IN_USE", 30), renamed
+
+
+@case("telemetry.batch-item")
+async def test_telemetry_batch_item(mock: Mock, case_id: str) -> None:
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    c = client(mock, tracer_provider=provider)
+    contents = {"/hr/a.md": b"a", "/hr/b.md": b"b", "/hr/broken.md": b"broken"}
+    batch = await built_batch(c, contents)
+    mock.faults(failUploads={"/hr/broken.md": True})
+    await batch.upload(by_path(contents))
+    spans = [s for s in exporter.get_finished_spans() if s.name == "caitlyn.batch.item"]
+    assert len(spans) == 3
+    for s in spans:
+        attrs = dict(s.attributes or {})
+        assert attrs["caitlyn.ingestion_batch.id"] == batch.id and attrs["caitlyn.ingestion_batch.item.id"]
+        events = [e.name for e in s.events]
+        if attrs["caitlyn.ingestion_batch.item.path"] == "/hr/broken.md":
+            assert events[:3] == ["opened", "checked", "sending"] and events[-1] == "failed", events
+            assert dict(s.events[-1].attributes or {})["caitlyn.error.code"] == "UPLOAD_FAILED"
+            assert s.status.status_code.name == "ERROR"
+        else:
+            assert events == ["opened", "checked", "sending", "sent", "completed"], events

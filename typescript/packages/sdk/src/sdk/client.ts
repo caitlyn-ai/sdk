@@ -17,7 +17,7 @@ import { CompleteIngestionBatchUploadsCommand } from "../commands/CompleteIngest
 import { CancelIngestionBatchCommand } from "../commands/CancelIngestionBatchCommand";
 import { ListDocumentsCommand } from "../commands/ListDocumentsCommand";
 import { EstimateIngestionCommand } from "../commands/EstimateIngestionCommand";
-import type { Access, Agent, AgentVersion, BatchCreateIngestionBatchItemsInput, BatchDeleteDocumentsInput, CancelDocumentProcessingInput, CancelIngestionBatchInput, CancelOperationInput, CompareAgentVersionsInput, CompleteIngestionBatchUploadsInput, Conversation, CreateAgentInput, CreateConversationInput, CreateDocumentInput, CreateDocumentVersionInput, CreateFieldInput, CreateFolderInput, CreateIngestionBatchInput, CreateIngestionBatchUploadPolicyInput, CreateKnowledgeBaseInput, CreateUploadInput, DeleteAgentInput, DeleteAgentVersionInput, DeleteDocumentInput, DeleteDocumentVersionInput, DeleteFieldInput, DeleteFolderInput, DeleteKnowledgeBaseInput, Document, DocumentVersion, EnableLayoutAwareSearchInput, EstimateDocumentVersionInput, EstimateFillInFieldsInput, EstimateIngestionInput, EstimateLayoutAwareSearchInput, EstimateReprocessDocumentsInput, Field, FillInFieldsInput, GetAccessInput, GetAgentInput, GetAgentVersionInput, GetConversationInput, GetDocumentContentInput, GetDocumentDownloadInput, GetDocumentInput, GetDocumentVersionInput, GetFieldInput, GetHistoryEntryInput, GetIngestionBatchInput, GetIngestionBatchItemInput, GetKnowledgeBaseInput, GetOperationInput, GetUploadInput, HistoryEntry, IngestionBatch, IngestionBatchItem, Job, KnowledgeBase, ListAgentVersionsInput, ListAgentVersionsOutput, ListAgentsInput, ListAgentsOutput, ListConversationsInput, ListConversationsOutput, ListDocumentVersionsInput, ListDocumentVersionsOutput, ListDocumentsInput, ListDocumentsOutput, ListFieldsInput, ListFieldsOutput, ListFoldersInput, ListFoldersOutput, ListGuardrailsInput, ListGuardrailsOutput, ListHistoryEntriesInput, ListHistoryEntriesOutput, ListIngestionBatchItemsInput, ListIngestionBatchItemsOutput, ListIngestionBatchesInput, ListIngestionBatchesOutput, ListKnowledgeBasesInput, ListKnowledgeBasesOutput, ListMemoryStoresInput, ListMemoryStoresOutput, ListMessagesInput, ListMessagesOutput, ListModelsInput, ListModelsOutput, ListOperationsInput, ListOperationsOutput, ListToolsInput, ListToolsOutput, ListVoicesInput, ListVoicesOutput, Operation, PublishAgentVersionInput, PutAccessInput, ReplaceDraftVersionInput, ReprocessDocumentsInput, ResetDraftVersionInput, RetryDocumentInput, SaveDraftVersionInput, SendMessageInput, SendMessageOutput, StartIngestionBatchInput, UpdateAgentInput, UpdateDocumentInput, UpdateDraftVersionInput, UpdateFieldInput, UpdateFolderInput, UpdateIngestionBatchInput, UpdateIngestionBatchItemInput, UpdateKnowledgeBaseInput, Upload, WatchConversationInput, WatchConversationOutput, WatchKnowledgeBaseInput, WatchKnowledgeBaseOutput, WatchOperationInput, WatchOperationOutput, WatchWorkspaceEventsInput, WatchWorkspaceEventsOutput } from "../models/models_0";
+import type { Access, Agent, AgentVersion, BatchCreateIngestionBatchItemsInput, BatchDeleteDocumentsInput, CancelDocumentProcessingInput, CancelIngestionBatchInput, CancelIngestionBatchItemInput, CancelOperationInput, CompareAgentVersionsInput, CompleteIngestionBatchUploadsInput, Conversation, CreateAgentInput, CreateConversationInput, CreateDocumentInput, CreateDocumentVersionInput, CreateFieldInput, CreateFolderInput, CreateIngestionBatchInput, CreateIngestionBatchUploadPolicyInput, CreateKnowledgeBaseInput, CreateUploadInput, DeleteAgentInput, DeleteAgentVersionInput, DeleteDocumentInput, DeleteDocumentVersionInput, DeleteFieldInput, DeleteFolderInput, DeleteKnowledgeBaseInput, Document, DocumentVersion, EnableLayoutAwareSearchInput, EstimateDocumentVersionInput, EstimateFillInFieldsInput, EstimateIngestionInput, EstimateLayoutAwareSearchInput, EstimateReprocessDocumentsInput, Field, FillInFieldsInput, GetAccessInput, GetAgentInput, GetAgentVersionInput, GetConversationInput, GetDocumentContentInput, GetDocumentDownloadInput, GetDocumentInput, GetDocumentVersionInput, GetFieldInput, GetHistoryEntryInput, GetIngestionBatchInput, GetIngestionBatchItemInput, GetKnowledgeBaseInput, GetOperationInput, GetUploadInput, HistoryEntry, IngestionBatch, IngestionBatchItem, Job, KnowledgeBase, ListAgentVersionsInput, ListAgentVersionsOutput, ListAgentsInput, ListAgentsOutput, ListConversationsInput, ListConversationsOutput, ListDocumentVersionsInput, ListDocumentVersionsOutput, ListDocumentsInput, ListDocumentsOutput, ListFieldsInput, ListFieldsOutput, ListFoldersInput, ListFoldersOutput, ListGuardrailsInput, ListGuardrailsOutput, ListHistoryEntriesInput, ListHistoryEntriesOutput, ListIngestionBatchItemsInput, ListIngestionBatchItemsOutput, ListIngestionBatchesInput, ListIngestionBatchesOutput, ListKnowledgeBasesInput, ListKnowledgeBasesOutput, ListMemoryStoresInput, ListMemoryStoresOutput, ListMessagesInput, ListMessagesOutput, ListModelsInput, ListModelsOutput, ListOperationsInput, ListOperationsOutput, ListToolsInput, ListToolsOutput, ListVoicesInput, ListVoicesOutput, Operation, PublishAgentVersionInput, PutAccessInput, ReplaceDraftVersionInput, ReprocessDocumentsInput, ResetDraftVersionInput, RetryDocumentInput, SaveDraftVersionInput, SendMessageInput, SendMessageOutput, StartIngestionBatchInput, UpdateAgentInput, UpdateDocumentInput, UpdateDraftVersionInput, UpdateFieldInput, UpdateFolderInput, UpdateIngestionBatchInput, UpdateIngestionBatchItemInput, UpdateKnowledgeBaseInput, Upload, WatchConversationInput, WatchConversationOutput, WatchKnowledgeBaseInput, WatchKnowledgeBaseOutput, WatchOperationInput, WatchOperationOutput, WatchWorkspaceEventsInput, WatchWorkspaceEventsOutput } from "../models/models_0";
 import type { BatchCreateIngestionBatchItemsResult, BatchDeleteDocumentsResult, CompareAgentVersionsResult, CompleteIngestionBatchUploadsResult, CreateDocumentResult, CreateDocumentVersionResult, CreateFolderResult, CreateUploadResult, DeleteAgentResult, DeleteAgentVersionResult, DeleteDocumentVersionResult, DeleteFieldResult, DeleteFolderResult, DeleteKnowledgeBaseResult, DocumentContent, DocumentDownload, EnableLayoutAwareSearchResult, EstimateDocumentVersionResult, EstimateFillInFieldsResult, EstimateIngestionResult, EstimateLayoutAwareSearchResult, EstimateReprocessDocumentsResult, FillInFieldsResult, IngestionBatchUploadPolicy, PublishAgentVersionResult, ReprocessDocumentsResult, RetryDocumentResult, StartIngestionBatchResult, UpdateDocumentResult, UpdateFolderResult } from "./results";
 import type { KnowledgeBaseEvent, KnowledgeBaseSnapshot } from "./events";
 
@@ -68,6 +68,7 @@ function syncDeps(c: CaitlynClient, ids: Ids): SyncDeps {
     tracer: s.tracer,
     maxAttempts: s.maxAttempts,
     maxRetryDelayMs: s.maxRetryDelayMs,
+    stallTimeoutMs: s.stallTimeoutMs,
     planned: async (id, o) => (await waitFor({ ...batch(id), until: "planned" }, o)) as Record<string, any>,
     finished: async (id, onBatch, o) => (await waitFor({ ...batch(id), onThing: onBatch }, o)) as Record<string, any>,
     describe: (file) => describeFile(file, toError) as Promise<Record<string, any>>,
@@ -133,7 +134,7 @@ export interface AgentScope {
    * These belong to the agent, not to its versions, so the change shows at once everywhere and makes
    * no new version. Members that are absent stay unchanged; name `description` or `avatar` in `clear`
    * to remove it. */
-  update(input: Omit<Parameters<typeof ops.updateAgent>[1], "agentId" | "ifMatch">, options: CallOptions & { ifMatch: string }): ReturnType<typeof ops.updateAgent>;
+  update(input: Omit<Parameters<typeof ops.updateAgent>[1], "agentId" | "ifMatch">, options: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch: string }): ReturnType<typeof ops.updateAgent>;
   /** Deletes an agent, its draft and every version.
    * 
    * Conversations with the agent are kept. Caitlyn's built-in agents (`native`) are defined by the
@@ -165,19 +166,19 @@ export interface AgentDraftScope {
    * how configuration kept as code is applied. Every reference is checked as UpdateDraftVersion checks
    * it, and a configuration over 256 KiB is refused with 400 `CONFIGURATION_TOO_LARGE`. Returns the
    * draft and its new ETag. */
-  replace(input?: Omit<ReplaceDraftVersionInput, "agentId" | "ifMatch">, options?: CallOptions & { ifMatch?: string }): ReturnType<typeof ops.replaceDraftVersion>;
+  replace(input?: Omit<ReplaceDraftVersionInput, "agentId" | "ifMatch">, options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.replaceDraftVersion>;
   /** Resets the draft to another version; `If-Match` is required.
    * 
    * The draft's configuration becomes the configuration of `from`, which is a version name or `live`.
    * Nothing else changes: `from` is kept as it is, and live is untouched. Returns the draft and its
    * new ETag. */
-  reset(from: ResetDraftVersionInput["from"], options: CallOptions & { ifMatch: string }): ReturnType<typeof ops.resetDraftVersion>;
+  reset(from: ResetDraftVersionInput["from"], options: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch: string }): ReturnType<typeof ops.resetDraftVersion>;
   /** Saves the draft as a new named version, without changing live.
    * 
    * Live does not change, and the draft carries on as before. Versions never change once made. Send
    * the draft's ETag as `If-Match` to save only the draft you tested; without it, the draft is saved as
    * it is now. Returns the new version, and `Location` names it. */
-  save(name: SaveDraftVersionInput["name"], input?: Omit<SaveDraftVersionInput, "agentId" | "idempotencyKey" | "ifMatch" | "name">, options?: CallOptions & { idempotencyKey?: string; ifMatch?: string }): ReturnType<typeof ops.saveDraftVersion>;
+  save(name: SaveDraftVersionInput["name"], input?: Omit<SaveDraftVersionInput, "agentId" | "idempotencyKey" | "ifMatch" | "name">, options?: CallOptions & { idempotencyKey?: string; /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.saveDraftVersion>;
   /** Edits the draft with a partial update of its configuration.
    * 
    * Members that are absent stay unchanged, nested objects are merged and lists are replaced whole,
@@ -185,7 +186,7 @@ export interface AgentDraftScope {
    * name it in `clear`; naming a member that is not clearable, or one the same request also sets, is
    * refused with 400 `VALIDATION_FAILED`. A draft whose configuration would pass 256 KiB is refused
    * with 400 `CONFIGURATION_TOO_LARGE`. Returns the whole draft and its new ETag. */
-  update(input?: Omit<UpdateDraftVersionInput, "agentId" | "ifMatch">, options?: CallOptions & { ifMatch?: string }): ReturnType<typeof ops.updateDraftVersion>;
+  update(input?: Omit<UpdateDraftVersionInput, "agentId" | "ifMatch">, options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.updateDraftVersion>;
   /** Gets one version of an agent, with its full configuration and its ETag.
    * 
    * `version` is `draft`, `live` or the name of a saved or published version. Live is the version the
@@ -213,7 +214,7 @@ export interface AgentDraftScope {
    * be: `expectedLive` names the version (or `none` before the first publish), or `If-Match` carries
    * live's ETag. Either, when stale, is refused with 412; with neither, the publish applies to live as
    * it is. Returns live, the version published, and the history entry the publish wrote. */
-  publish(input?: Omit<PublishAgentVersionInput, "agentId" | "version" | "ifMatch">, options?: CallOptions & { ifMatch?: string }): ReturnType<typeof ops.publishAgentVersion>;
+  publish(input?: Omit<PublishAgentVersionInput, "agentId" | "version" | "ifMatch">, options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.publishAgentVersion>;
   readonly conversations: AgentDraftConversationsNamespace;
 }
 
@@ -303,7 +304,7 @@ export interface AgentVersionScope {
    * be: `expectedLive` names the version (or `none` before the first publish), or `If-Match` carries
    * live's ETag. Either, when stale, is refused with 412; with neither, the publish applies to live as
    * it is. Returns live, the version published, and the history entry the publish wrote. */
-  publish(input?: Omit<PublishAgentVersionInput, "agentId" | "version" | "ifMatch">, options?: CallOptions & { ifMatch?: string }): ReturnType<typeof ops.publishAgentVersion>;
+  publish(input?: Omit<PublishAgentVersionInput, "agentId" | "version" | "ifMatch">, options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.publishAgentVersion>;
   readonly conversations: AgentVersionConversationsNamespace;
 }
 
@@ -463,7 +464,7 @@ export interface KnowledgeBaseScope {
    * Members that are absent stay unchanged, nested objects are merged and lists are replaced whole.
    * Name a member in `clear` to return it to its default. Metadata fields are changed one at a
    * time, with the field operations. Returns the knowledge base and its new ETag. */
-  update(input: Omit<UpdateKnowledgeBaseInput, "knowledgeBaseId" | "ifMatch">, options: CallOptions & { ifMatch: string }): ReturnType<typeof ops.updateKnowledgeBase>;
+  update(input: Omit<UpdateKnowledgeBaseInput, "knowledgeBaseId" | "ifMatch">, options: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch: string }): ReturnType<typeof ops.updateKnowledgeBase>;
   /** Deletes a knowledge base and every document in it; the work continues after the response.
    * 
    * Returns 202 with the Operation that tracks it. The knowledge base reads as `deleting` until it is
@@ -535,7 +536,7 @@ export interface KnowledgeBaseAccessScope {
    * with 400 `VALIDATION_FAILED`. Applying readers to
    * the passages a folder or document holds continues after the response; the returned access says
    * what is set, and the knowledge base's watch shows the work. */
-  set(input?: Omit<PutAccessInput, "knowledgeBaseId" | "ifMatch" | "folder" | "document" | "readers"> & { readers?: PutAccessInput["readers"] | ReadersShorthand }, options?: CallOptions & { ifMatch?: string }): ReturnType<typeof ops.putAccess>;
+  set(input?: Omit<PutAccessInput, "knowledgeBaseId" | "ifMatch" | "folder" | "document" | "readers"> & { readers?: PutAccessInput["readers"] | ReadersShorthand }, options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.putAccess>;
 }
 
 /** `caitlyn.knowledgeBases(knowledgeBaseId).documents`: call it with an identifier for one thing's scope; its methods act on the collection. */
@@ -606,7 +607,7 @@ export interface KnowledgeBaseDocumentScope {
    * processing fill a defined field again. A change that needs processing (a new name or folder, or
    * metadata that search reads) is applied after the response, by the Operation returned. Returns the
    * document and its new ETag. */
-  update(input: Omit<UpdateDocumentInput, "knowledgeBaseId" | "documentId" | "ifMatch">, options: CallOptions & { ifMatch: string }): WorkPromise<Awaited<ReturnType<typeof ops.updateDocument>>, Out<Document>, KnowledgeBaseEvent>;
+  update(input: Omit<UpdateDocumentInput, "knowledgeBaseId" | "documentId" | "ifMatch">, options: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch: string }): WorkPromise<Awaited<ReturnType<typeof ops.updateDocument>>, Out<Document>, KnowledgeBaseEvent>;
   /** Deletes a document; removing it from search continues after the response.
    * 
    * Returns 202 with the document in `deleting`; in the SDKs, `.wait()` on the result waits until it is
@@ -634,7 +635,7 @@ export interface KnowledgeBaseDocumentScope {
    * the same as the current version's make no new version (`result: unchanged`); bytes the same as an
    * earlier version's bring that version back (`result: restored`). */
   replace: {
-    (file: FileInput | { uploadId: string }, input?: Omit<CreateDocumentVersionInput, "knowledgeBaseId" | "documentId" | "idempotencyKey" | "ifMatch" | "uploadId">, options?: CallOptions & { idempotencyKey?: string; ifMatch?: string }): WorkPromise<Awaited<ReturnType<typeof ops.createDocumentVersion>>, Out<Document>, KnowledgeBaseEvent>;
+    (file: FileInput | { uploadId: string }, input?: Omit<CreateDocumentVersionInput, "knowledgeBaseId" | "documentId" | "idempotencyKey" | "ifMatch" | "uploadId">, options?: CallOptions & { idempotencyKey?: string; /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): WorkPromise<Awaited<ReturnType<typeof ops.createDocumentVersion>>, Out<Document>, KnowledgeBaseEvent>;
     /** Estimate replacing the file: what it would do and cost, with the same arguments. Nothing is started. */
     estimate(file: FileInput | UploadDescription, input?: Omit<EstimateDocumentVersionInput, "knowledgeBaseId" | "documentId" | "file">, options?: CallOptions): ReturnType<typeof ops.estimateDocumentVersion>;
   };
@@ -720,7 +721,7 @@ export interface KnowledgeBaseDocumentAccessNamespace {
    * with 400 `VALIDATION_FAILED`. Applying readers to
    * the passages a folder or document holds continues after the response; the returned access says
    * what is set, and the knowledge base's watch shows the work. */
-  set(input?: Omit<PutAccessInput, "knowledgeBaseId" | "document" | "ifMatch" | "folder" | "readers"> & { readers?: PutAccessInput["readers"] | ReadersShorthand }, options?: CallOptions & { ifMatch?: string }): ReturnType<typeof ops.putAccess>;
+  set(input?: Omit<PutAccessInput, "knowledgeBaseId" | "document" | "ifMatch" | "folder" | "readers"> & { readers?: PutAccessInput["readers"] | ReadersShorthand }, options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.putAccess>;
 }
 
 /** `caitlyn.knowledgeBases(knowledgeBaseId).fields`: call it with an identifier for one thing's scope; its methods act on the collection. */
@@ -761,7 +762,7 @@ export interface KnowledgeBaseFieldScope {
    * Members that are absent stay unchanged. Saving never fills values in again by itself: run a
    * fill-in for that. The change is made to the field alone, so it never undoes a change someone made
    * to another field at the same time. */
-  update(input?: Omit<UpdateFieldInput, "knowledgeBaseId" | "fieldKey" | "ifMatch">, options?: CallOptions & { ifMatch?: string }): ReturnType<typeof ops.updateField>;
+  update(input?: Omit<UpdateFieldInput, "knowledgeBaseId" | "fieldKey" | "ifMatch">, options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.updateField>;
   /** Removes a metadata field, with every value documents hold for it and every lock on those values.
    * 
    * Deleting cannot be undone. Agents and searches stop using the field at once. */
@@ -793,7 +794,7 @@ export interface KnowledgeBaseFolderScope {
    * `If-Match` is required. Give `name` to rename it, `parent` to move it, or both. Returns 202 with the
    * Operation that tracks the change. Documents keep their identifiers, versions and history. A path
    * that is taken is refused with 409 `ALREADY_EXISTS`. */
-  update(input: Omit<UpdateFolderInput, "knowledgeBaseId" | "folderPath" | "ifMatch">, options: CallOptions & { ifMatch: string }): WorkPromise<Awaited<ReturnType<typeof ops.updateFolder>>, NonNullable<KnowledgeBaseSnapshot["folder"]>, KnowledgeBaseEvent>;
+  update(input: Omit<UpdateFolderInput, "knowledgeBaseId" | "folderPath" | "ifMatch">, options: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch: string }): WorkPromise<Awaited<ReturnType<typeof ops.updateFolder>>, NonNullable<KnowledgeBaseSnapshot["folder"]>, KnowledgeBaseEvent>;
   /** Deletes a folder and everything in it; the work continues after the response.
    * 
    * Returns 202 with the Operation that tracks it. A folder holding documents still being processed is
@@ -834,7 +835,7 @@ export interface KnowledgeBaseFolderAccessNamespace {
    * with 400 `VALIDATION_FAILED`. Applying readers to
    * the passages a folder or document holds continues after the response; the returned access says
    * what is set, and the knowledge base's watch shows the work. */
-  set(input?: Omit<PutAccessInput, "knowledgeBaseId" | "folder" | "ifMatch" | "document" | "readers"> & { readers?: PutAccessInput["readers"] | ReadersShorthand }, options?: CallOptions & { ifMatch?: string }): ReturnType<typeof ops.putAccess>;
+  set(input?: Omit<PutAccessInput, "knowledgeBaseId" | "folder" | "ifMatch" | "document" | "readers"> & { readers?: PutAccessInput["readers"] | ReadersShorthand }, options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.putAccess>;
 }
 
 /** `caitlyn.knowledgeBases(knowledgeBaseId).ingestion`. */
@@ -885,7 +886,7 @@ export interface KnowledgeBaseIngestionBatchScope {
    * `policy` can change while the batch is `draft` or `planned`, and applies to every item not resolved
    * by hand. A batch past `planned` is refused with 409 `CONFLICT`. The last items, which end the
    * `draft`, are added with BatchCreateIngestionBatchItems and `last: true`. */
-  update(input: Omit<UpdateIngestionBatchInput, "knowledgeBaseId" | "ingestionBatchId" | "ifMatch">, options: CallOptions & { ifMatch: string }): ReturnType<typeof ops.updateIngestionBatch>;
+  update(input: Omit<UpdateIngestionBatchInput, "knowledgeBaseId" | "ingestionBatchId" | "ifMatch">, options: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch: string }): ReturnType<typeof ops.updateIngestionBatch>;
   /** Cancels an ingestion batch.
    * 
    * Items not yet uploaded are stopped, and their reserved documents released. With `stopRunning`,
@@ -905,7 +906,7 @@ export interface KnowledgeBaseIngestionBatchScope {
    * `INGESTION_BATCH_UNRESOLVED` while any item is `unresolved`. Returns 202 with the batch and one
    * upload policy: list the items to upload with `filter[status][eq]=awaiting_upload`, upload each to
    * its `objectKey`, then report them with CompleteIngestionBatchUploads. */
-  start(options?: CallOptions & { ifMatch?: string }): WorkPromise<Awaited<ReturnType<typeof ops.startIngestionBatch>>, Out<IngestionBatch>, KnowledgeBaseEvent>;
+  start(options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): WorkPromise<Awaited<ReturnType<typeof ops.startIngestionBatch>>, Out<IngestionBatch>, KnowledgeBaseEvent>;
   /** Follows it: a snapshot first, then each change; a dropped connection reconnects and starts with a snapshot again. `event.processing` is its processing. */
   watch(options?: CallOptions): SseStream<KnowledgeBaseEvent & ScopeWatchAccessor, never>;
   /**
@@ -960,7 +961,17 @@ export interface KnowledgeBaseIngestionBatchItemScope {
    * Only `resolution` can change, and only while the batch is `planned`; anything else is refused with
    * 409 `CONFLICT`. A resolution that does not fit the outcome (for example `move` for a `new` item) is
    * refused with 400 `VALIDATION_FAILED`. */
-  resolve(resolution: UpdateIngestionBatchItemInput["resolution"], options?: CallOptions & { ifMatch?: string }): ReturnType<typeof ops.updateIngestionBatchItem>;
+  resolve(resolution: UpdateIngestionBatchItemInput["resolution"], options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.updateIngestionBatchItem>;
+  /** Cancels one item of a running batch that is still waiting for its upload.
+   * 
+   * The item becomes `cancelled`, and the document the batch reserved for it is released: a new
+   * document's placeholder is removed, and an existing document is no longer held for a new version.
+   * Bytes already uploaded for it are never ingested. The rest of the batch carries on; if this was the
+   * last item not yet finished, the batch ends. An item that is not `awaiting_upload` (being ingested,
+   * already finished, or in a batch not yet started) is refused with 409 `CONFLICT`. Needs the same
+   * permission as cancelling the batch, and the caller must be able to see the item's folder (404
+   * otherwise). */
+  cancel(options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.cancelIngestionBatchItem>;
 }
 
 /** `caitlyn.core`. */
@@ -1000,7 +1011,9 @@ export interface CoreIngestionNamespace {
    * 
    * Returns a new policy for the same key prefix while the batch is `running` and has items awaiting
    * upload; anything else is refused with 409 `CONFLICT`. Each renewal also extends how long the
-   * batch's new documents stay reserved. The SDKs renew when less than 5 minutes are left. */
+   * batch's new documents stay reserved. A renewed policy lasts the batch's `uploadWindowSeconds`, as the
+   * first did. The SDKs renew when less than 5 minutes, or half the policy's lifetime when that is
+   * shorter, are left. */
   uploadPolicy(knowledgeBaseId: string, ingestionBatchId: string, options?: CallOptions & { idempotencyKey?: string }): ReturnType<typeof ops.createIngestionBatchUploadPolicy>;
   /** Adds up to 10,000 more items to a batch that is still `draft`, with a result for each.
    * 
@@ -1159,7 +1172,7 @@ function makeAgentScope(c: CaitlynClient, ids: Ids): AgentScope {
   return {
     agentId: ids.agentId,
     get: (options?: CallOptions): ReturnType<typeof ops.getAgent> => ops.getAgent(c, { agentId: ids.agentId } as Parameters<typeof ops.getAgent>[1], options),
-    update: (input: Omit<Parameters<typeof ops.updateAgent>[1], "agentId" | "ifMatch">, options: CallOptions & { ifMatch: string }): ReturnType<typeof ops.updateAgent> => ops.updateAgent(c, { ...input, agentId: ids.agentId } as Parameters<typeof ops.updateAgent>[1], options),
+    update: (input: Omit<Parameters<typeof ops.updateAgent>[1], "agentId" | "ifMatch">, options: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch: string }): ReturnType<typeof ops.updateAgent> => ops.updateAgent(c, { ...input, agentId: ids.agentId } as Parameters<typeof ops.updateAgent>[1], options),
     delete: (options?: CallOptions): ReturnType<typeof ops.deleteAgent> => ops.deleteAgent(c, { agentId: ids.agentId } as Parameters<typeof ops.deleteAgent>[1], options),
     conversations: makeAgentConversationsNamespace(c, ids),
     draft: makeAgentDraftScope(c, { ...ids, version: "draft" }),
@@ -1179,13 +1192,13 @@ function makeAgentDraftScope(c: CaitlynClient, ids: Ids): AgentDraftScope {
   return {
     agentId: ids.agentId,
     version: ids.version as "draft",
-    replace: (input?: Omit<ReplaceDraftVersionInput, "agentId" | "ifMatch">, options?: CallOptions & { ifMatch?: string }): ReturnType<typeof ops.replaceDraftVersion> => ops.replaceDraftVersion(c, { ...input, agentId: ids.agentId } as Parameters<typeof ops.replaceDraftVersion>[1], options),
-    reset: (from: ResetDraftVersionInput["from"], options: CallOptions & { ifMatch: string }): ReturnType<typeof ops.resetDraftVersion> => ops.resetDraftVersion(c, { from, agentId: ids.agentId } as Parameters<typeof ops.resetDraftVersion>[1], options),
-    save: (name: SaveDraftVersionInput["name"], input?: Omit<SaveDraftVersionInput, "agentId" | "idempotencyKey" | "ifMatch" | "name">, options?: CallOptions & { idempotencyKey?: string; ifMatch?: string }): ReturnType<typeof ops.saveDraftVersion> => ops.saveDraftVersion(c, { ...input, name, agentId: ids.agentId } as Parameters<typeof ops.saveDraftVersion>[1], options),
-    update: (input?: Omit<UpdateDraftVersionInput, "agentId" | "ifMatch">, options?: CallOptions & { ifMatch?: string }): ReturnType<typeof ops.updateDraftVersion> => ops.updateDraftVersion(c, { ...input, agentId: ids.agentId } as Parameters<typeof ops.updateDraftVersion>[1], options),
+    replace: (input?: Omit<ReplaceDraftVersionInput, "agentId" | "ifMatch">, options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.replaceDraftVersion> => ops.replaceDraftVersion(c, { ...input, agentId: ids.agentId } as Parameters<typeof ops.replaceDraftVersion>[1], options),
+    reset: (from: ResetDraftVersionInput["from"], options: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch: string }): ReturnType<typeof ops.resetDraftVersion> => ops.resetDraftVersion(c, { from, agentId: ids.agentId } as Parameters<typeof ops.resetDraftVersion>[1], options),
+    save: (name: SaveDraftVersionInput["name"], input?: Omit<SaveDraftVersionInput, "agentId" | "idempotencyKey" | "ifMatch" | "name">, options?: CallOptions & { idempotencyKey?: string; /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.saveDraftVersion> => ops.saveDraftVersion(c, { ...input, name, agentId: ids.agentId } as Parameters<typeof ops.saveDraftVersion>[1], options),
+    update: (input?: Omit<UpdateDraftVersionInput, "agentId" | "ifMatch">, options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.updateDraftVersion> => ops.updateDraftVersion(c, { ...input, agentId: ids.agentId } as Parameters<typeof ops.updateDraftVersion>[1], options),
     get: (options?: CallOptions): ReturnType<typeof ops.getAgentVersion> => ops.getAgentVersion(c, { agentId: ids.agentId, version: ids.version } as Parameters<typeof ops.getAgentVersion>[1], options),
     compare: (withVersion: CompareAgentVersionsInput["withVersion"], options?: CallOptions): ReturnType<typeof ops.compareAgentVersions> => ops.compareAgentVersions(c, { withVersion, agentId: ids.agentId, version: ids.version } as Parameters<typeof ops.compareAgentVersions>[1], options),
-    publish: (input?: Omit<PublishAgentVersionInput, "agentId" | "version" | "ifMatch">, options?: CallOptions & { ifMatch?: string }): ReturnType<typeof ops.publishAgentVersion> => ops.publishAgentVersion(c, { ...input, agentId: ids.agentId, version: ids.version } as Parameters<typeof ops.publishAgentVersion>[1], options),
+    publish: (input?: Omit<PublishAgentVersionInput, "agentId" | "version" | "ifMatch">, options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.publishAgentVersion> => ops.publishAgentVersion(c, { ...input, agentId: ids.agentId, version: ids.version } as Parameters<typeof ops.publishAgentVersion>[1], options),
     conversations: makeAgentDraftConversationsNamespace(c, ids),
   };
 }
@@ -1223,7 +1236,7 @@ function makeAgentVersionScope(c: CaitlynClient, ids: Ids): AgentVersionScope {
     get: (options?: CallOptions): ReturnType<typeof ops.getAgentVersion> => ops.getAgentVersion(c, { agentId: ids.agentId, version: ids.version } as Parameters<typeof ops.getAgentVersion>[1], options),
     delete: (options?: CallOptions): ReturnType<typeof ops.deleteAgentVersion> => ops.deleteAgentVersion(c, { agentId: ids.agentId, version: ids.version } as Parameters<typeof ops.deleteAgentVersion>[1], options),
     compare: (withVersion: CompareAgentVersionsInput["withVersion"], options?: CallOptions): ReturnType<typeof ops.compareAgentVersions> => ops.compareAgentVersions(c, { withVersion, agentId: ids.agentId, version: ids.version } as Parameters<typeof ops.compareAgentVersions>[1], options),
-    publish: (input?: Omit<PublishAgentVersionInput, "agentId" | "version" | "ifMatch">, options?: CallOptions & { ifMatch?: string }): ReturnType<typeof ops.publishAgentVersion> => ops.publishAgentVersion(c, { ...input, agentId: ids.agentId, version: ids.version } as Parameters<typeof ops.publishAgentVersion>[1], options),
+    publish: (input?: Omit<PublishAgentVersionInput, "agentId" | "version" | "ifMatch">, options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.publishAgentVersion> => ops.publishAgentVersion(c, { ...input, agentId: ids.agentId, version: ids.version } as Parameters<typeof ops.publishAgentVersion>[1], options),
     conversations: makeAgentVersionConversationsNamespace(c, ids),
   };
 }
@@ -1301,7 +1314,7 @@ function makeKnowledgeBaseScope(c: CaitlynClient, ids: Ids): KnowledgeBaseScope 
   return {
     knowledgeBaseId: ids.knowledgeBaseId,
     get: (options?: CallOptions): ReturnType<typeof ops.getKnowledgeBase> => ops.getKnowledgeBase(c, { knowledgeBaseId: ids.knowledgeBaseId } as Parameters<typeof ops.getKnowledgeBase>[1], options),
-    update: (input: Omit<UpdateKnowledgeBaseInput, "knowledgeBaseId" | "ifMatch">, options: CallOptions & { ifMatch: string }): ReturnType<typeof ops.updateKnowledgeBase> => ops.updateKnowledgeBase(c, { ...input, knowledgeBaseId: ids.knowledgeBaseId } as Parameters<typeof ops.updateKnowledgeBase>[1], options),
+    update: (input: Omit<UpdateKnowledgeBaseInput, "knowledgeBaseId" | "ifMatch">, options: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch: string }): ReturnType<typeof ops.updateKnowledgeBase> => ops.updateKnowledgeBase(c, { ...input, knowledgeBaseId: ids.knowledgeBaseId } as Parameters<typeof ops.updateKnowledgeBase>[1], options),
     delete: (options?: CallOptions): WorkPromise<Awaited<ReturnType<typeof ops.deleteKnowledgeBase>>, void, KnowledgeBaseEvent> => new WorkPromise(ops.deleteKnowledgeBase(c, { knowledgeBaseId: ids.knowledgeBaseId } as Parameters<typeof ops.deleteKnowledgeBase>[1], options), (out) => ({
         wait: async (o?: WaitOptions) => (await waitFor({ ...specKnowledgeBaseScope(c, ids), jobId: out.operation?.id, deleting: true }, o)) as void,
         watch: (o?: CallOptions) => ops.watchKnowledgeBase(c, { knowledgeBaseId: ids.knowledgeBaseId } as Parameters<typeof ops.watchKnowledgeBase>[1], o),
@@ -1332,7 +1345,7 @@ function makeKnowledgeBaseAccessScope(c: CaitlynClient, ids: Ids): KnowledgeBase
   return {
     knowledgeBaseId: ids.knowledgeBaseId,
     get: (options?: CallOptions): ReturnType<typeof ops.getAccess> => ops.getAccess(c, { knowledgeBaseId: ids.knowledgeBaseId } as Parameters<typeof ops.getAccess>[1], options),
-    set: (input?: Omit<PutAccessInput, "knowledgeBaseId" | "ifMatch" | "folder" | "document" | "readers"> & { readers?: PutAccessInput["readers"] | ReadersShorthand }, options?: CallOptions & { ifMatch?: string }): ReturnType<typeof ops.putAccess> => ops.putAccess(c, { ...input, readers: readers(input?.readers), knowledgeBaseId: ids.knowledgeBaseId } as Parameters<typeof ops.putAccess>[1], options),
+    set: (input?: Omit<PutAccessInput, "knowledgeBaseId" | "ifMatch" | "folder" | "document" | "readers"> & { readers?: PutAccessInput["readers"] | ReadersShorthand }, options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.putAccess> => ops.putAccess(c, { ...input, readers: readers(input?.readers), knowledgeBaseId: ids.knowledgeBaseId } as Parameters<typeof ops.putAccess>[1], options),
   };
 }
 
@@ -1363,7 +1376,7 @@ function makeKnowledgeBaseDocumentScope(c: CaitlynClient, ids: Ids): KnowledgeBa
     knowledgeBaseId: ids.knowledgeBaseId,
     documentId: ids.documentId,
     get: (options?: CallOptions): ReturnType<typeof ops.getDocument> => ops.getDocument(c, { knowledgeBaseId: ids.knowledgeBaseId, documentId: ids.documentId } as Parameters<typeof ops.getDocument>[1], options),
-    update: (input: Omit<UpdateDocumentInput, "knowledgeBaseId" | "documentId" | "ifMatch">, options: CallOptions & { ifMatch: string }): WorkPromise<Awaited<ReturnType<typeof ops.updateDocument>>, Out<Document>, KnowledgeBaseEvent> => new WorkPromise(ops.updateDocument(c, { ...input, knowledgeBaseId: ids.knowledgeBaseId, documentId: ids.documentId } as Parameters<typeof ops.updateDocument>[1], options), (out) => ({
+    update: (input: Omit<UpdateDocumentInput, "knowledgeBaseId" | "documentId" | "ifMatch">, options: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch: string }): WorkPromise<Awaited<ReturnType<typeof ops.updateDocument>>, Out<Document>, KnowledgeBaseEvent> => new WorkPromise(ops.updateDocument(c, { ...input, knowledgeBaseId: ids.knowledgeBaseId, documentId: ids.documentId } as Parameters<typeof ops.updateDocument>[1], options), (out) => ({
         wait: async (o?: WaitOptions) => (await waitFor({ ...specKnowledgeBaseDocumentScope(c, ids), jobId: out.operation?.id }, o)) as Out<Document>,
         watch: (o?: CallOptions) => ops.watchKnowledgeBase(c, { knowledgeBaseId: ids.knowledgeBaseId, document: ids.documentId } as Parameters<typeof ops.watchKnowledgeBase>[1], o),
       })),
@@ -1375,7 +1388,7 @@ function makeKnowledgeBaseDocumentScope(c: CaitlynClient, ids: Ids): KnowledgeBa
         wait: async (o?: WaitOptions) => (await waitFor({ ...specKnowledgeBaseDocumentScope(c, ids), cancelling: true }, o)) as Out<Document>,
         watch: (o?: CallOptions) => ops.watchKnowledgeBase(c, { knowledgeBaseId: ids.knowledgeBaseId, document: ids.documentId } as Parameters<typeof ops.watchKnowledgeBase>[1], o),
       })),
-    replace: Object.assign((file: FileInput | { uploadId: string }, input?: Omit<CreateDocumentVersionInput, "knowledgeBaseId" | "documentId" | "idempotencyKey" | "ifMatch" | "uploadId">, options?: CallOptions & { idempotencyKey?: string; ifMatch?: string }): WorkPromise<Awaited<ReturnType<typeof ops.createDocumentVersion>>, Out<Document>, KnowledgeBaseEvent> => new WorkPromise(ops.createDocumentVersion(c, { ...input, ...("uploadId" in Object(file) ? (file as object) : { file }), knowledgeBaseId: ids.knowledgeBaseId, documentId: ids.documentId } as Parameters<typeof ops.createDocumentVersion>[1], options), (out) => ({
+    replace: Object.assign((file: FileInput | { uploadId: string }, input?: Omit<CreateDocumentVersionInput, "knowledgeBaseId" | "documentId" | "idempotencyKey" | "ifMatch" | "uploadId">, options?: CallOptions & { idempotencyKey?: string; /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): WorkPromise<Awaited<ReturnType<typeof ops.createDocumentVersion>>, Out<Document>, KnowledgeBaseEvent> => new WorkPromise(ops.createDocumentVersion(c, { ...input, ...("uploadId" in Object(file) ? (file as object) : { file }), knowledgeBaseId: ids.knowledgeBaseId, documentId: ids.documentId } as Parameters<typeof ops.createDocumentVersion>[1], options), (out) => ({
         wait: async (o?: WaitOptions) => (await waitFor({ ...specKnowledgeBaseDocumentScope(c, ids), jobId: out.operation?.id }, o)) as Out<Document>,
         watch: (o?: CallOptions) => ops.watchKnowledgeBase(c, { knowledgeBaseId: ids.knowledgeBaseId, document: ids.documentId } as Parameters<typeof ops.watchKnowledgeBase>[1], o),
       })), {
@@ -1412,7 +1425,7 @@ function makeKnowledgeBaseDocumentVersionScope(c: CaitlynClient, ids: Ids): Know
 function makeKnowledgeBaseDocumentAccessNamespace(c: CaitlynClient, ids: Ids): KnowledgeBaseDocumentAccessNamespace {
   return {
     get: (options?: CallOptions): ReturnType<typeof ops.getAccess> => ops.getAccess(c, { knowledgeBaseId: ids.knowledgeBaseId, document: ids.documentId } as Parameters<typeof ops.getAccess>[1], options),
-    set: (input?: Omit<PutAccessInput, "knowledgeBaseId" | "document" | "ifMatch" | "folder" | "readers"> & { readers?: PutAccessInput["readers"] | ReadersShorthand }, options?: CallOptions & { ifMatch?: string }): ReturnType<typeof ops.putAccess> => ops.putAccess(c, { ...input, readers: readers(input?.readers), knowledgeBaseId: ids.knowledgeBaseId, document: ids.documentId } as Parameters<typeof ops.putAccess>[1], options),
+    set: (input?: Omit<PutAccessInput, "knowledgeBaseId" | "document" | "ifMatch" | "folder" | "readers"> & { readers?: PutAccessInput["readers"] | ReadersShorthand }, options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.putAccess> => ops.putAccess(c, { ...input, readers: readers(input?.readers), knowledgeBaseId: ids.knowledgeBaseId, document: ids.documentId } as Parameters<typeof ops.putAccess>[1], options),
   };
 }
 
@@ -1434,7 +1447,7 @@ function makeKnowledgeBaseFieldScope(c: CaitlynClient, ids: Ids): KnowledgeBaseF
     knowledgeBaseId: ids.knowledgeBaseId,
     fieldKey: ids.fieldKey,
     get: (options?: CallOptions): ReturnType<typeof ops.getField> => ops.getField(c, { knowledgeBaseId: ids.knowledgeBaseId, fieldKey: ids.fieldKey } as Parameters<typeof ops.getField>[1], options),
-    update: (input?: Omit<UpdateFieldInput, "knowledgeBaseId" | "fieldKey" | "ifMatch">, options?: CallOptions & { ifMatch?: string }): ReturnType<typeof ops.updateField> => ops.updateField(c, { ...input, knowledgeBaseId: ids.knowledgeBaseId, fieldKey: ids.fieldKey } as Parameters<typeof ops.updateField>[1], options),
+    update: (input?: Omit<UpdateFieldInput, "knowledgeBaseId" | "fieldKey" | "ifMatch">, options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.updateField> => ops.updateField(c, { ...input, knowledgeBaseId: ids.knowledgeBaseId, fieldKey: ids.fieldKey } as Parameters<typeof ops.updateField>[1], options),
     delete: (options?: CallOptions): ReturnType<typeof ops.deleteField> => ops.deleteField(c, { knowledgeBaseId: ids.knowledgeBaseId, fieldKey: ids.fieldKey } as Parameters<typeof ops.deleteField>[1], options),
   };
 }
@@ -1456,7 +1469,7 @@ function makeKnowledgeBaseFolderScope(c: CaitlynClient, ids: Ids): KnowledgeBase
   return {
     knowledgeBaseId: ids.knowledgeBaseId,
     folderPath: ids.folderPath,
-    update: (input: Omit<UpdateFolderInput, "knowledgeBaseId" | "folderPath" | "ifMatch">, options: CallOptions & { ifMatch: string }): WorkPromise<Awaited<ReturnType<typeof ops.updateFolder>>, NonNullable<KnowledgeBaseSnapshot["folder"]>, KnowledgeBaseEvent> => new WorkPromise(ops.updateFolder(c, { ...input, knowledgeBaseId: ids.knowledgeBaseId, folderPath: trimFolder(ids.folderPath) } as Parameters<typeof ops.updateFolder>[1], options), (out) => ({
+    update: (input: Omit<UpdateFolderInput, "knowledgeBaseId" | "folderPath" | "ifMatch">, options: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch: string }): WorkPromise<Awaited<ReturnType<typeof ops.updateFolder>>, NonNullable<KnowledgeBaseSnapshot["folder"]>, KnowledgeBaseEvent> => new WorkPromise(ops.updateFolder(c, { ...input, knowledgeBaseId: ids.knowledgeBaseId, folderPath: trimFolder(ids.folderPath) } as Parameters<typeof ops.updateFolder>[1], options), (out) => ({
         wait: async (o?: WaitOptions) => (await waitFor({ ...specKnowledgeBaseFolderScope(c, ids), jobId: out.operation?.id }, o)) as NonNullable<KnowledgeBaseSnapshot["folder"]>,
         watch: (o?: CallOptions) => ops.watchKnowledgeBase(c, { knowledgeBaseId: ids.knowledgeBaseId, folder: ids.folderPath } as Parameters<typeof ops.watchKnowledgeBase>[1], o),
       })),
@@ -1473,7 +1486,7 @@ function makeKnowledgeBaseFolderScope(c: CaitlynClient, ids: Ids): KnowledgeBase
 function makeKnowledgeBaseFolderAccessNamespace(c: CaitlynClient, ids: Ids): KnowledgeBaseFolderAccessNamespace {
   return {
     get: (options?: CallOptions): ReturnType<typeof ops.getAccess> => ops.getAccess(c, { knowledgeBaseId: ids.knowledgeBaseId, folder: ids.folderPath } as Parameters<typeof ops.getAccess>[1], options),
-    set: (input?: Omit<PutAccessInput, "knowledgeBaseId" | "folder" | "ifMatch" | "document" | "readers"> & { readers?: PutAccessInput["readers"] | ReadersShorthand }, options?: CallOptions & { ifMatch?: string }): ReturnType<typeof ops.putAccess> => ops.putAccess(c, { ...input, readers: readers(input?.readers), knowledgeBaseId: ids.knowledgeBaseId, folder: ids.folderPath } as Parameters<typeof ops.putAccess>[1], options),
+    set: (input?: Omit<PutAccessInput, "knowledgeBaseId" | "folder" | "ifMatch" | "document" | "readers"> & { readers?: PutAccessInput["readers"] | ReadersShorthand }, options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.putAccess> => ops.putAccess(c, { ...input, readers: readers(input?.readers), knowledgeBaseId: ids.knowledgeBaseId, folder: ids.folderPath } as Parameters<typeof ops.putAccess>[1], options),
   };
 }
 
@@ -1504,12 +1517,12 @@ function makeKnowledgeBaseIngestionBatchScope(c: CaitlynClient, ids: Ids): Knowl
     knowledgeBaseId: ids.knowledgeBaseId,
     ingestionBatchId: ids.ingestionBatchId,
     get: (options?: CallOptions): ReturnType<typeof ops.getIngestionBatch> => ops.getIngestionBatch(c, { knowledgeBaseId: ids.knowledgeBaseId, ingestionBatchId: ids.ingestionBatchId } as Parameters<typeof ops.getIngestionBatch>[1], options),
-    update: (input: Omit<UpdateIngestionBatchInput, "knowledgeBaseId" | "ingestionBatchId" | "ifMatch">, options: CallOptions & { ifMatch: string }): ReturnType<typeof ops.updateIngestionBatch> => ops.updateIngestionBatch(c, { ...input, knowledgeBaseId: ids.knowledgeBaseId, ingestionBatchId: ids.ingestionBatchId } as Parameters<typeof ops.updateIngestionBatch>[1], options),
+    update: (input: Omit<UpdateIngestionBatchInput, "knowledgeBaseId" | "ingestionBatchId" | "ifMatch">, options: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch: string }): ReturnType<typeof ops.updateIngestionBatch> => ops.updateIngestionBatch(c, { ...input, knowledgeBaseId: ids.knowledgeBaseId, ingestionBatchId: ids.ingestionBatchId } as Parameters<typeof ops.updateIngestionBatch>[1], options),
     cancel: (input?: Omit<CancelIngestionBatchInput, "knowledgeBaseId" | "ingestionBatchId">, options?: CallOptions): WorkPromise<Awaited<ReturnType<typeof ops.cancelIngestionBatch>>, Out<IngestionBatch>, KnowledgeBaseEvent> => new WorkPromise(ops.cancelIngestionBatch(c, { ...input, knowledgeBaseId: ids.knowledgeBaseId, ingestionBatchId: ids.ingestionBatchId } as Parameters<typeof ops.cancelIngestionBatch>[1], options), (out) => ({
         wait: async (o?: WaitOptions) => (await waitFor({ ...specKnowledgeBaseIngestionBatchScope(c, ids), cancelling: true }, o)) as Out<IngestionBatch>,
         watch: (o?: CallOptions) => watchKnowledgeBaseIngestionBatchScope(c, ids, o),
       })),
-    start: (options?: CallOptions & { ifMatch?: string }): WorkPromise<Awaited<ReturnType<typeof ops.startIngestionBatch>>, Out<IngestionBatch>, KnowledgeBaseEvent> => new WorkPromise(ops.startIngestionBatch(c, { knowledgeBaseId: ids.knowledgeBaseId, ingestionBatchId: ids.ingestionBatchId } as Parameters<typeof ops.startIngestionBatch>[1], options), (out) => ({
+    start: (options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): WorkPromise<Awaited<ReturnType<typeof ops.startIngestionBatch>>, Out<IngestionBatch>, KnowledgeBaseEvent> => new WorkPromise(ops.startIngestionBatch(c, { knowledgeBaseId: ids.knowledgeBaseId, ingestionBatchId: ids.ingestionBatchId } as Parameters<typeof ops.startIngestionBatch>[1], options), (out) => ({
         wait: async (o?: WaitOptions) => (await waitFor({ ...specKnowledgeBaseIngestionBatchScope(c, ids) }, o)) as Out<IngestionBatch>,
         watch: (o?: CallOptions) => watchKnowledgeBaseIngestionBatchScope(c, ids, o),
       })),
@@ -1539,7 +1552,8 @@ function makeKnowledgeBaseIngestionBatchItemScope(c: CaitlynClient, ids: Ids): K
     ingestionBatchId: ids.ingestionBatchId,
     itemId: ids.itemId,
     get: (options?: CallOptions): ReturnType<typeof ops.getIngestionBatchItem> => ops.getIngestionBatchItem(c, { knowledgeBaseId: ids.knowledgeBaseId, ingestionBatchId: ids.ingestionBatchId, itemId: ids.itemId } as Parameters<typeof ops.getIngestionBatchItem>[1], options),
-    resolve: (resolution: UpdateIngestionBatchItemInput["resolution"], options?: CallOptions & { ifMatch?: string }): ReturnType<typeof ops.updateIngestionBatchItem> => ops.updateIngestionBatchItem(c, { resolution, knowledgeBaseId: ids.knowledgeBaseId, ingestionBatchId: ids.ingestionBatchId, itemId: ids.itemId } as Parameters<typeof ops.updateIngestionBatchItem>[1], options),
+    resolve: (resolution: UpdateIngestionBatchItemInput["resolution"], options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.updateIngestionBatchItem> => ops.updateIngestionBatchItem(c, { resolution, knowledgeBaseId: ids.knowledgeBaseId, ingestionBatchId: ids.ingestionBatchId, itemId: ids.itemId } as Parameters<typeof ops.updateIngestionBatchItem>[1], options),
+    cancel: (options?: CallOptions & { /** The ETag you last read, sent as `If-Match`. `*` (any version) is sent only when you pass it yourself: no helper fills it in. */ ifMatch?: string }): ReturnType<typeof ops.cancelIngestionBatchItem> => ops.cancelIngestionBatchItem(c, { knowledgeBaseId: ids.knowledgeBaseId, ingestionBatchId: ids.ingestionBatchId, itemId: ids.itemId } as Parameters<typeof ops.cancelIngestionBatchItem>[1], options),
   };
 }
 

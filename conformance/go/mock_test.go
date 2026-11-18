@@ -66,7 +66,9 @@ func fresh(t *testing.T) mock {
 func (m mock) faults(t *testing.T, f map[string]any) { m.post(t, "/__mock/faults", f) }
 
 type logged struct {
-	Event       string            `json:"event"`
+	Event string `json:"event"`
+	// Op is the operation a held request was for (request-held, request-aborted).
+	Op          string            `json:"op"`
 	Method      string            `json:"method"`
 	Path        string            `json:"path"`
 	Query       string            `json:"query"`

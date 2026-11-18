@@ -6,6 +6,7 @@
 import { SpanKind, SpanStatusCode, type Tracer } from '@opentelemetry/api';
 import { recordFailure, urlWithoutQuery } from './telemetry.js';
 import { hashBlob, hashBytes, pathFile, createSpool, type PathFile } from './files-node.js';
+import { formatTimeout } from './runtime/http.js';
 
 /** The largest file the API accepts: 2 GB (2,147,483,648 bytes). */
 export const MAX_FILE_BYTES = 2_147_483_648;
@@ -301,6 +302,89 @@ export interface SendOptions {
   tracer?: Tracer;
   maxAttempts?: number;
   maxRetryDelayMs?: number;
+  /** How long an attempt may send and receive nothing before it is abandoned (default 60 000 ms; 0 never). */
+  stallTimeoutMs?: number;
+}
+
+/**
+ * The storage stall timeout (PROTOCOL.md 14): an attempt that has sent no request bytes and received no response for
+ * this long is abandoned as a failure with no response, and retried. It is not an overall limit: a large file on a
+ * slow link carries on while its bytes keep moving.
+ */
+export const STORAGE_STALL_TIMEOUT_MS = 60_000;
+
+/** Where request bodies can be streams with a known length (Node, Deno, Bun); a browser page sends a Blob as it is. */
+const STREAMED_BODIES = typeof (globalThis as { document?: unknown }).document === 'undefined' && typeof ReadableStream !== 'undefined';
+
+/** A form field's name or file name in a part's Content-Disposition, escaped as the HTML form encoder does. */
+const dispositionValue = (v: string) => v.replace(/\r/g, '%0D').replace(/\n/g, '%0A').replace(/"/g, '%22');
+
+/**
+ * A FormData as one multipart/form-data Blob, in the fields' order. The Blob is made of the parts' headers and the
+ * file Blobs themselves, so nothing is copied or read until it is sent, and its size is known: storage refuses a
+ * form sent in chunks, so the length goes in Content-Length.
+ */
+export function formBlob(form: FormData): { blob: Blob; contentType: string } {
+  const boundary = `----caitlyn-${Math.random().toString(16).slice(2)}${Math.random().toString(16).slice(2)}`;
+  const parts: BlobPart[] = [];
+  form.forEach((value, name) => {
+    if (typeof value === 'string') {
+      parts.push(`--${boundary}\r\nContent-Disposition: form-data; name="${dispositionValue(name)}"\r\n\r\n${value}\r\n`);
+    } else {
+      const file = value as Blob & { name?: string };
+      parts.push(
+        `--${boundary}\r\nContent-Disposition: form-data; name="${dispositionValue(name)}"; filename="${dispositionValue(file.name ?? 'blob')}"\r\nContent-Type: ${file.type || 'application/octet-stream'}\r\n\r\n`,
+        file,
+        '\r\n',
+      );
+    }
+  });
+  parts.push(`--${boundary}--\r\n`);
+  return { blob: new Blob(parts), contentType: `multipart/form-data; boundary=${boundary}` };
+}
+
+/**
+ * One attempt's request, with the stall timer fed: the body as a stream that touches it for each chunk sent, with
+ * its length, where streamed bodies work; elsewhere the body as it is, and an attempt limit that grows with its size
+ * (the stall timeout plus a second for each 64 KiB).
+ */
+function counted(init: RequestInit, touch: () => void): { init: RequestInit & { duplex?: string }; extraMs: number } {
+  let blob: Blob | undefined;
+  const headers = new Headers(init.headers);
+  if (typeof FormData !== 'undefined' && init.body instanceof FormData) {
+    const f = formBlob(init.body);
+    blob = f.blob;
+    headers.set('content-type', f.contentType);
+  } else if (typeof Blob !== 'undefined' && init.body instanceof Blob) {
+    blob = init.body;
+  }
+  if (!blob) return { init, extraMs: 0 };
+  if (!STREAMED_BODIES) return { init: { ...init, body: blob, headers }, extraMs: Math.ceil(blob.size / 65_536) * 1000 };
+  headers.set('content-length', String(blob.size));
+  // Pulled 64 KiB at a time, only as the connection takes it: a Blob's own stream can hand over a whole in-memory part
+  // in one chunk, which would touch the timer once at the start and never again.
+  const reader = blob.stream().getReader();
+  let chunk: Uint8Array | undefined;
+  let at = 0;
+  const body = new ReadableStream<Uint8Array>(
+    {
+      async pull(out) {
+        if (!chunk || at >= chunk.byteLength) {
+          const next = await reader.read();
+          if (next.done) return out.close();
+          chunk = next.value;
+          at = 0;
+        }
+        const piece = chunk.subarray(at, at + 65_536);
+        at += piece.byteLength;
+        touch();
+        out.enqueue(piece);
+      },
+      cancel: (reason) => reader.cancel(reason),
+    },
+    { highWaterMark: 0 },
+  );
+  return { init: { ...init, body, headers, duplex: 'half' }, extraMs: 0 };
 }
 
 const RETRYABLE = new Set([429, 500, 502, 503, 504]);
@@ -344,13 +428,41 @@ export async function sendToStorage(url: string, init: () => RequestInit, opts: 
   try {
     for (let attempt = 1; ; attempt++) {
       let res: Response | undefined;
+      // The stall timer (PROTOCOL.md 14), on the attempt's own controller, which the caller's signal also aborts.
+      const stallMs = opts.stallTimeoutMs ?? STORAGE_STALL_TIMEOUT_MS;
+      const attemptCtl = new AbortController();
+      const forward = () => attemptCtl.abort(opts.signal!.reason);
+      opts.signal?.addEventListener('abort', forward, { once: true });
+      let stall: ReturnType<typeof setTimeout> | undefined;
+      let limitMs = stallMs;
+      // Set before the timer aborts the attempt, and what the failure is judged by: a fetch aborted by the timer
+      // rejects with the browser's own error in WebKit ("Fetch is aborted"), not the abort's reason.
+      let stalled: Error | undefined;
+      const touch = () => {
+        if (!stallMs) return;
+        clearTimeout(stall);
+        stall = setTimeout(() => {
+          stalled = Object.assign(new Error(`storage sent nothing for ${formatTimeout(stallMs)}`), { name: 'TimeoutError' });
+          attemptCtl.abort(stalled);
+        }, limitMs);
+      };
       try {
-        res = await fetch(url, { ...init(), signal: opts.signal });
+        const prepared = counted(init(), () => {
+          limitMs = stallMs;
+          touch();
+        });
+        limitMs = stallMs + prepared.extraMs;
+        touch();
+        res = await fetch(url, { ...prepared.init, signal: attemptCtl.signal });
       } catch (err) {
         if (opts.signal?.aborted) throw opts.signal.reason;
-        if (attempt >= attempts) throw err;
+        if (attempt >= attempts) throw stalled ?? err;
         await sleep(Math.random() * Math.min(8_000, 500 * 2 ** (attempt - 1)), opts.signal);
         continue;
+      } finally {
+        // The headers arrived, or the attempt failed: the timer has done its work either way.
+        clearTimeout(stall);
+        opts.signal?.removeEventListener('abort', forward);
       }
       if (!RETRYABLE.has(res.status) || attempt >= attempts) {
         span?.setAttribute('http.response.status_code', res.status);
