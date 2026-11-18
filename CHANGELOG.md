@@ -1,3 +1,10 @@
+## [0.10.1](https://github.com/caitlyn-ai/sdk/compare/v0.10.0...v0.10.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* SDK 0.10.1, timeouts, upload windows and uploads S3 accepts ([c3b5ebd](https://github.com/caitlyn-ai/sdk/commit/c3b5ebdd0d0dafa44880c2887af80c5afbaeb92a))
+
 # [0.10.0](https://github.com/caitlyn-ai/sdk/compare/v0.9.0...v0.10.0) (2026-11-17)
 
 
