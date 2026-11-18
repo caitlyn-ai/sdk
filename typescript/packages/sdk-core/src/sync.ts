@@ -53,6 +53,11 @@ export interface SyncPlan {
   batch: Json;
   items: Json[];
   estimate?: Json;
+  /**
+   * Why there is no estimate, when EstimateIngestion failed: the typed error it raised. Only `confirm` sees it, and
+   * decides whether to go on without an estimate; sync.estimate raises the error instead (PROTOCOL.md 15).
+   */
+  estimateError?: Error;
 }
 
 export interface SyncOptions {
@@ -64,6 +69,12 @@ export interface SyncOptions {
   exclude?: string[];
   /** The batch's rules (IngestionPolicy). */
   policy?: Json;
+  /**
+   * How long, in seconds, the batch waits for its files once it starts: each upload policy lasts this long, and an
+   * item whose bytes have not arrived soon after the last one expires fails. The server's default (30 minutes) when
+   * not given; a short window suits a test or a small batch sent at once.
+   */
+  uploadWindowSeconds?: number;
   externalId?: (file: LocalFile) => string | undefined;
   sourceUrl?: (file: LocalFile) => string | undefined;
   metadata?: (file: LocalFile) => Json | undefined;
@@ -269,7 +280,7 @@ async function run(deps: SyncDeps, knowledgeBaseId: string, source: string | Syn
     const more = items.length > ITEMS_PER_CALL;
     const created = await call(
       'CreateIngestionBatch',
-      { knowledgeBaseId, start: 'manual', awaitMoreItems: more, ...(options.policy ? { policy: options.policy } : {}), ...(folder !== '/' ? { scope: { folderPath: folder } } : {}), items: items.slice(0, ITEMS_PER_CALL) },
+      { knowledgeBaseId, start: 'manual', awaitMoreItems: more, ...(options.policy ? { policy: options.policy } : {}), ...(options.uploadWindowSeconds !== undefined ? { uploadWindowSeconds: options.uploadWindowSeconds } : {}), ...(folder !== '/' ? { scope: { folderPath: folder } } : {}), items: items.slice(0, ITEMS_PER_CALL) },
       signal,
     );
     batchId = created.id as string;
@@ -289,23 +300,35 @@ async function run(deps: SyncDeps, knowledgeBaseId: string, source: string | Syn
     progress({ phase: 'planned', done: items.length, total: items.length, counts: batch.counts });
     let all: Json[] | undefined;
     const listItems = async () => (all ??= await listAll(call, 'ListIngestionBatchItems', { knowledgeBaseId, ingestionBatchId: batchId, limit: 1000 }, 'items', signal));
-    // Every item that could need its bytes, the unresolved ones included: confirm sees the most the batch could cost.
-    const needBytes = (await listItems()).filter((i) => couldNeedBytes(i) && byPath.has(i.path));
-    // Priced as batch.upload.estimate prices them: each file by its name, content type and size, never hashed for it.
-    const estimate = await priceDocuments(
-      call,
-      knowledgeBaseId,
-      await Promise.all(needBytes.map((i) => deps.describe(byPath.get(i.path)!.prepared))),
-      (options as { estimatePerCall?: number }).estimatePerCall,
-      signal,
-    );
+    // The plan is priced only when someone will see it: sync.estimate, and sync with a confirm (PROTOCOL.md 15). Every
+    // item that could need its bytes is priced, the unresolved ones included: the most the batch could cost. Priced as
+    // batch.upload.estimate prices them: each file by its name, content type and size, never hashed for it.
+    let estimate: Json | undefined;
+    let estimateError: Error | undefined;
+    if (planOnly || options.confirm) {
+      try {
+        const needBytes = (await listItems()).filter((i) => couldNeedBytes(i) && byPath.has(i.path));
+        estimate = await priceDocuments(
+          call,
+          knowledgeBaseId,
+          await Promise.all(needBytes.map((i) => deps.describe(byPath.get(i.path)!.prepared))),
+          (options as { estimatePerCall?: number }).estimatePerCall,
+          signal,
+        );
+      } catch (err) {
+        // For confirm, an estimate that could not be made is the caller's to judge: the plan carries the error in its
+        // place. sync.estimate has nothing else to give, and a cancellation is never caught.
+        if (planOnly || signal?.aborted || (err as Error)?.name === 'AbortError') throw err;
+        estimateError = err as Error;
+      }
+    }
     const withoutMetadata = (e: Json | undefined) => {
       if (!e) return undefined;
       const { $metadata, ...rest } = e;
       void $metadata;
       return rest;
     };
-    const plan = async (): Promise<SyncPlan> => ({ batch, items: await listItems(), ...(estimate ? { estimate: withoutMetadata(estimate) } : {}) });
+    const plan = async (): Promise<SyncPlan> => ({ batch, items: await listItems(), ...(estimate ? { estimate: withoutMetadata(estimate) } : {}), ...(estimateError ? { estimateError } : {}) });
     if (planOnly) return await plan();
 
     // 4. Resolve
@@ -375,7 +398,7 @@ async function run(deps: SyncDeps, knowledgeBaseId: string, source: string | Syn
         policy,
         concurrency: options.concurrency,
         signal,
-        send: { signal, tracer: deps.tracer, maxAttempts: deps.maxAttempts, maxRetryDelayMs: deps.maxRetryDelayMs },
+        send: { signal, tracer: deps.tracer, maxAttempts: deps.maxAttempts, maxRetryDelayMs: deps.maxRetryDelayMs, stallTimeoutMs: deps.stallTimeoutMs },
         progress,
         onFailed: (item) => {
           failedLocally.set(item.id, item);

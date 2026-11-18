@@ -425,7 +425,9 @@ var filesCases = map[string]func(t *testing.T, m mock){
 		dir, files := policies(t, 3)
 		writeFile(t, dir, "drafts/unfinished.pdf", []byte("not yet"))
 		writeFile(t, dir, ".caitlynignore", []byte("# drafts stay local\ndrafts/\n"))
-		report, err := c.KnowledgeBase(kb).Ingestion.Sync(context.Background(), caitlyn.Dir(dir), &caitlyn.SyncOptions{Folder: "/hr/"})
+		// With a Confirm, so the plan is priced (sync.no-confirm-no-estimate: without one it is not).
+		report, err := c.KnowledgeBase(kb).Ingestion.Sync(context.Background(), caitlyn.Dir(dir), &caitlyn.SyncOptions{Folder: "/hr/",
+			Confirm: func(context.Context, *caitlyn.SyncPlan) (bool, error) { return true, nil }})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -467,7 +469,13 @@ var filesCases = map[string]func(t *testing.T, m mock){
 			k, _ := fdec.Token()
 			var v string
 			fdec.Decode(&v)
-			policyFields = append(policyFields, k.(string))
+			// The policy's own `key` is left out: the item's is sent after the policy's fields (PROTOCOL.md 15).
+			if k.(string) != "key" {
+				policyFields = append(policyFields, k.(string))
+			}
+		}
+		if len(policyFields) == 0 || policyFields[0] != "bucket" {
+			t.Fatalf("policy fields %v: the mock's policy is shaped as createPresignedPost's", policyFields)
 		}
 		forms := m.matching(t, isForm)
 		if len(forms) != 3 {
@@ -580,17 +588,16 @@ var filesCases = map[string]func(t *testing.T, m mock){
 	},
 
 	"sync.policy-renewal": func(t *testing.T, m mock) {
-		// Less than 5 minutes left: renewed before the first upload.
-		m.faults(t, map[string]any{"policySeconds": 120})
+		// Start's policy lasts a second, so its renewal margin is half a second; each file takes a second to arrive, one at
+		// a time. The first goes with Start's policy; it is renewed before the second goes.
+		m.faults(t, map[string]any{"policySeconds": 1, "uploadDelayMs": 1000})
 		dir, _ := policies(t, 2)
 		c := client(t, m)
-		if _, err := c.KnowledgeBase(kb).Ingestion.Sync(context.Background(), caitlyn.Dir(dir), &caitlyn.SyncOptions{Folder: "/hr/"}); err != nil {
+		if _, err := c.KnowledgeBase(kb).Ingestion.Sync(context.Background(), caitlyn.Dir(dir), &caitlyn.SyncOptions{Folder: "/hr/", Concurrency: 1}); err != nil {
 			t.Fatal(err)
 		}
-		reqs := m.requests(t)
-		renew, upload := slices.IndexFunc(reqs, pathHasSuffix("/upload-policies")), slices.IndexFunc(reqs, isForm)
-		if renew < 0 || upload < renew || len(m.matching(t, pathHasSuffix("/upload-policies"))) != 1 {
-			t.Fatalf("renewal at %d, first upload at %d", renew, upload)
+		if order := uploadOrder(m.requests(t)); order != "upload policy upload" {
+			t.Fatalf("POSTs %q; want the renewal between the uploads", order)
 		}
 		// A 403 saying the policy expired: renewed once, and that file sent again.
 		fresh(t)

@@ -462,25 +462,18 @@ var batchCases = map[string]func(t *testing.T, m mock){
 	},
 
 	"batch-upload.policy-renewal": func(t *testing.T, m mock) {
-		// The call's own policy has less than 5 minutes left: renewed before the first upload
-		m.faults(t, map[string]any{"renewedPolicySeconds": 120})
+		// The call's own policy lasts a second, so its renewal margin is half a second; each file takes a second to arrive,
+		// one at a time. The first goes with that policy; it is renewed before the second goes.
+		m.faults(t, map[string]any{"renewedPolicySeconds": 1, "uploadDelayMs": 1000})
 		c := client(t, m)
 		items, files := newFiles(2)
 		b := startedBatch(t, c, items)
 		before := len(m.requests(t))
-		if _, err := b.Upload(within(t), caitlyn.FilesByPath(files), nil); err != nil {
+		if _, err := b.Upload(within(t), caitlyn.FilesByPath(files), &caitlyn.BatchUploadOptions{Concurrency: 1}); err != nil {
 			t.Fatal(err)
 		}
-		reqs := m.requests(t)[before:]
-		first := slices.IndexFunc(reqs, isForm)
-		policies := 0
-		for _, r := range reqs[:max(first, 0)] {
-			if pathHasSuffix("/upload-policies")(r) {
-				policies++
-			}
-		}
-		if first < 0 || policies < 2 {
-			t.Fatalf("%d policies before the first upload (at %d), want the call's own and its renewal", policies, first)
+		if order := uploadOrder(m.requests(t)[before:]); order != "policy upload policy upload" {
+			t.Fatalf("POSTs %q; want the call's own policy, then its renewal between the uploads", order)
 		}
 		// A 403 that says the policy expired: renewed once, and that file sent again
 		m = fresh(t)

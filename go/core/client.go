@@ -14,6 +14,7 @@ import (
 	"errors"
 	"net/http"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -45,7 +46,21 @@ type settings struct {
 	propagator     propagation.TextMapPropagator
 	appID          string
 	retryBudget    int
+	// requestTimeout is how long an attempt waits for its response's headers; 0 waits as long as it takes.
+	requestTimeout time.Duration
+	// storageStallTimeout is how long a send to storage may send and receive nothing; 0 never gives up.
+	storageStallTimeout time.Duration
 }
+
+// DefaultRequestTimeout is how long an API call's attempt waits for its response's headers before it fails as a
+// connection failure with no response, retried as PROTOCOL.md 6.4 says. Only the headers are timed, never the body,
+// so a stream, a watch and a wait stay open while events or keep-alives arrive.
+const DefaultRequestTimeout = 120 * time.Second
+
+// DefaultStorageStallTimeout is how long a send to storage may send no request bytes and receive no response before
+// that attempt is abandoned and retried (PROTOCOL.md 14). It is not an overall limit: a large file on a slow link
+// carries on while its bytes keep moving.
+const DefaultStorageStallTimeout = 60 * time.Second
 
 // Option configures a client.
 type Option func(*settings)
@@ -73,6 +88,24 @@ func WithMaxRetryDelay(d time.Duration) Option { return func(s *settings) { s.ma
 // an attempt that got no response; a call that succeeds gives back 1, or its last retry's cost. When the budget
 // cannot pay for a retry, the call fails at once with its error. 0 turns retries off (PROTOCOL.md 6.4.6).
 func WithRetryBudget(tokens int) Option { return func(s *settings) { s.retryBudget = tokens } }
+
+// WithRequestTimeout sets how long each attempt of an API call waits for its response's headers (default 120 s);
+// 0 waits as long as it takes. It never limits reading a body, so streams and waits are not cut by it.
+func WithRequestTimeout(d time.Duration) Option { return func(s *settings) { s.requestTimeout = d } }
+
+// WithStorageStallTimeout sets how long a send to storage may send and receive nothing before that attempt is
+// abandoned and retried (default 60 s); 0 never gives up. It is not an overall limit (PROTOCOL.md 14).
+func WithStorageStallTimeout(d time.Duration) Option {
+	return func(s *settings) { s.storageStallTimeout = d }
+}
+
+// FormatTimeout writes a timeout as the SDKs' messages do: "300 ms", "1.5 s", "120 s".
+func FormatTimeout(d time.Duration) string {
+	if d < time.Second {
+		return strconv.FormatInt(d.Milliseconds(), 10) + " ms"
+	}
+	return strconv.FormatFloat(d.Seconds(), 'f', -1, 64) + " s"
+}
 
 // WithTracerProvider sets the OpenTelemetry tracer provider (default: the global one, a no-op unless set).
 func WithTracerProvider(tp trace.TracerProvider) Option {
@@ -111,12 +144,15 @@ func WorkspaceEndpoint(workspace string) string {
 // Endpoint is the base URL requests are sent to.
 func (c *Client) Endpoint() string { return c.s.endpoint }
 
+// Tracer is the client's OpenTelemetry tracer, a no-op unless a provider is set: helpers record their own spans with it.
+func (c *Client) Tracer() trace.Tracer { return c.tracer }
+
 // Auth is the client's sign-in: its mode, its token, and the OAuth mode's sign-in steps.
 func (c *Client) Auth() *AuthSession { return c.auth }
 
 // NewClient returns a runtime client for workspace (for example "your-company.getcaitlyn.ai").
 func NewClient(sdk SDKInfo, workspace string, auth Auth, opts ...Option) (*Client, error) {
-	s := settings{maxAttempts: 3, maxRetryDelay: 60 * time.Second, retryBudget: DefaultRetryBudget}
+	s := settings{maxAttempts: 3, maxRetryDelay: 60 * time.Second, retryBudget: DefaultRetryBudget, requestTimeout: DefaultRequestTimeout, storageStallTimeout: DefaultStorageStallTimeout}
 	for _, o := range opts {
 		o(&s)
 	}

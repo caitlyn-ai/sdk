@@ -1275,10 +1275,24 @@ func TestProtocol(t *testing.T) {
 			if !ok {
 				t.Fatalf("no Go test for protocol case %s", c.ID)
 			}
-			run(t, fresh(t))
+			// A case that runs past caseTimeout fails here, in seconds, rather than holding the suite until go test's
+			// own timeout: the case's goroutine is left behind, and the run ends with the failure.
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				run(t, fresh(t))
+			}()
+			select {
+			case <-done:
+			case <-time.After(caseTimeout):
+				t.Fatalf("protocol case %s ran past %s", c.ID, caseTimeout)
+			}
 		})
 	}
 }
+
+// caseTimeout is the longest a protocol case may run; the slowest takes about 14 s.
+const caseTimeout = 60 * time.Second
 
 // ------------------------------------------------------------------ the model's @examples
 
@@ -1522,6 +1536,9 @@ var examples = map[string]func(t *testing.T, c *caitlyn.Client, in json.RawMessa
 	},
 	"CancelIngestionBatch": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
 		return call(t, in, c.KnowledgeBase(str(t, in, "knowledgeBaseId")).Ingestion.Batch(str(t, in, "ingestionBatchId")).Cancel)
+	},
+	"CancelIngestionBatchItem": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
+		return call0(t, in, c.KnowledgeBase(str(t, in, "knowledgeBaseId")).Ingestion.Batch(str(t, in, "ingestionBatchId")).Item(str(t, in, "itemId")).Cancel)
 	},
 	"CancelOperation": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
 		return call0(t, in, c.Core.Operation(str(t, in, "knowledgeBaseId"), str(t, in, "operationId")).Cancel)

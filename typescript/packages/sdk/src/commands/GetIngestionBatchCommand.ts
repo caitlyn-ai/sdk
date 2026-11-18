@@ -99,6 +99,7 @@ export interface GetIngestionBatchCommandOutput extends GetIngestionBatchOutput,
  * //       code: "conflict_policy_fail" || "planning_failed" || "internal_error", // required
  * //       message: "STRING_VALUE", // required
  * //     },
+ * //     uploadWindowSeconds: Number("int"),
  * //     etag: "STRING_VALUE", // required
  * //   },
  * // };

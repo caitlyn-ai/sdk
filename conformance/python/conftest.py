@@ -3,6 +3,7 @@
 import json
 import os
 import random
+import signal
 import subprocess
 import urllib.parse
 import urllib.request
@@ -72,3 +73,24 @@ def mock_server() -> Iterator[Mock]:
 def mock(mock_server: Mock) -> Mock:
     mock_server.reset()
     return mock_server
+
+
+CASE_TIMEOUT = 60
+"""The longest a case may run, in seconds; the slowest takes about 14 s."""
+
+
+@pytest.fixture(autouse=True)
+def case_timeout() -> Iterator[None]:
+    """Fails a case that runs past CASE_TIMEOUT, in seconds, rather than holding the suite: SIGALRM raises in the
+    test's own thread, through its event loop."""
+
+    def expire(signum: int, frame: object) -> None:
+        raise TimeoutError(f"the case ran past {CASE_TIMEOUT} s")
+
+    previous = signal.signal(signal.SIGALRM, expire)
+    signal.alarm(CASE_TIMEOUT)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous)

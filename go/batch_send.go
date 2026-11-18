@@ -16,7 +16,51 @@ import (
 	"time"
 
 	"github.com/caitlyn-ai/sdk/go/core"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
+
+// itemSpans records each item's steps (PROTOCOL.md 13): a caitlyn.batch.item span per item, with an event for each
+// step (opened, checked, sending, sent, completed or failed), through the client's tracer, a no-op unless a provider
+// is set. The span ends when the item is completed or fails.
+type itemSpans struct {
+	mu      sync.Mutex
+	tracer  trace.Tracer
+	batchID string
+	spans   map[string]trace.Span
+}
+
+func (s *itemSpans) step(ctx context.Context, it IngestionBatchItem, name string, attrs ...attribute.KeyValue) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	span, ok := s.spans[it.ID]
+	if !ok {
+		_, span = s.tracer.Start(ctx, "caitlyn.batch.item", trace.WithSpanKind(trace.SpanKindInternal), trace.WithAttributes(
+			attribute.String("caitlyn.ingestion_batch.id", s.batchID),
+			attribute.String("caitlyn.ingestion_batch.item.id", it.ID),
+			attribute.String("caitlyn.ingestion_batch.item.path", deref(it.Path))))
+		s.spans[it.ID] = span
+	}
+	span.AddEvent(name, trace.WithAttributes(attrs...))
+	if name == "completed" || name == "failed" {
+		if name == "failed" {
+			span.SetStatus(codes.Error, deref(it.FailureCode))
+		}
+		span.End()
+		delete(s.spans, it.ID)
+	}
+}
+
+// endAll ends the spans of items the call left unfinished.
+func (s *itemSpans) endAll() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, span := range s.spans {
+		span.End()
+		delete(s.spans, id)
+	}
+}
 
 // uploadFile is one file ready to be sent for an item: its bytes, and the checksum the form carries (the item's
 // sha256, standard base64).
@@ -62,6 +106,19 @@ type policyHolder struct {
 	wake    chan struct{}
 	// lastRenewal is when the last renewal ended, whoever asked for it: the keep-alive's floor counts from it.
 	lastRenewal time.Time
+	// received is when the policy in hand arrived: its lifetime, for the renewal margin, runs from here to its expiresAt.
+	received time.Time
+}
+
+// margin is how long before its expiresAt the policy is renewed (PROTOCOL.md 15): SyncPolicyRenewBefore, or half the
+// policy's lifetime (from when it arrived to its expiresAt) when that is shorter, so a batch with a short
+// UploadWindowSeconds renews partway through each policy rather than at once and then once a second. A policy with no
+// expiresAt (the zero time) is always within it.
+func (h *policyHolder) margin() time.Duration {
+	if h.policy.ExpiresAt.IsZero() {
+		return SyncPolicyRenewBefore
+	}
+	return min(SyncPolicyRenewBefore, max(h.policy.ExpiresAt.Sub(h.received), 0)/2)
 }
 
 // keepAliveFloor is how often at most the keep-alive renews, so a policy that is already short cannot loop.
@@ -88,14 +145,16 @@ func (h *policyHolder) end() {
 }
 
 // keepAlive renews the policy on a timer while any upload is in flight (PROTOCOL.md 15): once it has less than
-// SyncPolicyRenewBefore left, at most once every keepAliveFloor. The server judges each file by when its bytes arrive
+// its renewal margin left, at most once every keepAliveFloor. The server judges each file by when its bytes arrive
 // against the batch's uploadsExpireAt, which a renewal moves on. A renewal that fails leaves the uploads in flight on
 // the policy they have, and is tried again at the next tick. It returns when stop is closed.
 func (h *policyHolder) keepAlive(ctx context.Context, stop <-chan struct{}) {
 	for {
 		h.mu.Lock()
-		active := h.sending > 0
-		wait := time.Until(h.policy.ExpiresAt) - SyncPolicyRenewBefore
+		// A policy with no expiresAt (the zero time: missing, PROTOCOL.md 15) is renewed before each upload instead
+		// (current), and no timer runs for it, so nothing loops.
+		active := h.sending > 0 && !h.policy.ExpiresAt.IsZero()
+		wait := time.Until(h.policy.ExpiresAt) - h.margin()
 		if floor := time.Until(h.lastRenewal.Add(keepAliveFloor)); floor > wait {
 			wait = floor
 		}
@@ -130,7 +189,7 @@ func (h *policyHolder) keepAlive(ctx context.Context, stop <-chan struct{}) {
 		// The lock waits out a renewal in flight; one that ended less than a second ago, whoever asked for it, is this
 		// tick's, and the loop waits again from the policy as it then stands.
 		h.mu.Lock()
-		if h.sending > 0 && time.Since(h.lastRenewal) >= keepAliveFloor && time.Until(h.policy.ExpiresAt) < SyncPolicyRenewBefore {
+		if h.sending > 0 && time.Since(h.lastRenewal) >= keepAliveFloor && time.Until(h.policy.ExpiresAt) < h.margin() {
 			_ = h.renewLocked(ctx) // the policy in hand is valid until it expires: the next tick tries again
 		}
 		h.mu.Unlock()
@@ -151,7 +210,7 @@ func (h *policyHolder) set(p *UploadPolicy) error {
 		}
 		sortFields(fields)
 	}
-	h.policy, h.fields = p, fields
+	h.policy, h.fields, h.received = p, core.WithoutOwnFields(fields), time.Now()
 	h.gen++
 	return nil
 }
@@ -166,11 +225,12 @@ func (h *policyHolder) renewLocked(ctx context.Context) error {
 	return h.set(&p)
 }
 
-// current returns the policy to upload with, renewed first when less than 5 minutes are left.
+// current returns the policy to upload with, renewed first when less than its renewal margin is left, or when its
+// expiresAt is missing (the zero time, which is always within it).
 func (h *policyHolder) current(ctx context.Context) (*UploadPolicy, []core.FormField, int, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if time.Until(h.policy.ExpiresAt) < SyncPolicyRenewBefore {
+	if time.Until(h.policy.ExpiresAt) < h.margin() {
 		if err := h.renewLocked(ctx); err != nil {
 			return nil, nil, 0, err
 		}
@@ -200,6 +260,8 @@ func (u *uploader) run(parent context.Context, policy *UploadPolicy, jobs []uplo
 	}
 	ctx, cancel := context.WithCancelCause(parent)
 	defer cancel(nil)
+	steps := &itemSpans{tracer: u.c.core.Tracer(), batchID: u.batchID, spans: map[string]trace.Span{}}
+	defer steps.endAll()
 	holder := &policyHolder{u: u, wake: make(chan struct{}, 1)}
 	if err := holder.set(policy); err != nil {
 		return err
@@ -246,7 +308,8 @@ func (u *uploader) run(parent context.Context, policy *UploadPolicy, jobs []uplo
 					return
 				case j := <-queue:
 					holder.begin()
-					itemErr, err := u.send(ctx, holder, j)
+					steps.step(ctx, j.item, "opened", attribute.Int64("caitlyn.file.byte_size", j.file.prepared.Size))
+					itemErr, err := u.send(ctx, holder, j, steps)
 					holder.end()
 					if err != nil {
 						cancel(err)
@@ -258,6 +321,7 @@ func (u *uploader) run(parent context.Context, policy *UploadPolicy, jobs []uplo
 						var ae *core.APIError
 						errors.As(itemErr, &ae)
 						it.Status, it.FailureCode, it.FailureDetail = IngestionItemStatusFailed, Ptr(ae.Code), Ptr(itemErr.Error())
+						steps.step(ctx, it, "failed", attribute.String("caitlyn.error.code", ae.Code))
 						u.failed(it, false)
 						pending.Done()
 						continue
@@ -318,15 +382,18 @@ func (u *uploader) run(parent context.Context, policy *UploadPolicy, jobs []uplo
 				switch {
 				case cr.Status == UploadCompletionStatusAccepted:
 					// Accepted is not final: the item reaches OnItem when it is indexed, or fails, at the end.
+					steps.step(ctx, it, "completed", attribute.String("caitlyn.ingestion_batch.item.status", "accepted"))
 					u.accepted(it)
 					mu.Lock()
 					acceptedCount++
 					mu.Unlock()
 				case deref(cr.Code) == "CHECKSUM_MISMATCH" && !j.again:
+					steps.step(ctx, it, "retrying", attribute.String("caitlyn.error.code", "CHECKSUM_MISMATCH"))
 					pending.Add(1)
 					queue <- uploadJob{item: j.item, file: j.file, again: true}
 				default:
 					it.Status, it.FailureCode, it.FailureDetail = IngestionItemStatusFailed, cr.Code, cr.Detail
+					steps.step(ctx, it, "failed", attribute.String("caitlyn.error.code", deref(cr.Code)))
 					u.failed(it, true)
 				}
 				pending.Done()
@@ -366,13 +433,22 @@ func (u *uploader) run(parent context.Context, policy *UploadPolicy, jobs []uplo
 // checksum fields, and the file last. A 403 that says the policy expired renews it and sends the file once more.
 // itemErr fails only this item (UPLOAD_FAILED after the retries, or FILE_CHANGED); err stops the whole batch (the
 // context, or a policy that could not be renewed).
-func (u *uploader) send(ctx context.Context, holder *policyHolder, j uploadJob) (itemErr, err error) {
+func (u *uploader) send(ctx context.Context, holder *policyHolder, j uploadJob, steps *itemSpans) (itemErr, err error) {
 	p := j.file.prepared
+	steps.step(ctx, j.item, "checked")
 	for renewed := false; ; renewed = true {
 		policy, fields, gen, err := holder.current(ctx)
 		if err != nil {
 			return nil, err
 		}
+		host := policy.UploadURL
+		if i := strings.Index(host, "://"); i >= 0 {
+			host = host[i+3:]
+		}
+		if i := strings.IndexAny(host, "/?"); i >= 0 {
+			host = host[:i]
+		}
+		steps.step(ctx, j.item, "sending", attribute.String("server.address", host))
 		all := append(append([]core.FormField(nil), fields...),
 			core.FormField{Name: "key", Value: objectKey(j.item, policy, j.file)},
 			core.FormField{Name: "Content-Type", Value: j.file.contentType},
@@ -380,6 +456,9 @@ func (u *uploader) send(ctx context.Context, holder *policyHolder, j uploadJob) 
 			core.FormField{Name: "x-amz-checksum-sha256", Value: j.file.checksum},
 		)
 		status, body, err := u.c.core.PostForm(ctx, policy.UploadURL, all, p)
+		if err == nil {
+			steps.step(ctx, j.item, "sent", attribute.Int("http.response.status_code", status))
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()

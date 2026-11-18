@@ -5,6 +5,9 @@ import assert from 'node:assert/strict';
 import { HttpResponse, type HttpRequest } from '@smithy/core/protocols';
 import { Caitlyn } from '@caitlyn-ai/sdk';
 
+/** node:events' getEventListeners, which this @types/node does not declare for an EventTarget. */
+const abortListeners = async () => ((await import('node:events')) as unknown as { getEventListeners(target: EventTarget, type: string): unknown[] }).getEventListeners;
+
 const VERSION = { agentId: 'GHT7YRWXPL', name: 'draft', createdAt: '2026-11-03T22:14:05.120Z', configuration: {} };
 
 test('requestHandler: API calls go through the handler the client was given', async () => {
@@ -35,4 +38,39 @@ test('requestHandler: the default fetch handler takes customFetch, which Node cl
   const v = await c.agents('GHT7YRWXPL').draft.get();
   assert.equal(v.$metadata.requestId, 'R2');
   assert.deepEqual(seen, ['GET https://your-company.getcaitlyn.ai/api/v3/agents/GHT7YRWXPL/versions/draft Bearer cait-pat-test']);
+});
+
+test('requestHandler: a signal reused for many calls keeps no listener from the calls that have finished', async () => {
+  const getEventListeners = await abortListeners();
+  let n = 0;
+  const customFetch = async () => {
+    n++;
+    if (n % 5 === 0) throw new TypeError('fetch failed');
+    if (n % 3 === 0) return new Response(JSON.stringify({ type: 'about:blank', title: 'Not found', status: 404, code: 'NOT_FOUND' }), { status: 404, headers: { 'content-type': 'application/problem+json' } });
+    return new Response(JSON.stringify(VERSION), { status: 200, headers: { 'content-type': 'application/json', 'caitlyn-request-id': `R${n}` } });
+  };
+  const c = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 'cait-pat-test' }, requestHandler: { customFetch } as never, maxAttempts: 1 });
+  const controller = new AbortController();
+  for (let i = 0; i < 30; i++) await c.agents('GHT7YRWXPL').draft.get({ signal: controller.signal }).catch(() => undefined);
+  assert.equal(n, 30, 'every call reached fetch');
+  assert.equal(getEventListeners(controller.signal, 'abort').length, 0);
+});
+
+test('requestHandler: a signal reused for many watches keeps no listener from the watches that have been left', async () => {
+  const getEventListeners = await abortListeners();
+  const frame = (n: number) => `id: m-1:${n}\nevent: text.delta\ndata: ${JSON.stringify({ delta: `part ${n}` })}\n\n`;
+  const customFetch = async () =>
+    new Response(new ReadableStream({ start: (c) => { c.enqueue(new TextEncoder().encode('retry: 2000\n\n' + frame(1) + frame(2))); } }), {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream', 'caitlyn-request-id': 'RW' },
+    });
+  const c = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 'cait-pat-test' }, requestHandler: { customFetch } as never });
+  const controller = new AbortController();
+  for (let i = 0; i < 15; i++) {
+    for await (const event of c.conversations('c-w').watch({}, { signal: controller.signal })) {
+      assert.equal(event.type, 'text.delta');
+      break;
+    }
+  }
+  assert.equal(getEventListeners(controller.signal, 'abort').length, 0);
 });

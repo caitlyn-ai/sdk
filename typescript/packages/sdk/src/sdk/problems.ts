@@ -81,6 +81,6 @@ export const jobError = (error: Record<string, unknown>): Error =>
 
 /** The client's limits for the bytes file helpers send to storage, and its tracer (PROTOCOL.md 13). */
 export const storage = (client: CaitlynClient, signal?: AbortSignal): SendOptions => {
-  const c = client.config as { caitlynTracer?: SendOptions["tracer"]; caitlynStorage?: { maxAttempts?: number; maxRetryDelayMs?: number } };
+  const c = client.config as { caitlynTracer?: SendOptions["tracer"]; caitlynStorage?: { maxAttempts?: number; maxRetryDelayMs?: number; stallTimeoutMs?: number } };
   return { signal, tracer: c.caitlynTracer, ...c.caitlynStorage };
 };

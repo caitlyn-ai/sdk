@@ -47,7 +47,8 @@ func (s *FieldScope) Get(ctx context.Context, opts ...CallOption) (*Field, error
 // to another field at the same time.
 //
 // caitlyn.WithIfMatch(etag) is optional: without it the change applies to the thing as it stands; with
-// it, a stale ETag is refused with 412.
+// it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
+// yourself: no helper fills it in.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *FieldScope) Update(ctx context.Context, in *UpdateFieldInput, opts ...CallOption) (*Field, error) {

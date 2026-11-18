@@ -46,7 +46,10 @@ func (s *CoreIngestion) CompleteUploads(ctx context.Context, knowledgeBaseID str
 //
 // Returns a new policy for the same key prefix while the batch is `running` and has items awaiting
 // upload; anything else is refused with 409 `CONFLICT`. Each renewal also extends how long the
-// batch's new documents stay reserved. The SDKs renew when less than 5 minutes are left.
+// batch's new documents stay reserved. A renewed policy lasts the batch's `uploadWindowSeconds`, as
+// the
+// first did. The SDKs renew when less than 5 minutes, or half the policy's lifetime when that is
+// shorter, are left.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *CoreIngestion) UploadPolicy(ctx context.Context, knowledgeBaseID string, ingestionBatchID string, opts ...CallOption) (*IngestionBatchUploadPolicy, error) {

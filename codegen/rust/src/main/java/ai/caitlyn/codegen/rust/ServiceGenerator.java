@@ -180,7 +180,8 @@ final class ServiceGenerator {
                 + requestType(op) + "`] sets the rest.");
         op.ifMatch.ifPresent(p -> text.append(" `If-Match` is the call option `.if_match(etag)`").append(p.member().isRequired()
                 ? " (required: without it the request fails before anything is sent)."
-                : " (optional: without it nothing is checked; with it, a change since that read fails with 412)."));
+                : " (optional: without it nothing is checked; with it, a change since that read fails with 412).")
+                .append(" `.if_match(\"*\")` (any version) is sent only when you pass it yourself: no helper fills it in."));
         op.idempotency.ifPresent(p -> text.append(" The idempotency key is generated, or set with `.idempotency_key(key)`."));
         w.l(Names.doc(text.toString(), ""));
         w.l("#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]\n#[serde(default)]\npub struct " + name + " {\n");

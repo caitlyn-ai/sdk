@@ -8193,7 +8193,8 @@ export interface IngestionBatch {
   planExpiresAt?: Date | undefined;
 
   /**
-   * When uploads must arrive by: at or after the upload policy's `expiresAt`. An item whose bytes
+   * When uploads must arrive by: the upload policy's `expiresAt` plus a grace of 5 minutes, or of
+   * `uploadWindowSeconds` when that is shorter. An item whose bytes
    * have not arrived by then fails with `UPLOAD_EXPIRED`; bytes that arrived in time are accepted
    * when they are reported, however late. A caller watching the batch can read it again after this
    * time to see which items failed. Renewing the upload policy moves it later. Absent when no item
@@ -8238,6 +8239,13 @@ export interface IngestionBatch {
    * @public
    */
   failure?: IngestionBatchFailure | undefined;
+
+  /**
+   * How long each upload policy the batch hands out lasts, renewals included, as set when the
+   * batch was made.
+   * @public
+   */
+  uploadWindowSeconds?: number | undefined;
 
   /**
    * The batch's ETag.
@@ -8402,6 +8410,14 @@ export interface CreateIngestionBatchInput {
    * @public
    */
   items?: IngestionItemInput[] | undefined;
+
+  /**
+   * How long each upload policy the batch hands out lasts, renewals included: from a minute to
+   * an hour, and 30 minutes when absent. A short window lets a test reach the upload deadline,
+   * and an expired policy, within seconds.
+   * @public
+   */
+  uploadWindowSeconds?: number | undefined;
 }
 
 /**
@@ -8497,7 +8513,8 @@ export interface UploadPolicy {
   maxByteSize: number;
 
   /**
-   * When the policy stops working. Renew it with CreateIngestionBatchUploadPolicy.
+   * When the policy stops working, the batch's `uploadWindowSeconds` after it was issued. Renew it
+   * with CreateIngestionBatchUploadPolicy.
    * @public
    */
   expiresAt: Date;
@@ -8582,6 +8599,66 @@ export interface GetIngestionBatchOutput {
    * @public
    */
   batch: IngestionBatch;
+}
+
+/**
+ * @public
+ */
+export interface CancelIngestionBatchItemInput {
+  /**
+   * The knowledge base the batch belongs to.
+   * @public
+   */
+  knowledgeBaseId: string;
+
+  /**
+   * The batch the item is in.
+   * @public
+   */
+  ingestionBatchId: string;
+
+  /**
+   * The item to cancel.
+   * @public
+   */
+  itemId: string;
+
+  /**
+   * The item's ETag. When given, an item that changed since is refused with 412.
+   * @public
+   */
+  ifMatch?: string | undefined;
+}
+
+/**
+ * @public
+ */
+export interface CancelIngestionBatchItemOutput {
+  /**
+   * The identifier support uses to find this request. The same value is in every error body;
+   * quote it to support.
+   * @public
+   */
+  requestId?: string | undefined;
+
+  /**
+   * The server's model version, for example `5.120.0`. The SDKs keep the latest value they have
+   * seen and refuse to call operations or send members newer than it.
+   * @public
+   */
+  apiVersion?: string | undefined;
+
+  /**
+   * The item's new ETag.
+   * @public
+   */
+  etag: string;
+
+  /**
+   * The item, cancelled. It is the whole response body.
+   * @public
+   */
+  item: IngestionBatchItem;
 }
 
 /**
@@ -9823,6 +9900,13 @@ export interface CreateUploadInput {
    * @public
    */
   purpose?: UploadPurpose | undefined;
+
+  /**
+   * How long the upload URL works: from a minute to an hour, and 15 minutes when absent. A short
+   * lifetime lets a test reach an expired upload within seconds.
+   * @public
+   */
+  expiresInSeconds?: number | undefined;
 }
 
 /**

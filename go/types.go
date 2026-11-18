@@ -6621,7 +6621,8 @@ type IngestionBatch struct {
 	// When the plan goes stale, 5 minutes after planning. A stale plan does not end the batch:
 	// StartIngestionBatch on a stale plan plans again first.
 	PlanExpiresAt *time.Time `json:"planExpiresAt,omitempty"`
-	// When uploads must arrive by: at or after the upload policy's `expiresAt`. An item whose bytes
+	// When uploads must arrive by: the upload policy's `expiresAt` plus a grace of 5 minutes, or of
+	// `uploadWindowSeconds` when that is shorter. An item whose bytes
 	// have not arrived by then fails with `UPLOAD_EXPIRED`; bytes that arrived in time are accepted
 	// when they are reported, however late. A caller watching the batch can read it again after this
 	// time to see which items failed. Renewing the upload policy moves it later. Absent when no item
@@ -6640,6 +6641,9 @@ type IngestionBatch struct {
 	// Why the batch failed, as a stable code and a fixed message. Present only when `status` is
 	// `failed`.
 	Failure *IngestionBatchFailure `json:"failure,omitempty"`
+	// How long each upload policy the batch hands out lasts, renewals included, as set when the
+	// batch was made.
+	UploadWindowSeconds *int32 `json:"uploadWindowSeconds,omitempty"`
 	// The batch's ETag.
 	ETag string `json:"etag"`
 
@@ -6773,7 +6777,8 @@ type UploadPolicy struct {
 	KeyPrefix string `json:"keyPrefix"`
 	// The largest file the policy accepts, in bytes.
 	MaxByteSize int64 `json:"maxByteSize"`
-	// When the policy stops working. Renew it with CreateIngestionBatchUploadPolicy.
+	// When the policy stops working, the batch's `uploadWindowSeconds` after it was issued. Renew it
+	// with CreateIngestionBatchUploadPolicy.
 	ExpiresAt time.Time `json:"expiresAt"`
 
 	raw core.Raw

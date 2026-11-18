@@ -753,6 +753,167 @@
       }
     },
     {
+      "id": "CancelIngestionBatchItem: Cancel a file still waiting for its upload",
+      "operation": "CancelIngestionBatchItem",
+      "input": {
+        "knowledgeBaseId": "KB4T7YQ2WL",
+        "ingestionBatchId": "0193a6f3-0001-7a2b-8c3d-4e5f60718293",
+        "itemId": "item-0002"
+      },
+      "request": {
+        "method": "POST",
+        "path": "/v3/knowledge-bases/KB4T7YQ2WL/ingestion-batches/0193a6f3-0001-7a2b-8c3d-4e5f60718293/items/item-0002/cancel",
+        "query": {},
+        "headers": {}
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "ETag": "\"5\""
+        },
+        "body": {
+          "etag": "\"5\"",
+          "id": "item-0002",
+          "action": "ingest",
+          "path": "/hr/travel-policy.pdf",
+          "sha256": "Zx2nQ7bV1cR8mW4kT0yH5sJ9gL3dF6aP2eU8iO1qXcA=",
+          "byteSize": 214558,
+          "contentType": "application/pdf",
+          "outcome": "new",
+          "resolution": "add",
+          "status": "cancelled"
+        }
+      },
+      "expected": {
+        "output": {
+          "etag": "\"5\"",
+          "id": "item-0002",
+          "action": "ingest",
+          "path": "/hr/travel-policy.pdf",
+          "sha256": "Zx2nQ7bV1cR8mW4kT0yH5sJ9gL3dF6aP2eU8iO1qXcA=",
+          "byteSize": 214558,
+          "contentType": "application/pdf",
+          "outcome": "new",
+          "resolution": "add",
+          "status": "cancelled"
+        },
+        "thing": true
+      }
+    },
+    {
+      "id": "CancelIngestionBatchItem: An item already being ingested",
+      "operation": "CancelIngestionBatchItem",
+      "input": {
+        "knowledgeBaseId": "KB4T7YQ2WL",
+        "ingestionBatchId": "0193a6f3-0001-7a2b-8c3d-4e5f60718293",
+        "itemId": "item-0001"
+      },
+      "request": {
+        "method": "POST",
+        "path": "/v3/knowledge-bases/KB4T7YQ2WL/ingestion-batches/0193a6f3-0001-7a2b-8c3d-4e5f60718293/items/item-0001/cancel",
+        "query": {},
+        "headers": {}
+      },
+      "response": {
+        "status": 409,
+        "shape": "ConflictError",
+        "code": "CONFLICT",
+        "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BG2",
+        "body": {
+          "type": "https://build.caitlyn.ai/errors/CONFLICT",
+          "title": "Conflict",
+          "status": 409,
+          "code": "CONFLICT",
+          "detail": "Item item-0001 is ingesting; only an item waiting for its upload can be cancelled. Delete its document instead.",
+          "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BG2"
+        }
+      },
+      "expected": {
+        "error": {
+          "status": 409,
+          "code": "CONFLICT",
+          "shape": "ConflictError",
+          "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BG2"
+        }
+      }
+    },
+    {
+      "id": "CancelIngestionBatchItem: permission denied (403, synthesised)",
+      "operation": "CancelIngestionBatchItem",
+      "synthesised": true,
+      "input": {
+        "knowledgeBaseId": "KB4T7YQ2WL",
+        "ingestionBatchId": "0193a6f3-0001-7a2b-8c3d-4e5f60718293",
+        "itemId": "item-0002"
+      },
+      "request": {
+        "method": "POST",
+        "path": "/v3/knowledge-bases/KB4T7YQ2WL/ingestion-batches/0193a6f3-0001-7a2b-8c3d-4e5f60718293/items/item-0002/cancel",
+        "query": {},
+        "headers": {}
+      },
+      "response": {
+        "status": 403,
+        "shape": "PermissionDeniedError",
+        "code": "PERMISSION_DENIED",
+        "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B70",
+        "body": {
+          "type": "https://build.caitlyn.ai/errors/PERMISSION_DENIED",
+          "title": "Permission denied",
+          "status": 403,
+          "code": "PERMISSION_DENIED",
+          "detail": "The caller may not call CancelIngestionBatchItem.",
+          "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B70"
+        }
+      },
+      "expected": {
+        "error": {
+          "status": 403,
+          "code": "PERMISSION_DENIED",
+          "shape": "PermissionDeniedError",
+          "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B70"
+        }
+      }
+    },
+    {
+      "id": "CancelIngestionBatchItem: not found (404, synthesised)",
+      "operation": "CancelIngestionBatchItem",
+      "synthesised": true,
+      "input": {
+        "knowledgeBaseId": "KB4T7YQ2WL",
+        "ingestionBatchId": "0193a6f3-0001-7a2b-8c3d-4e5f60718293",
+        "itemId": "item-0002"
+      },
+      "request": {
+        "method": "POST",
+        "path": "/v3/knowledge-bases/KB4T7YQ2WL/ingestion-batches/0193a6f3-0001-7a2b-8c3d-4e5f60718293/items/item-0002/cancel",
+        "query": {},
+        "headers": {}
+      },
+      "response": {
+        "status": 404,
+        "shape": "NotFoundError",
+        "code": "NOT_FOUND",
+        "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B71",
+        "body": {
+          "type": "https://build.caitlyn.ai/errors/NOT_FOUND",
+          "title": "Not found",
+          "status": 404,
+          "code": "NOT_FOUND",
+          "detail": "No knowledge-bases record \"KB4T7YQ2WL\" that the caller may see.",
+          "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B71"
+        }
+      },
+      "expected": {
+        "error": {
+          "status": 404,
+          "code": "NOT_FOUND",
+          "shape": "NotFoundError",
+          "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B71"
+        }
+      }
+    },
+    {
       "id": "CancelOperation: Stop a document's ingestion",
       "operation": "CancelOperation",
       "input": {

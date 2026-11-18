@@ -41,14 +41,17 @@ import { gzipSync } from 'node:zlib';
 // bytes): the scope tree, WorkPromise, wait() over the watch, and kb.ingestion.sync in place of the ingest helper.
 // Raised again by 600 bytes for the Caitlyn class (50 381 bytes): wait({onProgress}), the watch's processing
 // accessors, WAIT_TIMEOUT, EXPIRED and REDIRECT_UNREADABLE.
+// 0.10.1 raised every entry that makes a call by 400 bytes (37 657 for one operation): the fetch handler's request
+// timeout, the forwarding of the caller's signal removed once a response's body is read, the renewal margin, and the
+// model's new members (CancelIngestionBatchItem, the upload windows); the Caitlyn class by 500 (55 631).
 const ENTRIES = {
   'client + one operation': {
-    budget: 37_400,
+    budget: 37_800,
     code: `import { createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk';
 export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
   },
   'client + one operation + oauth sign-in': {
-    budget: 37_500,
+    budget: 37_900,
     code: `import { createAuth, createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk';
 const options = { workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'oauth', clientId: 'app', redirectUri: location.origin + '/callback' } };
 const auth = createAuth(options);
@@ -58,13 +61,13 @@ export const finish = (p) => auth.handleCallback(p);
 export const run = () => getAgentVersion(client, { agentId: 'A', version: 'draft' });`,
   },
   'client + streaming chat': {
-    budget: 41_850,
+    budget: 42_900, // 0.10.1: a message's attachments are sent with the storage stall timer (files.ts)
     code: `import { createCaitlynClient, sendMessage } from '@caitlyn-ai/sdk';
 const client = createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'session' } });
 export const ask = async (conversationId, message, onText) => { for await (const e of sendMessage(client, { conversationId, message })) if (e.type === 'text.delta') onText(e.delta); };`,
   },
   'Caitlyn class (every operation)': {
-    budget: 54_400, // grows with every operation the model gains, and with the stream runtime: raise it with the change that needs it
+    budget: 55_800, // grows with every operation the model gains, and with the stream runtime: raise it with the change that needs it
     code: `import { Caitlyn } from '@caitlyn-ai/sdk';
 export const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 't' } });`,
   },
@@ -72,13 +75,13 @@ export const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', au
   // and the browser build when it imports '@caitlyn-ai/sdk/browser'.
   // A Node bundle (a Lambda, say): the Node build, on fetch, with nothing from the Smithy HTTP handlers.
   'client + one operation, bundled for Node': {
-    budget: 40_500,
+    budget: 40_900,
     platform: 'node',
     code: `import { createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk';
 export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
   },
   'client + one operation, @caitlyn-ai/sdk/browser in a web worker': {
-    budget: 37_400,
+    budget: 37_800,
     conditions: ['worker'],
     code: `import { createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk/browser';
 export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,

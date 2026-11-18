@@ -1546,6 +1546,25 @@
                                                             }
                                                         ],
                                                         "ifMatchOptional": true
+                                                    },
+                                                    {
+                                                        "name": "cancel",
+                                                        "operation": "CancelIngestionBatchItem",
+                                                        "fills": [
+                                                            {
+                                                                "member": "knowledgeBaseId",
+                                                                "identifier": "knowledgeBaseId"
+                                                            },
+                                                            {
+                                                                "member": "ingestionBatchId",
+                                                                "identifier": "ingestionBatchId"
+                                                            },
+                                                            {
+                                                                "member": "itemId",
+                                                                "identifier": "itemId"
+                                                            }
+                                                        ],
+                                                        "ifMatchOptional": true
                                                     }
                                                 ]
                                             }

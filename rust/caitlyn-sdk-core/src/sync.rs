@@ -176,6 +176,7 @@ pub struct SyncInput<P, B, It, R, Est> {
     source_url: FileFn<String>,
     metadata: FileFn<serde_json::Map<String, Value>>,
     remove_missing: bool,
+    upload_window_seconds: Option<u32>,
     confirm: ConfirmFn<B, It, Est>,
     resolver: ResolverFn<It, R>,
     on_progress: ProgressFn<It>,
@@ -197,6 +198,9 @@ pub struct SyncPlan<B, It, Est> {
     pub batch: B,
     pub items: Vec<It>,
     pub estimate: Option<Est>,
+    /// Why `estimate` is `None` when EstimateIngestion failed: the error it returned. Only `confirm` sees it, and
+    /// decides whether to go on without an estimate; `sync.estimate` returns the error instead (PROTOCOL.md 15).
+    pub estimate_error: Option<Arc<Error>>,
 }
 
 impl<P, B, It, R, Est> From<&str> for SyncInput<P, B, It, R, Est> {
@@ -241,6 +245,7 @@ impl<P, B, It, R, Est> SyncInput<P, B, It, R, Est> {
             source_url: None,
             metadata: None,
             remove_missing: false,
+            upload_window_seconds: None,
             confirm: None,
             resolver: None,
             on_progress: None,
@@ -315,6 +320,13 @@ impl<P, B, It, R, Est> SyncInput<P, B, It, R, Est> {
     /// Also removes each document under the folder that has no file.
     pub fn remove_missing(mut self, yes: bool) -> Self {
         self.remove_missing = yes;
+        self
+    }
+
+    /// How long, in seconds, the batch waits for its files once it starts: each upload policy lasts this long. The
+    /// server's default (30 minutes) when not set; a short window suits a test or a small batch sent at once.
+    pub fn upload_window_seconds(mut self, seconds: u32) -> Self {
+        self.upload_window_seconds = Some(seconds);
         self
     }
 
@@ -474,12 +486,38 @@ struct Policy {
     form_fields: OrderedFields,
     #[serde(default)]
     max_byte_size: Option<u64>,
-    #[serde(with = "crate::time::rfc3339")]
-    expires_at: chrono::DateTime<chrono::Utc>,
+    /// None when the policy has no `expiresAt` (PROTOCOL.md 15): such a policy is renewed before each upload starts,
+    /// and no keep-alive timer runs for it. One that is not a time fails the call that returned it (`DECODE_FAILED`).
+    #[serde(default, with = "crate::time::rfc3339_option")]
+    expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// When the policy arrived (decoded): its lifetime, for the renewal margin, runs from here to its expiresAt.
+    #[serde(skip, default = "chrono::Utc::now")]
+    received: chrono::DateTime<chrono::Utc>,
+}
+
+impl Policy {
+    /// How long before its expiresAt the policy is renewed (PROTOCOL.md 15): [`RENEW_BEFORE`], or half its lifetime
+    /// (from when it arrived to its expiresAt) when that is shorter, so a batch with a short upload window renews
+    /// partway through each policy rather than at once and then once a second.
+    fn margin(&self) -> chrono::Duration {
+        let most = chrono::Duration::from_std(RENEW_BEFORE).unwrap_or_default();
+        match self.expires_at {
+            None => most,
+            Some(e) => most.min((e - self.received).max(chrono::Duration::zero()) / 2),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
 struct OrderedFields(Vec<(String, String)>);
+
+/// A form field an upload sends itself after the policy's (PROTOCOL.md 15, step 6), compared without regard to case as
+/// storage compares form field names.
+fn is_own_form_field(name: &str) -> bool {
+    ["key", "content-type", "x-amz-checksum-algorithm", "x-amz-checksum-sha256", "file"]
+        .iter()
+        .any(|own| name.eq_ignore_ascii_case(own))
+}
 
 impl<'de> Deserialize<'de> for OrderedFields {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
@@ -669,7 +707,17 @@ where
         on_progress: input.on_progress.clone(),
         _it: PhantomData,
     };
-    let prepared = prepare(&client, &knowledge_base_id, &input, codes, &opts, &ctx, Arc::new(Mutex::new(None))).await?;
+    let prepared = prepare(
+        &client,
+        &knowledge_base_id,
+        &input,
+        codes,
+        &opts,
+        &ctx,
+        Arc::new(Mutex::new(None)),
+        true,
+    )
+    .await?;
     Ok(prepared.plan)
 }
 
@@ -788,6 +836,7 @@ async fn wait_batch<B: DeserializeOwned>(
     Ok((v, b, etag))
 }
 
+#[allow(clippy::too_many_arguments)] // the run's parts, each its own; plan_only is sync.estimate's
 async fn prepare<P, B, It, R, Est>(
     c: &Client,
     kb: &str,
@@ -796,6 +845,7 @@ async fn prepare<P, B, It, R, Est>(
     opts: &CallOptions,
     ctx: &Ctx<It>,
     batch_id_out: Arc<Mutex<Option<String>>>,
+    plan_only: bool,
 ) -> Result<Prepared<B, It, Est>, Error>
 where
     P: Serialize,
@@ -922,6 +972,9 @@ where
     if let Some(folder) = &scope {
         body["scope"] = json!({"folderPath": folder});
     }
+    if let Some(seconds) = input.upload_window_seconds {
+        body["uploadWindowSeconds"] = json!(seconds);
+    }
     let path = format!("/v3/knowledge-bases/{}/ingestion-batches", path_label(kb));
     let (created, _) = call_json(c, &OP_CREATE, Request::new(path), Some(&body), opts).await?;
     let id = created["id"]
@@ -968,10 +1021,18 @@ where
         }
         Some(d)
     };
-    let estimate = match price(c, kb, &raw_items, &describe, input.estimate_per_call, opts).await? {
-        Some(v) => Some(decode::<Est>(&v)?),
-        None => None,
-    };
+    // Priced only when someone will see it: sync.estimate, and sync with a confirm (PROTOCOL.md 15). For confirm, an
+    // estimate that could not be made is the caller's to judge: the plan carries the error in its place. sync.estimate
+    // has nothing else to give, and a cancellation is never caught.
+    let (mut estimate, mut estimate_error) = (None, None);
+    if plan_only || input.confirm.is_some() {
+        match price(c, kb, &raw_items, &describe, input.estimate_per_call, opts).await {
+            Ok(Some(v)) => estimate = Some(decode::<Est>(&v)?),
+            Ok(None) => {}
+            Err(e) if plan_only || matches!(e, Error::Cancelled) => return Err(e),
+            Err(e) => estimate_error = Some(Arc::new(e)),
+        }
+    }
     let typed: Vec<It> = raw_items.iter().map(decode).collect::<Result<_, _>>()?;
     Ok(Prepared {
         id,
@@ -979,6 +1040,7 @@ where
             batch,
             items: typed,
             estimate,
+            estimate_error,
         },
         raw_items,
         batch_json: planned_json,
@@ -1007,7 +1069,7 @@ where
         on_progress: input.on_progress.clone(),
         _it: PhantomData,
     };
-    let prepared = prepare(c, kb, &input, codes, opts, &ctx, batch_id_out).await?;
+    let prepared = prepare(c, kb, &input, codes, opts, &ctx, batch_id_out, false).await?;
     let Prepared {
         id,
         plan,
@@ -1235,6 +1297,42 @@ struct Sending<'a, It> {
     opts: &'a CallOptions,
 }
 
+/// Each item's steps (PROTOCOL.md 13): a `caitlyn.batch.item` span per item, with an event for each step (opened,
+/// checked, sending, sent, completed or failed). A span ends (is dropped) when its item is completed or fails, or when
+/// the upload call returns.
+struct ItemSpans<'a> {
+    batch_id: &'a str,
+    spans: HashMap<String, tracing::Span>,
+}
+
+impl ItemSpans<'_> {
+    fn step(&mut self, item: &Value, name: &'static str, code: Option<&str>) {
+        let item_id = item["id"].as_str().unwrap_or_default().to_owned();
+        let batch_id = self.batch_id;
+        let span = self.spans.entry(item_id.clone()).or_insert_with(|| {
+            tracing::info_span!(
+                "caitlyn.batch.item",
+                otel.name = "caitlyn.batch.item",
+                otel.kind = "internal",
+                otel.status_code = tracing::field::Empty,
+                caitlyn.ingestion_batch.id = batch_id,
+                caitlyn.ingestion_batch.item.id = item_id.as_str(),
+                caitlyn.ingestion_batch.item.path = item["path"].as_str().unwrap_or_default(),
+            )
+        });
+        match code {
+            Some(code) => tracing::info!(parent: &*span, caitlyn.error.code = code, "{name}"),
+            None => tracing::info!(parent: &*span, "{name}"),
+        }
+        if name == "failed" {
+            span.record("otel.status_code", "ERROR");
+        }
+        if name == "completed" || name == "failed" {
+            self.spans.remove(&item_id);
+        }
+    }
+}
+
 /// What [`send_files`] did with each item, as JSON with its status.
 struct Sent {
     /// Accepted by CompleteIngestionBatchUploads: `ingesting`.
@@ -1297,9 +1395,16 @@ async fn send_files<It: DeserializeOwned + Clone>(s: Sending<'_, It>, jobs: Vec<
     // The keep-alive (PROTOCOL.md 15), polled beside the uploads while any is in flight and dropped when none is, or
     // when this call returns: no renewal starts after that.
     let mut keep_alive: Option<Pin<Box<dyn Future<Output = ()> + Send>>> = None;
+    let mut steps = ItemSpans {
+        batch_id: id,
+        spans: HashMap::new(),
+    };
     loop {
         while running.len() < concurrency && !cancelled() {
             let Some(job) = queue.pop_front() else { break };
+            steps.step(&job.item, "opened", None);
+            steps.step(&job.item, "checked", None);
+            steps.step(&job.item, "sending", None);
             let u = uploader.clone();
             running.push(async move {
                 let r = u.upload(&job.file, &job.key).await;
@@ -1331,7 +1436,7 @@ async fn send_files<It: DeserializeOwned + Clone>(s: Sending<'_, It>, jobs: Vec<
             break;
         };
         match r {
-            Ok(()) => {}
+            Ok(()) => steps.step(&job.item, "sent", None),
             Err(UploadError::Stop(e)) => return Err(e),
             Err(UploadError::Item(e)) => {
                 // This item fails; the others carry on. It is not reported to Complete.
@@ -1339,6 +1444,7 @@ async fn send_files<It: DeserializeOwned + Clone>(s: Sending<'_, It>, jobs: Vec<
                     Some("FILE_CHANGED") => "FILE_CHANGED",
                     _ => "UPLOAD_FAILED",
                 };
+                steps.step(&job.item, "failed", Some(code));
                 let failed = failed_item(&job.item, code, &e.to_string(), &on_item);
                 note(latest, failed.clone());
                 sent.failed.push(failed);
@@ -1381,6 +1487,11 @@ async fn send_files<It: DeserializeOwned + Clone>(s: Sending<'_, It>, jobs: Vec<
                     continue;
                 };
                 if res["status"] == "failed" {
+                    if res["code"] == "CHECKSUM_MISMATCH" && !retried.contains(&item_id) {
+                        steps.step(&g.item, "retrying", Some("CHECKSUM_MISMATCH"));
+                    } else {
+                        steps.step(&g.item, "failed", res["code"].as_str().or(Some("UPLOAD_FAILED")));
+                    }
                     if res["code"] == "CHECKSUM_MISMATCH" && retried.insert(item_id.clone()) {
                         done_bytes = done_bytes.saturating_sub(g.file.size());
                         uploaded = uploaded.saturating_sub(1);
@@ -1395,6 +1506,7 @@ async fn send_files<It: DeserializeOwned + Clone>(s: Sending<'_, It>, jobs: Vec<
                     continue;
                 }
                 // An accepted upload is not final: the item ends later, during ingestion.
+                steps.step(&g.item, "completed", None);
                 let mut accepted = g.item.clone();
                 accepted["status"] = json!("ingesting");
                 note(latest, accepted.clone());
@@ -1853,16 +1965,24 @@ struct Uploader {
 }
 
 impl Uploader {
-    /// Renews the policy on a timer (PROTOCOL.md 15): once it has less than five minutes left, at most once a second.
+    /// Renews the policy on a timer (PROTOCOL.md 15): once it has less than its renewal margin left, at most once a second.
     /// The server judges each file by when its bytes arrive against the batch's uploadsExpireAt, which a renewal moves
     /// on. A renewal that fails leaves the uploads in flight on the policy they have, and is tried again at the next
     /// tick. It never ends: the caller polls it while uploads are in flight, and drops it.
     async fn keep_alive(self) {
         loop {
-            let left = { self.policy.lock().await.expires_at } - chrono::Utc::now();
-            let due = (left - chrono::Duration::from_std(RENEW_BEFORE).unwrap_or_default())
-                .to_std()
-                .unwrap_or_default();
+            let (expires_at, margin) = {
+                let p = self.policy.lock().await;
+                (p.expires_at, p.margin())
+            };
+            let Some(expires_at) = expires_at else {
+                // No time to keep it alive by: each upload renews it before it starts instead. Look again later, in
+                // case a renewal brings a policy with an expiresAt; nothing is sent meanwhile.
+                tokio::time::sleep(KEEP_ALIVE_FLOOR).await;
+                continue;
+            };
+            let left = expires_at - chrono::Utc::now();
+            let due = (left - margin).to_std().unwrap_or_default();
             tokio::time::sleep(due.max(self.floor_left())).await;
             // The lock waits out a renewal in flight; one that ended less than a second ago, whoever asked for it, is
             // this tick's, and the loop waits again from the policy as it then stands.
@@ -1870,7 +1990,7 @@ impl Uploader {
             if !self.floor_left().is_zero() {
                 continue;
             }
-            // Renews only when less than five minutes are left; an error leaves the policy in hand.
+            // Renews only when less than the renewal margin is left; an error leaves the policy in hand.
             let _ = self.policy(None).await;
         }
     }
@@ -1885,12 +2005,13 @@ impl Uploader {
             .unwrap_or_default()
     }
 
-    /// The current policy, renewed first when it has less than five minutes left.
+    /// The current policy, renewed first when it has less than its renewal margin left.
     async fn policy(&self, force_after: Option<chrono::DateTime<chrono::Utc>>) -> Result<Policy, Error> {
         let mut p = self.policy.lock().await;
-        let left = p.expires_at - chrono::Utc::now();
-        let stale = force_after.is_some_and(|t| p.expires_at <= t);
-        if stale || left < chrono::Duration::from_std(RENEW_BEFORE).unwrap_or_default() {
+        // A policy with no expiresAt counts as due now: renewed before each upload (PROTOCOL.md 15).
+        let left = p.expires_at.map_or(chrono::Duration::MIN, |t| t - chrono::Utc::now());
+        let stale = force_after.is_some_and(|t| p.expires_at.is_none_or(|e| e <= t));
+        if stale || left < p.margin() {
             let renewed = call_with(
                 &self.c,
                 &OP_RENEW,
@@ -1930,7 +2051,10 @@ impl Uploader {
                 Ok(()) => return Ok(()),
                 Err(PostFailure::Expired) if !renewed => {
                     renewed = true;
-                    policy = self.policy(Some(policy.expires_at)).await.map_err(UploadError::Stop)?;
+                    policy = self
+                        .policy(Some(policy.expires_at.unwrap_or(chrono::DateTime::<chrono::Utc>::MAX_UTC)))
+                        .await
+                        .map_err(UploadError::Stop)?;
                 }
                 Err(PostFailure::Expired) => {
                     return Err(UploadError::Item(sdk(
@@ -1953,7 +2077,8 @@ impl Uploader {
                 escape(name)
             ));
         };
-        for (k, v) in &policy.form_fields.0 {
+        // The policy's fields, less any sent below: storage refuses a form that repeats a field (PROTOCOL.md 15).
+        for (k, v) in policy.form_fields.0.iter().filter(|(k, _)| !is_own_form_field(k)) {
             field(k, v);
         }
         field("key", key);
@@ -1970,18 +2095,21 @@ impl Uploader {
         let tail = Bytes::from(tail);
         let length = head.len() as u64 + file.size() + tail.len() as u64;
         let content_type = format!("multipart/form-data; boundary={boundary}");
-        let build = || async {
-            let stream = file.stream().await?;
-            let body = futures_util::stream::once(std::future::ready(Ok(head.clone())))
-                .chain(stream)
-                .chain(futures_util::stream::once(std::future::ready(Ok(tail.clone()))));
-            Ok(self
-                .c
-                .http()
-                .post(&policy.upload_url)
-                .header(http::header::CONTENT_TYPE, content_type.clone())
-                .header(http::header::CONTENT_LENGTH, length)
-                .body(reqwest::Body::wrap_stream(body)))
+        let build = |touch: crate::upload::Touch| {
+            let (head, tail, content_type) = (head.clone(), tail.clone(), content_type.clone());
+            async move {
+                let stream = file.stream().await?;
+                let body = futures_util::stream::once(std::future::ready(Ok(head)))
+                    .chain(stream)
+                    .chain(futures_util::stream::once(std::future::ready(Ok(tail))));
+                Ok(self
+                    .c
+                    .http()
+                    .post(&policy.upload_url)
+                    .header(http::header::CONTENT_TYPE, content_type)
+                    .header(http::header::CONTENT_LENGTH, length)
+                    .body(touch.counted(body)))
+            }
         };
         match self.c.send_to_storage(build, &self.opts).await {
             Ok(_) => Ok(()),
@@ -2014,6 +2142,14 @@ impl Uploader {
                 "UPLOAD_FAILED",
                 "The file could not be sent",
                 Some(Box::new(e)),
+            ))),
+            Err(ExternalFailure::Stalled(after)) => Err(PostFailure::Error(Error::sdk(
+                "UPLOAD_FAILED",
+                &format!(
+                    "The file could not be sent: storage sent nothing for {}",
+                    crate::upload::format_timeout(after)
+                ),
+                None,
             ))),
             Err(ExternalFailure::Other(e)) => Err(PostFailure::Error(e)),
         }

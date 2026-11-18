@@ -543,7 +543,7 @@ function operationPage(ast, op, typePages, examples, opsUsingError) {
   if (op.positional) notes.push(`\`${op.positional}\` is the method's first argument rather than an input field.`);
   for (const [name, m] of Object.entries(inMembers)) {
     const opt = callOption(name, m);
-    if (opt === 'ifMatch') notes.push(`\`${name}\` is a call option (TypeScript \`{ ifMatch }\`, Go \`caitlyn.WithIfMatch\`, Rust \`.if_match(…)\`; Python takes \`if_match=\`).`);
+    if (opt === 'ifMatch') notes.push(`\`${name}\` is a call option (TypeScript \`{ ifMatch }\`, Go \`caitlyn.WithIfMatch\`, Rust \`.if_match(…)\`; Python takes \`if_match=\`). \`*\` (any version) is accepted, and sent only when you pass it yourself: no helper fills it in.`);
     if (opt === 'idempotencyKey') notes.push(`\`${name}\` is optional: the SDKs generate one per call and reuse it on every retry. Pass your own as a call option (TypeScript \`{ idempotencyKey }\`, Python \`idempotency_key=\`, Go \`caitlyn.WithIdempotencyKey\`, Rust \`.idempotency_key(…)\`) to make a retry of your own safe.`);
   }
   if (notes.length) out.push(' ' + notes.join(' '));

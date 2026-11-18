@@ -3,6 +3,7 @@ export * from "./BatchCreateIngestionBatchItemsCommand";
 export * from "./BatchDeleteDocumentsCommand";
 export * from "./CancelDocumentProcessingCommand";
 export * from "./CancelIngestionBatchCommand";
+export * from "./CancelIngestionBatchItemCommand";
 export * from "./CancelOperationCommand";
 export * from "./CompareAgentVersionsCommand";
 export * from "./CompleteIngestionBatchUploadsCommand";

@@ -41,8 +41,10 @@ from ._retry import (
     RetryBudget,
     RetryPolicy,
     backoff,
+    describe_timeout,
     error_retry_delay,
     parse_retry_after,
+    storage_stall_message,
     transport_retry_delay,
 )
 from ._spec import OperationSpec
@@ -58,6 +60,12 @@ def workspace_endpoint(workspace: str) -> str:
     return f"https://{workspace_host(workspace)}/api"
 
 
+DEFAULT_REQUEST_TIMEOUT = 120.0
+"""Seconds an API call waits for each connect, read and write (PROTOCOL.md 6.4 rule 8)."""
+DEFAULT_STORAGE_STALL_TIMEOUT = 60.0
+"""Seconds a send to storage may move nothing before it is abandoned and retried (PROTOCOL.md 14)."""
+
+
 @dataclass(frozen=True, slots=True)
 class ClientConfig:
     endpoint: str
@@ -67,7 +75,12 @@ class ClientConfig:
     sdk_model: str
     """The model version the SDK was generated from (the highest @since); sent as Caitlyn-Sdk-Model."""
     retry: RetryPolicy = field(default_factory=RetryPolicy)
-    timeout: float | httpx.Timeout = 60.0
+    timeout: float | httpx.Timeout = DEFAULT_REQUEST_TIMEOUT
+    """httpx's timeout for API calls (PROTOCOL.md 6.4 rule 8): each connect, read and write waits at most this long, so a
+    call whose response headers have not come in 120 s fails, while a stream's keep-alives keep it open."""
+    storage_stall_timeout: float | None = DEFAULT_STORAGE_STALL_TIMEOUT
+    """How long a send to storage may send and receive nothing before that attempt is abandoned and retried
+    (PROTOCOL.md 14); ``None`` never gives up. Applied per request, so it holds with your own ``http_client`` too."""
     tracer_provider: TracerProvider | None = None
     interceptors: tuple[Interceptor, ...] = ()
     app_id: str | None = None
@@ -90,6 +103,7 @@ class ClientConfig:
         retry: RetryPolicy | None,
         retry_budget: int | None = None,
         timeout: float | httpx.Timeout,
+        storage_stall_timeout: float | None = DEFAULT_STORAGE_STALL_TIMEOUT,
         tracer_provider: TracerProvider | None,
         interceptors: Sequence[Interceptor],
         app_id: str | None,
@@ -115,6 +129,7 @@ class ClientConfig:
             sdk_model=sdk_model,
             retry=policy,
             timeout=timeout,
+            storage_stall_timeout=storage_stall_timeout,
             tracer_provider=tracer_provider,
             interceptors=tuple(interceptors),
             app_id=app_id,
@@ -162,6 +177,8 @@ class _CoreBase:
         self.server_api_version: str | None = None
         """The Caitlyn-Api-Version the server last reported; @since checks compare against it."""
         self._headers = config.headers()
+        self.storage_timeout = httpx.Timeout(config.storage_stall_timeout)
+        """The timeout every send to storage carries: httpx's, per read and per write, reset by each, is the stall timer."""
 
     def _begin(self, spec: OperationSpec, params: Mapping[str, object]) -> _Call:
         check_since(spec, params, self.server_api_version)
@@ -205,7 +222,8 @@ class _CoreBase:
     def _connection_error(spec: OperationSpec, error: httpx.TransportError) -> CaitlynConnectionError:
         """PROTOCOL.md 6.5: no response, or the connection failed while the body was read. Raised ``from`` the
         httpx error, which stays the ``__cause__``."""
-        return CaitlynConnectionError(f"{spec.name}: {type(error).__name__}: {error}", status=0, code="CONNECTION_ERROR", title=str(error))
+        what = describe_timeout(error) if isinstance(error, httpx.TimeoutException) else str(error)
+        return CaitlynConnectionError(f"{spec.name}: {type(error).__name__}: {what}", status=0, code="CONNECTION_ERROR", title=what)
 
 
 def _succeeded(spec: OperationSpec, response: httpx.Response) -> bool:
@@ -336,7 +354,7 @@ class SyncClientCore(_CoreBase):
                             raise UploadCancelled(f"the upload of {file.name} was cancelled")
                         yield chunk
 
-                response = self._http.request("POST", url, headers=form.get_headers(), content=body(), auth=None)
+                response = self._http.request("POST", url, headers=form.get_headers(), content=body(), auth=None, timeout=self.storage_timeout)
             span.set_attribute("http.response.status_code", response.status_code)
             return response
         except BaseException as e:
@@ -351,7 +369,8 @@ class SyncClientCore(_CoreBase):
         span = self.telemetry.start_upload("POST", url)
         try:
             with file.open() as f:
-                response = await http.request("POST", url, data=dict(fields), files={"file": (file.name, f, file.content_type)}, auth=None)
+                response = await http.request("POST", url, data=dict(fields), files={"file": (file.name, f, file.content_type)}, auth=None,
+                                          timeout=self.storage_timeout)
             span.set_attribute("http.response.status_code", response.status_code)
             return response
         except BaseException as e:
@@ -370,7 +389,8 @@ class SyncClientCore(_CoreBase):
             file.check_unchanged()
             span = self.telemetry.start_upload(method, url)
             try:
-                response = self._http.request(method, url, headers=_put_headers(headers, file), content=file.chunks(), auth=None)
+                response = self._http.request(method, url, headers=_put_headers(headers, file), content=file.chunks(), auth=None,
+                                              timeout=self.storage_timeout)
                 span.set_attribute("http.response.status_code", response.status_code)
                 failure: BaseException | None = _put_failure(response)
                 delay = None if failure is None else _put_retry_delay(policy, attempt, response)
@@ -488,7 +508,8 @@ class AsyncClientCore(_CoreBase):
         span = self.telemetry.start_upload("POST", url)
         try:
             with file.open() as f:
-                response = await self._http.request("POST", url, data=dict(fields), files={"file": (file.name, f, file.content_type)}, auth=None)
+                response = await self._http.request("POST", url, data=dict(fields), files={"file": (file.name, f, file.content_type)}, auth=None,
+                                                timeout=self.storage_timeout)
             span.set_attribute("http.response.status_code", response.status_code)
             return response
         except BaseException as e:
@@ -505,7 +526,8 @@ class AsyncClientCore(_CoreBase):
             file.check_unchanged()
             span = self.telemetry.start_upload(method, url)
             try:
-                response = await self._http.request(method, url, headers=_put_headers(headers, file), content=file.achunks(), auth=None)
+                response = await self._http.request(method, url, headers=_put_headers(headers, file), content=file.achunks(), auth=None,
+                                                    timeout=self.storage_timeout)
                 span.set_attribute("http.response.status_code", response.status_code)
                 failure: BaseException | None = _put_failure(response)
                 delay = None if failure is None else _put_retry_delay(policy, attempt, response)
@@ -562,7 +584,8 @@ def _put_retry_delay(policy: RetryPolicy, attempt: int, response: httpx.Response
 def _put_error(failure: BaseException) -> CaitlynError:
     if isinstance(failure, CaitlynError):
         return failure
-    err = CaitlynError(f"UPLOAD_PUT_FAILED: {type(failure).__name__}: {failure}", status=0, code="UPLOAD_PUT_FAILED", title=str(failure))
+    said = storage_stall_message(failure) if isinstance(failure, httpx.TransportError) else str(failure)
+    err = CaitlynError(f"UPLOAD_PUT_FAILED: {type(failure).__name__}: {said}", status=0, code="UPLOAD_PUT_FAILED", title=said)
     err.__cause__ = failure
     return err
 

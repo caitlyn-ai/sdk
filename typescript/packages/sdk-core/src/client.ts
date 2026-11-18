@@ -32,6 +32,12 @@ export interface CaitlynOptions {
   /** Longest Retry-After the SDK waits for (default 60 000 ms); above it the call fails at once. */
   maxRetryDelayMs?: number;
   /**
+   * How long a send to storage (an upload's bytes) may send and receive nothing before that attempt is abandoned and
+   * retried, in milliseconds (default 60 000; 0 never). Not an overall limit: a large file on a slow link carries on
+   * while its bytes keep moving (PROTOCOL.md 14). API calls have their own timeout: `requestHandler: { requestTimeout }`.
+   */
+  storageStallTimeoutMs?: number;
+  /**
    * The size of this client's retry budget, in tokens (default 500). A retry costs 5, or 10 after a failure with no
    * response; a call that succeeds gives back 1, or its last retry's cost. When the budget cannot pay for a retry,
    * the call fails at once with its error. 0 turns retries off (PROTOCOL.md 6.4).
@@ -64,7 +70,7 @@ export function clientConfig(opts: CaitlynOptions, auth: AuthSession = createAut
     /** The tracer upload helpers record the byte transfer with (PROTOCOL.md 13); absent with telemetry off. */
     caitlynTracer: opts.telemetry?.enabled === false ? undefined : caitlynTracer(opts.telemetry?.tracerProvider),
     /** How file helpers retry the bytes they send to storage (PROTOCOL.md 14): the client's own limits. */
-    caitlynStorage: { maxAttempts: opts.maxAttempts, maxRetryDelayMs: opts.maxRetryDelayMs },
+    caitlynStorage: { maxAttempts: opts.maxAttempts, maxRetryDelayMs: opts.maxRetryDelayMs, stallTimeoutMs: opts.storageStallTimeoutMs },
     ...(opts.requestHandler !== undefined ? { requestHandler: opts.requestHandler } : {}),
     ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
     ...(opts.maxRetryDelayMs !== undefined || opts.retryBudget !== undefined

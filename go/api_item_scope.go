@@ -53,7 +53,8 @@ func (s *ItemScope) Get(ctx context.Context, opts ...CallOption) (*IngestionBatc
 // refused with 400 `VALIDATION_FAILED`.
 //
 // caitlyn.WithIfMatch(etag) is optional: without it the change applies to the thing as it stands; with
-// it, a stale ETag is refused with 412.
+// it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
+// yourself: no helper fills it in.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *ItemScope) Resolve(ctx context.Context, in *UpdateIngestionBatchItemInput, opts ...CallOption) (*IngestionBatchItem, error) {
@@ -65,6 +66,83 @@ func (s *ItemScope) Resolve(ctx context.Context, in *UpdateIngestionBatchItemInp
 	p.IngestionBatchID = s.ingestionBatchID
 	p.ItemID = s.itemID
 	return s.c.callUpdateIngestionBatchItem(ctx, p, opts)
+}
+
+// Cancel cancels one item of a running batch that is still waiting for its upload.
+//
+// The item becomes `cancelled`, and the document the batch reserved for it is released: a new
+// document's placeholder is removed, and an existing document is no longer held for a new version.
+// Bytes already uploaded for it are never ingested. The rest of the batch carries on; if this was the
+// last item not yet finished, the batch ends. An item that is not `awaiting_upload` (being ingested,
+// already finished, or in a batch not yet started) is refused with 409 `CONFLICT`. Needs the same
+// permission as cancelling the batch, and the caller must be able to see the item's folder (404
+// otherwise).
+//
+// caitlyn.WithIfMatch(etag) is optional: without it the change applies to the thing as it stands; with
+// it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
+// yourself: no helper fills it in.
+//
+// Since Caitlyn 5.115.0; beta.
+func (s *ItemScope) Cancel(ctx context.Context, opts ...CallOption) (*IngestionBatchItem, error) {
+	p := &cancelIngestionBatchItemParams{}
+	p.KnowledgeBaseID = s.knowledgeBaseID
+	p.IngestionBatchID = s.ingestionBatchID
+	p.ItemID = s.itemID
+	return s.c.callCancelIngestionBatchItem(ctx, p, opts)
+}
+
+// cancelIngestionBatchItemParams is every member of CancelIngestionBatchItem's input: the caller's, and those the scope fills.
+type cancelIngestionBatchItemParams struct {
+	KnowledgeBaseID  string `json:"-"`
+	IngestionBatchID string `json:"-"`
+	ItemID           string `json:"-"`
+}
+
+var opCancelIngestionBatchItem = &core.Operation{
+	Name:      "CancelIngestionBatchItem",
+	Method:    "POST",
+	Since:     "5.115.0",
+	RetrySafe: true,
+	Retryable: []int{503, 429},
+	Errors:    errorForStatus,
+}
+
+func buildCancelIngestionBatchItem(in *cancelIngestionBatchItemParams) (*core.Request, error) {
+	if in.KnowledgeBaseID == "" {
+		return nil, core.MissingInput("CancelIngestionBatchItem", "knowledgeBaseId")
+	}
+	if in.IngestionBatchID == "" {
+		return nil, core.MissingInput("CancelIngestionBatchItem", "ingestionBatchId")
+	}
+	if in.ItemID == "" {
+		return nil, core.MissingInput("CancelIngestionBatchItem", "itemId")
+	}
+	req := core.NewRequest("/v3/knowledge-bases/" + core.PathLabel(in.KnowledgeBaseID) + "/ingestion-batches/" + core.PathLabel(in.IngestionBatchID) + "/items/" + core.PathLabel(in.ItemID) + "/cancel")
+	return req, nil
+}
+
+func readCancelIngestionBatchItem(resp *core.Response) (*IngestionBatchItem, error) {
+	out := &IngestionBatchItem{}
+	if err := resp.DecodeJSON(out); err != nil {
+		return nil, err
+	}
+	if out.ETag == "" {
+		out.ETag = resp.HeaderValue("ETag")
+	}
+	out.metadata = resp.Metadata()
+	return out, nil
+}
+
+func (c *Client) callCancelIngestionBatchItem(ctx context.Context, p *cancelIngestionBatchItemParams, opts []CallOption) (*IngestionBatchItem, error) {
+	req, err := buildCancelIngestionBatchItem(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opCancelIngestionBatchItem, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	return readCancelIngestionBatchItem(resp)
 }
 
 // getIngestionBatchItemParams is every member of GetIngestionBatchItem's input: the caller's, and those the scope fills.

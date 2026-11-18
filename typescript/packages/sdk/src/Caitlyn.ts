@@ -29,6 +29,11 @@ import {
   CancelIngestionBatchCommand,
 } from "./commands/CancelIngestionBatchCommand";
 import {
+  type CancelIngestionBatchItemCommandInput,
+  type CancelIngestionBatchItemCommandOutput,
+  CancelIngestionBatchItemCommand,
+} from "./commands/CancelIngestionBatchItemCommand";
+import {
   type CancelOperationCommandInput,
   type CancelOperationCommandOutput,
   CancelOperationCommand,
@@ -434,6 +439,7 @@ const commands = {
   BatchDeleteDocumentsCommand,
   CancelDocumentProcessingCommand,
   CancelIngestionBatchCommand,
+  CancelIngestionBatchItemCommand,
   CancelOperationCommand,
   CompareAgentVersionsCommand,
   CompleteIngestionBatchUploadsCommand,
@@ -612,6 +618,23 @@ export interface Caitlyn {
     args: CancelIngestionBatchCommandInput,
     options: CaitlynRequestOptions,
     cb: (err: any, data?: CancelIngestionBatchCommandOutput) => void
+  ): void;
+
+  /**
+   * @see {@link CancelIngestionBatchItemCommand}
+   */
+  cancelIngestionBatchItem(
+    args: CancelIngestionBatchItemCommandInput,
+    options?: CaitlynRequestOptions
+  ): Promise<CancelIngestionBatchItemCommandOutput>;
+  cancelIngestionBatchItem(
+    args: CancelIngestionBatchItemCommandInput,
+    cb: (err: any, data?: CancelIngestionBatchItemCommandOutput) => void
+  ): void;
+  cancelIngestionBatchItem(
+    args: CancelIngestionBatchItemCommandInput,
+    options: CaitlynRequestOptions,
+    cb: (err: any, data?: CancelIngestionBatchItemCommandOutput) => void
   ): void;
 
   /**

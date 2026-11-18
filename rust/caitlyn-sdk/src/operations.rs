@@ -681,6 +681,162 @@ impl std::future::IntoFuture for CancelIngestionBatchRequest {
     }
 }
 
+/// The input of CancelIngestionBatchItem. The scope a call is made on fills its identifiers;
+/// [`CancelIngestionBatchItemRequest`] sets the rest. `If-Match` is the call option `.if_match(etag)`
+/// (optional: without it nothing is checked; with it, a change since that read fails with 412).
+/// `.if_match("*")` (any version) is sent only when you pass it yourself: no helper fills it in.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CancelIngestionBatchItemInput {
+    /// The knowledge base the batch belongs to.
+    ///
+    /// Sent in the path.
+    #[serde(skip)]
+    pub knowledge_base_id: String,
+    /// The batch the item is in.
+    ///
+    /// Sent in the path.
+    #[serde(skip)]
+    pub ingestion_batch_id: String,
+    /// The item to cancel.
+    ///
+    /// Sent in the path.
+    #[serde(skip)]
+    pub item_id: String,
+}
+
+static OP_CANCEL_INGESTION_BATCH_ITEM: rt::Operation = rt::Operation {
+    name: "CancelIngestionBatchItem",
+    method: "POST",
+    since: Some("5.115.0"),
+    retry_safe: true,
+    sse: false,
+    idempotency_header: None,
+    if_match_required: false,
+    retryable: &[503, 429],
+};
+
+fn build_cancel_ingestion_batch_item(input: &CancelIngestionBatchItemInput) -> Result<rt::Request, rt::Error> {
+    if input.knowledge_base_id.is_empty() {
+        return Err(rt::Error::missing_input("CancelIngestionBatchItem", "knowledgeBaseId"));
+    }
+    if input.ingestion_batch_id.is_empty() {
+        return Err(rt::Error::missing_input("CancelIngestionBatchItem", "ingestionBatchId"));
+    }
+    if input.item_id.is_empty() {
+        return Err(rt::Error::missing_input("CancelIngestionBatchItem", "itemId"));
+    }
+    let req = rt::Request::new(
+        [
+            "/v3/knowledge-bases/",
+            &rt::path_label(&input.knowledge_base_id),
+            "/ingestion-batches/",
+            &rt::path_label(&input.ingestion_batch_id),
+            "/items/",
+            &rt::path_label(&input.item_id),
+            "/cancel",
+        ]
+        .concat(),
+    );
+    Ok(req)
+}
+
+async fn read_cancel_ingestion_batch_item(resp: rt::Response) -> Result<IngestionBatchItem, rt::Error> {
+    let metadata = resp.metadata();
+    let mut out: IngestionBatchItem = resp.json().await?;
+    if out.etag.is_empty() {
+        out.etag = metadata.etag.clone().unwrap_or_default();
+    }
+    out.response_metadata = rt::ThingMetadata(Some(metadata));
+    Ok(out)
+}
+
+/// The request CancelIngestionBatchItem sends: made by
+/// `client.knowledge_base(…).ingestion().batch(…).item(…).cancel(…)`. Set the members the call did not
+/// take as arguments, and the call options, then `.send().await` it (or `.await` it). It sends nothing
+/// until then.
+#[derive(Debug, Clone)]
+#[must_use = "a request does nothing until it is sent"]
+pub struct CancelIngestionBatchItemRequest {
+    core: rt::Client,
+    input: CancelIngestionBatchItemInput,
+    opts: rt::CallOptions,
+    /// The identifiers of the scope the request was made on.
+    #[allow(dead_code)]
+    ids: Vec<String>,
+}
+
+impl CancelIngestionBatchItemRequest {
+    pub(crate) fn new(core: rt::Client, input: CancelIngestionBatchItemInput, ids: Vec<String>) -> Self {
+        CancelIngestionBatchItemRequest {
+            core,
+            input,
+            opts: rt::CallOptions::default(),
+            ids,
+        }
+    }
+
+    /// Sets every member at once, from an [`CancelIngestionBatchItemInput`]. The identifiers the scope
+    /// filled are kept where `input` leaves them empty.
+    pub fn input(mut self, mut input: CancelIngestionBatchItemInput) -> Self {
+        if input.knowledge_base_id.is_empty() {
+            input.knowledge_base_id = std::mem::take(&mut self.input.knowledge_base_id);
+        }
+        if input.ingestion_batch_id.is_empty() {
+            input.ingestion_batch_id = std::mem::take(&mut self.input.ingestion_batch_id);
+        }
+        if input.item_id.is_empty() {
+            input.item_id = std::mem::take(&mut self.input.item_id);
+        }
+        self.input = input;
+        self
+    }
+
+    /// Sends `If-Match: etag`: refused with [`Error::PreconditionFailed`] (412) if the thing changed since it was read.
+    pub fn if_match(mut self, etag: impl Into<String>) -> Self {
+        self.opts = self.opts.if_match(etag);
+        self
+    }
+
+    /// Fails the call with [`Error::Cancelled`] when `token` fires, closing the connection.
+    pub fn cancel_on(mut self, token: rt::CancellationToken) -> Self {
+        self.opts = self.opts.cancel_on(token);
+        self
+    }
+
+    /// Replaces every call option at once.
+    pub fn options(mut self, opts: rt::CallOptions) -> Self {
+        self.opts = opts;
+        self
+    }
+
+    /// Sends the request.
+    pub fn send(self) -> rt::BoxFuture<'static, Result<IngestionBatchItem, Error>> {
+        let CancelIngestionBatchItemRequest {
+            core,
+            mut input,
+            opts,
+            ids,
+        } = self;
+        let _ = &ids;
+        Box::pin(async move {
+            let req = build_cancel_ingestion_batch_item(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_CANCEL_INGESTION_BATCH_ITEM, req, &opts).await.map_err(Error::from)?;
+            let out = read_cancel_ingestion_batch_item(resp).await.map_err(Error::from)?;
+            Ok(out)
+        })
+    }
+}
+
+impl std::future::IntoFuture for CancelIngestionBatchItemRequest {
+    type Output = Result<IngestionBatchItem, Error>;
+    type IntoFuture = rt::BoxFuture<'static, Result<IngestionBatchItem, Error>>;
+
+    fn into_future(self) -> Self::IntoFuture {
+        self.send()
+    }
+}
+
 /// The input of CancelOperation. The scope a call is made on fills its identifiers;
 /// [`CancelOperationRequest`] sets the rest.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -1672,7 +1828,8 @@ impl std::future::IntoFuture for CreateDocumentRequest {
 
 /// The input of CreateDocumentVersion. The scope a call is made on fills its identifiers;
 /// [`CreateDocumentVersionRequest`] sets the rest. `If-Match` is the call option `.if_match(etag)`
-/// (optional: without it nothing is checked; with it, a change since that read fails with 412). The
+/// (optional: without it nothing is checked; with it, a change since that read fails with 412).
+/// `.if_match("*")` (any version) is sent only when you pass it yourself: no helper fills it in. The
 /// idempotency key is generated, or set with `.idempotency_key(key)`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -2304,6 +2461,13 @@ pub struct CreateIngestionBatchInput {
     /// The first items, at most 10,000.
     #[serde(rename = "items", skip_serializing_if = "Option::is_none")]
     pub items: Option<Vec<IngestionItemInput>>,
+    /// How long each upload policy the batch hands out lasts, renewals included: from a minute to
+    /// an hour, and 30 minutes when absent. A short window lets a test reach the upload deadline,
+    /// and an expired policy, within seconds.
+    ///
+    /// Since Caitlyn 5.115.0: refused before sending to an older server.
+    #[serde(rename = "uploadWindowSeconds", skip_serializing_if = "Option::is_none")]
+    pub upload_window_seconds: Option<i32>,
 }
 
 static OP_CREATE_INGESTION_BATCH: rt::Operation = rt::Operation {
@@ -2396,6 +2560,14 @@ impl CreateIngestionBatchRequest {
     /// The first items, at most 10,000.
     pub fn items(mut self, v: impl IntoIterator<Item = IngestionItemInput>) -> Self {
         self.input.items = Some(v.into_iter().collect());
+        self
+    }
+
+    /// How long each upload policy the batch hands out lasts, renewals included: from a minute to
+    /// an hour, and 30 minutes when absent. A short window lets a test reach the upload deadline,
+    /// and an expired policy, within seconds.
+    pub fn upload_window_seconds(mut self, v: i32) -> Self {
+        self.input.upload_window_seconds = Some(v);
         self
     }
 
@@ -2809,6 +2981,12 @@ pub struct CreateUploadInput {
     /// Since Caitlyn 5.115.0: refused before sending to an older server.
     #[serde(rename = "purpose", skip_serializing_if = "Option::is_none")]
     pub purpose: Option<UploadPurpose>,
+    /// How long the upload URL works: from a minute to an hour, and 15 minutes when absent. A short
+    /// lifetime lets a test reach an expired upload within seconds.
+    ///
+    /// Since Caitlyn 5.115.0: refused before sending to an older server.
+    #[serde(rename = "expiresInSeconds", skip_serializing_if = "Option::is_none")]
+    pub expires_in_seconds: Option<i32>,
 }
 
 static OP_CREATE_UPLOAD: rt::Operation = rt::Operation {
@@ -2868,6 +3046,13 @@ impl CreateUploadRequest {
     /// What the upload is for, when that decides whether it is accepted. Absent means a document.
     pub fn purpose(mut self, v: impl Into<UploadPurpose>) -> Self {
         self.input.purpose = Some(v.into());
+        self
+    }
+
+    /// How long the upload URL works: from a minute to an hour, and 15 minutes when absent. A short
+    /// lifetime lets a test reach an expired upload within seconds.
+    pub fn expires_in_seconds(mut self, v: i32) -> Self {
+        self.input.expires_in_seconds = Some(v);
         self
     }
 
@@ -10030,6 +10215,7 @@ impl ListVoicesRequest {
 /// The input of PublishAgentVersion. The scope a call is made on fills its identifiers;
 /// [`PublishAgentVersionRequest`] sets the rest. `If-Match` is the call option `.if_match(etag)`
 /// (optional: without it nothing is checked; with it, a change since that read fails with 412).
+/// `.if_match("*")` (any version) is sent only when you pass it yourself: no helper fills it in.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PublishAgentVersionInput {
@@ -10207,7 +10393,8 @@ impl std::future::IntoFuture for PublishAgentVersionRequest {
 
 /// The input of PutAccess. The scope a call is made on fills its identifiers; [`PutAccessRequest`] sets
 /// the rest. `If-Match` is the call option `.if_match(etag)` (optional: without it nothing is checked;
-/// with it, a change since that read fails with 412).
+/// with it, a change since that read fails with 412). `.if_match("*")` (any version) is sent only when
+/// you pass it yourself: no helper fills it in.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PutAccessInput {
@@ -10372,6 +10559,7 @@ impl std::future::IntoFuture for PutAccessRequest {
 /// The input of ReplaceDraftVersion. The scope a call is made on fills its identifiers;
 /// [`ReplaceDraftVersionRequest`] sets the rest. `If-Match` is the call option `.if_match(etag)`
 /// (optional: without it nothing is checked; with it, a change since that read fails with 412).
+/// `.if_match("*")` (any version) is sent only when you pass it yourself: no helper fills it in.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ReplaceDraftVersionInput {
@@ -10857,7 +11045,8 @@ impl std::future::IntoFuture for ReprocessDocumentsRequest {
 
 /// The input of ResetDraftVersion. The scope a call is made on fills its identifiers;
 /// [`ResetDraftVersionRequest`] sets the rest. `If-Match` is the call option `.if_match(etag)`
-/// (required: without it the request fails before anything is sent).
+/// (required: without it the request fails before anything is sent). `.if_match("*")` (any version) is
+/// sent only when you pass it yourself: no helper fills it in.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ResetDraftVersionInput {
@@ -11175,7 +11364,8 @@ impl std::future::IntoFuture for RetryDocumentRequest {
 
 /// The input of SaveDraftVersion. The scope a call is made on fills its identifiers;
 /// [`SaveDraftVersionRequest`] sets the rest. `If-Match` is the call option `.if_match(etag)`
-/// (optional: without it nothing is checked; with it, a change since that read fails with 412). The
+/// (optional: without it nothing is checked; with it, a change since that read fails with 412).
+/// `.if_match("*")` (any version) is sent only when you pass it yourself: no helper fills it in. The
 /// idempotency key is generated, or set with `.idempotency_key(key)`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -11505,6 +11695,7 @@ impl std::future::IntoFuture for SendMessageRequest {
 /// The input of StartIngestionBatch. The scope a call is made on fills its identifiers;
 /// [`StartIngestionBatchRequest`] sets the rest. `If-Match` is the call option `.if_match(etag)`
 /// (optional: without it nothing is checked; with it, a change since that read fails with 412).
+/// `.if_match("*")` (any version) is sent only when you pass it yourself: no helper fills it in.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct StartIngestionBatchInput {
@@ -11705,7 +11896,8 @@ impl std::future::IntoFuture for StartIngestionBatchRequest {
 
 /// The input of UpdateAgent. The scope a call is made on fills its identifiers; [`UpdateAgentRequest`]
 /// sets the rest. `If-Match` is the call option `.if_match(etag)` (required: without it the request
-/// fails before anything is sent).
+/// fails before anything is sent). `.if_match("*")` (any version) is sent only when you pass it
+/// yourself: no helper fills it in.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UpdateAgentInput {
@@ -11885,7 +12077,8 @@ impl std::future::IntoFuture for UpdateAgentRequest {
 
 /// The input of UpdateDocument. The scope a call is made on fills its identifiers;
 /// [`UpdateDocumentRequest`] sets the rest. `If-Match` is the call option `.if_match(etag)` (required:
-/// without it the request fails before anything is sent).
+/// without it the request fails before anything is sent). `.if_match("*")` (any version) is sent only
+/// when you pass it yourself: no helper fills it in.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UpdateDocumentInput {
@@ -12163,6 +12356,7 @@ impl std::future::IntoFuture for UpdateDocumentRequest {
 /// The input of UpdateDraftVersion. The scope a call is made on fills its identifiers;
 /// [`UpdateDraftVersionRequest`] sets the rest. `If-Match` is the call option `.if_match(etag)`
 /// (optional: without it nothing is checked; with it, a change since that read fails with 412).
+/// `.if_match("*")` (any version) is sent only when you pass it yourself: no helper fills it in.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UpdateDraftVersionInput {
@@ -12451,7 +12645,8 @@ impl std::future::IntoFuture for UpdateDraftVersionRequest {
 
 /// The input of UpdateField. The scope a call is made on fills its identifiers; [`UpdateFieldRequest`]
 /// sets the rest. `If-Match` is the call option `.if_match(etag)` (optional: without it nothing is
-/// checked; with it, a change since that read fails with 412).
+/// checked; with it, a change since that read fails with 412). `.if_match("*")` (any version) is sent
+/// only when you pass it yourself: no helper fills it in.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UpdateFieldInput {
@@ -12686,7 +12881,8 @@ impl std::future::IntoFuture for UpdateFieldRequest {
 
 /// The input of UpdateFolder. The scope a call is made on fills its identifiers;
 /// [`UpdateFolderRequest`] sets the rest. `If-Match` is the call option `.if_match(etag)` (required:
-/// without it the request fails before anything is sent).
+/// without it the request fails before anything is sent). `.if_match("*")` (any version) is sent only
+/// when you pass it yourself: no helper fills it in.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UpdateFolderInput {
@@ -12906,7 +13102,8 @@ impl std::future::IntoFuture for UpdateFolderRequest {
 
 /// The input of UpdateIngestionBatch. The scope a call is made on fills its identifiers;
 /// [`UpdateIngestionBatchRequest`] sets the rest. `If-Match` is the call option `.if_match(etag)`
-/// (required: without it the request fails before anything is sent).
+/// (required: without it the request fails before anything is sent). `.if_match("*")` (any version) is
+/// sent only when you pass it yourself: no helper fills it in.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UpdateIngestionBatchInput {
@@ -13058,6 +13255,7 @@ impl std::future::IntoFuture for UpdateIngestionBatchRequest {
 /// The input of UpdateIngestionBatchItem. The scope a call is made on fills its identifiers;
 /// [`UpdateIngestionBatchItemRequest`] sets the rest. `If-Match` is the call option `.if_match(etag)`
 /// (optional: without it nothing is checked; with it, a change since that read fails with 412).
+/// `.if_match("*")` (any version) is sent only when you pass it yourself: no helper fills it in.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UpdateIngestionBatchItemInput {
@@ -13215,7 +13413,8 @@ impl std::future::IntoFuture for UpdateIngestionBatchItemRequest {
 
 /// The input of UpdateKnowledgeBase. The scope a call is made on fills its identifiers;
 /// [`UpdateKnowledgeBaseRequest`] sets the rest. `If-Match` is the call option `.if_match(etag)`
-/// (required: without it the request fails before anything is sent).
+/// (required: without it the request fails before anything is sent). `.if_match("*")` (any version) is
+/// sent only when you pass it yourself: no helper fills it in.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UpdateKnowledgeBaseInput {

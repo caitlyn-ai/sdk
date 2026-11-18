@@ -105,6 +105,25 @@ CANCEL_INGESTION_BATCH: Final = OperationSpec(
     thing=True,
 )
 
+CANCEL_INGESTION_BATCH_ITEM: Final = OperationSpec(
+    name="CancelIngestionBatchItem",
+    method="POST",
+    uri="/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}/cancel",
+    code=200,
+    members=(
+        Member("knowledge_base_id", "knowledgeBaseId", "label"),
+        Member("ingestion_batch_id", "ingestionBatchId", "label"),
+        Member("item_id", "itemId", "label"),
+        Member("if_match", "If-Match", "header"),
+    ),
+    response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("etag", "ETag"),),
+    errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
+    retry_safe=True,
+    since="5.115.0",
+    stability="beta",
+    thing=True,
+)
+
 CANCEL_OPERATION: Final = OperationSpec(
     name="CancelOperation",
     method="POST",
@@ -296,6 +315,7 @@ CREATE_INGESTION_BATCH: Final = OperationSpec(
         Member("policy", "policy", "body"),
         Member("scope", "scope", "body"),
         Member("items", "items", "body"),
+        Member("upload_window_seconds", "uploadWindowSeconds", "body", since="5.115.0"),
     ),
     response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("location", "Location"), ("etag", "ETag"),),
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
@@ -355,6 +375,7 @@ CREATE_UPLOAD: Final = OperationSpec(
         Member("sha256", "sha256", "body"),
         Member("idempotency_key", "Idempotency-Key", "header", idempotency_token=True),
         Member("purpose", "purpose", "body", since="5.115.0"),
+        Member("expires_in_seconds", "expiresInSeconds", "body", since="5.115.0"),
     ),
     response_headers=(("apiVersion", "Caitlyn-Api-Version"), ("requestId", "Caitlyn-Request-Id"), ("location", "Location"),),
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},

@@ -652,7 +652,7 @@ final class FacadeGenerator {
             fields.append(doc(m, "  ")).append("  ").append(m.getMemberName())
                 .append(alwaysSet.contains(m.getMemberName()) ? ": " : "?: ").append(type).append(";\n");
         }
-        fields.append("  /** `Retry-After` in seconds, on 429 and 503 responses. */\n  retryAfterSeconds?: number;\n")
+        fields.append("  /** `Retry-After` in seconds, on 409, 429 and 503 responses. */\n  retryAfterSeconds?: number;\n")
             .append("  /** The response body as received, as text, at most its first 8 KiB: the only view of a body that is not problem details. */\n  rawBody?: string;\n")
             .append("  /** True when the body was longer than 8 KiB and `rawBody` holds only its first 8 KiB. */\n  rawBodyTruncated?: boolean;\n")
             .append("  /** On the `CANCELLED` error of a sync whose plan was not confirmed (PROTOCOL.md 15): its report, the batch and\n")
@@ -810,7 +810,7 @@ final class FacadeGenerator {
             .append("  toError({ ...error, status: STATUS_OF_CODE[String(error.code)] ?? 0, title: String(error.detail ?? error.code) });\n\n")
             .append("/** The client's limits for the bytes file helpers send to storage, and its tracer (PROTOCOL.md 13). */\n")
             .append("export const storage = (client: CaitlynClient, signal?: AbortSignal): SendOptions => {\n")
-            .append("  const c = client.config as { caitlynTracer?: SendOptions[\"tracer\"]; caitlynStorage?: { maxAttempts?: number; maxRetryDelayMs?: number } };\n")
+            .append("  const c = client.config as { caitlynTracer?: SendOptions[\"tracer\"]; caitlynStorage?: { maxAttempts?: number; maxRetryDelayMs?: number; stallTimeoutMs?: number } };\n")
             .append("  return { signal, tracer: c.caitlynTracer, ...c.caitlynStorage };\n};\n");
         return out.toString();
     }

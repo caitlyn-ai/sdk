@@ -91,6 +91,11 @@ class Telemetry:
     def start_upload(self, method: str, url: str) -> Span:
         return self._tracer.start_span("caitlyn.upload", kind=SpanKind.CLIENT, attributes=http_attributes(method, httpx.URL(url)))
 
+    def start_item(self, batch_id: str, item_id: str, path: str) -> Span:
+        """An upload helper's span for one batch item (PROTOCOL.md 13): its steps are the span's events."""
+        return self._tracer.start_span("caitlyn.batch.item", kind=SpanKind.INTERNAL, attributes={
+            "caitlyn.ingestion_batch.id": batch_id, "caitlyn.ingestion_batch.item.id": item_id, "caitlyn.ingestion_batch.item.path": path})
+
 
 def http_attributes(method: str, url: httpx.URL) -> dict[str, str]:
     """``http.request.method``, ``server.address`` and ``url.full``. The URL loses its query, fragment and user

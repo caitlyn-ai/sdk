@@ -30,7 +30,8 @@ const (
 	SyncCompletePerCall = 100
 	// DefaultSyncConcurrency is how many files Sync uploads at once unless SyncOptions.Concurrency says otherwise.
 	DefaultSyncConcurrency = 6
-	// SyncPolicyRenewBefore is how close to its expiry an upload policy is renewed, before the next upload starts.
+	// SyncPolicyRenewBefore is the longest renewal margin: an upload policy is renewed before the next upload starts
+	// when less than this, or half its lifetime when that is shorter, is left (PROTOCOL.md 15).
 	SyncPolicyRenewBefore = 5 * time.Minute
 )
 
@@ -94,6 +95,9 @@ type SyncPlan struct {
 	Batch    *IngestionBatch
 	Items    []IngestionBatchItem
 	Estimate *EstimateIngestionResult
+	// EstimateErr is why Estimate is nil when EstimateIngestion failed: the error it returned. Only Confirm sees it, and
+	// decides whether to go on without an estimate; EstimateSync returns the error instead (PROTOCOL.md 15).
+	EstimateErr error
 }
 
 // SyncOptions are Sync's options. All are optional.
@@ -106,6 +110,9 @@ type SyncOptions struct {
 	Exclude []string
 	// Policy holds the rules that resolve each item's outcome (CreateIngestionBatch's policy).
 	Policy *IngestionPolicy
+	// UploadWindowSeconds is how long the batch waits for its files once it starts: each upload policy lasts this
+	// long. Zero leaves it to the server's default (30 minutes); a short window suits a test or a small batch.
+	UploadWindowSeconds int32
 	// ExternalID, SourceURL and Metadata give each item's externalId, sourceUrl and metadata. Each may be nil, and a
 	// zero result leaves the member out.
 	ExternalID func(LocalFile) string
@@ -168,7 +175,7 @@ type SyncReport struct {
 func (s *KnowledgeBaseIngestion) Sync(ctx context.Context, from SyncSource, in *SyncOptions) (*SyncReport, error) {
 	r := s.newRun(from, in)
 	defer r.close()
-	plan, err := r.plan(ctx)
+	plan, err := r.plan(ctx, false)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +188,7 @@ func (s *KnowledgeBaseIngestion) Sync(ctx context.Context, from SyncSource, in *
 func (s *KnowledgeBaseIngestion) EstimateSync(ctx context.Context, from SyncSource, in *SyncOptions) (*SyncPlan, error) {
 	r := s.newRun(from, in)
 	defer r.close()
-	return r.plan(ctx)
+	return r.plan(ctx, true)
 }
 
 func (s *KnowledgeBaseIngestion) newRun(from SyncSource, in *SyncOptions) *syncRun {
@@ -275,7 +282,7 @@ func (r *syncRun) item(it IngestionBatchItem) {
 }
 
 // plan runs steps 1 to 3: hash, create, plan (with the estimate).
-func (r *syncRun) plan(ctx context.Context) (*SyncPlan, error) {
+func (r *syncRun) plan(ctx context.Context, planOnly bool) (*SyncPlan, error) {
 	folder := r.in.Folder
 	if folder == "" {
 		folder = "/"
@@ -325,7 +332,7 @@ func (r *syncRun) plan(ctx context.Context) (*SyncPlan, error) {
 	first := items[:min(len(items), SyncItemsPerCall)]
 	more := len(items) > SyncItemsPerCall
 	created, err := kb.Batches.Create(ctx, &CreateIngestionBatchInput{Start: Ptr(StartModeManual), AwaitMoreItems: boolPtr(more),
-		Policy: r.in.Policy, Items: first})
+		Policy: r.in.Policy, Items: first, UploadWindowSeconds: optionalInt32(r.in.UploadWindowSeconds)})
 	if err != nil {
 		return nil, err
 	}
@@ -362,6 +369,10 @@ func (r *syncRun) plan(ctx context.Context) (*SyncPlan, error) {
 	r.progress(IngestionProgress{Phase: SyncPhasePlanned, Done: len(planItems), Total: len(planItems)})
 	r.planItems = planItems
 	plan := &SyncPlan{Batch: planned, Items: planItems}
+	// The plan is priced only when someone will see it: EstimateSync, and Sync with Confirm (PROTOCOL.md 15).
+	if !planOnly && r.in.Confirm == nil {
+		return plan, nil
+	}
 	// The items that need their bytes, each described by its file (its hints included), never hashed for the estimate:
 	// batch.EstimateUpload's pricing
 	est, err := r.c.priceItems(ctx, r.kb, planItems, func(it IngestionBatchItem) (*UploadDescription, error) {
@@ -372,7 +383,13 @@ func (r *syncRun) plan(ctx context.Context) (*SyncPlan, error) {
 		return describeLocal(path.Base(f.local.Path), f.prepared.ContentType, f.prepared.Size, f.local.File), nil
 	}, r.in.estimatePerCall)
 	if err != nil {
-		return nil, err
+		// For Confirm, an estimate that could not be made is the caller's to judge: the plan carries the error in its
+		// place. EstimateSync has nothing else to give, and a cancelled context is never caught.
+		if planOnly || ctx.Err() != nil {
+			return nil, err
+		}
+		plan.EstimateErr = err
+		return plan, nil
 	}
 	plan.Estimate = est
 	return plan, nil
@@ -823,4 +840,12 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// optionalInt32 is v as an optional member: nil for zero, which leaves it to the server's default.
+func optionalInt32(v int32) *int32 {
+	if v == 0 {
+		return nil
+	}
+	return &v
 }

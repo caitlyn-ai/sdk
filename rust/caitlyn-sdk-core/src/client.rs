@@ -106,7 +106,18 @@ pub struct ClientBuilder {
     propagator: Option<Arc<dyn Propagator>>,
     retry_budget: u32,
     spool_dir: Option<std::path::PathBuf>,
+    request_timeout: Option<Duration>,
+    storage_stall_timeout: Option<Duration>,
 }
+
+/// How long the default HTTP client waits to connect, and for each read of a response (its headers, and each chunk of
+/// its body), before an attempt fails as a connection failure with no response (PROTOCOL.md 6.4). Per read, never the
+/// whole exchange: a stream, a watch and a wait stay open while events or keep-alives arrive.
+pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// How long a send to storage may send no request bytes and receive no response before that attempt is abandoned and
+/// retried (PROTOCOL.md 14). Not an overall limit: a large file on a slow link carries on while its bytes keep moving.
+pub const DEFAULT_STORAGE_STALL_TIMEOUT: Duration = Duration::from_secs(60);
 
 impl ClientBuilder {
     pub fn new(sdk: SdkInfo, workspace: impl Into<String>, auth: Auth) -> Self {
@@ -122,7 +133,25 @@ impl ClientBuilder {
             propagator: None,
             retry_budget: crate::budget::DEFAULT_RETRY_BUDGET,
             spool_dir: None,
+            request_timeout: Some(DEFAULT_REQUEST_TIMEOUT),
+            storage_stall_timeout: Some(DEFAULT_STORAGE_STALL_TIMEOUT),
         }
+    }
+
+    /// How long the client waits to connect, and for each read of a response, before an attempt fails as a connection
+    /// failure with no response (default 120 s; `None` waits as long as it takes). Each read, not the whole exchange,
+    /// so streams and waits are not cut while their keep-alives arrive. It sets the default HTTP client's
+    /// `connect_timeout` and `read_timeout`; an [`http_client`](Self::http_client) of your own keeps its own.
+    pub fn request_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.request_timeout = timeout;
+        self
+    }
+
+    /// How long a send to storage (an upload's bytes) may send and receive nothing before that attempt is abandoned and
+    /// retried (default 60 s; `None` never gives up). Not an overall limit (PROTOCOL.md 14).
+    pub fn storage_stall_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.storage_stall_timeout = timeout;
+        self
     }
 
     /// Sends requests (and token requests) to `endpoint` instead of `https://<workspace>/api`, for a proxy or a
@@ -189,7 +218,7 @@ impl ClientBuilder {
         let endpoint = self.endpoint.unwrap_or_else(|| workspace_endpoint(&workspace));
         let http = match self.http {
             Some(h) => h,
-            None => default_http_client()?,
+            None => http_client_with(self.request_timeout)?,
         };
         let auth = AuthSession::new(self.auth, &endpoint, &workspace, http.clone());
         Ok(Client {
@@ -206,21 +235,25 @@ impl ClientBuilder {
                 budget: crate::budget::RetryBudget::new(self.retry_budget),
                 server_version: Mutex::new(None),
                 spool_dir: self.spool_dir,
+                storage_stall_timeout: self.storage_stall_timeout,
             }),
         })
     }
 }
 
-pub(crate) fn default_http_client() -> Result<reqwest::Client, Error> {
+/// The SDK's own HTTP client, with the request timeout as its connect and read timeouts.
+pub(crate) fn http_client_with(timeout: Option<Duration>) -> Result<reqwest::Client, Error> {
     #[cfg(feature = "rustls-ring")]
     {
         // reqwest's rustls needs a process-wide crypto provider; keep one the application installed.
         let _ = rustls::crypto::ring::default_provider().install_default();
     }
     // Redirects are not followed: a 302 is an answer (GetDocumentContent's address, which `download()` returns).
-    reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
+    let mut b = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none());
+    if let Some(t) = timeout {
+        b = b.connect_timeout(t).read_timeout(t);
+    }
+    b.build()
         .map_err(|e| Error::sdk("HTTP_CLIENT_FAILED", "The HTTP client could not be built", Some(Box::new(e))))
 }
 
@@ -257,6 +290,7 @@ struct Inner {
     budget: crate::budget::RetryBudget,
     server_version: Mutex<Option<String>>,
     spool_dir: Option<std::path::PathBuf>,
+    storage_stall_timeout: Option<Duration>,
 }
 
 impl std::fmt::Debug for Client {
@@ -306,6 +340,10 @@ impl Client {
 
     pub(crate) fn max_retry_delay(&self) -> Duration {
         self.inner.max_retry_delay
+    }
+
+    pub(crate) fn storage_stall_timeout(&self) -> Option<Duration> {
+        self.inner.storage_stall_timeout
     }
 
     pub(crate) fn budget(&self) -> &crate::budget::RetryBudget {

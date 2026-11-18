@@ -60,7 +60,8 @@ func (s *KnowledgeBaseAccess) Get(ctx context.Context, opts ...CallOption) (*Acc
 // what is set, and the knowledge base's watch shows the work.
 //
 // caitlyn.WithIfMatch(etag) is optional: without it the change applies to the thing as it stands; with
-// it, a stale ETag is refused with 412.
+// it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
+// yourself: no helper fills it in.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *KnowledgeBaseAccess) Set(ctx context.Context, in *PutAccessInput, opts ...CallOption) (*Access, error) {

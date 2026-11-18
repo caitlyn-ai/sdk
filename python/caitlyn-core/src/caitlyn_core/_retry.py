@@ -7,6 +7,7 @@ import random
 import threading
 import time
 from dataclasses import dataclass, field
+from typing import cast
 
 import httpx
 
@@ -100,3 +101,42 @@ def transport_retry_delay(policy: RetryPolicy, safe: bool, attempt: int, error: 
     if not safe or attempt + 1 >= policy.max_attempts:
         return None
     return backoff(policy, attempt)
+
+
+def format_timeout(seconds: float) -> str:
+    """A timeout as the SDKs' messages write it: "300 ms", "1.5 s", "60 s"."""
+    return f"{round(seconds * 1000)} ms" if seconds < 1 else f"{seconds:g} s"
+
+
+_TIMEOUT_PHASES: dict[type[httpx.TimeoutException], tuple[str, str]] = {
+    httpx.ConnectTimeout: ("connect", "could not connect within {}"),
+    httpx.ReadTimeout: ("read", "no response bytes within {}"),
+    httpx.WriteTimeout: ("write", "could not send the request within {}"),
+    httpx.PoolTimeout: ("pool", "no connection was free within {}"),
+}
+
+
+def timeout_seconds(error: httpx.TimeoutException) -> float | None:
+    """The httpx timeout that ran out (connect, read, write or pool), from the request it ran out on."""
+    phase = next((p for t, (p, _) in _TIMEOUT_PHASES.items() if isinstance(error, t)), None)
+    try:
+        value = cast(dict[str, float | None], error.request.extensions.get("timeout") or {}).get(phase or "")
+    except RuntimeError:  # an error not tied to a request
+        return None
+    return value
+
+
+def describe_timeout(error: httpx.TimeoutException) -> str:
+    """What timed out, and after how long: "no response bytes within 300 ms" (httpx's own message is often empty)."""
+    phrase = next((f for t, (_, f) in _TIMEOUT_PHASES.items() if isinstance(error, t)), "timed out within {}")
+    seconds = timeout_seconds(error)
+    return phrase.format(format_timeout(seconds)) if seconds is not None else phrase.replace(" within {}", "")
+
+
+def storage_stall_message(error: httpx.TransportError) -> str:
+    """A send to storage that a timeout ended (PROTOCOL.md 14): "storage sent nothing for 300 ms". httpx's timeouts are
+    per read and per write, reset by each, so they are the stall timeout the other SDKs keep themselves."""
+    seconds = timeout_seconds(error) if isinstance(error, httpx.TimeoutException) else None
+    if seconds is None:
+        return str(error) or type(error).__name__
+    return f"storage sent nothing for {format_timeout(seconds)}"

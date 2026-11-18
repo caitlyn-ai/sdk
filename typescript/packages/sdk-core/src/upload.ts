@@ -7,7 +7,13 @@
 import { openFile, sendToStorage, urlSafeBase64, type FileInput, type PreparedFile, type SendOptions, type ToError } from './files.js';
 import { describeFile, isUploadDescription, type UploadDescription } from './describe.js';
 import type { WaitOptions } from './scope.js';
-import type { Tracer } from '@opentelemetry/api';
+import { SpanKind, SpanStatusCode, type Span, type Tracer } from '@opentelemetry/api';
+
+/**
+ * The form fields an upload sends itself after the policy's (PROTOCOL.md 15, step 6). A policy's own copy of one is
+ * left out, compared without regard to case as storage compares form field names, so no field is sent twice.
+ */
+const OWN_FORM_FIELDS: ReadonlySet<string> = new Set(['key', 'content-type', 'x-amz-checksum-algorithm', 'x-amz-checksum-sha256', 'file']);
 
 type Json = Record<string, any>;
 
@@ -35,6 +41,8 @@ export interface BatchDeps {
   tracer?: Tracer;
   maxAttempts?: number;
   maxRetryDelayMs?: number;
+  /** The client's storage stall timeout (SendOptions.stallTimeoutMs). */
+  stallTimeoutMs?: number;
   /** The batch's planned(): the batch once it is planned or past it; raises its failure when planning failed it. */
   planned: (batchId: string, options: WaitOptions) => Promise<Json>;
 }
@@ -215,7 +223,7 @@ export interface UploadItemsOptions {
 
 /**
  * Uploads the given items (PROTOCOL.md 15, sync's step 6): at most `concurrency` at once, each a form POST under the
- * batch's upload policy, renewed when less than 5 minutes remain and once after a 403 that says it expired; accepted
+ * batch's upload policy, renewed when less than its renewal margin remains and once after a 403 that says it expired; accepted
  * uploads reported with CompleteIngestionBatchUploads at most 100 a call, a CHECKSUM_MISMATCH uploaded once more. One
  * item's failure is its own: the others carry on, and only cancellation or a failed renewal stops them.
  */
@@ -239,6 +247,8 @@ export async function uploadItems(
     return p;
   };
   let policy: Json | undefined = options.policy ?? (await newPolicy());
+  /** When the policy in hand arrived: its lifetime, for the renewal margin, runs from here to its expiresAt. */
+  let policyReceived = Date.now();
   let generation = 0;
   let renewing: Promise<void> | undefined;
   /** When the last renewal ended, whoever asked for it: the keep-alive's once-a-second floor counts from it. */
@@ -247,6 +257,7 @@ export async function uploadItems(
     if (generation !== from) return;
     renewing ??= (async () => {
       policy = await newPolicy();
+      policyReceived = Date.now();
       generation++;
     })().finally(() => {
       renewing = undefined;
@@ -254,9 +265,29 @@ export async function uploadItems(
     });
     await renewing;
   };
-  const expiresIn = () => Date.parse(String(policy!.expiresAt instanceof Date ? policy!.expiresAt.toISOString() : policy!.expiresAt)) - Date.now();
+  /**
+   * Milliseconds the policy has left. A policy whose `expiresAt` is missing or cannot be read as a time
+   * (PROTOCOL.md 15) counts as due now: it is renewed before each upload starts, and the keep-alive timer is not armed
+   * for it, so uploads keep working against a server that sends a bad value, and nothing loops.
+   */
+  const expiresIn = () => {
+    const at = policy!.expiresAt;
+    const ms = at instanceof Date ? at.getTime() : typeof at === 'string' ? Date.parse(at) : NaN;
+    return Number.isNaN(ms) ? -Infinity : ms - Date.now();
+  };
+  const unreadableExpiry = () => expiresIn() === -Infinity;
+  /**
+   * How long before its expiresAt the policy is renewed (PROTOCOL.md 15): 5 minutes, or half its lifetime (from when
+   * it arrived to its expiresAt) when that is shorter, so a batch with a short uploadWindowSeconds renews partway
+   * through each policy rather than at once and then once a second.
+   */
+  const margin = () => {
+    const left = expiresIn();
+    if (left === -Infinity) return RENEW_BEFORE_MS;
+    return Math.min(RENEW_BEFORE_MS, Math.max(0, left + Date.now() - policyReceived) / 2);
+  };
   // The keep-alive (PROTOCOL.md 15): while any upload is in flight, the policy is renewed on a timer once it has less
-  // than 5 minutes left, at most once a second, as the server judges each file by when its bytes arrive against the
+  // than its renewal margin left, at most once a second, as the server judges each file by when its bytes arrive against the
   // batch's uploadsExpireAt, which a renewal moves on. A renewal that fails leaves the uploads in flight on the policy
   // they have, and is tried again at the next tick. The timer stops when the last upload in flight settles, and when the
   // call ends, however it ends.
@@ -266,8 +297,8 @@ export async function uploadItems(
   const arm = () => {
     clearTimeout(keepAlive);
     keepAlive = undefined;
-    if (ended || sending === 0 || signal?.aborted) return;
-    const wait = Math.max(expiresIn() - RENEW_BEFORE_MS, lastRenewal + KEEP_ALIVE_FLOOR_MS - Date.now(), 0);
+    if (ended || sending === 0 || signal?.aborted || unreadableExpiry()) return;
+    const wait = Math.max(expiresIn() - margin(), lastRenewal + KEEP_ALIVE_FLOOR_MS - Date.now(), 0);
     keepAlive = setTimeout(async () => {
       keepAlive = undefined;
       if (ended || sending === 0 || signal?.aborted) return;
@@ -279,7 +310,7 @@ export async function uploadItems(
       }
       if (Date.now() - lastRenewal < KEEP_ALIVE_FLOOR_MS) return arm();
       try {
-        if (expiresIn() < RENEW_BEFORE_MS) await renew(generation);
+        if (expiresIn() < margin()) await renew(generation);
       } catch {
         // The policy in hand is valid until it expires: the next tick tries again.
       }
@@ -288,9 +319,30 @@ export async function uploadItems(
   };
   const totalBytes = items.reduce((n, it) => n + (it.byteSize ?? 0), 0);
   let sentBytes = 0;
+  // Each item's steps (PROTOCOL.md 13): a `caitlyn.batch.item` span per item, with an event for each step, through the
+  // client's tracer; nothing when telemetry is off. The span ends when the item is completed or fails.
+  const spans = new Map<string, Span>();
+  const step = (item: Json, name: string, attributes: Record<string, string | number> = {}) => {
+    if (!deps.tracer) return;
+    let span = spans.get(item.id);
+    if (!span) {
+      span = deps.tracer.startSpan('caitlyn.batch.item', {
+        kind: SpanKind.INTERNAL,
+        attributes: { 'caitlyn.ingestion_batch.id': batchId, 'caitlyn.ingestion_batch.item.id': String(item.id), 'caitlyn.ingestion_batch.item.path': String(item.path ?? '') },
+      });
+      spans.set(item.id, span);
+    }
+    span.addEvent(name, attributes);
+    if (name === 'completed' || name === 'failed') {
+      if (name === 'failed') span.setStatus({ code: SpanStatusCode.ERROR, message: String(attributes['caitlyn.error.code'] ?? '') });
+      span.end();
+      spans.delete(item.id);
+    }
+  };
   const fail = (item: Json, code: string, detail: string) => {
     const f = { ...item, status: 'failed', failureCode: code, failureDetail: detail };
     failed.push(f);
+    step(item, 'failed', { 'caitlyn.error.code': code });
     options.onFailed(f);
   };
   const opened = new Map<string, UploadSource>();
@@ -306,6 +358,7 @@ export async function uploadItems(
         return false;
       }
       opened.set(item.id, source);
+      step(item, 'opened', { 'caitlyn.file.byte_size': source.file.byteSize });
     }
     const local = source.file;
     // A file whose size is not the item's is not the file the item describes: FILE_CHANGED, with nothing sent.
@@ -326,22 +379,25 @@ export async function uploadItems(
     for (let expiredOnce = false; ; ) {
       // A renewal the keep-alive started that failed is not this upload's failure: it renews for itself below.
       if (renewing) await renewing.catch(() => {});
-      if (expiresIn() < RENEW_BEFORE_MS) await renew(generation);
+      if (expiresIn() < margin()) await renew(generation);
       try {
         await local.check();
+        step(item, 'checked');
       } catch (err) {
         fail(item, (err as { code?: string }).code ?? 'FILE_CHANGED', (err as Error).message);
         return false;
       }
       const used = generation;
       const p = policy!;
+      step(item, 'sending', { 'server.address': (() => { try { return new URL(String(p.uploadUrl)).hostname; } catch { return ''; } })() });
       let res: Response;
       try {
         res = await sendToStorage(
           p.uploadUrl,
           () => {
             const form = new FormData();
-            for (const [k, v] of Object.entries(p.formFields as Record<string, string>)) form.append(k, v);
+            // The policy's fields, less any the SDK sends itself: storage refuses a form that repeats a field.
+            for (const [k, v] of Object.entries(p.formFields as Record<string, string>)) if (!OWN_FORM_FIELDS.has(k.toLowerCase())) form.append(k, v);
             form.append('key', item.objectKey ?? `${p.keyPrefix}${urlSafeBase64(source!.sha256)}`);
             form.append('Content-Type', local.contentType);
             form.append('x-amz-checksum-algorithm', 'SHA256');
@@ -356,6 +412,7 @@ export async function uploadItems(
         fail(item, 'UPLOAD_FAILED', `${item.path}: no response from storage: ${(err as Error)?.message ?? err}`);
         return false;
       }
+      step(item, 'sent', { 'http.response.status_code': res.status });
       if (res.ok) {
         await res.body?.cancel().catch(() => {});
         break;
@@ -392,10 +449,12 @@ export async function uploadItems(
     for (const result of r.results as Json[]) {
       const item = batch.find((i) => i.id === result.itemId)!;
       if (result.status === 'accepted') {
+        step(item, 'completed', { 'caitlyn.ingestion_batch.item.status': 'accepted' });
         const a = { ...item, status: 'ingesting' };
         accepted.push(a);
         options.onAccepted?.(a);
       } else if (result.code === 'CHECKSUM_MISMATCH' && !retried.has(item.id)) {
+        step(item, 'retrying', { 'caitlyn.error.code': result.code });
         retried.add(item.id);
         queue.push(item);
       } else fail(item, result.code, result.detail);
@@ -431,6 +490,8 @@ export async function uploadItems(
   } finally {
     ended = true;
     clearTimeout(keepAlive);
+    // Items the call left unfinished (cancelled, or stopped by a Complete that failed): their spans end with it.
+    for (const span of spans.values()) span.end();
     await Promise.all([...opened.values()].map((s) => s.file.dispose()));
   }
   return { accepted, failed };
@@ -476,7 +537,7 @@ export async function batchUpload(deps: BatchDeps, knowledgeBaseId: string, batc
     {
       concurrency: options.concurrency,
       signal,
-      send: { signal, tracer: deps.tracer, maxAttempts: deps.maxAttempts, maxRetryDelayMs: deps.maxRetryDelayMs },
+      send: { signal, tracer: deps.tracer, maxAttempts: deps.maxAttempts, maxRetryDelayMs: deps.maxRetryDelayMs, stallTimeoutMs: deps.stallTimeoutMs },
       progress: options.onProgress,
       onFailed: (item) => options.onItem?.(item),
     },

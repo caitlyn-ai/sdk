@@ -42,7 +42,16 @@ const DEFAULT_FAULTS = {
   // A fault with `body` (a string) or `contentType` is served as that raw body instead of a problem, with no
   // Caitlyn-Request-Id or Caitlyn-Api-Version, as a proxy or a web framework's own error page would be. A fault
   // with `close: true` closes the connection without any response, as a failed TLS handshake or a reset would.
+  // A fault with `hold: true` answers nothing and keeps the connection open, at most `holdMs` (default 30 s), as a
+  // server that never answers does (client.request-timeout); a client that gives up and closes it is logged as
+  // {event: 'request-aborted', op}. The S3 stand-ins take `hold` too, under `PutUpload` and `PostObject`.
   status: {},
+  // `If-Match: *` ("any version", PROTOCOL.md 8) is answered 400 IF_MATCH_WILDCARD_NOT_ASKED unless this is true: no
+  // SDK helper may send it on its own, so every case that does not ask for it guards that (if-match.never-wildcard).
+  // With it, `*` matches whatever version the resource has.
+  allowIfMatchWildcard: false,
+  // Send an SSE keep-alive comment on WatchKnowledgeBase this often (ms), between its events; 0 sends none.
+  watchKeepAliveMs: 0,
   // Close the SSE connection (without a final event) after this many events on the first stream only.
   dropAfterEvents: null,
   // With dropAfterEvents, wait for POST /__mock/drop before closing, so the client has read the events sent before
@@ -111,6 +120,12 @@ const DEFAULT_FAULTS = {
   // its first upload (PROTOCOL.md 15).
   policySeconds: 1800,
   renewedPolicySeconds: 1800,
+  // How long an Upload (CreateUpload) lasts unused, in seconds; then GetUpload reads it `expired`, and a document
+  // made from it is refused with 409 CONFLICT.
+  uploadSeconds: 900,
+  // Caller-set windows (uploadWindowSeconds, expiresInSeconds) under the server's 60-second least, down to 1 second:
+  // test mode, so a deadline runs out in seconds.
+  shortWindows: false,
   // The form endpoint answers every upload signed with the policy Start returned with 403 "Policy expired", as S3
   // does when the policy's expiry has passed by its clock (a client whose clock is behind). A renewed policy works.
   startPolicyExpired: false,
@@ -120,6 +135,13 @@ const DEFAULT_FAULTS = {
   // Hold each form POST this long before storing it, so uploads overlap (ingest.concurrency) and can be cancelled
   // in flight (ingest.cancel). A client that disconnects meanwhile stores nothing (`upload-aborted` in the log).
   uploadDelayMs: 0,
+  // Every policy CreateIngestionBatchUploadPolicy gives (not Start's) carries this as its `expiresAt` instead of a
+  // timestamp: a string ('not a date'), or null to leave the member out (batch-upload.unreadable-expiry). The policy
+  // still works. undefined for the usual mock.
+  policyExpiresAt: undefined,
+  // The form endpoint reads each upload's body at most this many bytes a second, so a large file arrives slowly but
+  // steadily (files.slow-not-stalled). 0 reads it at once.
+  uploadReadBytesPerSecond: 0,
   // Upload reservations on a compressed clock (batch-upload.keep-alive): { policySeconds: 302, reservationSeconds: 4 }.
   // Every upload policy (Start's and each renewal's) expires policySeconds after it is issued, so an SDK's "less than
   // 5 minutes left" falls due 2 seconds after each issue; the batch's uploadsExpireAt is the latest issue plus
@@ -333,6 +355,20 @@ function problem(res, rid, status, code, detail, { extra = {}, fieldErrors } = {
   sendProblem(res, rid, body, extra);
 }
 
+/** Reads a body at most `bytesPerSecond`, pausing the request between chunks, so the client's sends slow to match. */
+function readBodySlowly(req, bytesPerSecond) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', (c) => {
+      chunks.push(c);
+      req.pause();
+      setTimeout(() => req.resume(), Math.ceil((c.length / bytesPerSecond) * 1000));
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -347,6 +383,21 @@ function parseJson(buf) {
   return JSON.parse(buf.toString('utf8'));
 }
 
+/**
+ * A `hold` fault: no answer, the connection kept open until the client closes it (logged as request-aborted) or
+ * holdMs passes (then the socket is destroyed, as an idle timeout at a proxy would). Returns true.
+ */
+function hold(op, res, holdMs = 30_000) {
+  const at = Date.now();
+  log.push({ event: 'request-held', op, at });
+  const timer = setTimeout(() => res.socket?.destroy(), holdMs);
+  res.on('close', () => {
+    clearTimeout(timer);
+    if (!res.writableFinished) log.push({ event: 'request-aborted', op, afterMs: Date.now() - at, at: Date.now() });
+  });
+  return true;
+}
+
 /** Serve a queued status fault for this operation, if any. Returns true when it did. */
 function statusFault(op, res, rid) {
   const queue = faults.status[op];
@@ -356,6 +407,7 @@ function statusFault(op, res, rid) {
     res.socket.destroy();
     return true;
   }
+  if (f.hold) return hold(op, res, f.holdMs);
   const extra = f.retryAfter != null ? { 'Retry-After': String(f.retryAfter) } : {};
   if (f.body !== undefined || f.contentType !== undefined) {
     res.writeHead(f.status, { ...(f.contentType ? { 'Content-Type': f.contentType } : {}), ...extra });
@@ -368,9 +420,23 @@ function statusFault(op, res, rid) {
 }
 
 /** An S3 error: XML, with none of the Caitlyn headers. */
-function s3Error(res, status, code, message, extra = {}) {
+function s3Error(res, status, code, message, extra = {}, more = '') {
   res.writeHead(status, { 'Content-Type': 'application/xml', ...extra });
-  res.end(`<?xml version="1.0" encoding="UTF-8"?>\n<Error><Code>${code}</Code><Message>${message}</Message></Error>`);
+  res.end(`<?xml version="1.0" encoding="UTF-8"?>\n<Error><Code>${code}</Code><Message>${message}</Message>${more}</Error>`);
+}
+
+/**
+ * S3 needs a request body's length up front: it refuses a chunked body (501 NotImplemented, naming the
+ * Transfer-Encoding header) and a body with no Content-Length (411 MissingContentLength), before reading it. Returns
+ * true when it refused, and logs {event: 'storage-refused-length', op, reason}.
+ */
+function s3LengthRequired(op, req, res) {
+  const chunked = /chunked/i.test(req.headers['transfer-encoding'] ?? '');
+  if (!chunked && req.headers['content-length'] != null) return false;
+  log.push({ event: 'storage-refused-length', op, reason: chunked ? 'chunked' : 'no-content-length', at: Date.now() });
+  if (chunked) s3Error(res, 501, 'NotImplemented', 'A header you provided implies functionality that is not implemented', {}, '<Header>Transfer-Encoding</Header>');
+  else s3Error(res, 411, 'MissingContentLength', 'You must provide the Content-Length HTTP header.');
+  return true;
 }
 
 /** Serve a queued status fault for an S3 stand-in, as S3 would. Returns true when it did. */
@@ -382,12 +448,15 @@ function s3StatusFault(op, res) {
     res.socket.destroy();
     return true;
   }
+  if (f.hold) return hold(op, res, f.holdMs);
   const extra = f.retryAfter != null ? { 'Retry-After': String(f.retryAfter) } : {};
   const code = f.status === 503 ? 'SlowDown' : f.status === 500 ? 'InternalError' : `Http${f.status}`;
   s3Error(res, f.status, code, 'Injected fault', extra);
   return true;
 }
 
+/** An If-Match value against a resource's ETag: equal, or `*` (any version of a resource that exists). */
+const etagMatches = (ifMatch, etag) => ifMatch === etag || ifMatch === '*';
 const sha256b64 = (buf) => crypto.createHash('sha256').update(buf).digest('base64');
 /** URL-safe base64 with no padding: the form of a SHA-256 in an object key (PROTOCOL.md 14). */
 const urlSafe = (b64) => b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -511,10 +580,13 @@ function operationWatchEvents(operationId) {
   ];
 }
 
-// WatchOperation: an operation running, then finished (the final event); then the stream ends.
+// WatchOperation: an operation running, then finished (the final event); then the stream ends. The operation itself
+// is finished too, so GetOperation afterwards agrees with what the watch said.
 async function watchOperation(req, res, rid, [kb, id]) {
   if (statusFault('WatchOperation', res, rid)) return;
-  if (!jobOr404(res, rid, kb, id)) return;
+  const job = jobOr404(res, rid, kb, id);
+  if (!job) return;
+  for (let i = 0; i < 100 && !FINAL_JOB.has(job.status); i++) stepJob(job);
   const events = operationWatchEvents(decodeURIComponent(id));
   const at = events.findIndex((e) => e.id === req.headers['last-event-id']);
   return streamEvents(req, res, rid, id, events.slice(at + 1), 0, false);
@@ -685,6 +757,7 @@ const routes = [
   ['GET', new RegExp(`^${KB}/ingestion-batches/([^/]+)/items$`), listItems],
   ['GET', new RegExp(`^${KB}/ingestion-batches/([^/]+)/items/([^/]+)$`), getItem],
   ['PATCH', new RegExp(`^${KB}/ingestion-batches/([^/]+)/items/([^/]+)$`), updateItem],
+  ['POST', new RegExp(`^${KB}/ingestion-batches/([^/]+)/items/([^/]+)/cancel$`), cancelItem],
   ['POST', new RegExp(`^${KB}/ingestion-batches/([^/]+)/start$`), startIngestionBatch],
   ['POST', new RegExp(`^${KB}/ingestion-batches/([^/]+)/upload-policies$`), createUploadPolicy],
   ['POST', new RegExp(`^${KB}/ingestion-batches/([^/]+)/complete-uploads$`), completeUploads],
@@ -992,6 +1065,21 @@ async function watchWorkspaceEvents(req, res, rid, _m, url) {
 }
 
 const MAX_FILE = 2_147_483_648; // 2 GB (PROTOCOL.md 14)
+
+/**
+ * A caller-set window (uploadWindowSeconds on CreateIngestionBatch, expiresInSeconds on CreateUpload): 60 to 3600
+ * seconds, as the server takes them, or down to 1 second under faults.shortWindows, so a test of a deadline runs in
+ * seconds. Returns [seconds | undefined, problem | undefined].
+ */
+function windowSeconds(input, member) {
+  const v = input?.[member];
+  if (v === undefined || v === null) return [undefined, undefined];
+  const least = faults.shortWindows ? 1 : 60;
+  if (!Number.isInteger(v) || v < least || v > 3600) {
+    return [undefined, { status: 400, problem: ['VALIDATION_FAILED', `${member} is from ${least} to 3600 seconds`, { fieldErrors: [{ pointer: `/${member}`, code: 'VALIDATION_FAILED' }] }] }];
+  }
+  return [v, undefined];
+}
 const AVATAR_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const AVATAR_MAX = 1_048_576; // 1 MB
 
@@ -1002,6 +1090,8 @@ async function createUpload(req, res, rid, _m, url, body) {
   const input = parseJson(body);
   const result = idempotent(key, 'CreateUpload', () => {
     const missing = ['fileName', 'contentType', 'byteSize', 'sha256'].filter((f) => input[f] == null);
+    const [life, badLife] = windowSeconds(input, 'expiresInSeconds');
+    if (badLife) return badLife;
     if (missing.length) return { status: 400, problem: ['VALIDATION_FAILED', 'Required members are missing', { fieldErrors: missing.map((f) => ({ pointer: `/${f}`, code: 'VALIDATION_FAILED', detail: 'Required' })) }] };
     if (Number(input.byteSize) > MAX_FILE) return { status: 413, problem: ['PAYLOAD_TOO_LARGE', 'Files can be at most 2 GB (2,147,483,648 bytes).'] };
     // purpose.agentAvatar: a PNG, JPEG or WebP image of at most 1 MB, checked here (UploadPurpose).
@@ -1016,7 +1106,7 @@ async function createUpload(req, res, rid, _m, url, body) {
       uploadUrl: `http://${req.headers.host}/__s3/${id}?X-Amz-Signature=mock`,
       uploadMethod: 'PUT',
       requiredHeaders: { 'content-type': input.contentType, 'x-amz-checksum-sha256': input.sha256 },
-      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+      expiresAt: new Date(Date.now() + (life ?? faults.uploadSeconds ?? 900) * 1000).toISOString(),
       status: 'awaiting_bytes',
     };
     state.uploads.set(id, { ...upload, input });
@@ -1027,16 +1117,24 @@ async function createUpload(req, res, rid, _m, url, body) {
 }
 
 // GetUpload: the upload's status and when its upload URL expires; 404 for one never reserved.
+/** An Upload not used by its expiresAt becomes `expired`, a final status (UploadStatus). */
+function expireIfDue(up) {
+  if (up.status !== 'consumed' && up.status !== 'expired' && Date.parse(up.expiresAt) <= Date.now()) up.status = 'expired';
+  return up;
+}
+
 async function getUpload(req, res, rid, [id]) {
   if (statusFault('GetUpload', res, rid)) return;
   const up = state.uploads.get(decodeURIComponent(id));
   if (!up) return problem(res, rid, 404, 'NOT_FOUND', `No upload ${id}`);
+  expireIfDue(up);
   sendJson(res, rid, 200, { id: up.id, status: up.status, expiresAt: up.expiresAt });
 }
 
 // The presigned PUT: the bytes must match the reserved checksum and size, and carry the checksum header.
 // Status faults: `PutUpload`.
 async function putUploadBytes(req, res, rid, [id], url, body) {
+  if (s3LengthRequired('PutUpload', req, res)) return;
   if (s3StatusFault('PutUpload', res)) return;
   const up = state.uploads.get(id);
   if (!up) return s3Error(res, 404, 'NoSuchUpload', 'The upload does not exist');
@@ -1055,6 +1153,7 @@ async function putUploadBytes(req, res, rid, [id], url, body) {
 function consumeUpload(uploadId) {
   const up = state.uploads.get(uploadId);
   if (!up) return { status: 404, problem: ['NOT_FOUND', `No upload ${uploadId}`] };
+  if (expireIfDue(up).status === 'expired') return { status: 409, problem: ['CONFLICT', `Upload ${up.id} has expired. Reserve a new upload.`] };
   if (up.status === 'awaiting_bytes') return { status: 409, problem: ['CONFLICT', `Upload ${up.id} has no bytes yet. Send the file to its uploadUrl first.`] };
   if (up.status === 'consumed') return { status: 409, problem: ['CONFLICT', `Upload ${up.id} has already been used. Reserve a new upload.`] };
   return { up };
@@ -1096,6 +1195,19 @@ function newDocument(kb, { name, folder, contentType, byteSize, sha256, external
   return doc;
 }
 
+/**
+ * A path a started batch has reserved for a new document (an `add` item still awaiting its upload): a write onto it
+ * is refused with 409 TARGET_IN_USE and a Retry-After until the batch's upload arrives. Returns the problem, if any.
+ */
+function reservedPath(kb, folder, name) {
+  const path = `${folder ?? '/'}${name}`;
+  const holder = [...state.batches.values()].find(
+    (b) => b.knowledgeBaseId === kb && b.status === 'running' && b.items.some((it) => it.resolution === 'add' && it.status === 'awaiting_upload' && it.path === path),
+  );
+  if (!holder) return undefined;
+  return { status: 409, problem: ['TARGET_IN_USE', `${path} is reserved for a new document by ingestion batch ${holder.id}. Try again once its upload has arrived.`, { extra: { 'Retry-After': '30' } }] };
+}
+
 async function createDocument(req, res, rid, [kb], url, body) {
   const key = req.headers['idempotency-key'];
   if (statusFault('CreateDocument', res, rid)) return;
@@ -1115,6 +1227,9 @@ async function createDocument(req, res, rid, [kb], url, body) {
     const taken = consumeUpload(input.uploadId);
     if (taken.problem) return taken;
     const { up } = taken;
+    // The upload is checked first, then the path; the upload is not consumed when the path is refused.
+    const reserved = reservedPath(kb, input.folder, input.name ?? up.input.fileName);
+    if (reserved) return reserved;
     up.status = 'consumed';
     const doc = newDocument(kb, { ...up.input, ...input, name: input.name ?? up.input.fileName });
     docs.push(doc);
@@ -1169,7 +1284,7 @@ async function createDocumentVersion(req, res, rid, [kb, documentId], url, body)
   const doc = findDoc(kb, documentId);
   if (!doc) return problem(res, rid, 404, 'NOT_FOUND', `No document ${documentId}`);
   const ifMatch = req.headers['if-match'];
-  if (ifMatch && ifMatch !== docEtag(doc)) return problem(res, rid, 412, 'PRECONDITION_FAILED', `Document ${doc.id} changed since you read it.`);
+  if (ifMatch && !etagMatches(ifMatch, docEtag(doc))) return problem(res, rid, 412, 'PRECONDITION_FAILED', `Document ${doc.id} changed since you read it.`);
   const result = idempotent(key, `CreateDocumentVersion:${doc.id}`, () => {
     const versions = versionsOf.get(doc);
     if (versions.some((v) => v.status === 'pending' || v.status === 'processing')) {
@@ -1306,7 +1421,7 @@ async function updateAgent(req, res, rid, [agentId], url, body) {
   if (!a) return problem(res, rid, 404, 'NOT_FOUND', `No agent ${agentId}`);
   const ifMatch = req.headers['if-match'];
   if (!ifMatch) return problem(res, rid, 428, 'PRECONDITION_REQUIRED', 'Send the ETag you last read in If-Match.');
-  if (ifMatch !== agentEtag(a)) return problem(res, rid, 412, 'PRECONDITION_FAILED', `Agent ${a.agent.id} changed since you read it.`);
+  if (!etagMatches(ifMatch, agentEtag(a))) return problem(res, rid, 412, 'PRECONDITION_FAILED', `Agent ${a.agent.id} changed since you read it.`);
   const { clear = [], ...patch } = parseJson(body);
   const fieldErrors = [];
   clear.forEach((k, i) => {
@@ -1360,7 +1475,7 @@ async function updateDraft(req, res, rid, [agentId], url, body) {
   if (!agent) return problem(res, rid, 404, 'NOT_FOUND', `No agent ${agentId}`);
   // If-Match is optional here (@ifMatchOptional): without it the change applies to the draft as it is.
   const ifMatch = req.headers['if-match'];
-  if (ifMatch && ifMatch !== etagOf(agent))
+  if (ifMatch && !etagMatches(ifMatch, etagOf(agent)))
     return problem(res, rid, 412, 'PRECONDITION_FAILED', `The draft of agent ${agentId} changed since you read it. Read it again and reapply your change.`);
   const { clear = [], ...patch } = parseJson(body);
   const fieldErrors = [];
@@ -1419,7 +1534,12 @@ const RESOLUTIONS = {
   conflict: ['new_version', 'overwrite', 'add', 'skip'],
 };
 const UPLOAD_SECRET = 'mock-upload-policy-secret';
-const FORM_FIELD_ORDER = ['x-amz-algorithm', 'x-amz-credential', 'x-amz-date', 'policy', 'x-amz-signature'];
+// An upload policy's formFields, as the AWS SDK's createPresignedPost returns them for a Key: `bucket`, the signing
+// fields, then `key` (the prefix and S3's ${filename} template), the policy and its signature. The `key` is the policy's
+// own, which a client must not send as well as the item's (PROTOCOL.md 15, step 6): the POST refuses a repeated field.
+const FORM_FIELD_ORDER = ['bucket', 'x-amz-algorithm', 'x-amz-credential', 'x-amz-date', 'key', 'policy', 'x-amz-signature'];
+/** The fields a client sends itself after the policy's, lower-cased. */
+const OWN_FORM_FIELDS = new Set(['key', 'content-type', 'x-amz-checksum-algorithm', 'x-amz-checksum-sha256', 'file']);
 
 const batchEtag = (b) => `"batch-${b.etagN}"`;
 const itemEtag = (it) => `"${it.id}-${it.etagN}"`;
@@ -1446,6 +1566,7 @@ function batchBody(b, withEtag = false) {
     awaitMoreItems: b.awaitMoreItems,
     policy: b.policy,
     ...(b.scope ? { scope: b.scope } : {}),
+    ...(b.uploadWindowSeconds ? { uploadWindowSeconds: b.uploadWindowSeconds } : {}),
     itemCount: b.items.length,
     ...(b.planned ? { counts: counts(b) } : {}),
     ...(b.planExpiresAt ? { planExpiresAt: b.planExpiresAt } : {}),
@@ -1555,12 +1676,18 @@ function newPolicy(b, req, seconds) {
     b.uploadsExpireAt = new Date(Date.now() + reservation.reservationSeconds * 1000).toISOString();
     b.reservedByPolicy = true;
   }
+  // A batch made with uploadWindowSeconds: every policy lasts the window, and each issue moves the deadline to the
+  // policy's expiry plus a grace of 5 minutes, or of the window when that is shorter (PROTOCOL.md 15, short windows).
+  if (b.uploadWindowSeconds && !reservation) {
+    seconds = b.uploadWindowSeconds;
+    b.uploadsExpireAt = new Date(Date.now() + (seconds + Math.min(300, b.uploadWindowSeconds)) * 1000).toISOString();
+  }
   const expiresAt = new Date(Date.now() + seconds * 1000).toISOString();
   const doc = { expiration: expiresAt, batchId: b.id, generation: b.policyGeneration, conditions: [['starts-with', '$key', b.keyPrefix], ['eq', '$x-amz-checksum-algorithm', 'SHA256'], ['content-length-range', 1, MAX_FILE]] };
   const policy = Buffer.from(JSON.stringify(doc)).toString('base64');
   const signature = crypto.createHmac('sha256', UPLOAD_SECRET).update(policy).digest('hex');
   const date = expiresAt.replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
-  const values = { 'x-amz-algorithm': 'AWS4-HMAC-SHA256', 'x-amz-credential': `MOCKKEY/${date.slice(0, 8)}/ap-southeast-2/s3/aws4_request`, 'x-amz-date': date, policy, 'x-amz-signature': signature };
+  const values = { bucket: 'mock-bucket', key: `${b.keyPrefix}${'${filename}'}`, 'x-amz-algorithm': 'AWS4-HMAC-SHA256', 'x-amz-credential': `MOCKKEY/${date.slice(0, 8)}/ap-southeast-2/s3/aws4_request`, 'x-amz-date': date, policy, 'x-amz-signature': signature };
   const formFields = Object.fromEntries(FORM_FIELD_ORDER.map((k) => [k, values[k]]));
   return { uploadUrl: `http://${req.headers.host}/__s3/`, formFields, keyPrefix: b.keyPrefix, maxByteSize: MAX_FILE, expiresAt };
 }
@@ -1576,6 +1703,18 @@ function advance(b) {
       it.status = 'cancelled';
       it.etagN++;
     } else finishItem(b, it);
+  }
+  // The deadline sweep, for a batch with a caller-set window: once its uploadsExpireAt has passed, each item still
+  // awaiting its upload, whose bytes did not arrive in time, fails UPLOAD_EXPIRED, as the server's sweep does. (Bytes
+  // that arrived before the deadline keep their item, whenever Complete reports them: the arrival rule.)
+  if (b.uploadWindowSeconds && b.uploadsExpireAt && Date.now() > Date.parse(b.uploadsExpireAt)) {
+    const deadline = Date.parse(b.uploadsExpireAt);
+    for (const it of b.items) {
+      const arrived = it.objectKey && state.objects.get(it.objectKey);
+      if (it.status === 'awaiting_upload' && !(arrived && arrived.arrivedAt <= deadline)) {
+        Object.assign(it, { status: 'failed', failureCode: 'UPLOAD_EXPIRED', failureDetail: 'No bytes arrived before the upload policy expired.', etagN: it.etagN + 1 });
+      }
+    }
   }
   // The sweep: items whose uploads always fail (failUploads) are failed once nothing else is left to finish.
   const rest = b.items.filter((it) => !FINAL_ITEM.has(it.status));
@@ -1649,6 +1788,8 @@ async function createIngestionBatch(req, res, rid, [kbId], url, body) {
     if (input.start !== undefined && !['when_planned', 'manual'].includes(input.start)) return { status: 400, problem: ['VALIDATION_FAILED', 'start is when_planned or manual', { fieldErrors: [{ pointer: '/start', code: 'VALIDATION_FAILED' }] }] };
     const items = input.items ?? [];
     if (items.length > 10_000) return { status: 400, problem: ['VALIDATION_FAILED', 'A request takes at most 10,000 items', { fieldErrors: [{ pointer: '/items', code: 'VALIDATION_FAILED' }] }] };
+    const [uploadWindowSeconds, badWindow] = windowSeconds(input, 'uploadWindowSeconds');
+    if (badWindow) return badWindow;
     const id = crypto.randomUUID();
     const now = nowIso();
     const b = {
@@ -1662,6 +1803,7 @@ async function createIngestionBatch(req, res, rid, [kbId], url, body) {
       awaitMoreItems: input.awaitMoreItems === true,
       policy: input.policy ?? { onConflict: { default: 'ask' } },
       ...(input.scope ? { scope: input.scope } : {}),
+      ...(uploadWindowSeconds ? { uploadWindowSeconds } : {}),
       items: [],
       itemSeq: 0,
       etagN: 1,
@@ -1709,7 +1851,7 @@ function startBatch(b, req) {
   const needsBytes = b.items.some((it) => it.status === 'awaiting_upload');
   const uploadPolicy = needsBytes ? newPolicy(b, req, faults.policySeconds ?? 1800) : undefined;
   // When the items awaiting upload are given up: the policy's expiry plus the server's grace, here 15 minutes.
-  if (!b.reservedByPolicy) b.uploadsExpireAt = new Date(Date.now() + (faults.deadlinePassed === 'uploads' ? -60_000 : ((faults.policySeconds ?? 1800) + 900) * 1000)).toISOString();
+  if (!b.reservedByPolicy && !(b.uploadWindowSeconds && needsBytes)) b.uploadsExpireAt = new Date(Date.now() + (faults.deadlinePassed === 'uploads' ? -60_000 : ((faults.policySeconds ?? 1800) + 900) * 1000)).toISOString();
   if (faults.deadlinePassed === 'uploads') b.endsOnRead = 'uploads';
   if (needsBytes && faults.startPolicyExpired) b.expiredGeneration = b.policyGeneration;
   if (!needsBytes) advance(b);
@@ -1736,7 +1878,7 @@ function preconditions(req, res, rid, etag, { optional = false } = {}) {
   const ifMatch = req.headers['if-match'];
   if (!ifMatch && optional) return false; // @ifMatchOptional: no If-Match writes unconditionally
   if (!ifMatch) return problem(res, rid, 428, 'PRECONDITION_REQUIRED', 'Send the ETag you last read in If-Match.'), true;
-  if (ifMatch !== etag) return problem(res, rid, 412, 'PRECONDITION_FAILED', 'The resource changed since you read it. Read it again and reapply your change.'), true;
+  if (!etagMatches(ifMatch, etag)) return problem(res, rid, 412, 'PRECONDITION_FAILED', 'The resource changed since you read it. Read it again and reapply your change.'), true;
   return false;
 }
 
@@ -1833,6 +1975,25 @@ async function updateItem(req, res, rid, [kb, id, itemId], url, body) {
   sendJson(res, rid, 200, rest, { ETag: etag });
 }
 
+// CancelIngestionBatchItem: an item of a running batch still awaiting its upload becomes `cancelled`, and the path it
+// reserved is free again; any other item is 409 CONFLICT. If-Match is optional. Once no item is left unfinished, the
+// batch ends, as it would after its last upload.
+async function cancelItem(req, res, rid, [kb, id, itemId]) {
+  if (statusFault('CancelIngestionBatchItem', res, rid)) return;
+  const b = findBatch(id, kb);
+  const it = b?.items.find((x) => x.id === decodeURIComponent(itemId));
+  if (!it) return problem(res, rid, 404, 'NOT_FOUND', `No item ${decodeURIComponent(itemId)}`);
+  if (preconditions(req, res, rid, itemEtag(it), { optional: true })) return; // @ifMatchOptional
+  if (b.status !== 'running' || it.status !== 'awaiting_upload') {
+    return problem(res, rid, 409, 'CONFLICT', `Item ${it.id} is ${it.status}; only an item waiting for its upload can be cancelled.`);
+  }
+  it.status = 'cancelled';
+  it.etagN++;
+  touch(b);
+  const { etag, ...rest } = itemBody(it);
+  sendJson(res, rid, 200, { item: { ...rest, etag } }, { ETag: etag });
+}
+
 async function startIngestionBatch(req, res, rid, [kb, id]) {
   if (statusFault('StartIngestionBatch', res, rid)) return;
   const b = findBatch(id, kb);
@@ -1858,6 +2019,8 @@ async function createUploadPolicy(req, res, rid, [kb, id]) {
   // renews at most once a second while any policy is short) has nothing more to do: the count stays exact.
   b.createdPolicies = (b.createdPolicies ?? 0) + 1;
   const uploadPolicy = newPolicy(b, req, b.createdPolicies === 1 ? (faults.renewedPolicySeconds ?? 1800) : 1800);
+  if (faults.policyExpiresAt === null) delete uploadPolicy.expiresAt;
+  else if (faults.policyExpiresAt !== undefined) uploadPolicy.expiresAt = faults.policyExpiresAt;
   if (faults.firstCreatedPolicyExpired && !b.createdPolicyExpired) {
     b.createdPolicyExpired = true;
     b.expiredGeneration = b.policyGeneration;
@@ -2349,7 +2512,7 @@ async function updateField(req, res, rid, [kb, key], url, body) {
   const f = rec && fieldOr404(res, rid, rec, key);
   if (!f) return;
   const ifMatch = req.headers['if-match'];
-  if (ifMatch && ifMatch !== fieldEtag(rec.id, f)) return problem(res, rid, 412, 'PRECONDITION_FAILED', `Field ${f.key} changed since you read it.`);
+  if (ifMatch && !etagMatches(ifMatch, fieldEtag(rec.id, f))) return problem(res, rid, 412, 'PRECONDITION_FAILED', `Field ${f.key} changed since you read it.`);
   const input = parseJson(body);
   for (const m of FIELD_MEMBERS) if (input[m] !== undefined) f[m] = input[m];
   f.etagN++;
@@ -2526,6 +2689,10 @@ async function updateDocument(req, res, rid, [kb, documentId], url, body) {
   if (preconditions(req, res, rid, doc.etag)) return;
   const { clear = [], ...patch } = parseJson(body);
   if (patch.folder !== undefined && !FOLDER_PATH.test(patch.folder)) return problem(res, rid, 400, 'VALIDATION_FAILED', FOLDER_DETAIL, { fieldErrors: [{ pointer: '/folder', code: 'VALIDATION_FAILED' }] });
+  if (patch.name !== undefined || patch.folder !== undefined) {
+    const reserved = reservedPath(doc.knowledgeBaseId, patch.folder ?? doc.folder, patch.name ?? doc.name);
+    if (reserved) return problem(res, rid, reserved.status, ...reserved.problem);
+  }
   if (patch.name !== undefined) doc.name = patch.name;
   for (const k of ['metadata', 'extraMetadata', 'sourceUrl', 'externalId']) if (patch[k] !== undefined) doc[k] = patch[k];
   for (const k of clear) delete doc[k];
@@ -2860,9 +3027,14 @@ async function watchKnowledgeBase(req, res, rid, [kbId], url) {
   send('snapshot', snapshot);
   let last = JSON.stringify(snapshot.batch ?? null);
   const until = Date.now() + 30_000;
+  let keptAlive = Date.now();
   while (!closed && Date.now() < until && state === born) {
     await sleep(faults.watchTickMs ?? 10);
     if (closed || state !== born) break;
+    if (faults.watchKeepAliveMs && Date.now() - keptAlive >= faults.watchKeepAliveMs) {
+      res.write(': keep-alive\n\n');
+      keptAlive = Date.now();
+    }
     look(filter);
     for (; at < (state.kbLog ??= []).length && !closed; at++) {
       const e = state.kbLog[at];
@@ -2901,10 +3073,14 @@ async function listOperations(req, res, rid, [kb], url) {
   sendJson(res, rid, 200, { items });
 }
 
+// GetOperation: each read moves an unfinished operation on one step, as a watch would see it progress, so a caller
+// that polls instead of watching sees it finish.
 async function getOperation(req, res, rid, [kb, id]) {
   if (statusFault('GetOperation', res, rid)) return;
   const job = jobOr404(res, rid, kb, id);
-  if (job) sendJson(res, rid, 200, jobBody(job));
+  if (!job) return;
+  if (!FINAL_JOB.has(job.status)) stepJob(job);
+  sendJson(res, rid, 200, jobBody(job));
 }
 
 async function cancelOperation(req, res, rid, [kb, id]) {
@@ -3046,7 +3222,7 @@ async function saveDraftVersion(req, res, rid, [agentId], url, body) {
   const a = agentOr404(res, rid, agentId);
   if (!a) return;
   const ifMatch = req.headers['if-match'];
-  if (ifMatch && ifMatch !== etagOf(a)) return problem(res, rid, 412, 'PRECONDITION_FAILED', `The draft of agent ${a.agent.id} changed since you read it.`);
+  if (ifMatch && !etagMatches(ifMatch, etagOf(a))) return problem(res, rid, 412, 'PRECONDITION_FAILED', `The draft of agent ${a.agent.id} changed since you read it.`);
   const { name, note } = parseJson(body) ?? {};
   if (!VERSION_NAME.test(name ?? '') || ['draft', 'live'].includes(name)) return problem(res, rid, 400, 'VALIDATION_FAILED', 'name is a version name, not draft or live', { fieldErrors: [{ pointer: '/name', code: 'VALIDATION_FAILED' }] });
   const result = idempotent(key, `SaveDraftVersion:${a.agent.id}`, () => {
@@ -3084,7 +3260,7 @@ async function publishAgentVersion(req, res, rid, [agentId, version], url, body)
   a.named.get(target).publishedAt = now;
   const entry = { id: `lh-${String(a.history.length + 1).padStart(4, '0')}`, agentId: a.agent.id, version: target, ...(previous ? { previousVersion: previous } : {}), kind, changedAt: now, changedBy: { displayName: 'Mock caller' }, ...(input.note ? { note: input.note } : {}) };
   a.history.push(entry);
-  sendJson(res, rid, 200, { live: { version: target, publishedAt: now, publishedBy: { displayName: 'Mock caller' } }, version: versionSummaryOf(a, target), historyEntry: entry }, { ETag: liveEtag(a) });
+  sendJson(res, rid, 200, { live: { version: target, publishedAt: now, publishedBy: { displayName: 'Mock caller' } }, version: { ...namedBody(a, target), etag: namedEtag(a, target) }, historyEntry: entry }, { ETag: liveEtag(a) });
 }
 
 async function compareAgentVersions(req, res, rid, [agentId, version], url) {
@@ -3212,6 +3388,9 @@ const loggedParts = (parts) =>
 // not have expired (403 "Invalid according to Policy: Policy expired."); the key must start with its prefix; the
 // bytes must match the checksum (400 BadDigest). Status faults: `PostObject`. Answers 204, as S3 does.
 async function postObjectForm(req, res, rid, _m, url, body) {
+  // The policy is judged when the request arrives, as S3 reads the policy field before the file: a slow upload
+  // (uploadDelayMs) that began under a policy is not refused because the policy expired while its bytes were moving.
+  const arrived = Date.now();
   state.uploadsInFlight++;
   state.maxUploadsInFlight = Math.max(state.maxUploadsInFlight, state.uploadsInFlight);
   let aborted = false;
@@ -3224,6 +3403,7 @@ async function postObjectForm(req, res, rid, _m, url, body) {
       log.push({ event: 'upload-aborted', requestId: rid, at: Date.now() });
       return;
     }
+    if (s3LengthRequired('PostObject', req, res)) return;
     if (s3StatusFault('PostObject', res)) return;
     const parts = parseMultipart(req, body);
     const failing = parts && [...state.batches.values()].flatMap((x) => x.items).find((it) => it.objectKey && it.objectKey === parts.find((p) => p.name === 'key')?.value);
@@ -3237,15 +3417,21 @@ async function postObjectForm(req, res, rid, _m, url, body) {
       return s3Error(res, 403, 'AccessDenied', 'Invalid according to Policy: the policy could not be read.');
     }
     const b = state.batches.get(doc.batchId);
-    const expected = [...FORM_FIELD_ORDER, 'key', 'Content-Type', 'x-amz-checksum-algorithm', 'x-amz-checksum-sha256', 'file'];
+    // S3 compares form field names without regard to case, and refuses a POST that repeats one.
     const got = parts.map((p) => p.name);
+    const repeated = got.find((n, i) => got.findIndex((m) => m.toLowerCase() === n.toLowerCase()) !== i);
+    if (repeated) {
+      log.push({ event: 'storage-refused-repeated-field', field: repeated, at: Date.now() });
+      return s3Error(res, 400, 'InvalidArgument', `POST requires exactly one value for each form field; ${repeated} was sent more than once.`);
+    }
+    const expected = [...FORM_FIELD_ORDER.filter((k) => !OWN_FORM_FIELDS.has(k)), 'key', 'Content-Type', 'x-amz-checksum-algorithm', 'x-amz-checksum-sha256', 'file'];
     if (got.join('\n') !== expected.join('\n')) {
       return s3Error(res, 400, 'InvalidArgument', `The form fields are not in the policy's order: expected ${expected.join(', ')}; got ${got.join(', ')}.`);
     }
     if (crypto.createHmac('sha256', UPLOAD_SECRET).update(fields.policy).digest('hex') !== fields['x-amz-signature']) {
       return s3Error(res, 403, 'SignatureDoesNotMatch', 'The request signature we calculated does not match the signature you provided.');
     }
-    if (!b || Date.parse(doc.expiration) <= Date.now() || b.expiredGeneration === doc.generation) {
+    if (!b || Date.parse(doc.expiration) <= arrived || b.expiredGeneration === doc.generation) {
       return s3Error(res, 403, 'AccessDenied', 'Invalid according to Policy: Policy expired.');
     }
     if (!fields.key.startsWith(doc.conditions[0][2])) return s3Error(res, 403, 'AccessDenied', 'Invalid according to Policy: Policy Condition failed: ["starts-with", "$key", ...]');
@@ -3332,7 +3518,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify(primed ? { id: primed.case.id, served: primed.served, mismatches: primed.mismatches } : null));
     }
-    const body = await readBody(req);
+    const body = req.method === 'POST' && url.pathname === '/__s3/' && faults.uploadReadBytesPerSecond ? await readBodySlowly(req, faults.uploadReadBytesPerSecond) : await readBody(req);
     const multipart = req.method === 'POST' && url.pathname === '/__s3/' ? parseMultipart(req, body) : null;
     const entry = {
       headerNames: Object.keys(req.headers),
@@ -3355,6 +3541,9 @@ const server = http.createServer(async (req, res) => {
       const delay = refusalDelayMs();
       if (delay) await new Promise((r) => setTimeout(r, delay));
       return problem(res, rid, 401, 'UNAUTHENTICATED', 'The bearer token is missing, expired or not valid for this workspace');
+    }
+    if (req.headers['if-match'] === '*' && !faults.allowIfMatchWildcard) {
+      return problem(res, rid, 400, 'IF_MATCH_WILDCARD_NOT_ASKED', 'If-Match: * was sent, and this case did not ask for it: no SDK helper may send it on its own (PROTOCOL.md 8).');
     }
     if (primed && !primed.served && !url.pathname.startsWith('/__s3/')) return await serveExample(req, res, url, body);
     for (const [method, re, handler] of routes) {
