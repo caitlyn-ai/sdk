@@ -142,9 +142,9 @@ const DEFAULT_FAULTS = {
   // The form endpoint reads each upload's body at most this many bytes a second, so a large file arrives slowly but
   // steadily (files.slow-not-stalled). 0 reads it at once.
   uploadReadBytesPerSecond: 0,
-  // Upload reservations on a compressed clock (batch-upload.keep-alive): { policySeconds: 302, reservationSeconds: 4 }.
-  // Every upload policy (Start's and each renewal's) expires policySeconds after it is issued, so an SDK's "less than
-  // 5 minutes left" falls due 2 seconds after each issue; the batch's uploadsExpireAt is the latest issue plus
+  // Upload reservations on a compressed clock (batch-upload.keep-alive): { policySeconds: 2, reservationSeconds: 2 }.
+  // Every upload policy (Start's and each renewal's) expires policySeconds after it is issued, so an SDK's renewal
+  // margin (half a short policy's life) falls due 1 second after each issue; the batch's uploadsExpireAt is the latest issue plus
   // reservationSeconds; and CompleteIngestionBatchUploads fails an item UPLOAD_EXPIRED when its object was stored
   // after the uploadsExpireAt in force at that moment. false for the usual mock.
   uploadReservation: false,

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Go: the Go tag script's tests, then build, vet and staticcheck the SDK, the developer docs' examples and the harness, run the conformance harness (writes
-# build/conformance/go.json), then again with the race detector.
+# Go: the Go tag script's tests, then build, vet and staticcheck the SDK, the developer docs' examples and the harness, and run the conformance harness
+# once, under the race detector (writes build/conformance/go.json).
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$root/build/conformance"
@@ -20,9 +20,16 @@ cd "$root/conformance/go"
 test -z "$(gofmt -l .)" || { gofmt -l .; echo "gofmt: the files above are not formatted" >&2; exit 1; }
 # The harness builds the SDK with its conformance-only hooks (go/sync_conformance.go)
 go vet -tags caitlyn_conformance ./... && staticcheck -tags caitlyn_conformance ./...
-go test -tags caitlyn_conformance -count=1 -p 1 -json ./... > "$root/build/conformance/go.json" || { grep -E '"Action":"fail"' "$root/build/conformance/go.json" | head -20; exit 1; }
-# The race run's whole output is kept in build/conformance/go-race.log and printed when it fails, so a data race
-# report (or a failing test) is never reduced to its last line
-CGO_ENABLED=1 go test -tags caitlyn_conformance -race -count=1 -p 1 ./... > "$root/build/conformance/go-race.log" 2>&1 \
-  || { grep -v -E '^(=== RUN|    --- PASS|--- PASS)' "$root/build/conformance/go-race.log"; echo "go test -race failed: full output in build/conformance/go-race.log" >&2; exit 1; }
-tail -1 "$root/build/conformance/go-race.log"
+# One run, under the race detector, which runs every test as a plain run would and also reports a data race; its
+# events go to build/conformance/go.json (the per-case check reads them). On a failure, the failing tests' output and
+# any race report are printed, never reduced to the last line.
+CGO_ENABLED=1 go test -tags caitlyn_conformance -race -count=1 -p 1 -json ./... > "$root/build/conformance/go.json" || {
+  node -e '
+    const lines = require("fs").readFileSync(process.argv[1], "utf8").split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    const failed = new Set(lines.filter((e) => e.Action === "fail").map((e) => e.Test ?? e.Package));
+    for (const e of lines) if (e.Action === "output" && (failed.has(e.Test ?? e.Package) || /DATA RACE|WARNING: DATA RACE/.test(e.Output))) process.stdout.write(e.Output);
+  ' "$root/build/conformance/go.json"
+  echo "go test -race failed: every event is in build/conformance/go.json" >&2
+  exit 1
+}
+grep -E '"Action":"(pass|fail)","Package"' "$root/build/conformance/go.json" | tail -2

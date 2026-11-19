@@ -3312,29 +3312,29 @@ test('[batch-upload.not-started] upload() on a batch not started raises INGESTIO
 });
 
 test('[batch-upload.keep-alive] while an upload is in flight the policy is renewed on a timer, so a long final upload is accepted; no renewal after the call returns or is cancelled', async () => {
-  // A compressed clock: each policy lasts 4 s, so it is due for renewal 2 s after it arrives (half its life), and the
-  // batch stops waiting for bytes 4 s after the latest one. The one file takes 6 s to arrive.
+  // A compressed clock: each policy lasts 2 s, so it is due for renewal 1 s after it arrives (half its life), and the
+  // batch stops waiting for bytes 2 s after the latest one. The one file takes 3 s to arrive.
   const renewals = async () => (await api()).filter((r) => r.method === 'POST' && r.path.endsWith('/upload-policies')).length;
   const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
-  await faults({ uploadReservation: { policySeconds: 4, reservationSeconds: 4 }, uploadDelayMs: 6000 });
+  await faults({ uploadReservation: { policySeconds: 2, reservationSeconds: 2 }, uploadDelayMs: 3000 });
   const files = handFiles(1);
   const batch = await startedBatch(files);
   const uploaded = await batch.upload(asUploads(files));
   assert.deepEqual(uploaded.items.map((i) => [i.status, i.failureCode]), [['ingesting', undefined]], 'the item was accepted, not UPLOAD_EXPIRED');
   const sent = await renewals();
   assert.ok(sent >= 3, `${sent} policies asked for: the first, then at least two while the upload was in flight`);
-  await pause(2500);
+  await pause(1500);
   assert.equal(await renewals(), sent, 'no renewal after the call returned');
   // Cancelled during a slow upload: no renewal after the cancellation is raised.
   await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
-  await faults({ uploadReservation: { policySeconds: 4, reservationSeconds: 4 }, uploadDelayMs: 6000 });
+  await faults({ uploadReservation: { policySeconds: 2, reservationSeconds: 2 }, uploadDelayMs: 3000 });
   const again = await startedBatch(files);
   const controller = new AbortController();
-  setTimeout(() => controller.abort(), 2500);
+  setTimeout(() => controller.abort(), 1500);
   const err = await again.upload(asUploads(files), { signal: controller.signal }).then(() => undefined, (e: unknown) => e as Error);
   assert.equal(err?.name, 'AbortError');
   const atCancel = await renewals();
-  await pause(2500);
+  await pause(1500);
   assert.equal(await renewals(), atCancel, 'no renewal after the cancellation');
 });
 
@@ -3354,18 +3354,18 @@ test('[batch-upload.keep-alive-floor] a policy due every half second is renewed 
 });
 
 test('[batch-upload.short-window] uploadWindowSeconds and expiresInSeconds pass straight through, and a short policy is renewed once half its life has passed', async () => {
-  // A 4-second window (under the server's 60-second least: the mock's test mode) and one file that takes 5 s to
-  // arrive. Each policy lasts 4 s, so its renewal margin is 2 s, not 5 minutes: renewals about 2 s apart, not at once
-  // and then once a second.
-  await faults({ shortWindows: true, uploadDelayMs: 5000 });
+  // A 2-second window (under the server's 60-second least: the mock's test mode) and one file that takes 2.5 s to
+  // arrive. Each policy lasts 2 s, so its renewal margin is 1 s, not 5 minutes: renewals about 1 s apart, not at once
+  // and then on each of the keep-alive's ticks.
+  await faults({ shortWindows: true, uploadDelayMs: 2500 });
   const t0 = Date.now();
-  const report = await kbScope().ingestion.sync(await syncSource({ 'annual-leave.pdf': enc('%PDF annual') }), { folder: '/window/', uploadWindowSeconds: 4 });
+  const report = await kbScope().ingestion.sync(await syncSource({ 'annual-leave.pdf': enc('%PDF annual') }), { folder: '/window/', uploadWindowSeconds: 2 });
   assert.equal(report.batch.status, 'succeeded');
   const created = (await api()).find((r) => r.method === 'POST' && r.path === BATCHES)!;
-  assert.equal(JSON.parse(created.body).uploadWindowSeconds, 4, 'sent as given');
+  assert.equal(JSON.parse(created.body).uploadWindowSeconds, 2, 'sent as given');
   const at = (await api()).filter((r) => r.method === 'POST' && r.path.endsWith('/upload-policies')).map((r) => (r.at as number) - t0);
-  assert.ok(at.length >= 1 && at.length <= 3, `${at.length} renewals in a 5 s upload under 4 s policies (at ${at.join(', ')} ms)`);
-  for (let i = 1; i < at.length; i++) assert.ok(at[i] - at[i - 1] >= 1500, `renewals ${at[i] - at[i - 1]} ms apart`);
+  assert.ok(at.length >= 1 && at.length <= 3, `${at.length} renewals in a 2.5 s upload under 2 s policies (at ${at.join(', ')} ms)`);
+  for (let i = 1; i < at.length; i++) assert.ok(at[i] - at[i - 1] >= 750, `renewals ${at[i] - at[i - 1]} ms apart`);
   // expiresInSeconds on a single file's upload, as given.
   const before = Date.now();
   const up = await client().core.uploads.reserve({ fileName: 'a.pdf', contentType: 'application/pdf', byteSize: 1, sha256: await sha256(enc('a')), expiresInSeconds: 60 });

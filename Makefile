@@ -30,7 +30,8 @@ go: ## Go: build, vet, staticcheck, conformance (also with the race detector)
 rust: ## Rust: rustfmt, clippy, unit and doc tests, conformance
 	@$(RUN) scripts/test-rust.sh
 
-conformance: typescript python go rust ## All four conformance suites, then the per-case check
+conformance: ## All four language suites at once (CAITLYN_SUITES_AT_ONCE, default 4), then the per-case check
+	@scripts/conformance-all.sh
 	@$(RUN) node scripts/check-conformance.mjs
 
 model-snapshot-check: ## Fail if model/ changed (against origin/main) without model/model.lock.json: edit the app's smithy/ instead

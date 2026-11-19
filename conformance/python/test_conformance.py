@@ -3653,51 +3653,51 @@ async def test_batch_upload_not_started(mock: Mock, case_id: str) -> None:
 
 @case("batch-upload.keep-alive")
 async def test_batch_upload_keep_alive(mock: Mock, case_id: str) -> None:
-    # A compressed clock: each policy lasts 4 s, so it is due for renewal 2 s after it arrives (half its life), and the
-    # batch stops waiting for bytes 4 s after the latest one. The one file takes 6 s to arrive.
+    # A compressed clock: each policy lasts 2 s, so it is due for renewal 1 s after it arrives (half its life), and the
+    # batch stops waiting for bytes 2 s after the latest one. The one file takes 3 s to arrive.
     def renewals() -> int:
         return len(calls(mock, "/upload-policies"))
 
-    reservation = {"policySeconds": 4, "reservationSeconds": 4}
+    reservation = {"policySeconds": 2, "reservationSeconds": 2}
     contents = {"/hr/annual-leave.md": b"Staff receive 20 days of annual leave."}
-    mock.faults(uploadReservation=reservation, uploadDelayMs=6000)
+    mock.faults(uploadReservation=reservation, uploadDelayMs=3000)
     c = client(mock)
     uploaded = await (await built_batch(c, contents)).upload(by_path(contents))
     assert [(str(i.status), i.failure_code) for i in uploaded.items] == [("ingesting", None)], "accepted, not UPLOAD_EXPIRED"
     sent = renewals()
     assert sent >= 3, f"{sent} policies asked for: the first, then at least two while the upload was in flight"
-    await asyncio.sleep(2.5)
+    await asyncio.sleep(1.5)
     assert renewals() == sent, "no renewal after the call returned"
     # Cancelled during the slow upload: no renewal after the cancellation is raised.
     mock.reset()
-    mock.faults(uploadReservation=reservation, uploadDelayMs=6000)
+    mock.faults(uploadReservation=reservation, uploadDelayMs=3000)
     batch = await built_batch(c, contents)
     task = asyncio.create_task(batch.upload(by_path(contents)))
-    await asyncio.sleep(2.5)
+    await asyncio.sleep(1.5)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
     at_cancel = renewals()
-    await asyncio.sleep(2.5)
+    await asyncio.sleep(1.5)
     assert renewals() == at_cancel, "no renewal after the cancellation"
 
 
 @case("batch-upload.short-window")
 async def test_batch_upload_short_window(mock: Mock, case_id: str) -> None:
-    # A 4-second window (under the server's 60-second least: the mock's test mode) and one file that takes 5 s to arrive.
-    # Each policy lasts 4 s, so its renewal margin is 2 s, not 5 minutes: renewals about 2 s apart, not at once and then
-    # once a second.
-    mock.faults(shortWindows=True, uploadDelayMs=5000)
+    # A 2-second window (under the server's 60-second least: the mock's test mode) and one file that takes 2.5 s to
+    # arrive. Each policy lasts 2 s, so its renewal margin is 1 s, not 5 minutes: renewals about 1 s apart, not at once
+    # and then on each of the keep-alive's ticks.
+    mock.faults(shortWindows=True, uploadDelayMs=2500)
     c = client(mock)
     files = [SyncFile("annual-leave.pdf", UploadFile.from_bytes(b"%PDF annual", name="annual-leave.pdf"))]
-    report = await c.knowledge_bases(KB).ingestion.sync(files, folder="/window/", upload_window_seconds=4)
+    report = await c.knowledge_bases(KB).ingestion.sync(files, folder="/window/", upload_window_seconds=2)
     assert str(report.batch.status) == "succeeded"
     created = [r for r in mock.api() if r["method"] == "POST" and str(r["path"]).endswith("/ingestion-batches")][0]
-    assert json.loads(created["body"])["uploadWindowSeconds"] == 4, "sent as given"
+    assert json.loads(created["body"])["uploadWindowSeconds"] == 2, "sent as given"
     at = [int(r["at"]) for r in calls(mock, "/upload-policies")]
-    assert 1 <= len(at) <= 3, f"{len(at)} renewals in a 5 s upload under 4 s policies"
+    assert 1 <= len(at) <= 3, f"{len(at)} renewals in a 2.5 s upload under 2 s policies"
     gaps = [b - a for a, b in zip(at, at[1:])]
-    assert all(g >= 1500 for g in gaps), f"renewals {gaps} ms apart"
+    assert all(g >= 750 for g in gaps), f"renewals {gaps} ms apart"
     # expires_in_seconds on a single file's upload, as given.
     before = time.time()
     up = await c.core.uploads.reserve(file_name="a.pdf", content_type="application/pdf", byte_size=1, sha256=sha_b64(b"a"), expires_in_seconds=60)
