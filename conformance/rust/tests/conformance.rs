@@ -4187,14 +4187,14 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             Ok(())
         }),
         "batch-upload.keep-alive" => Box::pin(async move {
-            // A compressed clock: each policy lasts 4 s, so it is due for renewal 2 s after it arrives (half its life), and
-            // the batch stops waiting for bytes 4 s after the latest one. The one file takes 6 s to arrive.
+            // A compressed clock: each policy lasts 2 s, so it is due for renewal 1 s after it arrives (half its life), and
+            // the batch stops waiting for bytes 2 s after the latest one. The one file takes 3 s to arrive.
             let renewals = || async {
                 m.matching(|r| str_at(r, "method") == "POST" && str_at(r, "path").ends_with("/upload-policies"))
                     .await
                     .len()
             };
-            let faults = json!({"uploadReservation": {"policySeconds": 4, "reservationSeconds": 4}, "uploadDelayMs": 6000});
+            let faults = json!({"uploadReservation": {"policySeconds": 2, "reservationSeconds": 2}, "uploadDelayMs": 3000});
             m.faults(faults.clone()).await;
             let c = client(m);
             let data = b"Staff receive 20 days of annual leave.";
@@ -4211,7 +4211,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 sent >= 3,
                 "{sent} policies asked for: the first, then at least two while the upload was in flight"
             );
-            tokio::time::sleep(Duration::from_millis(2500)).await;
+            tokio::time::sleep(Duration::from_millis(1500)).await;
             ensure!(renewals().await == sent, "a renewal after the call returned");
             // Cancelled during the slow upload: no renewal after the cancellation is raised.
             m.reset().await;
@@ -4221,33 +4221,33 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let token = CancellationToken::new();
             let t = token.clone();
             tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(2500)).await;
+                tokio::time::sleep(Duration::from_millis(1500)).await;
                 t.cancel();
             });
             let r = batch.upload(files()).cancel_on(token).await;
             ensure!(matches!(r, Err(Error::Cancelled)), "got {:?}", r.err());
             let at_cancel = renewals().await;
-            tokio::time::sleep(Duration::from_millis(2500)).await;
+            tokio::time::sleep(Duration::from_millis(1500)).await;
             ensure!(renewals().await == at_cancel, "a renewal after the cancellation");
             Ok(())
         }),
         "batch-upload.short-window" => Box::pin(async move {
-            // A 4-second window (under the server's 60-second least: the mock's test mode) and one file that takes 5 s
-            // to arrive. Each policy lasts 4 s, so its renewal margin is 2 s, not 5 minutes: renewals about 2 s apart.
-            m.faults(json!({"shortWindows": true, "uploadDelayMs": 5000})).await;
+            // A 2-second window (under the server's 60-second least: the mock's test mode) and one file that takes 2.5 s
+            // to arrive. Each policy lasts 2 s, so its renewal margin is 1 s, not 5 minutes: renewals about 1 s apart.
+            m.faults(json!({"shortWindows": true, "uploadDelayMs": 2500})).await;
             let c = client(m);
             let input = SyncInput::items(vec![SyncItem::file(
                 "/window/annual-leave.pdf",
                 pdf("annual-leave.pdf", b"%PDF annual"),
             )])
-            .upload_window_seconds(4);
+            .upload_window_seconds(2);
             let report = c.knowledge_base(KB).ingestion().sync(input).await.map_err(s)?;
             ensure!(report.batch.status.as_str() == "succeeded", "batch {:?}", report.batch.status);
             let created = m
                 .matching(|r| str_at(r, "method") == "POST" && str_at(r, "path").ends_with("/ingestion-batches"))
                 .await;
             let body: Value = serde_json::from_str(created.first().map(|r| str_at(r, "body")).unwrap_or("{}")).unwrap_or_default();
-            ensure!(body["uploadWindowSeconds"] == json!(4), "CreateIngestionBatch sent {body}");
+            ensure!(body["uploadWindowSeconds"] == json!(2), "CreateIngestionBatch sent {body}");
             let at: Vec<i64> = m
                 .matching(|r| str_at(r, "method") == "POST" && str_at(r, "path").ends_with("/upload-policies"))
                 .await
@@ -4256,11 +4256,11 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 .collect();
             ensure!(
                 (1..=3).contains(&at.len()),
-                "{} renewals in a 5 s upload under 4 s policies",
+                "{} renewals in a 2.5 s upload under 2 s policies",
                 at.len()
             );
             let gaps: Vec<i64> = at.windows(2).map(|w| w[1] - w[0]).collect();
-            ensure!(gaps.iter().all(|g| *g >= 1500), "renewals {gaps:?} ms apart");
+            ensure!(gaps.iter().all(|g| *g >= 750), "renewals {gaps:?} ms apart");
             // expires_in_seconds on a single file's upload, as given.
             let before = chrono::Utc::now();
             let up = c

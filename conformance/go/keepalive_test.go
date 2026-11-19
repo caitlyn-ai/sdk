@@ -15,12 +15,12 @@ import (
 
 func init() {
 	protocol["batch-upload.keep-alive"] = func(t *testing.T, m mock) {
-		// A compressed clock: each policy lasts 4 s, so it is due for renewal 2 s after it arrives (half its life), and the
-		// batch stops waiting for bytes 4 s after the latest one. The one file takes 6 s to arrive.
+		// A compressed clock: each policy lasts 2 s, so it is due for renewal 1 s after it arrives (half its life), and the
+		// batch stops waiting for bytes 2 s after the latest one. The one file takes 3 s to arrive.
 		renewals := func() int {
 			return len(m.matching(t, func(r logged) bool { return r.Method == "POST" && pathHasSuffix("/upload-policies")(r) }))
 		}
-		faults := map[string]any{"uploadReservation": map[string]any{"policySeconds": 4, "reservationSeconds": 4}, "uploadDelayMs": 6000}
+		faults := map[string]any{"uploadReservation": map[string]any{"policySeconds": 2, "reservationSeconds": 2}, "uploadDelayMs": 3000}
 		m.faults(t, faults)
 		c := client(t, m)
 		items, files := newFiles(1)
@@ -36,7 +36,7 @@ func init() {
 		if sent < 3 {
 			t.Fatalf("%d policies asked for; want the first, then at least two while the upload was in flight", sent)
 		}
-		time.Sleep(2500 * time.Millisecond)
+		time.Sleep(1500 * time.Millisecond)
 		if n := renewals(); n != sent {
 			t.Fatalf("%d renewals after the call returned", n-sent)
 		}
@@ -46,14 +46,14 @@ func init() {
 		m.faults(t, faults)
 		c = client(t, m)
 		b = startedBatch(t, c, items)
-		ctx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 		defer cancel()
 		_, err = b.Upload(ctx, caitlyn.FilesByPath(files), nil)
 		if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 			t.Fatalf("got %v; want the context's error", err)
 		}
 		atCancel := renewals()
-		time.Sleep(2500 * time.Millisecond)
+		time.Sleep(1500 * time.Millisecond)
 		if n := renewals(); n != atCancel {
 			t.Fatalf("%d renewals after the cancellation", n-atCancel)
 		}
@@ -89,13 +89,13 @@ func init() {
 	}
 
 	protocol["batch-upload.short-window"] = func(t *testing.T, m mock) {
-		// A 4-second window (under the server's 60-second least: the mock's test mode) and one file that takes 5 s to
-		// arrive. Each policy lasts 4 s, so its renewal margin is 2 s, not 5 minutes: renewals about 2 s apart.
-		m.faults(t, map[string]any{"shortWindows": true, "uploadDelayMs": 5000})
+		// A 2-second window (under the server's 60-second least: the mock's test mode) and one file that takes 2.5 s to
+		// arrive. Each policy lasts 2 s, so its renewal margin is 1 s, not 5 minutes: renewals about 1 s apart.
+		m.faults(t, map[string]any{"shortWindows": true, "uploadDelayMs": 2500})
 		c := client(t, m)
 		report, err := c.KnowledgeBase(kb).Ingestion.Sync(within(t), caitlyn.Files{
 			{RelativePath: "annual-leave.pdf", File: caitlyn.FileFromBytes("annual-leave.pdf", pdf("annual leave"))},
-		}, &caitlyn.SyncOptions{Folder: "/window/", UploadWindowSeconds: 4})
+		}, &caitlyn.SyncOptions{Folder: "/window/", UploadWindowSeconds: 2})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -104,18 +104,18 @@ func init() {
 		}
 		created := m.matching(t, func(r logged) bool { return r.Method == "POST" && strings.HasSuffix(r.Path, "/ingestion-batches") })
 		var body map[string]any
-		if len(created) == 0 || json.Unmarshal([]byte(created[0].Body), &body) != nil || body["uploadWindowSeconds"] != float64(4) {
-			t.Fatalf("CreateIngestionBatch sent %v; want uploadWindowSeconds 4", body)
+		if len(created) == 0 || json.Unmarshal([]byte(created[0].Body), &body) != nil || body["uploadWindowSeconds"] != float64(2) {
+			t.Fatalf("CreateIngestionBatch sent %v; want uploadWindowSeconds 2", body)
 		}
 		var at []int64
 		for _, r := range m.matching(t, func(r logged) bool { return r.Method == "POST" && pathHasSuffix("/upload-policies")(r) }) {
 			at = append(at, r.At)
 		}
 		if len(at) < 1 || len(at) > 3 {
-			t.Fatalf("%d renewals in a 5 s upload under 4 s policies", len(at))
+			t.Fatalf("%d renewals in a 2.5 s upload under 2 s policies", len(at))
 		}
 		for i := 1; i < len(at); i++ {
-			if at[i]-at[i-1] < 1500 {
+			if at[i]-at[i-1] < 750 {
 				t.Fatalf("renewals %d ms apart (%v)", at[i]-at[i-1], at)
 			}
 		}
