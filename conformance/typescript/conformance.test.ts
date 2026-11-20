@@ -4110,19 +4110,26 @@ test('[watch.snapshot-not-progress] a watch whose connections bring only their s
   // Three such connections, then one that stays open and brings a change: the watch carries on to it.
   await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
   await faults({ watchDrops: { count: 3, afterEvents: 1 } });
-  const changing = (async () => {
-    while ((await watches()) < 4) await new Promise((r) => setTimeout(r, 50));
-    await new Promise((r) => setTimeout(r, 100));
+  // The change is made once the watch has yielded the fourth connection's snapshot, the one that stays open, so it
+  // cannot land before that connection: what the case checks does not depend on timing.
+  let changing: Promise<void> | undefined;
+  const change = async () => {
     const current = await kb.get();
     await kb.update({ description: 'Still watching' }, { ifMatch: current.etag! });
-  })();
+  };
   const types: string[] = [];
   for await (const e of kb.watch()) {
     types.push(e.type);
+    if (e.type === 'snapshot' && types.length === 4) changing = change();
     if (e.type === 'knowledge_base.updated') break;
   }
   await changing;
-  assert.deepEqual(types, ['snapshot', 'snapshot', 'snapshot', 'snapshot', 'knowledge_base.updated']);
+  // The three snapshot-only reconnects did not end the watch, and the change after them arrived. A browser may drop
+  // and reopen the long-lived connection on its own; each such reconnect starts with a snapshot too, so more than
+  // four snapshots may come first. Only snapshots come before the change.
+  assert.equal(types.at(-1), 'knowledge_base.updated');
+  const snapshots = types.slice(0, -1);
+  assert.ok(snapshots.length >= 4 && snapshots.every((t) => t === 'snapshot'), `before the change: ${snapshots.join(', ')}`);
 });
 
 test('[batch-upload.policy-sets-key] a policy whose formFields have their own key, as createPresignedPost makes them, uploads each item with one key, the item\'s objectKey (the mock refuses a repeated field)', async () => {
