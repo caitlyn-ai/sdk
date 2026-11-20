@@ -7398,23 +7398,40 @@ impl ListAgentsRequest {
         self.items().collect().await
     }
 
+    fn read_page(core: rt::Client, input: ListAgentsInput, opts: rt::CallOptions) -> rt::BoxFuture<'static, Result<ListAgentsPage, Error>> {
+        Box::pin(async move {
+            let req = build_list_agents(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_LIST_AGENTS, req, &opts).await.map_err(Error::from)?;
+            let mut out = read_list_agents(resp).await.map_err(Error::from)?;
+            if out.has_next_page() {
+                let mut next = input.clone();
+                next.cursor = out.next_cursor.clone();
+                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));
+            }
+            Ok(out)
+        })
+    }
+
     /// The pages, from the `cursor` set (normally none) to the last page.
     pub fn pages(self) -> rt::Pages<ListAgentsPage, Error> {
         let ListAgentsRequest { core, input, opts, .. } = self;
         let start = input.cursor.clone();
         rt::Pages::new(start, move |cursor, opts| {
-            let core = core.clone();
             let mut input = input.clone();
             input.cursor = cursor;
+            let read = Self::read_page(core.clone(), input, opts);
             Box::pin(async move {
-                let req = build_list_agents(&input).map_err(Error::from)?;
-                let resp = core.send(&OP_LIST_AGENTS, req, &opts).await.map_err(Error::from)?;
-                let out = read_list_agents(resp).await.map_err(Error::from)?;
+                let out = read.await?;
                 let next = out.next_cursor.clone();
                 Ok((out, next))
             })
         })
         .options(opts)
+    }
+
+    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `next_cursor`, set as `cursor`, reads the page after it.
+    pub async fn page(self) -> Result<ListAgentsPage, Error> {
+        self.pages().first().await.expect("a list always gives its first page")
     }
 }
 
@@ -7544,23 +7561,44 @@ impl ListAgentVersionsRequest {
         self.items().collect().await
     }
 
+    fn read_page(
+        core: rt::Client,
+        input: ListAgentVersionsInput,
+        opts: rt::CallOptions,
+    ) -> rt::BoxFuture<'static, Result<ListAgentVersionsPage, Error>> {
+        Box::pin(async move {
+            let req = build_list_agent_versions(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_LIST_AGENT_VERSIONS, req, &opts).await.map_err(Error::from)?;
+            let mut out = read_list_agent_versions(resp).await.map_err(Error::from)?;
+            if out.has_next_page() {
+                let mut next = input.clone();
+                next.cursor = out.next_cursor.clone();
+                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));
+            }
+            Ok(out)
+        })
+    }
+
     /// The pages, from the `cursor` set (normally none) to the last page.
     pub fn pages(self) -> rt::Pages<ListAgentVersionsPage, Error> {
         let ListAgentVersionsRequest { core, input, opts, .. } = self;
         let start = input.cursor.clone();
         rt::Pages::new(start, move |cursor, opts| {
-            let core = core.clone();
             let mut input = input.clone();
             input.cursor = cursor;
+            let read = Self::read_page(core.clone(), input, opts);
             Box::pin(async move {
-                let req = build_list_agent_versions(&input).map_err(Error::from)?;
-                let resp = core.send(&OP_LIST_AGENT_VERSIONS, req, &opts).await.map_err(Error::from)?;
-                let out = read_list_agent_versions(resp).await.map_err(Error::from)?;
+                let out = read.await?;
                 let next = out.next_cursor.clone();
                 Ok((out, next))
             })
         })
         .options(opts)
+    }
+
+    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `next_cursor`, set as `cursor`, reads the page after it.
+    pub async fn page(self) -> Result<ListAgentVersionsPage, Error> {
+        self.pages().first().await.expect("a list always gives its first page")
     }
 }
 
@@ -7690,23 +7728,44 @@ impl ListConversationsRequest {
         self.items().collect().await
     }
 
+    fn read_page(
+        core: rt::Client,
+        input: ListConversationsInput,
+        opts: rt::CallOptions,
+    ) -> rt::BoxFuture<'static, Result<ListConversationsPage, Error>> {
+        Box::pin(async move {
+            let req = build_list_conversations(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_LIST_CONVERSATIONS, req, &opts).await.map_err(Error::from)?;
+            let mut out = read_list_conversations(resp).await.map_err(Error::from)?;
+            if out.has_next_page() {
+                let mut next = input.clone();
+                next.cursor = out.next_cursor.clone();
+                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));
+            }
+            Ok(out)
+        })
+    }
+
     /// The pages, from the `cursor` set (normally none) to the last page.
     pub fn pages(self) -> rt::Pages<ListConversationsPage, Error> {
         let ListConversationsRequest { core, input, opts, .. } = self;
         let start = input.cursor.clone();
         rt::Pages::new(start, move |cursor, opts| {
-            let core = core.clone();
             let mut input = input.clone();
             input.cursor = cursor;
+            let read = Self::read_page(core.clone(), input, opts);
             Box::pin(async move {
-                let req = build_list_conversations(&input).map_err(Error::from)?;
-                let resp = core.send(&OP_LIST_CONVERSATIONS, req, &opts).await.map_err(Error::from)?;
-                let out = read_list_conversations(resp).await.map_err(Error::from)?;
+                let out = read.await?;
                 let next = out.next_cursor.clone();
                 Ok((out, next))
             })
         })
         .options(opts)
+    }
+
+    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `next_cursor`, set as `cursor`, reads the page after it.
+    pub async fn page(self) -> Result<ListConversationsPage, Error> {
+        self.pages().first().await.expect("a list always gives its first page")
     }
 }
 
@@ -7982,23 +8041,44 @@ impl ListDocumentsRequest {
         self.items().collect().await
     }
 
+    fn read_page(
+        core: rt::Client,
+        input: ListDocumentsInput,
+        opts: rt::CallOptions,
+    ) -> rt::BoxFuture<'static, Result<ListDocumentsPage, Error>> {
+        Box::pin(async move {
+            let req = build_list_documents(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_LIST_DOCUMENTS, req, &opts).await.map_err(Error::from)?;
+            let mut out = read_list_documents(resp).await.map_err(Error::from)?;
+            if out.has_next_page() {
+                let mut next = input.clone();
+                next.cursor = out.next_cursor.clone();
+                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));
+            }
+            Ok(out)
+        })
+    }
+
     /// The pages, from the `cursor` set (normally none) to the last page.
     pub fn pages(self) -> rt::Pages<ListDocumentsPage, Error> {
         let ListDocumentsRequest { core, input, opts, .. } = self;
         let start = input.cursor.clone();
         rt::Pages::new(start, move |cursor, opts| {
-            let core = core.clone();
             let mut input = input.clone();
             input.cursor = cursor;
+            let read = Self::read_page(core.clone(), input, opts);
             Box::pin(async move {
-                let req = build_list_documents(&input).map_err(Error::from)?;
-                let resp = core.send(&OP_LIST_DOCUMENTS, req, &opts).await.map_err(Error::from)?;
-                let out = read_list_documents(resp).await.map_err(Error::from)?;
+                let out = read.await?;
                 let next = out.next_cursor.clone();
                 Ok((out, next))
             })
         })
         .options(opts)
+    }
+
+    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `next_cursor`, set as `cursor`, reads the page after it.
+    pub async fn page(self) -> Result<ListDocumentsPage, Error> {
+        self.pages().first().await.expect("a list always gives its first page")
     }
 }
 
@@ -8149,23 +8229,44 @@ impl ListDocumentVersionsRequest {
         self.items().collect().await
     }
 
+    fn read_page(
+        core: rt::Client,
+        input: ListDocumentVersionsInput,
+        opts: rt::CallOptions,
+    ) -> rt::BoxFuture<'static, Result<ListDocumentVersionsPage, Error>> {
+        Box::pin(async move {
+            let req = build_list_document_versions(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_LIST_DOCUMENT_VERSIONS, req, &opts).await.map_err(Error::from)?;
+            let mut out = read_list_document_versions(resp).await.map_err(Error::from)?;
+            if out.has_next_page() {
+                let mut next = input.clone();
+                next.cursor = out.next_cursor.clone();
+                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));
+            }
+            Ok(out)
+        })
+    }
+
     /// The pages, from the `cursor` set (normally none) to the last page.
     pub fn pages(self) -> rt::Pages<ListDocumentVersionsPage, Error> {
         let ListDocumentVersionsRequest { core, input, opts, .. } = self;
         let start = input.cursor.clone();
         rt::Pages::new(start, move |cursor, opts| {
-            let core = core.clone();
             let mut input = input.clone();
             input.cursor = cursor;
+            let read = Self::read_page(core.clone(), input, opts);
             Box::pin(async move {
-                let req = build_list_document_versions(&input).map_err(Error::from)?;
-                let resp = core.send(&OP_LIST_DOCUMENT_VERSIONS, req, &opts).await.map_err(Error::from)?;
-                let out = read_list_document_versions(resp).await.map_err(Error::from)?;
+                let out = read.await?;
                 let next = out.next_cursor.clone();
                 Ok((out, next))
             })
         })
         .options(opts)
+    }
+
+    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `next_cursor`, set as `cursor`, reads the page after it.
+    pub async fn page(self) -> Result<ListDocumentVersionsPage, Error> {
+        self.pages().first().await.expect("a list always gives its first page")
     }
 }
 
@@ -8295,23 +8396,40 @@ impl ListFieldsRequest {
         self.items().collect().await
     }
 
+    fn read_page(core: rt::Client, input: ListFieldsInput, opts: rt::CallOptions) -> rt::BoxFuture<'static, Result<ListFieldsPage, Error>> {
+        Box::pin(async move {
+            let req = build_list_fields(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_LIST_FIELDS, req, &opts).await.map_err(Error::from)?;
+            let mut out = read_list_fields(resp).await.map_err(Error::from)?;
+            if out.has_next_page() {
+                let mut next = input.clone();
+                next.cursor = out.next_cursor.clone();
+                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));
+            }
+            Ok(out)
+        })
+    }
+
     /// The pages, from the `cursor` set (normally none) to the last page.
     pub fn pages(self) -> rt::Pages<ListFieldsPage, Error> {
         let ListFieldsRequest { core, input, opts, .. } = self;
         let start = input.cursor.clone();
         rt::Pages::new(start, move |cursor, opts| {
-            let core = core.clone();
             let mut input = input.clone();
             input.cursor = cursor;
+            let read = Self::read_page(core.clone(), input, opts);
             Box::pin(async move {
-                let req = build_list_fields(&input).map_err(Error::from)?;
-                let resp = core.send(&OP_LIST_FIELDS, req, &opts).await.map_err(Error::from)?;
-                let out = read_list_fields(resp).await.map_err(Error::from)?;
+                let out = read.await?;
                 let next = out.next_cursor.clone();
                 Ok((out, next))
             })
         })
         .options(opts)
+    }
+
+    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `next_cursor`, set as `cursor`, reads the page after it.
+    pub async fn page(self) -> Result<ListFieldsPage, Error> {
+        self.pages().first().await.expect("a list always gives its first page")
     }
 }
 
@@ -8483,23 +8601,44 @@ impl ListFoldersRequest {
         self.items().collect().await
     }
 
+    fn read_page(
+        core: rt::Client,
+        input: ListFoldersInput,
+        opts: rt::CallOptions,
+    ) -> rt::BoxFuture<'static, Result<ListFoldersPage, Error>> {
+        Box::pin(async move {
+            let req = build_list_folders(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_LIST_FOLDERS, req, &opts).await.map_err(Error::from)?;
+            let mut out = read_list_folders(resp).await.map_err(Error::from)?;
+            if out.has_next_page() {
+                let mut next = input.clone();
+                next.cursor = out.next_cursor.clone();
+                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));
+            }
+            Ok(out)
+        })
+    }
+
     /// The pages, from the `cursor` set (normally none) to the last page.
     pub fn pages(self) -> rt::Pages<ListFoldersPage, Error> {
         let ListFoldersRequest { core, input, opts, .. } = self;
         let start = input.cursor.clone();
         rt::Pages::new(start, move |cursor, opts| {
-            let core = core.clone();
             let mut input = input.clone();
             input.cursor = cursor;
+            let read = Self::read_page(core.clone(), input, opts);
             Box::pin(async move {
-                let req = build_list_folders(&input).map_err(Error::from)?;
-                let resp = core.send(&OP_LIST_FOLDERS, req, &opts).await.map_err(Error::from)?;
-                let out = read_list_folders(resp).await.map_err(Error::from)?;
+                let out = read.await?;
                 let next = out.next_cursor.clone();
                 Ok((out, next))
             })
         })
         .options(opts)
+    }
+
+    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `next_cursor`, set as `cursor`, reads the page after it.
+    pub async fn page(self) -> Result<ListFoldersPage, Error> {
+        self.pages().first().await.expect("a list always gives its first page")
     }
 }
 
@@ -8618,23 +8757,44 @@ impl ListGuardrailsRequest {
         self.items().collect().await
     }
 
+    fn read_page(
+        core: rt::Client,
+        input: ListGuardrailsInput,
+        opts: rt::CallOptions,
+    ) -> rt::BoxFuture<'static, Result<ListGuardrailsPage, Error>> {
+        Box::pin(async move {
+            let req = build_list_guardrails(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_LIST_GUARDRAILS, req, &opts).await.map_err(Error::from)?;
+            let mut out = read_list_guardrails(resp).await.map_err(Error::from)?;
+            if out.has_next_page() {
+                let mut next = input.clone();
+                next.cursor = out.next_cursor.clone();
+                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));
+            }
+            Ok(out)
+        })
+    }
+
     /// The pages, from the `cursor` set (normally none) to the last page.
     pub fn pages(self) -> rt::Pages<ListGuardrailsPage, Error> {
         let ListGuardrailsRequest { core, input, opts, .. } = self;
         let start = input.cursor.clone();
         rt::Pages::new(start, move |cursor, opts| {
-            let core = core.clone();
             let mut input = input.clone();
             input.cursor = cursor;
+            let read = Self::read_page(core.clone(), input, opts);
             Box::pin(async move {
-                let req = build_list_guardrails(&input).map_err(Error::from)?;
-                let resp = core.send(&OP_LIST_GUARDRAILS, req, &opts).await.map_err(Error::from)?;
-                let out = read_list_guardrails(resp).await.map_err(Error::from)?;
+                let out = read.await?;
                 let next = out.next_cursor.clone();
                 Ok((out, next))
             })
         })
         .options(opts)
+    }
+
+    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `next_cursor`, set as `cursor`, reads the page after it.
+    pub async fn page(self) -> Result<ListGuardrailsPage, Error> {
+        self.pages().first().await.expect("a list always gives its first page")
     }
 }
 
@@ -8764,23 +8924,44 @@ impl ListHistoryEntriesRequest {
         self.items().collect().await
     }
 
+    fn read_page(
+        core: rt::Client,
+        input: ListHistoryEntriesInput,
+        opts: rt::CallOptions,
+    ) -> rt::BoxFuture<'static, Result<ListHistoryEntriesPage, Error>> {
+        Box::pin(async move {
+            let req = build_list_history_entries(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_LIST_HISTORY_ENTRIES, req, &opts).await.map_err(Error::from)?;
+            let mut out = read_list_history_entries(resp).await.map_err(Error::from)?;
+            if out.has_next_page() {
+                let mut next = input.clone();
+                next.cursor = out.next_cursor.clone();
+                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));
+            }
+            Ok(out)
+        })
+    }
+
     /// The pages, from the `cursor` set (normally none) to the last page.
     pub fn pages(self) -> rt::Pages<ListHistoryEntriesPage, Error> {
         let ListHistoryEntriesRequest { core, input, opts, .. } = self;
         let start = input.cursor.clone();
         rt::Pages::new(start, move |cursor, opts| {
-            let core = core.clone();
             let mut input = input.clone();
             input.cursor = cursor;
+            let read = Self::read_page(core.clone(), input, opts);
             Box::pin(async move {
-                let req = build_list_history_entries(&input).map_err(Error::from)?;
-                let resp = core.send(&OP_LIST_HISTORY_ENTRIES, req, &opts).await.map_err(Error::from)?;
-                let out = read_list_history_entries(resp).await.map_err(Error::from)?;
+                let out = read.await?;
                 let next = out.next_cursor.clone();
                 Ok((out, next))
             })
         })
         .options(opts)
+    }
+
+    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `next_cursor`, set as `cursor`, reads the page after it.
+    pub async fn page(self) -> Result<ListHistoryEntriesPage, Error> {
+        self.pages().first().await.expect("a list always gives its first page")
     }
 }
 
@@ -8932,23 +9113,44 @@ impl ListIngestionBatchesRequest {
         self.items().collect().await
     }
 
+    fn read_page(
+        core: rt::Client,
+        input: ListIngestionBatchesInput,
+        opts: rt::CallOptions,
+    ) -> rt::BoxFuture<'static, Result<ListIngestionBatchesPage, Error>> {
+        Box::pin(async move {
+            let req = build_list_ingestion_batches(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_LIST_INGESTION_BATCHES, req, &opts).await.map_err(Error::from)?;
+            let mut out = read_list_ingestion_batches(resp).await.map_err(Error::from)?;
+            if out.has_next_page() {
+                let mut next = input.clone();
+                next.cursor = out.next_cursor.clone();
+                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));
+            }
+            Ok(out)
+        })
+    }
+
     /// The pages, from the `cursor` set (normally none) to the last page.
     pub fn pages(self) -> rt::Pages<ListIngestionBatchesPage, Error> {
         let ListIngestionBatchesRequest { core, input, opts, .. } = self;
         let start = input.cursor.clone();
         rt::Pages::new(start, move |cursor, opts| {
-            let core = core.clone();
             let mut input = input.clone();
             input.cursor = cursor;
+            let read = Self::read_page(core.clone(), input, opts);
             Box::pin(async move {
-                let req = build_list_ingestion_batches(&input).map_err(Error::from)?;
-                let resp = core.send(&OP_LIST_INGESTION_BATCHES, req, &opts).await.map_err(Error::from)?;
-                let out = read_list_ingestion_batches(resp).await.map_err(Error::from)?;
+                let out = read.await?;
                 let next = out.next_cursor.clone();
                 Ok((out, next))
             })
         })
         .options(opts)
+    }
+
+    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `next_cursor`, set as `cursor`, reads the page after it.
+    pub async fn page(self) -> Result<ListIngestionBatchesPage, Error> {
+        self.pages().first().await.expect("a list always gives its first page")
     }
 }
 
@@ -9155,23 +9357,44 @@ impl ListIngestionBatchItemsRequest {
         self.items().collect().await
     }
 
+    fn read_page(
+        core: rt::Client,
+        input: ListIngestionBatchItemsInput,
+        opts: rt::CallOptions,
+    ) -> rt::BoxFuture<'static, Result<ListIngestionBatchItemsPage, Error>> {
+        Box::pin(async move {
+            let req = build_list_ingestion_batch_items(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_LIST_INGESTION_BATCH_ITEMS, req, &opts).await.map_err(Error::from)?;
+            let mut out = read_list_ingestion_batch_items(resp).await.map_err(Error::from)?;
+            if out.has_next_page() {
+                let mut next = input.clone();
+                next.cursor = out.next_cursor.clone();
+                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));
+            }
+            Ok(out)
+        })
+    }
+
     /// The pages, from the `cursor` set (normally none) to the last page.
     pub fn pages(self) -> rt::Pages<ListIngestionBatchItemsPage, Error> {
         let ListIngestionBatchItemsRequest { core, input, opts, .. } = self;
         let start = input.cursor.clone();
         rt::Pages::new(start, move |cursor, opts| {
-            let core = core.clone();
             let mut input = input.clone();
             input.cursor = cursor;
+            let read = Self::read_page(core.clone(), input, opts);
             Box::pin(async move {
-                let req = build_list_ingestion_batch_items(&input).map_err(Error::from)?;
-                let resp = core.send(&OP_LIST_INGESTION_BATCH_ITEMS, req, &opts).await.map_err(Error::from)?;
-                let out = read_list_ingestion_batch_items(resp).await.map_err(Error::from)?;
+                let out = read.await?;
                 let next = out.next_cursor.clone();
                 Ok((out, next))
             })
         })
         .options(opts)
+    }
+
+    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `next_cursor`, set as `cursor`, reads the page after it.
+    pub async fn page(self) -> Result<ListIngestionBatchItemsPage, Error> {
+        self.pages().first().await.expect("a list always gives its first page")
     }
 }
 
@@ -9304,23 +9527,44 @@ impl ListKnowledgeBasesRequest {
         self.items().collect().await
     }
 
+    fn read_page(
+        core: rt::Client,
+        input: ListKnowledgeBasesInput,
+        opts: rt::CallOptions,
+    ) -> rt::BoxFuture<'static, Result<ListKnowledgeBasesPage, Error>> {
+        Box::pin(async move {
+            let req = build_list_knowledge_bases(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_LIST_KNOWLEDGE_BASES, req, &opts).await.map_err(Error::from)?;
+            let mut out = read_list_knowledge_bases(resp).await.map_err(Error::from)?;
+            if out.has_next_page() {
+                let mut next = input.clone();
+                next.cursor = out.next_cursor.clone();
+                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));
+            }
+            Ok(out)
+        })
+    }
+
     /// The pages, from the `cursor` set (normally none) to the last page.
     pub fn pages(self) -> rt::Pages<ListKnowledgeBasesPage, Error> {
         let ListKnowledgeBasesRequest { core, input, opts, .. } = self;
         let start = input.cursor.clone();
         rt::Pages::new(start, move |cursor, opts| {
-            let core = core.clone();
             let mut input = input.clone();
             input.cursor = cursor;
+            let read = Self::read_page(core.clone(), input, opts);
             Box::pin(async move {
-                let req = build_list_knowledge_bases(&input).map_err(Error::from)?;
-                let resp = core.send(&OP_LIST_KNOWLEDGE_BASES, req, &opts).await.map_err(Error::from)?;
-                let out = read_list_knowledge_bases(resp).await.map_err(Error::from)?;
+                let out = read.await?;
                 let next = out.next_cursor.clone();
                 Ok((out, next))
             })
         })
         .options(opts)
+    }
+
+    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `next_cursor`, set as `cursor`, reads the page after it.
+    pub async fn page(self) -> Result<ListKnowledgeBasesPage, Error> {
+        self.pages().first().await.expect("a list always gives its first page")
     }
 }
 
@@ -9439,23 +9683,44 @@ impl ListMemoryStoresRequest {
         self.items().collect().await
     }
 
+    fn read_page(
+        core: rt::Client,
+        input: ListMemoryStoresInput,
+        opts: rt::CallOptions,
+    ) -> rt::BoxFuture<'static, Result<ListMemoryStoresPage, Error>> {
+        Box::pin(async move {
+            let req = build_list_memory_stores(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_LIST_MEMORY_STORES, req, &opts).await.map_err(Error::from)?;
+            let mut out = read_list_memory_stores(resp).await.map_err(Error::from)?;
+            if out.has_next_page() {
+                let mut next = input.clone();
+                next.cursor = out.next_cursor.clone();
+                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));
+            }
+            Ok(out)
+        })
+    }
+
     /// The pages, from the `cursor` set (normally none) to the last page.
     pub fn pages(self) -> rt::Pages<ListMemoryStoresPage, Error> {
         let ListMemoryStoresRequest { core, input, opts, .. } = self;
         let start = input.cursor.clone();
         rt::Pages::new(start, move |cursor, opts| {
-            let core = core.clone();
             let mut input = input.clone();
             input.cursor = cursor;
+            let read = Self::read_page(core.clone(), input, opts);
             Box::pin(async move {
-                let req = build_list_memory_stores(&input).map_err(Error::from)?;
-                let resp = core.send(&OP_LIST_MEMORY_STORES, req, &opts).await.map_err(Error::from)?;
-                let out = read_list_memory_stores(resp).await.map_err(Error::from)?;
+                let out = read.await?;
                 let next = out.next_cursor.clone();
                 Ok((out, next))
             })
         })
         .options(opts)
+    }
+
+    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `next_cursor`, set as `cursor`, reads the page after it.
+    pub async fn page(self) -> Result<ListMemoryStoresPage, Error> {
+        self.pages().first().await.expect("a list always gives its first page")
     }
 }
 
@@ -9585,23 +9850,44 @@ impl ListMessagesRequest {
         self.items().collect().await
     }
 
+    fn read_page(
+        core: rt::Client,
+        input: ListMessagesInput,
+        opts: rt::CallOptions,
+    ) -> rt::BoxFuture<'static, Result<ListMessagesPage, Error>> {
+        Box::pin(async move {
+            let req = build_list_messages(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_LIST_MESSAGES, req, &opts).await.map_err(Error::from)?;
+            let mut out = read_list_messages(resp).await.map_err(Error::from)?;
+            if out.has_next_page() {
+                let mut next = input.clone();
+                next.cursor = out.next_cursor.clone();
+                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));
+            }
+            Ok(out)
+        })
+    }
+
     /// The pages, from the `cursor` set (normally none) to the last page.
     pub fn pages(self) -> rt::Pages<ListMessagesPage, Error> {
         let ListMessagesRequest { core, input, opts, .. } = self;
         let start = input.cursor.clone();
         rt::Pages::new(start, move |cursor, opts| {
-            let core = core.clone();
             let mut input = input.clone();
             input.cursor = cursor;
+            let read = Self::read_page(core.clone(), input, opts);
             Box::pin(async move {
-                let req = build_list_messages(&input).map_err(Error::from)?;
-                let resp = core.send(&OP_LIST_MESSAGES, req, &opts).await.map_err(Error::from)?;
-                let out = read_list_messages(resp).await.map_err(Error::from)?;
+                let out = read.await?;
                 let next = out.next_cursor.clone();
                 Ok((out, next))
             })
         })
         .options(opts)
+    }
+
+    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `next_cursor`, set as `cursor`, reads the page after it.
+    pub async fn page(self) -> Result<ListMessagesPage, Error> {
+        self.pages().first().await.expect("a list always gives its first page")
     }
 }
 
@@ -9720,23 +10006,40 @@ impl ListModelsRequest {
         self.items().collect().await
     }
 
+    fn read_page(core: rt::Client, input: ListModelsInput, opts: rt::CallOptions) -> rt::BoxFuture<'static, Result<ListModelsPage, Error>> {
+        Box::pin(async move {
+            let req = build_list_models(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_LIST_MODELS, req, &opts).await.map_err(Error::from)?;
+            let mut out = read_list_models(resp).await.map_err(Error::from)?;
+            if out.has_next_page() {
+                let mut next = input.clone();
+                next.cursor = out.next_cursor.clone();
+                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));
+            }
+            Ok(out)
+        })
+    }
+
     /// The pages, from the `cursor` set (normally none) to the last page.
     pub fn pages(self) -> rt::Pages<ListModelsPage, Error> {
         let ListModelsRequest { core, input, opts, .. } = self;
         let start = input.cursor.clone();
         rt::Pages::new(start, move |cursor, opts| {
-            let core = core.clone();
             let mut input = input.clone();
             input.cursor = cursor;
+            let read = Self::read_page(core.clone(), input, opts);
             Box::pin(async move {
-                let req = build_list_models(&input).map_err(Error::from)?;
-                let resp = core.send(&OP_LIST_MODELS, req, &opts).await.map_err(Error::from)?;
-                let out = read_list_models(resp).await.map_err(Error::from)?;
+                let out = read.await?;
                 let next = out.next_cursor.clone();
                 Ok((out, next))
             })
         })
         .options(opts)
+    }
+
+    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `next_cursor`, set as `cursor`, reads the page after it.
+    pub async fn page(self) -> Result<ListModelsPage, Error> {
+        self.pages().first().await.expect("a list always gives its first page")
     }
 }
 
@@ -9922,23 +10225,44 @@ impl ListOperationsRequest {
         self.items().collect().await
     }
 
+    fn read_page(
+        core: rt::Client,
+        input: ListOperationsInput,
+        opts: rt::CallOptions,
+    ) -> rt::BoxFuture<'static, Result<ListOperationsPage, Error>> {
+        Box::pin(async move {
+            let req = build_list_operations(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_LIST_OPERATIONS, req, &opts).await.map_err(Error::from)?;
+            let mut out = read_list_operations(resp).await.map_err(Error::from)?;
+            if out.has_next_page() {
+                let mut next = input.clone();
+                next.cursor = out.next_cursor.clone();
+                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));
+            }
+            Ok(out)
+        })
+    }
+
     /// The pages, from the `cursor` set (normally none) to the last page.
     pub fn pages(self) -> rt::Pages<ListOperationsPage, Error> {
         let ListOperationsRequest { core, input, opts, .. } = self;
         let start = input.cursor.clone();
         rt::Pages::new(start, move |cursor, opts| {
-            let core = core.clone();
             let mut input = input.clone();
             input.cursor = cursor;
+            let read = Self::read_page(core.clone(), input, opts);
             Box::pin(async move {
-                let req = build_list_operations(&input).map_err(Error::from)?;
-                let resp = core.send(&OP_LIST_OPERATIONS, req, &opts).await.map_err(Error::from)?;
-                let out = read_list_operations(resp).await.map_err(Error::from)?;
+                let out = read.await?;
                 let next = out.next_cursor.clone();
                 Ok((out, next))
             })
         })
         .options(opts)
+    }
+
+    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `next_cursor`, set as `cursor`, reads the page after it.
+    pub async fn page(self) -> Result<ListOperationsPage, Error> {
+        self.pages().first().await.expect("a list always gives its first page")
     }
 }
 
@@ -10057,23 +10381,40 @@ impl ListToolsRequest {
         self.items().collect().await
     }
 
+    fn read_page(core: rt::Client, input: ListToolsInput, opts: rt::CallOptions) -> rt::BoxFuture<'static, Result<ListToolsPage, Error>> {
+        Box::pin(async move {
+            let req = build_list_tools(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_LIST_TOOLS, req, &opts).await.map_err(Error::from)?;
+            let mut out = read_list_tools(resp).await.map_err(Error::from)?;
+            if out.has_next_page() {
+                let mut next = input.clone();
+                next.cursor = out.next_cursor.clone();
+                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));
+            }
+            Ok(out)
+        })
+    }
+
     /// The pages, from the `cursor` set (normally none) to the last page.
     pub fn pages(self) -> rt::Pages<ListToolsPage, Error> {
         let ListToolsRequest { core, input, opts, .. } = self;
         let start = input.cursor.clone();
         rt::Pages::new(start, move |cursor, opts| {
-            let core = core.clone();
             let mut input = input.clone();
             input.cursor = cursor;
+            let read = Self::read_page(core.clone(), input, opts);
             Box::pin(async move {
-                let req = build_list_tools(&input).map_err(Error::from)?;
-                let resp = core.send(&OP_LIST_TOOLS, req, &opts).await.map_err(Error::from)?;
-                let out = read_list_tools(resp).await.map_err(Error::from)?;
+                let out = read.await?;
                 let next = out.next_cursor.clone();
                 Ok((out, next))
             })
         })
         .options(opts)
+    }
+
+    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `next_cursor`, set as `cursor`, reads the page after it.
+    pub async fn page(self) -> Result<ListToolsPage, Error> {
+        self.pages().first().await.expect("a list always gives its first page")
     }
 }
 
@@ -10192,23 +10533,40 @@ impl ListVoicesRequest {
         self.items().collect().await
     }
 
+    fn read_page(core: rt::Client, input: ListVoicesInput, opts: rt::CallOptions) -> rt::BoxFuture<'static, Result<ListVoicesPage, Error>> {
+        Box::pin(async move {
+            let req = build_list_voices(&input).map_err(Error::from)?;
+            let resp = core.send(&OP_LIST_VOICES, req, &opts).await.map_err(Error::from)?;
+            let mut out = read_list_voices(resp).await.map_err(Error::from)?;
+            if out.has_next_page() {
+                let mut next = input.clone();
+                next.cursor = out.next_cursor.clone();
+                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));
+            }
+            Ok(out)
+        })
+    }
+
     /// The pages, from the `cursor` set (normally none) to the last page.
     pub fn pages(self) -> rt::Pages<ListVoicesPage, Error> {
         let ListVoicesRequest { core, input, opts, .. } = self;
         let start = input.cursor.clone();
         rt::Pages::new(start, move |cursor, opts| {
-            let core = core.clone();
             let mut input = input.clone();
             input.cursor = cursor;
+            let read = Self::read_page(core.clone(), input, opts);
             Box::pin(async move {
-                let req = build_list_voices(&input).map_err(Error::from)?;
-                let resp = core.send(&OP_LIST_VOICES, req, &opts).await.map_err(Error::from)?;
-                let out = read_list_voices(resp).await.map_err(Error::from)?;
+                let out = read.await?;
                 let next = out.next_cursor.clone();
                 Ok((out, next))
             })
         })
         .options(opts)
+    }
+
+    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `next_cursor`, set as `cursor`, reads the page after it.
+    pub async fn page(self) -> Result<ListVoicesPage, Error> {
+        self.pages().first().await.expect("a list always gives its first page")
     }
 }
 

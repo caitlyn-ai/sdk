@@ -30,7 +30,8 @@ func newFolders(c *Client, knowledgeBaseID string) *Folders {
 // below it. `q` keeps folders whose name contains the text. List the documents in a folder with
 // ListDocuments.
 //
-// It yields every item, fetching pages as needed; ListPages yields whole pages.
+// It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
+// one.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *Folders) List(ctx context.Context, in *ListFoldersInput, opts ...CallOption) iter.Seq2[Folder, error] {
@@ -49,6 +50,12 @@ func (s *Folders) ListPages(ctx context.Context, in *ListFoldersInput, opts ...C
 	}
 	p.KnowledgeBaseID = s.knowledgeBaseID
 	return s.c.pagesListFolders(ctx, p, opts)
+}
+
+// ListPage reads one page of List, from the input's Cursor (the first page when it is unset): exactly
+// one request. The page's NextCursor, given as Cursor, reads the page after it.
+func (s *Folders) ListPage(ctx context.Context, in *ListFoldersInput, opts ...CallOption) (*ListFoldersPage, error) {
+	return core.First(s.ListPages(ctx, in, opts...))
 }
 
 // Create creates a folder; it appears once the work finishes, after the response.
@@ -204,19 +211,32 @@ func readListFolders(resp *core.Response) (*ListFoldersPage, error) {
 	return out, nil
 }
 
+func (c *Client) pageListFolders(ctx context.Context, p *listFoldersParams, opts []CallOption) (*ListFoldersPage, error) {
+	req, err := buildListFolders(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opListFolders, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, err := readListFolders(resp)
+	if err != nil {
+		return nil, err
+	}
+	if out.HasNextPage() {
+		next := *p
+		next.Cursor = out.NextCursor
+		out.nextPage = func(ctx context.Context) (*ListFoldersPage, error) { return c.pageListFolders(ctx, &next, opts) }
+	}
+	return out, nil
+}
+
 func (c *Client) pagesListFolders(ctx context.Context, p *listFoldersParams, opts []CallOption) iter.Seq2[*ListFoldersPage, error] {
 	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListFoldersPage, *string, error) {
 		page := *p
 		page.Cursor = cursor
-		req, err := buildListFolders(&page)
-		if err != nil {
-			return nil, nil, err
-		}
-		resp, err := c.core.Do(ctx, opListFolders, req, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		out, err := readListFolders(resp)
+		out, err := c.pageListFolders(ctx, &page, opts)
 		if err != nil {
 			return nil, nil, err
 		}

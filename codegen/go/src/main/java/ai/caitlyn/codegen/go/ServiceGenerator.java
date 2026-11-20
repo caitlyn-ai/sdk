@@ -498,12 +498,18 @@ final class ServiceGenerator {
     private void pages(GoWriter w, OperationInfo op) {
         w.imp("iter");
         PageInfo pi = pageInfo(op, w);
+        // One page, which knows how to read the page after it (NextPage, PROTOCOL.md 10), and the pages from a cursor
+        w.l("func (c *Client) page" + op.name + "(ctx context.Context, p *" + paramsType(op) + ", opts []CallOption) (*" + pi.page() + ", error) {\n");
+        w.l("\treq, err := build" + op.name + "(p)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n");
+        w.l("\tresp, err := c.core.Do(ctx, op" + op.name + ", req, opts)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n");
+        w.l("\tout, err := read" + op.name + "(resp)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n");
+        w.l("\tif out.HasNextPage() {\n\t\tnext := *p\n\t\tnext." + pi.cursorField() + " = out." + pi.next() + "\n"
+                + "\t\tout.nextPage = func(ctx context.Context) (*" + pi.page() + ", error) { return c.page" + op.name + "(ctx, &next, opts) }\n\t}\n");
+        w.l("\treturn out, nil\n}\n\n");
         w.l("func (c *Client) pages" + op.name + "(ctx context.Context, p *" + paramsType(op) + ", opts []CallOption) iter.Seq2[*" + pi.page() + ", error] {\n");
         w.l("\treturn core.Pages(ctx, p." + pi.cursorField() + ", func(ctx context.Context, cursor *string) (*" + pi.page() + ", *string, error) {\n");
         w.l("\t\tpage := *p\n\t\tpage." + pi.cursorField() + " = cursor\n");
-        w.l("\t\treq, err := build" + op.name + "(&page)\n\t\tif err != nil {\n\t\t\treturn nil, nil, err\n\t\t}\n");
-        w.l("\t\tresp, err := c.core.Do(ctx, op" + op.name + ", req, opts)\n\t\tif err != nil {\n\t\t\treturn nil, nil, err\n\t\t}\n");
-        w.l("\t\tout, err := read" + op.name + "(resp)\n\t\tif err != nil {\n\t\t\treturn nil, nil, err\n\t\t}\n");
+        w.l("\t\tout, err := c.page" + op.name + "(ctx, &page, opts)\n\t\tif err != nil {\n\t\t\treturn nil, nil, err\n\t\t}\n");
         w.l("\t\treturn out, out." + pi.next() + ", nil\n\t})\n}\n\n");
     }
 
@@ -1010,10 +1016,11 @@ final class ServiceGenerator {
             case PAGINATED -> {
                 claim(members, n, name);
                 claim(members, n, name + "Pages");
+                claim(members, n, name + "Page");
                 w.imp("iter").imp(core);
                 PageInfo pi = pageInfo(op, w);
                 String args = String.join("", m.leading.stream().map(l -> GoScopes.idVar(l) + ", ").toList()) + (hasInput(op) ? "in, " : "");
-                w.l(methodDoc(op, name, "It yields every item, fetching pages as needed; " + name + "Pages yields whole pages."));
+                w.l(methodDoc(op, name, "It yields every item, fetching pages as needed; " + name + "Pages yields whole pages, and " + name + "Page reads one."));
                 w.l("func (" + r + " *" + type + ") " + name + "(" + sig.params() + ") iter.Seq2[" + pi.itemType() + ", error] {\n");
                 w.l("\treturn core.Items(" + r + "." + name + "Pages(ctx, " + args + "opts...), func(p *" + pi.page() + ") []" + pi.itemType()
                         + " { return p." + pi.items() + " })\n}\n\n");
@@ -1021,6 +1028,11 @@ final class ServiceGenerator {
                 w.l("func (" + r + " *" + type + ") " + name + "Pages(" + sig.params() + ") iter.Seq2[*" + pi.page() + ", error] {\n");
                 fillParams(w, n, m, op, op, e -> "core.Fail[*" + pi.page() + "](" + e + ")");
                 w.l("\treturn " + client(n) + ".pages" + op.name + "(ctx, p, opts)\n}\n\n");
+                // PROTOCOL.md 10: one page, for a caller that shows a page at a time and keeps the next cursor itself.
+                w.l(Names.comment(name + "Page reads one page of " + name + ", from the input's " + pi.cursorField() + " (the first page when it is unset): exactly one request. "
+                        + "The page's " + pi.next() + ", given as " + pi.cursorField() + ", reads the page after it.", ""));
+                w.l("func (" + r + " *" + type + ") " + name + "Page(" + sig.params() + ") (*" + pi.page() + ", error) {\n");
+                w.l("\treturn core.First(" + r + "." + name + "Pages(ctx, " + args + "opts...))\n}\n\n");
             }
             case UNARY -> {
                 claim(members, n, name);

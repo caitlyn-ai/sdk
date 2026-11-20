@@ -124,7 +124,10 @@ final class CaitlynPythonCodegen implements DirectedCodegen<GenerationContext, P
         boolean result = facts.resultNames.containsKey(shape.getId());
         ctx.writerDelegator().useShapeWriter(shape, w -> {
             // A call's result also carries the response it was read from (PROTOCOL.md 4.2).
-            String base = result ? "CaitlynResult" : "CaitlynModel";
+            // A page of a list (PROTOCOL.md 10) also carries the way to the page after it.
+            boolean page = result && ctx.model().getOperationShapesWithTrait(software.amazon.smithy.model.traits.PaginatedTrait.class).stream()
+                .anyMatch(o -> o.getOutputShape().equals(shape.getId()));
+            String base = page ? "CaitlynPage" : result ? "CaitlynResult" : "CaitlynModel";
             w.importFrom("caitlyn_core", base);
             w.write("class $L($L):", className, base);
             w.indent();

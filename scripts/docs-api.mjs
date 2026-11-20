@@ -558,7 +558,7 @@ export function sdkReturns({ ast, ops, tree, typePages, sdkSlug }) {
   // The SDK types each response pane names, by family, for the SDK types area (sdkTypePages)
   const used = {};
   // The SDKs' own wrappers: what the call hands back around a result, never a result itself
-  const WRAPPER = /(Scope|Stream|Started|Request|Page)$|^Created|^(WorkPromise|SseStream|AsyncIterable|Paginator|EventStream|Promise)$/;
+  const WRAPPER = /(Scope|Stream|Started|Request|Page)$|^Created|^(WorkPromise|SseStream|AsyncIterable|Paginated|Paginator|EventStream|Promise)$/;
   const out = {};
   for (const op of ops) {
     const method = tree.callOf.get(op.name) ?? '';
@@ -601,7 +601,7 @@ export function sdkReturns({ ast, ops, tree, typePages, sdkSlug }) {
         own.add(now);
         ret.typescript = `returns ${typeHtml(`WorkPromise`, link)}: awaits to ${typeHtml(now, link)}; <code>.wait()</code> gives ${done === 'void' ? 'nothing once it is gone' : typeHtml(done, link)}`;
       } else if (g?.name === 'SseStream') ret.typescript = `returns ${typeHtml(ts, link)}`;
-      else if (g?.name === 'AsyncIterable') ret.typescript = `returns ${typeHtml(ts, link)}`;
+      else if (g?.name === 'AsyncIterable' || g?.name === 'Paginated') ret.typescript = `returns ${typeHtml(ts, link)}`;
       else {
         const inner = g?.name === 'Promise' ? g.args[0] : ts;
         own.add(inner);
@@ -751,7 +751,7 @@ export const SDK_TYPE_FAMILIES = [
   { key: 'handles', title: 'Handles', lead: 'What a call that starts work returns: the call\'s response, with `wait()` for the work to finish and `watch()` for its events. A handle for a new thing is also that thing\'s scope.' },
   { key: 'scopes', title: 'Scopes', lead: 'A scope is one thing in the client, `caitlyn.knowledgeBases(kbId).documents(documentId)`, with every call about it. Making a scope sends nothing. The scope a `create` returns also carries the response\'s fields.' },
   { key: 'streams', title: 'Streams', lead: 'What a stream or a watch returns: its events in order, one at a time, reconnecting by itself when a connection drops. A stream with a final event (an answer) also gives that final message.' },
-  { key: 'lists', title: 'Lists and pages', lead: 'What a list returns: every item, fetching each page as it is needed, or the pages themselves.' },
+  { key: 'lists', title: 'Lists and pages', lead: 'What a list returns: every item, fetching each page as it is needed; the pages themselves; or one page, from a cursor.' },
   { key: 'requests', title: 'Request builders', lead: 'In Rust, a call returns a request builder: set any options on it, then await it (or call `send()`) to make the request.' },
   { key: 'error-classes', title: 'Error classes', lead: 'The class each SDK raises for an error response, chosen by its HTTP status. Each carries the error\'s `code`, `detail` and `requestId`; [Errors](/errors/#handling-errors) shows how to handle them.' },
 ];
@@ -765,7 +765,7 @@ function sdkTypeFamily(lang, name, scopeNames) {
   if (scopeNames.has(name)) return 'scopes';
   if (lang === 'rust' && /Request$/.test(name)) return 'requests';
   if (/(Stream|EventStream)$/.test(name) || name === 'SseStream') return 'streams';
-  if (/Page$/.test(name) || ['Paginator', 'AsyncIterable', 'Items', 'Pages'].includes(name)) return 'lists';
+  if (/Page$/.test(name) || ['Paginated', 'Paginator', 'AsyncIterable', 'Items', 'Pages'].includes(name)) return 'lists';
   if (/Scope$/.test(name)) return 'scopes';
   if (['WorkPromise', 'Started', 'Created'].includes(name) || /Started$/.test(name) || (lang === 'go' && /^Created/.test(name))) return 'handles';
   return null;

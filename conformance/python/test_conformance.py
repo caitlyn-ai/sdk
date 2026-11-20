@@ -217,6 +217,49 @@ async def test_pagination(mock: Mock, case_id: str) -> None:
     assert "cursor=" in reqs[2]["query"]
 
 
+@case("pagination.page")
+async def test_pagination_page(mock: Mock, case_id: str) -> None:
+    docs = client(mock).knowledge_bases("KB4T7YQ2WL").documents
+    first = await docs.list(limit=3).page()
+    assert len(first.items) == 3 and first.next_cursor
+    assert len(mock.api()) == 1, "page() asks for one page only"
+    second = await docs.list(limit=3, cursor=first.next_cursor).page()
+    assert len(second.items) == 3 and second.next_cursor
+    assert not {d.id for d in second.items} & {d.id for d in first.items}, "the second page follows the first"
+    reqs = mock.api()
+    assert len(reqs) == 2
+    assert "cursor=" not in reqs[0]["query"]
+    assert urllib.parse.parse_qs(reqs[1]["query"].lstrip("?"))["cursor"] == [first.next_cursor]
+
+
+@case("pagination.next-page")
+async def test_pagination_next_page(mock: Mock, case_id: str) -> None:
+    first = await client(mock).knowledge_bases("KB4T7YQ2WL").documents.list(limit=3).page()
+    assert first.has_next_page
+    second = await first.next_page_async()
+    assert second is not None and second.has_next_page and len(second.items) == 3
+    third = await second.next_page_async()
+    assert third is not None and len(third.items) == 1 and not third.has_next_page
+    assert await third.next_page_async() is None
+    reqs = mock.api()
+    assert len(reqs) == 3, "one request a page, and none after the last"
+    assert urllib.parse.parse_qs(reqs[1]["query"].lstrip("?"))["cursor"] == [first.next_cursor]
+    assert all(urllib.parse.parse_qs(r["query"].lstrip("?"))["limit"] == ["3"] for r in reqs)
+    assert "next_page" not in first.model_dump()
+
+
+@case("pagination.pages-from-cursor")
+async def test_pagination_pages_from_cursor(mock: Mock, case_id: str) -> None:
+    docs = client(mock).knowledge_bases("KB4T7YQ2WL").documents
+    first = await docs.list(limit=3).page()
+    pages = await collect(docs.list(limit=3, cursor=first.next_cursor).pages())
+    assert [len(p.items) for p in pages] == [3, 1]
+    assert pages[0].next_cursor and pages[1].next_cursor is None
+    reqs = mock.api()
+    assert len(reqs) == 3
+    assert "cursor=" in reqs[1]["query"] and "cursor=" in reqs[2]["query"]
+
+
 # ------------------------------------------------------------------ SSE
 
 
@@ -1671,10 +1714,9 @@ async def test_example(mock: Mock, ex: dict[str, Any]) -> None:
         else:
             fn, lead, kwargs = scope_method(c, ex["operation"], ex["input"])
             out = fn(*lead, **kwargs)
-            if hasattr(out, "pages"):  # a list: the example is one page
-                async for page in out.pages():
-                    result = page
-                    break
+            if hasattr(out, "pages"):  # a list (PROTOCOL.md 10): the example is one page, read with page()
+                assert callable(getattr(out, "page", None)), f"{ex['operation']}'s list has no page()"
+                result = await out.page()
             else:
                 result = await out
                 result = getattr(result, "result", None) or result

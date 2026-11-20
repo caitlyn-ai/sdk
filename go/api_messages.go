@@ -27,7 +27,8 @@ func newMessages(c *Client, conversationID string) *Messages {
 //
 // An answer still being written is not listed until it ends; follow it with WatchConversation.
 //
-// It yields every item, fetching pages as needed; ListPages yields whole pages.
+// It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
+// one.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *Messages) List(ctx context.Context, in *ListMessagesInput, opts ...CallOption) iter.Seq2[Message, error] {
@@ -43,6 +44,12 @@ func (s *Messages) ListPages(ctx context.Context, in *ListMessagesInput, opts ..
 	}
 	p.ConversationID = s.conversationID
 	return s.c.pagesListMessages(ctx, p, opts)
+}
+
+// ListPage reads one page of List, from the input's Cursor (the first page when it is unset): exactly
+// one request. The page's NextCursor, given as Cursor, reads the page after it.
+func (s *Messages) ListPage(ctx context.Context, in *ListMessagesInput, opts ...CallOption) (*ListMessagesPage, error) {
+	return core.First(s.ListPages(ctx, in, opts...))
 }
 
 // ListMessagesInput is what the caller gives ListMessages; the scope it is called on fills the
@@ -97,19 +104,32 @@ func readListMessages(resp *core.Response) (*ListMessagesPage, error) {
 	return out, nil
 }
 
+func (c *Client) pageListMessages(ctx context.Context, p *listMessagesParams, opts []CallOption) (*ListMessagesPage, error) {
+	req, err := buildListMessages(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opListMessages, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, err := readListMessages(resp)
+	if err != nil {
+		return nil, err
+	}
+	if out.HasNextPage() {
+		next := *p
+		next.Cursor = out.NextCursor
+		out.nextPage = func(ctx context.Context) (*ListMessagesPage, error) { return c.pageListMessages(ctx, &next, opts) }
+	}
+	return out, nil
+}
+
 func (c *Client) pagesListMessages(ctx context.Context, p *listMessagesParams, opts []CallOption) iter.Seq2[*ListMessagesPage, error] {
 	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListMessagesPage, *string, error) {
 		page := *p
 		page.Cursor = cursor
-		req, err := buildListMessages(&page)
-		if err != nil {
-			return nil, nil, err
-		}
-		resp, err := c.core.Do(ctx, opListMessages, req, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		out, err := readListMessages(resp)
+		out, err := c.pageListMessages(ctx, &page, opts)
 		if err != nil {
 			return nil, nil, err
 		}

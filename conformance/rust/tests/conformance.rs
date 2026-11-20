@@ -458,6 +458,85 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             );
             Ok(())
         }),
+        "pagination.page" => Box::pin(async move {
+            let c = client(m);
+            let first = c.knowledge_base(KB).documents().list().limit(3).page().await.map_err(s)?;
+            ensure!(first.items.len() == 3 && first.next_cursor.is_some(), "first page {first:?}");
+            ensure!(m.api().await.len() == 1, "page() asks for one page only");
+            let cursor = first.next_cursor.clone().unwrap_or_default();
+            let second = c
+                .knowledge_base(KB)
+                .documents()
+                .list()
+                .limit(3)
+                .cursor(cursor.clone())
+                .page()
+                .await
+                .map_err(s)?;
+            ensure!(second.items.len() == 3 && second.next_cursor.is_some(), "second page {second:?}");
+            ensure!(
+                !second.items.iter().any(|d| first.items.iter().any(|f| f.id == d.id)),
+                "the second page follows the first"
+            );
+            let reqs = m.api().await;
+            let sent = url::form_urlencoded::parse(str_at(&reqs[1], "query").trim_start_matches('?').as_bytes())
+                .find(|(k, _)| k == "cursor")
+                .map(|(_, v)| v.into_owned());
+            ensure!(
+                reqs.len() == 2 && !str_at(&reqs[0], "query").contains("cursor=") && sent.as_deref() == Some(cursor.as_str()),
+                "requests {reqs:?}"
+            );
+            Ok(())
+        }),
+        "pagination.next-page" => Box::pin(async move {
+            let first = client(m).knowledge_base(KB).documents().list().limit(3).page().await.map_err(s)?;
+            ensure!(first.has_next_page(), "first page {first:?}");
+            let second = first.next_page().await.map_err(s)?.ok_or_else(|| "no second page".to_string())?;
+            ensure!(second.has_next_page() && second.items.len() == 3, "second page {second:?}");
+            let third = second.next_page().await.map_err(s)?.ok_or_else(|| "no third page".to_string())?;
+            ensure!(!third.has_next_page() && third.items.len() == 1, "third page {third:?}");
+            ensure!(third.next_page().await.map_err(s)?.is_none(), "a page after the last");
+            let reqs = m.api().await;
+            let param = |r: &Value, k: &str| {
+                url::form_urlencoded::parse(str_at(r, "query").trim_start_matches('?').as_bytes())
+                    .find(|(n, _)| n == k)
+                    .map(|(_, v)| v.into_owned())
+            };
+            ensure!(
+                reqs.len() == 3
+                    && param(&reqs[1], "cursor") == first.next_cursor
+                    && reqs.iter().all(|r| param(r, "limit").as_deref() == Some("3")),
+                "requests {reqs:?}"
+            );
+            Ok(())
+        }),
+        "pagination.pages-from-cursor" => Box::pin(async move {
+            let c = client(m);
+            let first = c.knowledge_base(KB).documents().list().limit(3).page().await.map_err(s)?;
+            let cursor = first.next_cursor.clone().unwrap_or_default();
+            let pages = c
+                .knowledge_base(KB)
+                .documents()
+                .list()
+                .limit(3)
+                .cursor(cursor)
+                .pages()
+                .collect()
+                .await
+                .map_err(s)?;
+            let sizes: Vec<usize> = pages.iter().map(|p| p.items.len()).collect();
+            let reqs = m.api().await;
+            ensure!(
+                sizes == [3, 1]
+                    && pages[0].next_cursor.is_some()
+                    && pages[1].next_cursor.is_none()
+                    && reqs.len() == 3
+                    && str_at(&reqs[1], "query").contains("cursor=")
+                    && str_at(&reqs[2], "query").contains("cursor="),
+                "pages {sizes:?} requests {reqs:?}"
+            );
+            Ok(())
+        }),
 
         // ------------------------------------------------------------------ SSE
         "sse.resumed-answer-reset" => Box::pin(async move {
@@ -6635,9 +6714,8 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
                 .list()
                 .input(i)
                 .options(options(input))
-                .pages()
-                .next()
-                .await?
+                .page()
+                .await
             {
                 Ok(o) => Ok(with_headers(
                     &o,
@@ -6650,7 +6728,7 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
             let mut i: ListAgentsInput = serde_json::from_value(input.clone()).ok()?;
             i.limit = field(input, "limit");
             i.cursor = field(input, "cursor");
-            match c.agents().list().input(i).options(options(input)).pages().next().await? {
+            match c.agents().list().input(i).options(options(input)).page().await {
                 Ok(o) => Ok(with_headers(
                     &o,
                     &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
@@ -6669,9 +6747,8 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
                 .list()
                 .input(i)
                 .options(options(input))
-                .pages()
-                .next()
-                .await?
+                .page()
+                .await
             {
                 Ok(o) => Ok(with_headers(
                     &o,
@@ -6693,9 +6770,8 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
                 .list()
                 .input(i)
                 .options(options(input))
-                .pages()
-                .next()
-                .await?
+                .page()
+                .await
             {
                 Ok(o) => Ok(with_headers(
                     &o,
@@ -6725,9 +6801,8 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
                 .list()
                 .input(i)
                 .options(options(input))
-                .pages()
-                .next()
-                .await?
+                .page()
+                .await
             {
                 Ok(o) => Ok(with_headers(
                     &o,
@@ -6747,9 +6822,8 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
                 .list()
                 .input(i)
                 .options(options(input))
-                .pages()
-                .next()
-                .await?
+                .page()
+                .await
             {
                 Ok(o) => Ok(with_headers(
                     &o,
@@ -6772,9 +6846,8 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
                 .list()
                 .input(i)
                 .options(options(input))
-                .pages()
-                .next()
-                .await?
+                .page()
+                .await
             {
                 Ok(o) => Ok(with_headers(
                     &o,
@@ -6787,16 +6860,7 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
             let mut i: ListGuardrailsInput = serde_json::from_value(input.clone()).ok()?;
             i.limit = field(input, "limit");
             i.cursor = field(input, "cursor");
-            match c
-                .agents()
-                .options()
-                .guardrails()
-                .input(i)
-                .options(options(input))
-                .pages()
-                .next()
-                .await?
-            {
+            match c.agents().options().guardrails().input(i).options(options(input)).page().await {
                 Ok(o) => Ok(with_headers(
                     &o,
                     &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
@@ -6815,9 +6879,8 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
                 .list()
                 .input(i)
                 .options(options(input))
-                .pages()
-                .next()
-                .await?
+                .page()
+                .await
             {
                 Ok(o) => Ok(with_headers(
                     &o,
@@ -6844,9 +6907,8 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
                 .list()
                 .input(i)
                 .options(options(input))
-                .pages()
-                .next()
-                .await?
+                .page()
+                .await
             {
                 Ok(o) => Ok(with_headers(
                     &o,
@@ -6868,9 +6930,8 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
                 .list()
                 .input(i)
                 .options(options(input))
-                .pages()
-                .next()
-                .await?
+                .page()
+                .await
             {
                 Ok(o) => Ok(with_headers(
                     &o,
@@ -6884,7 +6945,7 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
             i.limit = field(input, "limit");
             i.cursor = field(input, "cursor");
             i.status = field(input, "status");
-            match c.knowledge_bases().list().input(i).options(options(input)).pages().next().await? {
+            match c.knowledge_bases().list().input(i).options(options(input)).page().await {
                 Ok(o) => Ok(with_headers(
                     &o,
                     &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
@@ -6896,16 +6957,7 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
             let mut i: ListMemoryStoresInput = serde_json::from_value(input.clone()).ok()?;
             i.limit = field(input, "limit");
             i.cursor = field(input, "cursor");
-            match c
-                .agents()
-                .options()
-                .memory_stores()
-                .input(i)
-                .options(options(input))
-                .pages()
-                .next()
-                .await?
-            {
+            match c.agents().options().memory_stores().input(i).options(options(input)).page().await {
                 Ok(o) => Ok(with_headers(
                     &o,
                     &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
@@ -6924,9 +6976,8 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
                 .list()
                 .input(i)
                 .options(options(input))
-                .pages()
-                .next()
-                .await?
+                .page()
+                .await
             {
                 Ok(o) => Ok(with_headers(
                     &o,
@@ -6939,16 +6990,7 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
             let mut i: ListModelsInput = serde_json::from_value(input.clone()).ok()?;
             i.limit = field(input, "limit");
             i.cursor = field(input, "cursor");
-            match c
-                .agents()
-                .options()
-                .models()
-                .input(i)
-                .options(options(input))
-                .pages()
-                .next()
-                .await?
-            {
+            match c.agents().options().models().input(i).options(options(input)).page().await {
                 Ok(o) => Ok(with_headers(
                     &o,
                     &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
@@ -6971,9 +7013,8 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
                 .list(field::<String>(input, "knowledgeBaseId"))
                 .input(i)
                 .options(options(input))
-                .pages()
-                .next()
-                .await?
+                .page()
+                .await
             {
                 Ok(o) => Ok(with_headers(
                     &o,
@@ -6986,7 +7027,7 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
             let mut i: ListToolsInput = serde_json::from_value(input.clone()).ok()?;
             i.limit = field(input, "limit");
             i.cursor = field(input, "cursor");
-            match c.agents().options().tools().input(i).options(options(input)).pages().next().await? {
+            match c.agents().options().tools().input(i).options(options(input)).page().await {
                 Ok(o) => Ok(with_headers(
                     &o,
                     &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],
@@ -6998,16 +7039,7 @@ async fn call_example(c: &Client, op: &str, input: &Value) -> Option<Result<Valu
             let mut i: ListVoicesInput = serde_json::from_value(input.clone()).ok()?;
             i.limit = field(input, "limit");
             i.cursor = field(input, "cursor");
-            match c
-                .agents()
-                .options()
-                .voices()
-                .input(i)
-                .options(options(input))
-                .pages()
-                .next()
-                .await?
-            {
+            match c.agents().options().voices().input(i).options(options(input)).page().await {
                 Ok(o) => Ok(with_headers(
                     &o,
                     &[("requestId", o.request_id.as_deref()), ("apiVersion", o.api_version.as_deref())],

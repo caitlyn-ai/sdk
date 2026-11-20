@@ -27,7 +27,8 @@ func newAgentOptions(c *Client) *AgentOptions {
 // `contentSafety.guardrail` names one of these by its `id`, or says `default` or `none`. Guardrails
 // are created and changed outside Caitlyn.
 //
-// It yields every item, fetching pages as needed; GuardrailsPages yields whole pages.
+// It yields every item, fetching pages as needed; GuardrailsPages yields whole pages, and
+// GuardrailsPage reads one.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *AgentOptions) Guardrails(ctx context.Context, in *ListGuardrailsInput, opts ...CallOption) iter.Seq2[GuardrailSummary, error] {
@@ -45,11 +46,18 @@ func (s *AgentOptions) GuardrailsPages(ctx context.Context, in *ListGuardrailsIn
 	return s.c.pagesListGuardrails(ctx, p, opts)
 }
 
+// GuardrailsPage reads one page of Guardrails, from the input's Cursor (the first page when it is
+// unset): exactly one request. The page's NextCursor, given as Cursor, reads the page after it.
+func (s *AgentOptions) GuardrailsPage(ctx context.Context, in *ListGuardrailsInput, opts ...CallOption) (*ListGuardrailsPage, error) {
+	return core.First(s.GuardrailsPages(ctx, in, opts...))
+}
+
 // MemoryStores lists the memory stores an agent can remember people in.
 //
 // An agent's `memory.memoryStoreId` names one of these.
 //
-// It yields every item, fetching pages as needed; MemoryStoresPages yields whole pages.
+// It yields every item, fetching pages as needed; MemoryStoresPages yields whole pages, and
+// MemoryStoresPage reads one.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *AgentOptions) MemoryStores(ctx context.Context, in *ListMemoryStoresInput, opts ...CallOption) iter.Seq2[MemoryStoreSummary, error] {
@@ -67,6 +75,12 @@ func (s *AgentOptions) MemoryStoresPages(ctx context.Context, in *ListMemoryStor
 	return s.c.pagesListMemoryStores(ctx, p, opts)
 }
 
+// MemoryStoresPage reads one page of MemoryStores, from the input's Cursor (the first page when it is
+// unset): exactly one request. The page's NextCursor, given as Cursor, reads the page after it.
+func (s *AgentOptions) MemoryStoresPage(ctx context.Context, in *ListMemoryStoresInput, opts ...CallOption) (*ListMemoryStoresPage, error) {
+	return core.First(s.MemoryStoresPages(ctx, in, opts...))
+}
+
 // Models lists the models an agent can use, with the settings each one accepts.
 //
 // Each model says whether it reasons, which reasoning effort levels it offers, which sampling
@@ -74,7 +88,8 @@ func (s *AgentOptions) MemoryStoresPages(ctx context.Context, in *ListMemoryStor
 // apply. An agent configuration that names a model or setting this list does not offer is refused
 // with 400 `VALIDATION_FAILED`.
 //
-// It yields every item, fetching pages as needed; ModelsPages yields whole pages.
+// It yields every item, fetching pages as needed; ModelsPages yields whole pages, and ModelsPage reads
+// one.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *AgentOptions) Models(ctx context.Context, in *ListModelsInput, opts ...CallOption) iter.Seq2[ModelSummary, error] {
@@ -91,11 +106,18 @@ func (s *AgentOptions) ModelsPages(ctx context.Context, in *ListModelsInput, opt
 	return s.c.pagesListModels(ctx, p, opts)
 }
 
+// ModelsPage reads one page of Models, from the input's Cursor (the first page when it is unset):
+// exactly one request. The page's NextCursor, given as Cursor, reads the page after it.
+func (s *AgentOptions) ModelsPage(ctx context.Context, in *ListModelsInput, opts ...CallOption) (*ListModelsPage, error) {
+	return core.First(s.ModelsPages(ctx, in, opts...))
+}
+
 // Tools lists Caitlyn's own tools, which an agent's phases can use.
 //
 // A phase names one of these tools with `tools[].name`. Tools on an MCP server are not in this list.
 //
-// It yields every item, fetching pages as needed; ToolsPages yields whole pages.
+// It yields every item, fetching pages as needed; ToolsPages yields whole pages, and ToolsPage reads
+// one.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *AgentOptions) Tools(ctx context.Context, in *ListToolsInput, opts ...CallOption) iter.Seq2[ToolSummary, error] {
@@ -112,11 +134,18 @@ func (s *AgentOptions) ToolsPages(ctx context.Context, in *ListToolsInput, opts 
 	return s.c.pagesListTools(ctx, p, opts)
 }
 
+// ToolsPage reads one page of Tools, from the input's Cursor (the first page when it is unset):
+// exactly one request. The page's NextCursor, given as Cursor, reads the page after it.
+func (s *AgentOptions) ToolsPage(ctx context.Context, in *ListToolsInput, opts ...CallOption) (*ListToolsPage, error) {
+	return core.First(s.ToolsPages(ctx, in, opts...))
+}
+
 // Voices lists the cloud voices an agent can speak its answers in.
 //
 // An agent's `voice.voiceId` names one of these when `voice.provider` is `cloud`.
 //
-// It yields every item, fetching pages as needed; VoicesPages yields whole pages.
+// It yields every item, fetching pages as needed; VoicesPages yields whole pages, and VoicesPage reads
+// one.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *AgentOptions) Voices(ctx context.Context, in *ListVoicesInput, opts ...CallOption) iter.Seq2[VoiceSummary, error] {
@@ -131,6 +160,12 @@ func (s *AgentOptions) VoicesPages(ctx context.Context, in *ListVoicesInput, opt
 		p.Cursor = in.Cursor
 	}
 	return s.c.pagesListVoices(ctx, p, opts)
+}
+
+// VoicesPage reads one page of Voices, from the input's Cursor (the first page when it is unset):
+// exactly one request. The page's NextCursor, given as Cursor, reads the page after it.
+func (s *AgentOptions) VoicesPage(ctx context.Context, in *ListVoicesInput, opts ...CallOption) (*ListVoicesPage, error) {
+	return core.First(s.VoicesPages(ctx, in, opts...))
 }
 
 // ListGuardrailsInput is what the caller gives ListGuardrails; the scope it is called on fills the
@@ -181,19 +216,32 @@ func readListGuardrails(resp *core.Response) (*ListGuardrailsPage, error) {
 	return out, nil
 }
 
+func (c *Client) pageListGuardrails(ctx context.Context, p *listGuardrailsParams, opts []CallOption) (*ListGuardrailsPage, error) {
+	req, err := buildListGuardrails(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opListGuardrails, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, err := readListGuardrails(resp)
+	if err != nil {
+		return nil, err
+	}
+	if out.HasNextPage() {
+		next := *p
+		next.Cursor = out.NextCursor
+		out.nextPage = func(ctx context.Context) (*ListGuardrailsPage, error) { return c.pageListGuardrails(ctx, &next, opts) }
+	}
+	return out, nil
+}
+
 func (c *Client) pagesListGuardrails(ctx context.Context, p *listGuardrailsParams, opts []CallOption) iter.Seq2[*ListGuardrailsPage, error] {
 	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListGuardrailsPage, *string, error) {
 		page := *p
 		page.Cursor = cursor
-		req, err := buildListGuardrails(&page)
-		if err != nil {
-			return nil, nil, err
-		}
-		resp, err := c.core.Do(ctx, opListGuardrails, req, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		out, err := readListGuardrails(resp)
+		out, err := c.pageListGuardrails(ctx, &page, opts)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -249,19 +297,34 @@ func readListMemoryStores(resp *core.Response) (*ListMemoryStoresPage, error) {
 	return out, nil
 }
 
+func (c *Client) pageListMemoryStores(ctx context.Context, p *listMemoryStoresParams, opts []CallOption) (*ListMemoryStoresPage, error) {
+	req, err := buildListMemoryStores(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opListMemoryStores, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, err := readListMemoryStores(resp)
+	if err != nil {
+		return nil, err
+	}
+	if out.HasNextPage() {
+		next := *p
+		next.Cursor = out.NextCursor
+		out.nextPage = func(ctx context.Context) (*ListMemoryStoresPage, error) {
+			return c.pageListMemoryStores(ctx, &next, opts)
+		}
+	}
+	return out, nil
+}
+
 func (c *Client) pagesListMemoryStores(ctx context.Context, p *listMemoryStoresParams, opts []CallOption) iter.Seq2[*ListMemoryStoresPage, error] {
 	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListMemoryStoresPage, *string, error) {
 		page := *p
 		page.Cursor = cursor
-		req, err := buildListMemoryStores(&page)
-		if err != nil {
-			return nil, nil, err
-		}
-		resp, err := c.core.Do(ctx, opListMemoryStores, req, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		out, err := readListMemoryStores(resp)
+		out, err := c.pageListMemoryStores(ctx, &page, opts)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -317,19 +380,32 @@ func readListModels(resp *core.Response) (*ListModelsPage, error) {
 	return out, nil
 }
 
+func (c *Client) pageListModels(ctx context.Context, p *listModelsParams, opts []CallOption) (*ListModelsPage, error) {
+	req, err := buildListModels(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opListModels, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, err := readListModels(resp)
+	if err != nil {
+		return nil, err
+	}
+	if out.HasNextPage() {
+		next := *p
+		next.Cursor = out.NextCursor
+		out.nextPage = func(ctx context.Context) (*ListModelsPage, error) { return c.pageListModels(ctx, &next, opts) }
+	}
+	return out, nil
+}
+
 func (c *Client) pagesListModels(ctx context.Context, p *listModelsParams, opts []CallOption) iter.Seq2[*ListModelsPage, error] {
 	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListModelsPage, *string, error) {
 		page := *p
 		page.Cursor = cursor
-		req, err := buildListModels(&page)
-		if err != nil {
-			return nil, nil, err
-		}
-		resp, err := c.core.Do(ctx, opListModels, req, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		out, err := readListModels(resp)
+		out, err := c.pageListModels(ctx, &page, opts)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -384,19 +460,32 @@ func readListTools(resp *core.Response) (*ListToolsPage, error) {
 	return out, nil
 }
 
+func (c *Client) pageListTools(ctx context.Context, p *listToolsParams, opts []CallOption) (*ListToolsPage, error) {
+	req, err := buildListTools(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opListTools, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, err := readListTools(resp)
+	if err != nil {
+		return nil, err
+	}
+	if out.HasNextPage() {
+		next := *p
+		next.Cursor = out.NextCursor
+		out.nextPage = func(ctx context.Context) (*ListToolsPage, error) { return c.pageListTools(ctx, &next, opts) }
+	}
+	return out, nil
+}
+
 func (c *Client) pagesListTools(ctx context.Context, p *listToolsParams, opts []CallOption) iter.Seq2[*ListToolsPage, error] {
 	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListToolsPage, *string, error) {
 		page := *p
 		page.Cursor = cursor
-		req, err := buildListTools(&page)
-		if err != nil {
-			return nil, nil, err
-		}
-		resp, err := c.core.Do(ctx, opListTools, req, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		out, err := readListTools(resp)
+		out, err := c.pageListTools(ctx, &page, opts)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -452,19 +541,32 @@ func readListVoices(resp *core.Response) (*ListVoicesPage, error) {
 	return out, nil
 }
 
+func (c *Client) pageListVoices(ctx context.Context, p *listVoicesParams, opts []CallOption) (*ListVoicesPage, error) {
+	req, err := buildListVoices(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opListVoices, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, err := readListVoices(resp)
+	if err != nil {
+		return nil, err
+	}
+	if out.HasNextPage() {
+		next := *p
+		next.Cursor = out.NextCursor
+		out.nextPage = func(ctx context.Context) (*ListVoicesPage, error) { return c.pageListVoices(ctx, &next, opts) }
+	}
+	return out, nil
+}
+
 func (c *Client) pagesListVoices(ctx context.Context, p *listVoicesParams, opts []CallOption) iter.Seq2[*ListVoicesPage, error] {
 	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListVoicesPage, *string, error) {
 		page := *p
 		page.Cursor = cursor
-		req, err := buildListVoices(&page)
-		if err != nil {
-			return nil, nil, err
-		}
-		resp, err := c.core.Do(ctx, opListVoices, req, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		out, err := readListVoices(resp)
+		out, err := c.pageListVoices(ctx, &page, opts)
 		if err != nil {
 			return nil, nil, err
 		}

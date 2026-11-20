@@ -102,6 +102,16 @@ pub async fn pagination(client: &Client) -> Result<(), Error> {
         let page = page?;
         println!("{} {:?}", page.items.len(), page.next_cursor);
     }
+
+    // Or one page at a time, as a table shows them
+    let documents = client.knowledge_base("KB4T7YQ2WL").documents();
+    let first = documents.list().limit(25).page().await?;
+    let second = first.next_page().await?; // None on the last page
+    println!("{} {}", first.has_next_page(), second.is_some());
+    // Later, from a stored position: the same page as `second`
+    if let Some(cursor) = first.next_cursor.clone() {
+        documents.list().limit(25).cursor(cursor).page().await?;
+    }
     // #endregion
     Ok(())
 }

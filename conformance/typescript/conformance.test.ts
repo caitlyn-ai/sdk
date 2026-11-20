@@ -256,6 +256,52 @@ test('[pagination.to-last-page] a list runs to the last page, following nextCurs
   assert.ok(reqs[2].query.includes('cursor='));
 });
 
+test("[pagination.page] a list's page() is one request from the input's cursor, giving the page's items and nextCursor", async () => {
+  const docs = client().knowledgeBases('KB4T7YQ2WL').documents;
+  const first = await docs.list({ limit: 3 }).page();
+  assert.equal(first.items?.length, 3);
+  assert.ok(first.nextCursor);
+  assert.equal((await api()).length, 1, 'page() asks for one page only');
+  const second = await docs.list({ limit: 3, cursor: first.nextCursor }).page();
+  assert.equal(second.items?.length, 3);
+  assert.ok(second.nextCursor);
+  assert.ok(!second.items!.some((d) => first.items!.some((f) => f.id === d.id)), 'the second page follows the first');
+  const reqs = await api();
+  assert.equal(reqs.length, 2);
+  assert.ok(!reqs[0].query.includes('cursor='));
+  assert.equal(new URLSearchParams(reqs[1].query).get('cursor'), first.nextCursor);
+});
+
+test("[pagination.next-page] a page's nextPage() reads the page after it with the same input; the last page's gives null and sends nothing", async () => {
+  const first = await client().knowledgeBases('KB4T7YQ2WL').documents.list({ limit: 3 }).page();
+  assert.equal(first.hasNextPage, true);
+  const second = await first.nextPage();
+  assert.ok(second && second.hasNextPage);
+  assert.equal(second.items.length, 3);
+  const third = await second.nextPage();
+  assert.ok(third);
+  assert.equal(third.items.length, 1);
+  assert.equal(third.hasNextPage, false);
+  assert.equal(await third.nextPage(), null);
+  const reqs = await api();
+  assert.equal(reqs.length, 3, 'one request a page, and none after the last');
+  assert.equal(new URLSearchParams(reqs[1].query).get('cursor'), first.nextCursor);
+  assert.ok(reqs.every((r) => new URLSearchParams(r.query).get('limit') === '3'), 'the same input on every page');
+  assert.deepEqual(Object.keys(first).includes('nextPage'), false, 'nextPage is not a field of the page');
+});
+
+test("[pagination.pages-from-cursor] a list's pages() yields each page, with its nextCursor, from the input's cursor to the last page", async () => {
+  const docs = client().knowledgeBases('KB4T7YQ2WL').documents;
+  const first = await docs.list({ limit: 3 }).page();
+  const pages = await collect(docs.list({ limit: 3, cursor: first.nextCursor }).pages());
+  assert.deepEqual(pages.map((p) => p.items?.length), [3, 1]);
+  assert.ok(pages[0]!.nextCursor);
+  assert.equal(pages[1]!.nextCursor, undefined, 'the last page has no nextCursor');
+  const reqs = await api();
+  assert.equal(reqs.length, 3);
+  assert.ok(reqs[1].query.includes('cursor=') && reqs[2].query.includes('cursor='));
+});
+
 // ---------------------------------------------------------------- SSE
 
 test('[sse.resumed-answer-reset] a stream with a final event, resumed after its answer finished, yields stream.reset and ends with no error', async () => {
@@ -3867,12 +3913,11 @@ async function callExample(c: Caitlyn, ex: ExampleCase): Promise<unknown> {
     return events;
   }
   if (result && typeof result === 'object' && Symbol.asyncIterator in result && !(result as { then?: unknown }).then) {
-    // A list: the example's one page, read without asking for the next (at least one item is asked for, so the
-    // first page is requested even when the example's is empty or an error).
-    const want = Math.max(1, ((ex.expected.output as { items?: unknown[] } | undefined)?.items ?? []).length);
-    const items: unknown[] = [];
-    for await (const item of result as AsyncIterable<unknown>) if (items.push(item) >= want) break;
-    return { items };
+    // A list (PROTOCOL.md 10): the example's one page, read with page(), so the whole page is compared, nextCursor
+    // included. Every list offers page(); a list without it fails here.
+    const list = result as { page?: () => Promise<unknown> };
+    assert.equal(typeof list.page, 'function', `${ex.operation}'s list has no page()`);
+    return list.page!();
   }
   return result;
 }
@@ -3908,8 +3953,7 @@ for (const ex of EXAMPLES) {
       assert.equal(error, undefined, `unexpected error: ${String(error)}`);
       if (ex.expected.output && !ex.response.stream) {
         const want = ex.expected.output as Record<string, unknown>;
-        if (output && typeof output === 'object' && 'items' in output && 'items' in want) assertSubset({ items: want.items }, output);
-        else assertSubset(want, output);
+        assertSubset(want, output);
       }
     }
   });

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from caitlyn_core import CaitlynModel, CaitlynResult, FieldError as FieldError, OpenEnum, UploadFile
+from caitlyn_core import CaitlynModel, CaitlynPage, CaitlynResult, FieldError as FieldError, OpenEnum, UploadFile
 from pydantic import JsonValue
 
 class ReadersKind(OpenEnum):
@@ -1393,7 +1393,7 @@ class HistoryEntry(CaitlynModel):
     """
 
 
-class ListHistoryEntriesPage(CaitlynResult):
+class ListHistoryEntriesPage(CaitlynPage):
     """One page of results. Lists an agent's live history, newest first: every time live moved to another version.
 
     Each entry names the version live pointed at after the change and before it, what kind of change
@@ -1419,7 +1419,7 @@ class ListHistoryEntriesPage(CaitlynResult):
     """
 
 
-class ListAgentsPage(CaitlynResult):
+class ListAgentsPage(CaitlynPage):
     """One page of results. Lists the agents the caller may see, one page at a time.
 
     Each agent says which version live points at; read a version's configuration with
@@ -1475,7 +1475,7 @@ class Conversation(CaitlynModel):
     """When the last message was written."""
 
 
-class ListConversationsPage(CaitlynResult):
+class ListConversationsPage(CaitlynPage):
     """One page of results. Lists the caller's conversations with one agent, newest first, across its versions.
 
     Each says which version it is with. Only the caller's own conversations, and those shared with
@@ -1572,7 +1572,7 @@ class DeleteAgentVersionResult(CaitlynResult):
     """
 
 
-class ListAgentVersionsPage(CaitlynResult):
+class ListAgentVersionsPage(CaitlynPage):
     """One page of results. Lists an agent's named versions in the order they were made, oldest first.
 
     Each entry says how the version was made, who made it, whether live points at it, and which
@@ -2081,7 +2081,7 @@ class Message(CaitlynModel):
     """When the message was written."""
 
 
-class ListMessagesPage(CaitlynResult):
+class ListMessagesPage(CaitlynPage):
     """One page of results. Lists a conversation's messages, oldest first: the caller's and the agent's.
 
     An answer still being written is not listed until it ends; follow it with WatchConversation.
@@ -2938,7 +2938,7 @@ class DeleteDocumentVersionResult(CaitlynResult):
     """
 
 
-class ListDocumentVersionsPage(CaitlynResult):
+class ListDocumentVersionsPage(CaitlynPage):
     """One page of results. Lists a document's versions, newest first.
 
     Each version says whether it is the current one (the one search uses) and whether it is the
@@ -3128,7 +3128,7 @@ class DocumentDownload(CaitlynResult):
     """
 
 
-class ListDocumentsPage(CaitlynResult):
+class ListDocumentsPage(CaitlynPage):
     """One page of results. Lists the documents in a knowledge base, one page at a time.
 
     Documents are returned in a stable order that does not change between pages. Filters combine
@@ -3603,7 +3603,7 @@ class FillInFieldsResult(CaitlynResult):
     """
 
 
-class ListFieldsPage(CaitlynResult):
+class ListFieldsPage(CaitlynPage):
     """One page of results. Lists a knowledge base's metadata fields, each with how much work it still needs.
 
     `needsWork` says how many documents still need a value, an index write or new search vectors for
@@ -3701,7 +3701,7 @@ class Folder(CaitlynModel):
     """When the folder last changed."""
 
 
-class ListFoldersPage(CaitlynResult):
+class ListFoldersPage(CaitlynPage):
     """One page of results. Lists the folders in a knowledge base, one page at a time.
 
     With `filter[parent][eq]`, the folders directly in that folder; with `deep` as well, every folder
@@ -4130,7 +4130,7 @@ class IngestionBatchUploadPolicy(CaitlynResult):
     """
 
 
-class ListIngestionBatchItemsPage(CaitlynResult):
+class ListIngestionBatchItemsPage(CaitlynPage):
     """One page of results. Lists a batch's items, in the order they were added.
 
     Filter by action, outcome, status or resolution: for example `filter[status][eq]=awaiting_upload`
@@ -4156,7 +4156,7 @@ class ListIngestionBatchItemsPage(CaitlynResult):
     """
 
 
-class ListIngestionBatchesPage(CaitlynResult):
+class ListIngestionBatchesPage(CaitlynPage):
     """One page of results. Lists one knowledge base's ingestion batches, newest first.
 
     Narrow the list by status.
@@ -4214,7 +4214,7 @@ class StartIngestionBatchResult(CaitlynResult):
     """The batch's new ETag. From the `ETag` response header."""
 
 
-class ListKnowledgeBasesPage(CaitlynResult):
+class ListKnowledgeBasesPage(CaitlynPage):
     """One page of results. Lists the knowledge bases the caller may see, in every state.
 
     Knowledge bases still being created, being moved, that failed or that are being deleted are
@@ -4240,7 +4240,7 @@ class ListKnowledgeBasesPage(CaitlynResult):
     """
 
 
-class ListOperationsPage(CaitlynResult):
+class ListOperationsPage(CaitlynPage):
     """One page of results. Lists the Operations on one knowledge base, or one thing in it, newest first.
 
     The caller needs read access to the knowledge base. Narrow the list with the target, the kind and
@@ -4289,7 +4289,7 @@ class GuardrailSummary(CaitlynModel):
     """The guardrail version that screens documents."""
 
 
-class ListGuardrailsPage(CaitlynResult):
+class ListGuardrailsPage(CaitlynPage):
     """One page of results. Lists the guardrails an agent version can screen attached documents with.
 
     The list holds the platform default and the guardrails available to the workspace. An agent's
@@ -4324,7 +4324,7 @@ class MemoryStoreSummary(CaitlynModel):
     """The memory store's name, as people see it."""
 
 
-class ListMemoryStoresPage(CaitlynResult):
+class ListMemoryStoresPage(CaitlynPage):
     """One page of results. Lists the memory stores an agent can remember people in.
 
     An agent's `memory.memoryStoreId` names one of these.
@@ -4385,7 +4385,7 @@ class ModelSummary(CaitlynModel):
     """The most tokens it can write in one answer."""
 
 
-class ListModelsPage(CaitlynResult):
+class ListModelsPage(CaitlynPage):
     """One page of results. Lists the models an agent can use, with the settings each one accepts.
 
     Each model says whether it reasons, which reasoning effort levels it offers, which sampling
@@ -4421,7 +4421,7 @@ class ToolSummary(CaitlynModel):
     """What the tool does, in the words the agent reads unless a phase gives its own."""
 
 
-class ListToolsPage(CaitlynResult):
+class ListToolsPage(CaitlynPage):
     """One page of results. Lists Caitlyn's own tools, which an agent's phases can use.
 
     A phase names one of these tools with `tools[].name`. Tools on an MCP server are not in this list.
@@ -4458,7 +4458,7 @@ class VoiceSummary(CaitlynModel):
     """The qualities it comes in."""
 
 
-class ListVoicesPage(CaitlynResult):
+class ListVoicesPage(CaitlynPage):
     """One page of results. Lists the cloud voices an agent can speak its answers in.
 
     An agent's `voice.voiceId` names one of these when `voice.provider` is `cloud`.

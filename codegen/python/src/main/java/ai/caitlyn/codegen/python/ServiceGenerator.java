@@ -1036,7 +1036,7 @@ final class ServiceGenerator {
                 w.importFrom(CORE, paginator);
                 writeDef(w, false, pyName, c.params, paginator + "[" + page + ", " + item + "]");
                 w.indent();
-                w.write("$D", methodDocs(o, c) + "\n\nReturns:\n    A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.");
+                w.write("$D", methodDocs(o, c) + "\n\nReturns:\n    A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.");
                 String dict = c.dict.replace(Names.pyString(tokenParam) + ": " + tokenParam + ", ", "").replace(", " + Names.pyString(tokenParam) + ": " + tokenParam, "");
                 w.write("params: dict[str, object] = $L", dict);
                 w.write("");

@@ -84,6 +84,19 @@ export async function pagination(): Promise<void> {
   for await (const document of caitlyn.knowledgeBases('KB4T7YQ2WL').documents.list({ folder: '/policies/', limit: 100 })) {
     console.log(document.name, document.status);
   }
+
+  // Or page by page
+  for await (const page of caitlyn.knowledgeBases('KB4T7YQ2WL').documents.list({ limit: 100 }).pages()) {
+    console.log(page.items.length, page.nextCursor);
+  }
+
+  // Or one page at a time, as a table shows them
+  const documents = caitlyn.knowledgeBases('KB4T7YQ2WL').documents;
+  const first = await documents.list({ limit: 25 }).page();
+  const second = await first.nextPage(); // null on the last page
+  console.log(first.hasNextPage, second?.items.length);
+  // Later, from a stored position: the same page as `second`
+  if (first.nextCursor) await documents.list({ limit: 25, cursor: first.nextCursor }).page();
   // #endregion
 }
 

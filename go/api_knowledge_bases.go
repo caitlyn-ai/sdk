@@ -28,7 +28,8 @@ func newKnowledgeBases(c *Client) *KnowledgeBases {
 // listed too, each with its `status`. Document operations on a knowledge base that is not `ready`
 // are refused with 409 `CONFLICT`.
 //
-// It yields every item, fetching pages as needed; ListPages yields whole pages.
+// It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
+// one.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *KnowledgeBases) List(ctx context.Context, in *ListKnowledgeBasesInput, opts ...CallOption) iter.Seq2[KnowledgeBase, error] {
@@ -44,6 +45,12 @@ func (s *KnowledgeBases) ListPages(ctx context.Context, in *ListKnowledgeBasesIn
 		p.Status = in.Status
 	}
 	return s.c.pagesListKnowledgeBases(ctx, p, opts)
+}
+
+// ListPage reads one page of List, from the input's Cursor (the first page when it is unset): exactly
+// one request. The page's NextCursor, given as Cursor, reads the page after it.
+func (s *KnowledgeBases) ListPage(ctx context.Context, in *ListKnowledgeBasesInput, opts ...CallOption) (*ListKnowledgeBasesPage, error) {
+	return core.First(s.ListPages(ctx, in, opts...))
 }
 
 // Create creates a knowledge base; setting it up continues after the response.
@@ -192,19 +199,34 @@ func readListKnowledgeBases(resp *core.Response) (*ListKnowledgeBasesPage, error
 	return out, nil
 }
 
+func (c *Client) pageListKnowledgeBases(ctx context.Context, p *listKnowledgeBasesParams, opts []CallOption) (*ListKnowledgeBasesPage, error) {
+	req, err := buildListKnowledgeBases(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opListKnowledgeBases, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, err := readListKnowledgeBases(resp)
+	if err != nil {
+		return nil, err
+	}
+	if out.HasNextPage() {
+		next := *p
+		next.Cursor = out.NextCursor
+		out.nextPage = func(ctx context.Context) (*ListKnowledgeBasesPage, error) {
+			return c.pageListKnowledgeBases(ctx, &next, opts)
+		}
+	}
+	return out, nil
+}
+
 func (c *Client) pagesListKnowledgeBases(ctx context.Context, p *listKnowledgeBasesParams, opts []CallOption) iter.Seq2[*ListKnowledgeBasesPage, error] {
 	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListKnowledgeBasesPage, *string, error) {
 		page := *p
 		page.Cursor = cursor
-		req, err := buildListKnowledgeBases(&page)
-		if err != nil {
-			return nil, nil, err
-		}
-		resp, err := c.core.Do(ctx, opListKnowledgeBases, req, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		out, err := readListKnowledgeBases(resp)
+		out, err := c.pageListKnowledgeBases(ctx, &page, opts)
 		if err != nil {
 			return nil, nil, err
 		}
