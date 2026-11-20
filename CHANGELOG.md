@@ -1,3 +1,10 @@
+# [0.11.0](https://github.com/caitlyn-ai/sdk/compare/v0.10.1...v0.11.0) (2026-11-20)
+
+
+### Features
+
+* one page of any list, and its pages, in every SDK ([0c580a7](https://github.com/caitlyn-ai/sdk/commit/0c580a75b2f25df25aa76b38a9b15f8097ff8d4d))
+
 ## [0.10.1](https://github.com/caitlyn-ai/sdk/compare/v0.10.0...v0.10.1) (2026-11-18)
 
 

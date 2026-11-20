@@ -37,7 +37,7 @@ from ._files import CONTENT_TYPES, MAX_FILE_SIZE, ByteStream, FileInput, Prepare
 from ._sync import AsyncHelperCore, BatchFiles, BatchUpload, SyncApi, batch_upload_async, batch_upload_estimate_async, SyncCancelledError, SyncInterrupted, SyncFile, SyncHelperCore, SyncPlan, IngestionProgress, SyncReport, run_sync, sync_async, sync_estimate_async, walk
 from ._uploads import UploadId, attachment_refs, attachment_refs_async, file_at, with_upload_id
 
-__version__ = "0.10.1"
+__version__ = "0.11.0"
 
 __all__ = [
     "AsyncHelperCore",
