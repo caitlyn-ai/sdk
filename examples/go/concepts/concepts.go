@@ -140,6 +140,23 @@ func Pagination(ctx context.Context, client *caitlyn.Client) error {
 		}
 		fmt.Println(len(page.Items), page.NextCursor)
 	}
+
+	// Or one page at a time, as a table shows them
+	first, err := documents.ListPage(ctx, &caitlyn.ListDocumentsInput{Limit: caitlyn.Ptr[int32](25)})
+	if err != nil {
+		return err
+	}
+	second, err := first.NextPage(ctx) // nil on the last page
+	if err != nil {
+		return err
+	}
+	fmt.Println(first.HasNextPage(), second != nil)
+	// Later, from a stored position: the same page as second
+	if first.HasNextPage() {
+		if _, err := documents.ListPage(ctx, &caitlyn.ListDocumentsInput{Limit: caitlyn.Ptr[int32](25), Cursor: first.NextCursor}); err != nil {
+			return err
+		}
+	}
 	// #endregion
 	return nil
 }

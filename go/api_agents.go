@@ -30,7 +30,8 @@ func newAgents(c *Client) *Agents {
 // Each agent says which version live points at; read a version's configuration with
 // GetAgentVersion.
 //
-// It yields every item, fetching pages as needed; ListPages yields whole pages.
+// It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
+// one.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *Agents) List(ctx context.Context, in *ListAgentsInput, opts ...CallOption) iter.Seq2[Agent, error] {
@@ -45,6 +46,12 @@ func (s *Agents) ListPages(ctx context.Context, in *ListAgentsInput, opts ...Cal
 		p.Cursor = in.Cursor
 	}
 	return s.c.pagesListAgents(ctx, p, opts)
+}
+
+// ListPage reads one page of List, from the input's Cursor (the first page when it is unset): exactly
+// one request. The page's NextCursor, given as Cursor, reads the page after it.
+func (s *Agents) ListPage(ctx context.Context, in *ListAgentsInput, opts ...CallOption) (*ListAgentsPage, error) {
+	return core.First(s.ListPages(ctx, in, opts...))
 }
 
 // Create creates an agent with a draft; it has no live version until the draft is published.
@@ -195,19 +202,32 @@ func readListAgents(resp *core.Response) (*ListAgentsPage, error) {
 	return out, nil
 }
 
+func (c *Client) pageListAgents(ctx context.Context, p *listAgentsParams, opts []CallOption) (*ListAgentsPage, error) {
+	req, err := buildListAgents(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opListAgents, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, err := readListAgents(resp)
+	if err != nil {
+		return nil, err
+	}
+	if out.HasNextPage() {
+		next := *p
+		next.Cursor = out.NextCursor
+		out.nextPage = func(ctx context.Context) (*ListAgentsPage, error) { return c.pageListAgents(ctx, &next, opts) }
+	}
+	return out, nil
+}
+
 func (c *Client) pagesListAgents(ctx context.Context, p *listAgentsParams, opts []CallOption) iter.Seq2[*ListAgentsPage, error] {
 	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListAgentsPage, *string, error) {
 		page := *p
 		page.Cursor = cursor
-		req, err := buildListAgents(&page)
-		if err != nil {
-			return nil, nil, err
-		}
-		resp, err := c.core.Do(ctx, opListAgents, req, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		out, err := readListAgents(resp)
+		out, err := c.pageListAgents(ctx, &page, opts)
 		if err != nil {
 			return nil, nil, err
 		}

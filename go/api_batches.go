@@ -28,7 +28,8 @@ func newBatches(c *Client, knowledgeBaseID string) *Batches {
 //
 // Narrow the list by status.
 //
-// It yields every item, fetching pages as needed; ListPages yields whole pages.
+// It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
+// one.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *Batches) List(ctx context.Context, in *ListIngestionBatchesInput, opts ...CallOption) iter.Seq2[IngestionBatch, error] {
@@ -45,6 +46,12 @@ func (s *Batches) ListPages(ctx context.Context, in *ListIngestionBatchesInput, 
 	}
 	p.KnowledgeBaseID = s.knowledgeBaseID
 	return s.c.pagesListIngestionBatches(ctx, p, opts)
+}
+
+// ListPage reads one page of List, from the input's Cursor (the first page when it is unset): exactly
+// one request. The page's NextCursor, given as Cursor, reads the page after it.
+func (s *Batches) ListPage(ctx context.Context, in *ListIngestionBatchesInput, opts ...CallOption) (*ListIngestionBatchesPage, error) {
+	return core.First(s.ListPages(ctx, in, opts...))
 }
 
 // Create makes an ingestion batch for one knowledge base, and plans it unless more items will follow.
@@ -214,19 +221,34 @@ func readListIngestionBatches(resp *core.Response) (*ListIngestionBatchesPage, e
 	return out, nil
 }
 
+func (c *Client) pageListIngestionBatches(ctx context.Context, p *listIngestionBatchesParams, opts []CallOption) (*ListIngestionBatchesPage, error) {
+	req, err := buildListIngestionBatches(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opListIngestionBatches, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, err := readListIngestionBatches(resp)
+	if err != nil {
+		return nil, err
+	}
+	if out.HasNextPage() {
+		next := *p
+		next.Cursor = out.NextCursor
+		out.nextPage = func(ctx context.Context) (*ListIngestionBatchesPage, error) {
+			return c.pageListIngestionBatches(ctx, &next, opts)
+		}
+	}
+	return out, nil
+}
+
 func (c *Client) pagesListIngestionBatches(ctx context.Context, p *listIngestionBatchesParams, opts []CallOption) iter.Seq2[*ListIngestionBatchesPage, error] {
 	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListIngestionBatchesPage, *string, error) {
 		page := *p
 		page.Cursor = cursor
-		req, err := buildListIngestionBatches(&page)
-		if err != nil {
-			return nil, nil, err
-		}
-		resp, err := c.core.Do(ctx, opListIngestionBatches, req, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		out, err := readListIngestionBatches(resp)
+		out, err := c.pageListIngestionBatches(ctx, &page, opts)
 		if err != nil {
 			return nil, nil, err
 		}

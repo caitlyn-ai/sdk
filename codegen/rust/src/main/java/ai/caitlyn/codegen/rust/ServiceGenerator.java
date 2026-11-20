@@ -795,15 +795,30 @@ final class ServiceGenerator {
                 + "        rt::Items::new(self.pages(), |p| " + itemsExpr + ")\n    }\n\n");
         w.l("    /// Every item, read to the last page.\n    pub async fn collect(self) -> Result<Vec<" + itemType + ">, Error> {\n"
                 + "        self.items().collect().await\n    }\n\n");
+        String nextField = Names.snake(next.getMemberName());
+        // One page, which knows how to read the page after it (next_page, PROTOCOL.md 10)
+        w.l("    fn read_page(core: rt::Client, input: " + op.inputType() + ", opts: rt::CallOptions) -> rt::BoxFuture<'static, Result<" + page + ", Error>> {\n"
+                + "        Box::pin(async move {\n"
+                + "            let req = build_" + fnName(op) + "(&input).map_err(Error::from)?;\n"
+                + "            let resp = core.send(&OP_" + Names.constant(op.name) + ", req, &opts).await.map_err(Error::from)?;\n"
+                + "            let mut out = read_" + fnName(op) + "(resp).await.map_err(Error::from)?;\n"
+                + "            if out.has_next_page() {\n"
+                + "                let mut next = input.clone();\n                next." + cursorField + " = out." + nextField + ".clone();\n"
+                + "                out.following = rt::NextPage::new(move || Self::read_page(core.clone(), next.clone(), opts.clone()));\n"
+                + "            }\n            Ok(out)\n        })\n    }\n\n");
         w.l("    /// The pages, from the `cursor` set (normally none) to the last page.\n    pub fn pages(self) -> rt::Pages<" + page + ", Error> {\n"
                 + "        let " + requestType(op) + " { core, input, opts, .. } = self;\n        let start = input." + cursorField + ".clone();\n"
-                + "        rt::Pages::new(start, move |cursor, opts| {\n            let core = core.clone();\n"
-                + "            let mut input = input.clone();\n            input." + cursorField + " = cursor;\n            Box::pin(async move {\n"
-                + "                let req = build_" + fnName(op) + "(&input).map_err(Error::from)?;\n"
-                + "                let resp = core.send(&OP_" + Names.constant(op.name) + ", req, &opts).await.map_err(Error::from)?;\n"
-                + "                let out = read_" + fnName(op) + "(resp).await.map_err(Error::from)?;\n"
-                + "                let next = out." + Names.snake(next.getMemberName()) + ".clone();\n                Ok((out, next))\n"
-                + "            })\n        })\n        .options(opts)\n    }\n");
+                + "        rt::Pages::new(start, move |cursor, opts| {\n"
+                + "            let mut input = input.clone();\n            input." + cursorField + " = cursor;\n"
+                + "            let read = Self::read_page(core.clone(), input, opts);\n            Box::pin(async move {\n"
+                + "                let out = read.await?;\n"
+                + "                let next = out." + nextField + ".clone();\n                Ok((out, next))\n"
+                + "            })\n        })\n        .options(opts)\n    }\n\n");
+        // PROTOCOL.md 10: one page, for a caller that shows a page at a time and keeps the next cursor itself.
+        w.l("    /// One page, from the `cursor` set (the first page when none is): exactly one request. Its `"
+                + Names.snake(next.getMemberName()) + "`, set as `cursor`, reads the page after it.\n"
+                + "    pub async fn page(self) -> Result<" + page + ", Error> {\n"
+                + "        self.pages().first().await.expect(\"a list always gives its first page\")\n    }\n");
     }
 
     // ------------------------------------------------------------------ streams

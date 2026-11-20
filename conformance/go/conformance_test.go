@@ -10,9 +10,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"iter"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -293,6 +293,82 @@ var protocol = map[string]func(t *testing.T, m mock){
 		reqs := m.api(t)
 		if err != nil || len(docs) != 7 || len(reqs) != 3 || strings.Contains(reqs[0].Query, "cursor=") || !strings.Contains(reqs[2].Query, "cursor=") {
 			t.Fatalf("docs=%d err=%v requests %+v", len(docs), err, reqs)
+		}
+	},
+	"pagination.page": func(t *testing.T, m mock) {
+		docs := client(t, m).KnowledgeBase(kb).Documents
+		ctx := context.Background()
+		first, err := docs.ListPage(ctx, &caitlyn.ListDocumentsInput{Limit: caitlyn.Ptr[int32](3)})
+		if err != nil || len(first.Items) != 3 || first.NextCursor == nil || len(m.api(t)) != 1 {
+			t.Fatalf("first page %+v err=%v requests %d", first, err, len(m.api(t)))
+		}
+		second, err := docs.ListPage(ctx, &caitlyn.ListDocumentsInput{Limit: caitlyn.Ptr[int32](3), Cursor: first.NextCursor})
+		if err != nil || len(second.Items) != 3 || second.NextCursor == nil {
+			t.Fatalf("second page %+v err=%v", second, err)
+		}
+		for _, d := range second.Items {
+			for _, f := range first.Items {
+				if d.ID == f.ID {
+					t.Fatalf("the second page repeats %s", d.ID)
+				}
+			}
+		}
+		reqs := m.api(t)
+		q, _ := url.ParseQuery(strings.TrimPrefix(reqs[1].Query, "?"))
+		if len(reqs) != 2 || strings.Contains(reqs[0].Query, "cursor=") || q.Get("cursor") != *first.NextCursor {
+			t.Fatalf("requests %+v", reqs)
+		}
+	},
+	"pagination.next-page": func(t *testing.T, m mock) {
+		ctx := context.Background()
+		first, err := client(t, m).KnowledgeBase(kb).Documents.ListPage(ctx, &caitlyn.ListDocumentsInput{Limit: caitlyn.Ptr[int32](3)})
+		if err != nil || !first.HasNextPage() {
+			t.Fatalf("first %+v err=%v", first, err)
+		}
+		second, err := first.NextPage(ctx)
+		if err != nil || second == nil || !second.HasNextPage() || len(second.Items) != 3 {
+			t.Fatalf("second %+v err=%v", second, err)
+		}
+		third, err := second.NextPage(ctx)
+		if err != nil || third == nil || third.HasNextPage() || len(third.Items) != 1 {
+			t.Fatalf("third %+v err=%v", third, err)
+		}
+		if after, err := third.NextPage(ctx); after != nil || err != nil {
+			t.Fatalf("after the last page: %+v err=%v", after, err)
+		}
+		reqs := m.api(t)
+		q, _ := url.ParseQuery(strings.TrimPrefix(reqs[1].Query, "?"))
+		if len(reqs) != 3 || q.Get("cursor") != *first.NextCursor {
+			t.Fatalf("requests %+v", reqs)
+		}
+		for _, r := range reqs {
+			if q, _ := url.ParseQuery(strings.TrimPrefix(r.Query, "?")); q.Get("limit") != "3" {
+				t.Fatalf("a page without the input's limit: %+v", r)
+			}
+		}
+	},
+	"pagination.pages-from-cursor": func(t *testing.T, m mock) {
+		docs := client(t, m).KnowledgeBase(kb).Documents
+		ctx := context.Background()
+		first, err := docs.ListPage(ctx, &caitlyn.ListDocumentsInput{Limit: caitlyn.Ptr[int32](3)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var sizes []int
+		var last *caitlyn.ListDocumentsPage
+		for page, err := range docs.ListPages(ctx, &caitlyn.ListDocumentsInput{Limit: caitlyn.Ptr[int32](3), Cursor: first.NextCursor}) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			if last != nil && last.NextCursor == nil {
+				t.Fatalf("a page followed one with no NextCursor")
+			}
+			sizes = append(sizes, len(page.Items))
+			last = page
+		}
+		reqs := m.api(t)
+		if len(sizes) != 2 || sizes[0] != 3 || sizes[1] != 1 || last.NextCursor != nil || len(reqs) != 3 || !strings.Contains(reqs[1].Query, "cursor=") || !strings.Contains(reqs[2].Query, "cursor=") {
+			t.Fatalf("pages %v requests %+v", sizes, reqs)
 		}
 	},
 
@@ -1494,21 +1570,15 @@ func callLead2NoInput[O any](t *testing.T, raw json.RawMessage, a, b string, fn 
 	return result(fn(context.Background(), str(t, raw, a), str(t, raw, b), opts...))
 }
 
-// firstPage reads a list's first page: every example is one page.
-func firstPage[I, P any](t *testing.T, raw json.RawMessage, fn func(context.Context, *I, ...caitlyn.CallOption) iter.Seq2[*P, error]) (any, error) {
+// firstPage reads a list's page with its ...Page method (PROTOCOL.md 10): every example is one page.
+func firstPage[I, P any](t *testing.T, raw json.RawMessage, fn func(context.Context, *I, ...caitlyn.CallOption) (*P, error)) (any, error) {
 	in, opts := fill[I](t, raw)
-	for page, err := range fn(context.Background(), in, opts...) {
-		return result(page, err)
-	}
-	return nil, nil
+	return result(fn(context.Background(), in, opts...))
 }
 
-func firstPageLead[I, P any](t *testing.T, raw json.RawMessage, a string, fn func(context.Context, string, *I, ...caitlyn.CallOption) iter.Seq2[*P, error]) (any, error) {
+func firstPageLead[I, P any](t *testing.T, raw json.RawMessage, a string, fn func(context.Context, string, *I, ...caitlyn.CallOption) (*P, error)) (any, error) {
 	in, opts := fill[I](t, raw)
-	for page, err := range fn(context.Background(), str(t, raw, a), in, opts...) {
-		return result(page, err)
-	}
-	return nil, nil
+	return result(fn(context.Background(), str(t, raw, a), in, opts...))
 }
 
 func firstEvent[I, E, F any](t *testing.T, raw json.RawMessage, fn func(context.Context, *I, ...caitlyn.CallOption) (*core.Stream[E, F], error)) (any, error) {
@@ -1677,58 +1747,58 @@ var examples = map[string]func(t *testing.T, c *caitlyn.Client, in json.RawMessa
 		return call0(t, in, c.Core.Upload(str(t, in, "uploadId")).Get)
 	},
 	"ListAgentVersions": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
-		return firstPage(t, in, c.Agent(str(t, in, "agentId")).Versions.ListPages)
+		return firstPage(t, in, c.Agent(str(t, in, "agentId")).Versions.ListPage)
 	},
 	"ListAgents": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
-		return firstPage(t, in, c.Agents.ListPages)
+		return firstPage(t, in, c.Agents.ListPage)
 	},
 	"ListConversations": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
-		return firstPage(t, in, c.Agent(str(t, in, "agentId")).Conversations.ListPages)
+		return firstPage(t, in, c.Agent(str(t, in, "agentId")).Conversations.ListPage)
 	},
 	"ListDocumentVersions": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
-		return firstPage(t, in, c.KnowledgeBase(str(t, in, "knowledgeBaseId")).Document(str(t, in, "documentId")).Versions.ListPages)
+		return firstPage(t, in, c.KnowledgeBase(str(t, in, "knowledgeBaseId")).Document(str(t, in, "documentId")).Versions.ListPage)
 	},
 	"ListDocuments": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
-		return firstPage(t, in, c.KnowledgeBase(str(t, in, "knowledgeBaseId")).Documents.ListPages)
+		return firstPage(t, in, c.KnowledgeBase(str(t, in, "knowledgeBaseId")).Documents.ListPage)
 	},
 	"ListFields": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
-		return firstPage(t, in, c.KnowledgeBase(str(t, in, "knowledgeBaseId")).Fields.ListPages)
+		return firstPage(t, in, c.KnowledgeBase(str(t, in, "knowledgeBaseId")).Fields.ListPage)
 	},
 	"ListFolders": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
-		return firstPage(t, in, c.KnowledgeBase(str(t, in, "knowledgeBaseId")).Folders.ListPages)
+		return firstPage(t, in, c.KnowledgeBase(str(t, in, "knowledgeBaseId")).Folders.ListPage)
 	},
 	"ListGuardrails": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
-		return firstPage(t, in, c.Agents.Options.GuardrailsPages)
+		return firstPage(t, in, c.Agents.Options.GuardrailsPage)
 	},
 	"ListHistoryEntries": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
-		return firstPage(t, in, c.Agent(str(t, in, "agentId")).History.ListPages)
+		return firstPage(t, in, c.Agent(str(t, in, "agentId")).History.ListPage)
 	},
 	"ListIngestionBatchItems": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
-		return firstPage(t, in, c.KnowledgeBase(str(t, in, "knowledgeBaseId")).Ingestion.Batch(str(t, in, "ingestionBatchId")).Items.ListPages)
+		return firstPage(t, in, c.KnowledgeBase(str(t, in, "knowledgeBaseId")).Ingestion.Batch(str(t, in, "ingestionBatchId")).Items.ListPage)
 	},
 	"ListIngestionBatches": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
-		return firstPage(t, in, c.KnowledgeBase(str(t, in, "knowledgeBaseId")).Ingestion.Batches.ListPages)
+		return firstPage(t, in, c.KnowledgeBase(str(t, in, "knowledgeBaseId")).Ingestion.Batches.ListPage)
 	},
 	"ListKnowledgeBases": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
-		return firstPage(t, in, c.KnowledgeBases.ListPages)
+		return firstPage(t, in, c.KnowledgeBases.ListPage)
 	},
 	"ListMemoryStores": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
-		return firstPage(t, in, c.Agents.Options.MemoryStoresPages)
+		return firstPage(t, in, c.Agents.Options.MemoryStoresPage)
 	},
 	"ListMessages": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
-		return firstPage(t, in, c.Conversation(str(t, in, "conversationId")).Messages.ListPages)
+		return firstPage(t, in, c.Conversation(str(t, in, "conversationId")).Messages.ListPage)
 	},
 	"ListModels": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
-		return firstPage(t, in, c.Agents.Options.ModelsPages)
+		return firstPage(t, in, c.Agents.Options.ModelsPage)
 	},
 	"ListOperations": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
-		return firstPageLead(t, in, "knowledgeBaseId", c.Core.Operations.ListPages)
+		return firstPageLead(t, in, "knowledgeBaseId", c.Core.Operations.ListPage)
 	},
 	"ListTools": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
-		return firstPage(t, in, c.Agents.Options.ToolsPages)
+		return firstPage(t, in, c.Agents.Options.ToolsPage)
 	},
 	"ListVoices": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
-		return firstPage(t, in, c.Agents.Options.VoicesPages)
+		return firstPage(t, in, c.Agents.Options.VoicesPage)
 	},
 	"PublishAgentVersion": func(t *testing.T, c *caitlyn.Client, in json.RawMessage) (any, error) {
 		return call(t, in, c.Agent(str(t, in, "agentId")).Version(str(t, in, "version")).Publish)

@@ -12,7 +12,21 @@ import path from 'node:path';
 const root = path.resolve(import.meta.dirname, '..');
 const read = (p) => JSON.parse(fs.readFileSync(path.join(root, p), 'utf8'));
 const protocol = read('conformance/cases/protocol.json').cases.map((c) => c.id);
-const examples = read('conformance/cases/examples.json').cases.map((c) => c.id);
+const exampleCases = read('conformance/cases/examples.json').cases;
+const examples = exampleCases.map((c) => c.id);
+
+// Every harness reads a list example through the list's page() (PROTOCOL.md 10), so every list is checked to offer
+// one page, nextCursor included, in every language, so long as each list has an example: a list without one fails here.
+const shapes = read('model/model.json').shapes;
+const lists = Object.entries(shapes)
+  .filter(([, s]) => s.type === 'operation' && s.traits?.['smithy.api#paginated'] !== undefined)
+  .map(([id]) => id.split('#')[1]);
+const unexampled = lists.filter((op) => !exampleCases.some((c) => c.operation === op));
+let failed = false;
+for (const op of unexampled) {
+  console.error(`${op} is a list with no example case, so no harness reads its page(): add an @examples entry to it`);
+  failed = true;
+}
 
 const unescape = (s) => s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 
@@ -71,7 +85,6 @@ const languages = {
 };
 
 const wanted = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(languages);
-let failed = false;
 const rows = [];
 for (const lang of wanted) {
   const l = languages[lang];

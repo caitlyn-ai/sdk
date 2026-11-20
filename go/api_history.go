@@ -30,7 +30,8 @@ func newHistory(c *Client, agentID string) *History {
 // it was, who made it and when, and which members differ between the two versions. Read the
 // configuration live had with GetHistoryEntry. Entries are never edited or deleted.
 //
-// It yields every item, fetching pages as needed; ListPages yields whole pages.
+// It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
+// one.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *History) List(ctx context.Context, in *ListHistoryEntriesInput, opts ...CallOption) iter.Seq2[HistoryEntry, error] {
@@ -46,6 +47,12 @@ func (s *History) ListPages(ctx context.Context, in *ListHistoryEntriesInput, op
 	}
 	p.AgentID = s.agentID
 	return s.c.pagesListHistoryEntries(ctx, p, opts)
+}
+
+// ListPage reads one page of List, from the input's Cursor (the first page when it is unset): exactly
+// one request. The page's NextCursor, given as Cursor, reads the page after it.
+func (s *History) ListPage(ctx context.Context, in *ListHistoryEntriesInput, opts ...CallOption) (*ListHistoryEntriesPage, error) {
+	return core.First(s.ListPages(ctx, in, opts...))
 }
 
 // ListHistoryEntriesInput is what the caller gives ListHistoryEntries; the scope it is called on fills
@@ -100,19 +107,34 @@ func readListHistoryEntries(resp *core.Response) (*ListHistoryEntriesPage, error
 	return out, nil
 }
 
+func (c *Client) pageListHistoryEntries(ctx context.Context, p *listHistoryEntriesParams, opts []CallOption) (*ListHistoryEntriesPage, error) {
+	req, err := buildListHistoryEntries(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opListHistoryEntries, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, err := readListHistoryEntries(resp)
+	if err != nil {
+		return nil, err
+	}
+	if out.HasNextPage() {
+		next := *p
+		next.Cursor = out.NextCursor
+		out.nextPage = func(ctx context.Context) (*ListHistoryEntriesPage, error) {
+			return c.pageListHistoryEntries(ctx, &next, opts)
+		}
+	}
+	return out, nil
+}
+
 func (c *Client) pagesListHistoryEntries(ctx context.Context, p *listHistoryEntriesParams, opts []CallOption) iter.Seq2[*ListHistoryEntriesPage, error] {
 	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListHistoryEntriesPage, *string, error) {
 		page := *p
 		page.Cursor = cursor
-		req, err := buildListHistoryEntries(&page)
-		if err != nil {
-			return nil, nil, err
-		}
-		resp, err := c.core.Do(ctx, opListHistoryEntries, req, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		out, err := readListHistoryEntries(resp)
+		out, err := c.pageListHistoryEntries(ctx, &page, opts)
 		if err != nil {
 			return nil, nil, err
 		}

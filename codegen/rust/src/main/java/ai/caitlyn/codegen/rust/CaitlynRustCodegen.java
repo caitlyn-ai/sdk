@@ -116,6 +116,13 @@ final class CaitlynRustCodegen implements DirectedCodegen<RustContext, RustSetti
         if (thing && result) {
             throw new CodegenException(shape.getId() + ": a thing is also a named result");
         }
+        // A page of a list (PROTOCOL.md 10): its cursor member, when the shape is a paginated operation's output
+        java.util.Optional<String> pageCursor = ctx.model().getOperationShapesWithTrait(software.amazon.smithy.model.traits.PaginatedTrait.class).stream()
+            .filter(o -> o.getOutputShape().equals(shape.getId()))
+            .findFirst()
+            .map(o -> software.amazon.smithy.model.knowledge.PaginatedIndex.of(ctx.model())
+                .getPaginationInfo(ctx.settings().service(), o).orElseThrow().getOutputTokenMemberPath().get(0).getMemberName())
+            .map(Names::snake);
         ctx.writerDelegator().useFileWriter("src/types.rs", "", w -> {
             w.l(Names.doc(doc(shape), ""));
             if (facts.resultNames.containsKey(shape.getId())) {
@@ -150,6 +157,10 @@ final class CaitlynRustCodegen implements DirectedCodegen<RustContext, RustSetti
                 w.l("    /// The response this thing was read from; see [`response_metadata`](Self::response_metadata).\n"
                         + "    #[serde(skip)]\n    pub(crate) response_metadata: rt::ThingMetadata,\n");
             }
+            if (pageCursor.isPresent()) {
+                w.l("    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page\n"
+                        + "    /// built in code.\n    #[serde(skip)]\n    pub(crate) following: rt::NextPage<" + name + ", crate::Error>,\n");
+            }
             w.l("    /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values\n"
                     + "    /// you build yourself.\n    #[serde(skip)]\n    pub raw: rt::Raw,\n}\n\n");
             w.l("impl Serialize for " + name + " {\n    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {\n"
@@ -157,6 +168,18 @@ final class CaitlynRustCodegen implements DirectedCodegen<RustContext, RustSetti
             w.l("impl<'de> Deserialize<'de> for " + name + " {\n    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {\n"
                     + "        let v = serde_json::Value::deserialize(d)?;\n"
                     + "        rt::raw::with_raw(v, |v| " + name + "::deserialize(v), |o, r| o.raw = r)\n    }\n}\n\n");
+            if (pageCursor.isPresent()) {
+                String c = pageCursor.get();
+                w.l("impl " + name + " {\n"
+                        + "    /// Whether another page follows (the page has a `" + c + "`).\n"
+                        + "    pub fn has_next_page(&self) -> bool {\n        self." + c + ".as_deref().is_some_and(|c| !c.is_empty())\n    }\n\n"
+                        + "    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no\n"
+                        + "    /// request. Keep `" + c + "` for state that outlives the page: set as the request's `cursor`, it reads the\n"
+                        + "    /// same next page. Cursors only go forward, so there is no previous page.\n"
+                        + "    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {\n"
+                        + "        if !self.has_next_page() {\n            return Ok(None);\n        }\n"
+                        + "        self.following.read().await.transpose()\n    }\n}\n\n");
+            }
             if (thing) {
                 w.l("impl " + name + " {\n"
                         + "    /// The response this " + name + " was read from (PROTOCOL.md 4.2): its HTTP status, request id and ETag. `Some` on a\n"

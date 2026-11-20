@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"iter"
 )
 
@@ -42,3 +43,14 @@ func Items[P any, T any](pages iter.Seq2[P, error], items func(P) []T) iter.Seq2
 		}
 	}
 }
+
+// First reads one page: the first that pages yields, which is one request from the input's cursor.
+func First[P any](pages iter.Seq2[P, error]) (P, error) {
+	for page, err := range pages {
+		return page, err
+	}
+	var zero P
+	return zero, errNoPage
+}
+
+var errNoPage = errors.New("caitlyn: a list gave no page")

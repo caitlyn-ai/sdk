@@ -10,6 +10,7 @@ export { sync, estimateSync, globToRegExp, isSyncAborted, type IngestCall, type 
 export { batchUpload, estimateUpload, type BatchDeps, type BatchFiles, type BatchUpload, type BatchUploadOptions } from './upload.js';
 export { WorkPromise, WaitTimeoutError, processingIn, withProcessing, rereadAtDeadline, batchDeadline, DEADLINE_GRACE_MS, type ScopeWatchAccessor, type KnowledgeBaseWatchAccessor, waitFor, waitForJob, readers, trimFolder, withFields, eager, type Follow, type WaitOptions, type WaitSpec, type WatchedKind, type ReadersShorthand } from './scope.js';
 export { describeFile, type UploadDescription } from './describe.js';
+export { paginated, type Paginated, type Page } from './pagination.js';
 export { clientConfig, createAuth, workspaceEndpoint, type CaitlynOptions, type CallOptions, type CaitlynErrorFields, type CaitlynFieldError } from './client.js';
 export { AuthSession, CaitlynAuthError, workspaceAudience, workspaceHost, getCaitlynAuthPlugin, tokenIdentityProvider, type AuthOptions, type OAuthTokens, type TokenStore } from './auth.js';
 export { signV4, getWebIdentityToken, defaultAwsCredentials, type AwsCredentials, type AwsCredentialSource } from './aws.js';

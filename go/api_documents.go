@@ -34,7 +34,8 @@ func newDocuments(c *Client, knowledgeBaseID string) *Documents {
 // documents whose name contains the text. The list can be sorted by `name`, `updatedAt` (when the
 // document last changed) and `byteSize`.
 //
-// It yields every item, fetching pages as needed; ListPages yields whole pages.
+// It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
+// one.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *Documents) List(ctx context.Context, in *ListDocumentsInput, opts ...CallOption) iter.Seq2[Document, error] {
@@ -60,6 +61,12 @@ func (s *Documents) ListPages(ctx context.Context, in *ListDocumentsInput, opts 
 	}
 	p.KnowledgeBaseID = s.knowledgeBaseID
 	return s.c.pagesListDocuments(ctx, p, opts)
+}
+
+// ListPage reads one page of List, from the input's Cursor (the first page when it is unset): exactly
+// one request. The page's NextCursor, given as Cursor, reads the page after it.
+func (s *Documents) ListPage(ctx context.Context, in *ListDocumentsInput, opts ...CallOption) (*ListDocumentsPage, error) {
+	return core.First(s.ListPages(ctx, in, opts...))
 }
 
 // Create creates a document from an upload; ingestion continues after the response.
@@ -574,19 +581,32 @@ func readListDocuments(resp *core.Response) (*ListDocumentsPage, error) {
 	return out, nil
 }
 
+func (c *Client) pageListDocuments(ctx context.Context, p *listDocumentsParams, opts []CallOption) (*ListDocumentsPage, error) {
+	req, err := buildListDocuments(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opListDocuments, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, err := readListDocuments(resp)
+	if err != nil {
+		return nil, err
+	}
+	if out.HasNextPage() {
+		next := *p
+		next.Cursor = out.NextCursor
+		out.nextPage = func(ctx context.Context) (*ListDocumentsPage, error) { return c.pageListDocuments(ctx, &next, opts) }
+	}
+	return out, nil
+}
+
 func (c *Client) pagesListDocuments(ctx context.Context, p *listDocumentsParams, opts []CallOption) iter.Seq2[*ListDocumentsPage, error] {
 	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListDocumentsPage, *string, error) {
 		page := *p
 		page.Cursor = cursor
-		req, err := buildListDocuments(&page)
-		if err != nil {
-			return nil, nil, err
-		}
-		resp, err := c.core.Do(ctx, opListDocuments, req, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		out, err := readListDocuments(resp)
+		out, err := c.pageListDocuments(ctx, &page, opts)
 		if err != nil {
 			return nil, nil, err
 		}

@@ -30,7 +30,8 @@ func newFields(c *Client, knowledgeBaseID string) *Fields {
 // `needsWork` says how many documents still need a value, an index write or new search vectors for
 // the field; `fillIn` does that work.
 //
-// It yields every item, fetching pages as needed; ListPages yields whole pages.
+// It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
+// one.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *Fields) List(ctx context.Context, in *ListFieldsInput, opts ...CallOption) iter.Seq2[Field, error] {
@@ -46,6 +47,12 @@ func (s *Fields) ListPages(ctx context.Context, in *ListFieldsInput, opts ...Cal
 	}
 	p.KnowledgeBaseID = s.knowledgeBaseID
 	return s.c.pagesListFields(ctx, p, opts)
+}
+
+// ListPage reads one page of List, from the input's Cursor (the first page when it is unset): exactly
+// one request. The page's NextCursor, given as Cursor, reads the page after it.
+func (s *Fields) ListPage(ctx context.Context, in *ListFieldsInput, opts ...CallOption) (*ListFieldsPage, error) {
+	return core.First(s.ListPages(ctx, in, opts...))
 }
 
 // Create adds a metadata field to a knowledge base.
@@ -395,19 +402,32 @@ func readListFields(resp *core.Response) (*ListFieldsPage, error) {
 	return out, nil
 }
 
+func (c *Client) pageListFields(ctx context.Context, p *listFieldsParams, opts []CallOption) (*ListFieldsPage, error) {
+	req, err := buildListFields(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opListFields, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, err := readListFields(resp)
+	if err != nil {
+		return nil, err
+	}
+	if out.HasNextPage() {
+		next := *p
+		next.Cursor = out.NextCursor
+		out.nextPage = func(ctx context.Context) (*ListFieldsPage, error) { return c.pageListFields(ctx, &next, opts) }
+	}
+	return out, nil
+}
+
 func (c *Client) pagesListFields(ctx context.Context, p *listFieldsParams, opts []CallOption) iter.Seq2[*ListFieldsPage, error] {
 	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListFieldsPage, *string, error) {
 		page := *p
 		page.Cursor = cursor
-		req, err := buildListFields(&page)
-		if err != nil {
-			return nil, nil, err
-		}
-		resp, err := c.core.Do(ctx, opListFields, req, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		out, err := readListFields(resp)
+		out, err := c.pageListFields(ctx, &page, opts)
 		if err != nil {
 			return nil, nil, err
 		}

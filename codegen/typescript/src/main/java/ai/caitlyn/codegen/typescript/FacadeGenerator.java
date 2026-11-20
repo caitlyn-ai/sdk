@@ -524,16 +524,23 @@ final class FacadeGenerator {
                 modelTypes.add(item);
                 String pageSize = info.getPageSizeMember().map(MemberShape::getMemberName).orElse(null);
                 imports.add("import { paginate" + opName + " } from \"../pagination/" + opName + "Paginator\";\n");
+                imports.add("import { paginated, type Paginated } from \"@caitlyn-ai/sdk-core\";\n");
+                // PROTOCOL.md 10: a list is iterated for its items, and gives its pages (pages()) and one page (page()),
+                // each from the input's cursor. A page is the operation's output: its items and nextCursor.
+                String pageType = "WithRaw<" + out + " & __MetadataBearer>";
                 body.append("export function ").append(fn).append("(client: CaitlynClient, ").append(positionalParam)
                     .append("input: ").append(inputType).append(", ").append(optionsParam)
-                    .append("): AsyncIterable<WithRaw<").append(item).append(">> {\n")
+                    .append("): Paginated<").append(pageType).append(", WithRaw<").append(item).append(">> {\n")
                     .append("  const { signal, ...rest } = options;\n")
-                    .append("  return {\n    async *[Symbol.asyncIterator]() {\n")
-                    .append("      const pages = paginate").append(opName).append("({ client")
+                    .append("  return paginated(\n")
+                    .append("    (cursor) => paginate").append(opName).append("({ client")
                     .append(pageSize != null ? ", pageSize: input." + pageSize : "").append(" }, ")
-                    .append(commandInput).append(", { abortSignal: signal });\n")
-                    .append("      for await (const page of pages) yield* page.").append(items.getMemberName())
-                    .append(" as WithRaw<").append(item).append(">[];\n    },\n  };\n}\n\n");
+                    .append(commandInput, 0, commandInput.length() - 2)
+                    .append(", ...(cursor === undefined ? {} : { ").append(info.getInputTokenMember().getMemberName()).append(": cursor }) }")
+                    .append(", { abortSignal: signal }) as AsyncIterable<").append(pageType).append(">,\n")
+                    .append("    (page) => (page.").append(items.getMemberName()).append(" ?? []) as WithRaw<").append(item).append(">[],\n")
+                    .append("    (page) => page.").append(info.getOutputTokenMemberPath().get(info.getOutputTokenMemberPath().size() - 1).getMemberName()).append(",\n")
+                    .append("  );\n}\n\n");
             } else if (uploadTarget(op).isPresent()) {
                 // @uploadTarget (PROTOCOL.md 10): the method takes a file in place of the identifier at the member's path,
                 // uploads it (core.uploads.send, with the purpose the member's documentation names), then calls the
@@ -615,7 +622,7 @@ final class FacadeGenerator {
             + "export { CaitlynError } from \"./errors\";\n"
             + "export { ErrorCode } from \"./errorCodes\";\n"
             + "export { CaitlynConnectionError } from \"./connection\";\n"
-            + "export { NotSupportedByServer, SseStream, CaitlynAuthError, UploadFile, WorkPromise, contentTypeFor, createAuth, workspaceAudience, isSyncAborted, withHints, type FileInput, type UploadFileOptions, type UploadDescription, type BatchFiles, type BatchUpload, type BatchUploadOptions, type IngestionProgress, type SyncItemInput, type SyncOptions, type SyncPhase, type SyncPlan, type SyncReport, type SyncReportBatch, type SyncReportItem, type LocalFile, type ReadersShorthand, type WaitOptions, type AuthOptions, type AuthSession, type AwsCredentials, type OAuthTokens, type TokenStore, type CaitlynOptions, type CallOptions, type CaitlynErrorFields, type WithRaw } from \"@caitlyn-ai/sdk-core\";\n";
+            + "export { NotSupportedByServer, SseStream, CaitlynAuthError, UploadFile, WorkPromise, contentTypeFor, createAuth, workspaceAudience, isSyncAborted, withHints, type FileInput, type UploadFileOptions, type UploadDescription, type BatchFiles, type BatchUpload, type BatchUploadOptions, type IngestionProgress, type SyncItemInput, type SyncOptions, type SyncPhase, type SyncPlan, type SyncReport, type SyncReportBatch, type SyncReportItem, type LocalFile, type ReadersShorthand, type WaitOptions, type AuthOptions, type AuthSession, type AwsCredentials, type OAuthTokens, type TokenStore, type CaitlynOptions, type CallOptions, type CaitlynErrorFields, type WithRaw, type Paginated, type Page } from \"@caitlyn-ai/sdk-core\";\n";
     }
 
     /**

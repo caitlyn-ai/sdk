@@ -32,7 +32,8 @@ func newDocumentVersions(c *Client, knowledgeBaseID, documentID string) *Documen
 // Each version says whether it is the current one (the one search uses) and whether it is the
 // latest. A caller who may not add versions sees only the current version.
 //
-// It yields every item, fetching pages as needed; ListPages yields whole pages.
+// It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
+// one.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *DocumentVersions) List(ctx context.Context, in *ListDocumentVersionsInput, opts ...CallOption) iter.Seq2[DocumentVersion, error] {
@@ -49,6 +50,12 @@ func (s *DocumentVersions) ListPages(ctx context.Context, in *ListDocumentVersio
 	p.KnowledgeBaseID = s.knowledgeBaseID
 	p.DocumentID = s.documentID
 	return s.c.pagesListDocumentVersions(ctx, p, opts)
+}
+
+// ListPage reads one page of List, from the input's Cursor (the first page when it is unset): exactly
+// one request. The page's NextCursor, given as Cursor, reads the page after it.
+func (s *DocumentVersions) ListPage(ctx context.Context, in *ListDocumentVersionsInput, opts ...CallOption) (*ListDocumentVersionsPage, error) {
+	return core.First(s.ListPages(ctx, in, opts...))
 }
 
 // ListDocumentVersionsInput is what the caller gives ListDocumentVersions; the scope it is called on
@@ -107,19 +114,34 @@ func readListDocumentVersions(resp *core.Response) (*ListDocumentVersionsPage, e
 	return out, nil
 }
 
+func (c *Client) pageListDocumentVersions(ctx context.Context, p *listDocumentVersionsParams, opts []CallOption) (*ListDocumentVersionsPage, error) {
+	req, err := buildListDocumentVersions(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opListDocumentVersions, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, err := readListDocumentVersions(resp)
+	if err != nil {
+		return nil, err
+	}
+	if out.HasNextPage() {
+		next := *p
+		next.Cursor = out.NextCursor
+		out.nextPage = func(ctx context.Context) (*ListDocumentVersionsPage, error) {
+			return c.pageListDocumentVersions(ctx, &next, opts)
+		}
+	}
+	return out, nil
+}
+
 func (c *Client) pagesListDocumentVersions(ctx context.Context, p *listDocumentVersionsParams, opts []CallOption) iter.Seq2[*ListDocumentVersionsPage, error] {
 	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListDocumentVersionsPage, *string, error) {
 		page := *p
 		page.Cursor = cursor
-		req, err := buildListDocumentVersions(&page)
-		if err != nil {
-			return nil, nil, err
-		}
-		resp, err := c.core.Do(ctx, opListDocumentVersions, req, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		out, err := readListDocumentVersions(resp)
+		out, err := c.pageListDocumentVersions(ctx, &page, opts)
 		if err != nil {
 			return nil, nil, err
 		}

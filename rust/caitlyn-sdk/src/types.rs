@@ -4276,6 +4276,10 @@ pub struct ListHistoryEntriesPage {
     /// The default on values you build yourself.
     #[serde(skip)]
     pub response_metadata: rt::ResponseMetadata,
+    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page
+    /// built in code.
+    #[serde(skip)]
+    pub(crate) following: rt::NextPage<ListHistoryEntriesPage, crate::Error>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -4292,6 +4296,23 @@ impl<'de> Deserialize<'de> for ListHistoryEntriesPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListHistoryEntriesPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl ListHistoryEntriesPage {
+    /// Whether another page follows (the page has a `next_cursor`).
+    pub fn has_next_page(&self) -> bool {
+        self.next_cursor.as_deref().is_some_and(|c| !c.is_empty())
+    }
+
+    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no
+    /// request. Keep `next_cursor` for state that outlives the page: set as the request's `cursor`, it reads the
+    /// same next page. Cursors only go forward, so there is no previous page.
+    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {
+        if !self.has_next_page() {
+            return Ok(None);
+        }
+        self.following.read().await.transpose()
     }
 }
 
@@ -4322,6 +4343,10 @@ pub struct ListAgentsPage {
     /// The default on values you build yourself.
     #[serde(skip)]
     pub response_metadata: rt::ResponseMetadata,
+    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page
+    /// built in code.
+    #[serde(skip)]
+    pub(crate) following: rt::NextPage<ListAgentsPage, crate::Error>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -4338,6 +4363,23 @@ impl<'de> Deserialize<'de> for ListAgentsPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListAgentsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl ListAgentsPage {
+    /// Whether another page follows (the page has a `next_cursor`).
+    pub fn has_next_page(&self) -> bool {
+        self.next_cursor.as_deref().is_some_and(|c| !c.is_empty())
+    }
+
+    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no
+    /// request. Keep `next_cursor` for state that outlives the page: set as the request's `cursor`, it reads the
+    /// same next page. Cursors only go forward, so there is no previous page.
+    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {
+        if !self.has_next_page() {
+            return Ok(None);
+        }
+        self.following.read().await.transpose()
     }
 }
 
@@ -4506,6 +4548,10 @@ pub struct ListConversationsPage {
     /// The default on values you build yourself.
     #[serde(skip)]
     pub response_metadata: rt::ResponseMetadata,
+    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page
+    /// built in code.
+    #[serde(skip)]
+    pub(crate) following: rt::NextPage<ListConversationsPage, crate::Error>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -4522,6 +4568,23 @@ impl<'de> Deserialize<'de> for ListConversationsPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListConversationsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl ListConversationsPage {
+    /// Whether another page follows (the page has a `next_cursor`).
+    pub fn has_next_page(&self) -> bool {
+        self.next_cursor.as_deref().is_some_and(|c| !c.is_empty())
+    }
+
+    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no
+    /// request. Keep `next_cursor` for state that outlives the page: set as the request's `cursor`, it reads the
+    /// same next page. Cursors only go forward, so there is no previous page.
+    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {
+        if !self.has_next_page() {
+            return Ok(None);
+        }
+        self.following.read().await.transpose()
     }
 }
 
@@ -4740,6 +4803,10 @@ pub struct ListAgentVersionsPage {
     /// The default on values you build yourself.
     #[serde(skip)]
     pub response_metadata: rt::ResponseMetadata,
+    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page
+    /// built in code.
+    #[serde(skip)]
+    pub(crate) following: rt::NextPage<ListAgentVersionsPage, crate::Error>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -4756,6 +4823,23 @@ impl<'de> Deserialize<'de> for ListAgentVersionsPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListAgentVersionsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl ListAgentVersionsPage {
+    /// Whether another page follows (the page has a `next_cursor`).
+    pub fn has_next_page(&self) -> bool {
+        self.next_cursor.as_deref().is_some_and(|c| !c.is_empty())
+    }
+
+    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no
+    /// request. Keep `next_cursor` for state that outlives the page: set as the request's `cursor`, it reads the
+    /// same next page. Cursors only go forward, so there is no previous page.
+    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {
+        if !self.has_next_page() {
+            return Ok(None);
+        }
+        self.following.read().await.transpose()
     }
 }
 
@@ -6090,6 +6174,10 @@ pub struct ListMessagesPage {
     /// The default on values you build yourself.
     #[serde(skip)]
     pub response_metadata: rt::ResponseMetadata,
+    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page
+    /// built in code.
+    #[serde(skip)]
+    pub(crate) following: rt::NextPage<ListMessagesPage, crate::Error>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -6106,6 +6194,23 @@ impl<'de> Deserialize<'de> for ListMessagesPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListMessagesPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl ListMessagesPage {
+    /// Whether another page follows (the page has a `next_cursor`).
+    pub fn has_next_page(&self) -> bool {
+        self.next_cursor.as_deref().is_some_and(|c| !c.is_empty())
+    }
+
+    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no
+    /// request. Keep `next_cursor` for state that outlives the page: set as the request's `cursor`, it reads the
+    /// same next page. Cursors only go forward, so there is no previous page.
+    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {
+        if !self.has_next_page() {
+            return Ok(None);
+        }
+        self.following.read().await.transpose()
     }
 }
 
@@ -8571,6 +8676,10 @@ pub struct ListDocumentVersionsPage {
     /// The default on values you build yourself.
     #[serde(skip)]
     pub response_metadata: rt::ResponseMetadata,
+    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page
+    /// built in code.
+    #[serde(skip)]
+    pub(crate) following: rt::NextPage<ListDocumentVersionsPage, crate::Error>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -8587,6 +8696,23 @@ impl<'de> Deserialize<'de> for ListDocumentVersionsPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListDocumentVersionsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl ListDocumentVersionsPage {
+    /// Whether another page follows (the page has a `next_cursor`).
+    pub fn has_next_page(&self) -> bool {
+        self.next_cursor.as_deref().is_some_and(|c| !c.is_empty())
+    }
+
+    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no
+    /// request. Keep `next_cursor` for state that outlives the page: set as the request's `cursor`, it reads the
+    /// same next page. Cursors only go forward, so there is no previous page.
+    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {
+        if !self.has_next_page() {
+            return Ok(None);
+        }
+        self.following.read().await.transpose()
     }
 }
 
@@ -8919,6 +9045,10 @@ pub struct ListDocumentsPage {
     /// The default on values you build yourself.
     #[serde(skip)]
     pub response_metadata: rt::ResponseMetadata,
+    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page
+    /// built in code.
+    #[serde(skip)]
+    pub(crate) following: rt::NextPage<ListDocumentsPage, crate::Error>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -8935,6 +9065,23 @@ impl<'de> Deserialize<'de> for ListDocumentsPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListDocumentsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl ListDocumentsPage {
+    /// Whether another page follows (the page has a `next_cursor`).
+    pub fn has_next_page(&self) -> bool {
+        self.next_cursor.as_deref().is_some_and(|c| !c.is_empty())
+    }
+
+    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no
+    /// request. Keep `next_cursor` for state that outlives the page: set as the request's `cursor`, it reads the
+    /// same next page. Cursors only go forward, so there is no previous page.
+    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {
+        if !self.has_next_page() {
+            return Ok(None);
+        }
+        self.following.read().await.transpose()
     }
 }
 
@@ -10006,6 +10153,10 @@ pub struct ListFieldsPage {
     /// The default on values you build yourself.
     #[serde(skip)]
     pub response_metadata: rt::ResponseMetadata,
+    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page
+    /// built in code.
+    #[serde(skip)]
+    pub(crate) following: rt::NextPage<ListFieldsPage, crate::Error>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -10022,6 +10173,23 @@ impl<'de> Deserialize<'de> for ListFieldsPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListFieldsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl ListFieldsPage {
+    /// Whether another page follows (the page has a `next_cursor`).
+    pub fn has_next_page(&self) -> bool {
+        self.next_cursor.as_deref().is_some_and(|c| !c.is_empty())
+    }
+
+    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no
+    /// request. Keep `next_cursor` for state that outlives the page: set as the request's `cursor`, it reads the
+    /// same next page. Cursors only go forward, so there is no previous page.
+    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {
+        if !self.has_next_page() {
+            return Ok(None);
+        }
+        self.following.read().await.transpose()
     }
 }
 
@@ -10198,6 +10366,10 @@ pub struct ListFoldersPage {
     /// The default on values you build yourself.
     #[serde(skip)]
     pub response_metadata: rt::ResponseMetadata,
+    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page
+    /// built in code.
+    #[serde(skip)]
+    pub(crate) following: rt::NextPage<ListFoldersPage, crate::Error>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -10214,6 +10386,23 @@ impl<'de> Deserialize<'de> for ListFoldersPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListFoldersPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl ListFoldersPage {
+    /// Whether another page follows (the page has a `next_cursor`).
+    pub fn has_next_page(&self) -> bool {
+        self.next_cursor.as_deref().is_some_and(|c| !c.is_empty())
+    }
+
+    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no
+    /// request. Keep `next_cursor` for state that outlives the page: set as the request's `cursor`, it reads the
+    /// same next page. Cursors only go forward, so there is no previous page.
+    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {
+        if !self.has_next_page() {
+            return Ok(None);
+        }
+        self.following.read().await.transpose()
     }
 }
 
@@ -11397,6 +11586,10 @@ pub struct ListIngestionBatchItemsPage {
     /// The default on values you build yourself.
     #[serde(skip)]
     pub response_metadata: rt::ResponseMetadata,
+    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page
+    /// built in code.
+    #[serde(skip)]
+    pub(crate) following: rt::NextPage<ListIngestionBatchItemsPage, crate::Error>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -11413,6 +11606,23 @@ impl<'de> Deserialize<'de> for ListIngestionBatchItemsPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListIngestionBatchItemsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl ListIngestionBatchItemsPage {
+    /// Whether another page follows (the page has a `next_cursor`).
+    pub fn has_next_page(&self) -> bool {
+        self.next_cursor.as_deref().is_some_and(|c| !c.is_empty())
+    }
+
+    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no
+    /// request. Keep `next_cursor` for state that outlives the page: set as the request's `cursor`, it reads the
+    /// same next page. Cursors only go forward, so there is no previous page.
+    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {
+        if !self.has_next_page() {
+            return Ok(None);
+        }
+        self.following.read().await.transpose()
     }
 }
 
@@ -11443,6 +11653,10 @@ pub struct ListIngestionBatchesPage {
     /// The default on values you build yourself.
     #[serde(skip)]
     pub response_metadata: rt::ResponseMetadata,
+    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page
+    /// built in code.
+    #[serde(skip)]
+    pub(crate) following: rt::NextPage<ListIngestionBatchesPage, crate::Error>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -11459,6 +11673,23 @@ impl<'de> Deserialize<'de> for ListIngestionBatchesPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListIngestionBatchesPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl ListIngestionBatchesPage {
+    /// Whether another page follows (the page has a `next_cursor`).
+    pub fn has_next_page(&self) -> bool {
+        self.next_cursor.as_deref().is_some_and(|c| !c.is_empty())
+    }
+
+    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no
+    /// request. Keep `next_cursor` for state that outlives the page: set as the request's `cursor`, it reads the
+    /// same next page. Cursors only go forward, so there is no previous page.
+    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {
+        if !self.has_next_page() {
+            return Ok(None);
+        }
+        self.following.read().await.transpose()
     }
 }
 
@@ -11540,6 +11771,10 @@ pub struct ListKnowledgeBasesPage {
     /// The default on values you build yourself.
     #[serde(skip)]
     pub response_metadata: rt::ResponseMetadata,
+    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page
+    /// built in code.
+    #[serde(skip)]
+    pub(crate) following: rt::NextPage<ListKnowledgeBasesPage, crate::Error>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -11556,6 +11791,23 @@ impl<'de> Deserialize<'de> for ListKnowledgeBasesPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListKnowledgeBasesPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl ListKnowledgeBasesPage {
+    /// Whether another page follows (the page has a `next_cursor`).
+    pub fn has_next_page(&self) -> bool {
+        self.next_cursor.as_deref().is_some_and(|c| !c.is_empty())
+    }
+
+    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no
+    /// request. Keep `next_cursor` for state that outlives the page: set as the request's `cursor`, it reads the
+    /// same next page. Cursors only go forward, so there is no previous page.
+    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {
+        if !self.has_next_page() {
+            return Ok(None);
+        }
+        self.following.read().await.transpose()
     }
 }
 
@@ -11586,6 +11838,10 @@ pub struct ListOperationsPage {
     /// The default on values you build yourself.
     #[serde(skip)]
     pub response_metadata: rt::ResponseMetadata,
+    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page
+    /// built in code.
+    #[serde(skip)]
+    pub(crate) following: rt::NextPage<ListOperationsPage, crate::Error>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -11602,6 +11858,23 @@ impl<'de> Deserialize<'de> for ListOperationsPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListOperationsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl ListOperationsPage {
+    /// Whether another page follows (the page has a `next_cursor`).
+    pub fn has_next_page(&self) -> bool {
+        self.next_cursor.as_deref().is_some_and(|c| !c.is_empty())
+    }
+
+    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no
+    /// request. Keep `next_cursor` for state that outlives the page: set as the request's `cursor`, it reads the
+    /// same next page. Cursors only go forward, so there is no previous page.
+    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {
+        if !self.has_next_page() {
+            return Ok(None);
+        }
+        self.following.read().await.transpose()
     }
 }
 
@@ -11738,6 +12011,10 @@ pub struct ListGuardrailsPage {
     /// The default on values you build yourself.
     #[serde(skip)]
     pub response_metadata: rt::ResponseMetadata,
+    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page
+    /// built in code.
+    #[serde(skip)]
+    pub(crate) following: rt::NextPage<ListGuardrailsPage, crate::Error>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -11754,6 +12031,23 @@ impl<'de> Deserialize<'de> for ListGuardrailsPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListGuardrailsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl ListGuardrailsPage {
+    /// Whether another page follows (the page has a `next_cursor`).
+    pub fn has_next_page(&self) -> bool {
+        self.next_cursor.as_deref().is_some_and(|c| !c.is_empty())
+    }
+
+    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no
+    /// request. Keep `next_cursor` for state that outlives the page: set as the request's `cursor`, it reads the
+    /// same next page. Cursors only go forward, so there is no previous page.
+    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {
+        if !self.has_next_page() {
+            return Ok(None);
+        }
+        self.following.read().await.transpose()
     }
 }
 
@@ -11813,6 +12107,10 @@ pub struct ListMemoryStoresPage {
     /// The default on values you build yourself.
     #[serde(skip)]
     pub response_metadata: rt::ResponseMetadata,
+    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page
+    /// built in code.
+    #[serde(skip)]
+    pub(crate) following: rt::NextPage<ListMemoryStoresPage, crate::Error>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -11829,6 +12127,23 @@ impl<'de> Deserialize<'de> for ListMemoryStoresPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListMemoryStoresPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl ListMemoryStoresPage {
+    /// Whether another page follows (the page has a `next_cursor`).
+    pub fn has_next_page(&self) -> bool {
+        self.next_cursor.as_deref().is_some_and(|c| !c.is_empty())
+    }
+
+    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no
+    /// request. Keep `next_cursor` for state that outlives the page: set as the request's `cursor`, it reads the
+    /// same next page. Cursors only go forward, so there is no previous page.
+    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {
+        if !self.has_next_page() {
+            return Ok(None);
+        }
+        self.following.read().await.transpose()
     }
 }
 
@@ -11984,6 +12299,10 @@ pub struct ListModelsPage {
     /// The default on values you build yourself.
     #[serde(skip)]
     pub response_metadata: rt::ResponseMetadata,
+    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page
+    /// built in code.
+    #[serde(skip)]
+    pub(crate) following: rt::NextPage<ListModelsPage, crate::Error>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -12000,6 +12319,23 @@ impl<'de> Deserialize<'de> for ListModelsPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListModelsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl ListModelsPage {
+    /// Whether another page follows (the page has a `next_cursor`).
+    pub fn has_next_page(&self) -> bool {
+        self.next_cursor.as_deref().is_some_and(|c| !c.is_empty())
+    }
+
+    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no
+    /// request. Keep `next_cursor` for state that outlives the page: set as the request's `cursor`, it reads the
+    /// same next page. Cursors only go forward, so there is no previous page.
+    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {
+        if !self.has_next_page() {
+            return Ok(None);
+        }
+        self.following.read().await.transpose()
     }
 }
 
@@ -12059,6 +12395,10 @@ pub struct ListToolsPage {
     /// The default on values you build yourself.
     #[serde(skip)]
     pub response_metadata: rt::ResponseMetadata,
+    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page
+    /// built in code.
+    #[serde(skip)]
+    pub(crate) following: rt::NextPage<ListToolsPage, crate::Error>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -12075,6 +12415,23 @@ impl<'de> Deserialize<'de> for ListToolsPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListToolsPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl ListToolsPage {
+    /// Whether another page follows (the page has a `next_cursor`).
+    pub fn has_next_page(&self) -> bool {
+        self.next_cursor.as_deref().is_some_and(|c| !c.is_empty())
+    }
+
+    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no
+    /// request. Keep `next_cursor` for state that outlives the page: set as the request's `cursor`, it reads the
+    /// same next page. Cursors only go forward, so there is no previous page.
+    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {
+        if !self.has_next_page() {
+            return Ok(None);
+        }
+        self.following.read().await.transpose()
     }
 }
 
@@ -12140,6 +12497,10 @@ pub struct ListVoicesPage {
     /// The default on values you build yourself.
     #[serde(skip)]
     pub response_metadata: rt::ResponseMetadata,
+    /// How this page reads the page after it ([`next_page`](Self::next_page)). Empty on the last page and on a page
+    /// built in code.
+    #[serde(skip)]
+    pub(crate) following: rt::NextPage<ListVoicesPage, crate::Error>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
     /// you build yourself.
     #[serde(skip)]
@@ -12156,6 +12517,23 @@ impl<'de> Deserialize<'de> for ListVoicesPage {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = serde_json::Value::deserialize(d)?;
         rt::raw::with_raw(v, |v| ListVoicesPage::deserialize(v), |o, r| o.raw = r)
+    }
+}
+
+impl ListVoicesPage {
+    /// Whether another page follows (the page has a `next_cursor`).
+    pub fn has_next_page(&self) -> bool {
+        self.next_cursor.as_deref().is_some_and(|c| !c.is_empty())
+    }
+
+    /// The page after this one with the same input, in exactly one request: `None` on the last page, with no
+    /// request. Keep `next_cursor` for state that outlives the page: set as the request's `cursor`, it reads the
+    /// same next page. Cursors only go forward, so there is no previous page.
+    pub async fn next_page(&self) -> Result<Option<Self>, crate::Error> {
+        if !self.has_next_page() {
+            return Ok(None);
+        }
+        self.following.read().await.transpose()
     }
 }
 

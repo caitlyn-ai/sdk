@@ -3,6 +3,7 @@
 package caitlyn
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -2520,6 +2521,7 @@ type ListHistoryEntriesPage struct {
 	NextCursor *string `json:"nextCursor,omitempty"`
 
 	metadata core.ResponseMetadata
+	nextPage func(ctx context.Context) (*ListHistoryEntriesPage, error)
 
 	raw core.Raw
 }
@@ -2544,6 +2546,21 @@ func (v *ListHistoryEntriesPage) RawJSON() json.RawMessage { return v.raw.JSON()
 // (the zero value for a result built in code).
 func (v *ListHistoryEntriesPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
+// HasNextPage reports whether another page follows (the page has a NextCursor).
+func (v *ListHistoryEntriesPage) HasNextPage() bool {
+	return v != nil && v.NextCursor != nil && *v.NextCursor != ""
+}
+
+// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,
+// with no request. Keep NextCursor for state that outlives the page: given as the input's cursor, it reads the same
+// next page. Cursors only go forward, so there is no previous page.
+func (v *ListHistoryEntriesPage) NextPage(ctx context.Context) (*ListHistoryEntriesPage, error) {
+	if !v.HasNextPage() || v.nextPage == nil {
+		return nil, nil
+	}
+	return v.nextPage(ctx)
+}
+
 // ListAgentsPage is generated from the Caitlyn model.
 //
 // Header-bound members are filled from the response headers; Raw holds the body as received.
@@ -2562,6 +2579,7 @@ type ListAgentsPage struct {
 	NextCursor *string `json:"nextCursor,omitempty"`
 
 	metadata core.ResponseMetadata
+	nextPage func(ctx context.Context) (*ListAgentsPage, error)
 
 	raw core.Raw
 }
@@ -2585,6 +2603,21 @@ func (v *ListAgentsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
 // ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *ListAgentsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// HasNextPage reports whether another page follows (the page has a NextCursor).
+func (v *ListAgentsPage) HasNextPage() bool {
+	return v != nil && v.NextCursor != nil && *v.NextCursor != ""
+}
+
+// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,
+// with no request. Keep NextCursor for state that outlives the page: given as the input's cursor, it reads the same
+// next page. Cursors only go forward, so there is no previous page.
+func (v *ListAgentsPage) NextPage(ctx context.Context) (*ListAgentsPage, error) {
+	if !v.HasNextPage() || v.nextPage == nil {
+		return nil, nil
+	}
+	return v.nextPage(ctx)
+}
 
 // ConversationStatus: Whether a conversation is answering. Open: new values may be added.
 //
@@ -2670,6 +2703,7 @@ type ListConversationsPage struct {
 	NextCursor *string `json:"nextCursor,omitempty"`
 
 	metadata core.ResponseMetadata
+	nextPage func(ctx context.Context) (*ListConversationsPage, error)
 
 	raw core.Raw
 }
@@ -2693,6 +2727,21 @@ func (v *ListConversationsPage) RawJSON() json.RawMessage { return v.raw.JSON() 
 // ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *ListConversationsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// HasNextPage reports whether another page follows (the page has a NextCursor).
+func (v *ListConversationsPage) HasNextPage() bool {
+	return v != nil && v.NextCursor != nil && *v.NextCursor != ""
+}
+
+// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,
+// with no request. Keep NextCursor for state that outlives the page: given as the input's cursor, it reads the same
+// next page. Cursors only go forward, so there is no previous page.
+func (v *ListConversationsPage) NextPage(ctx context.Context) (*ListConversationsPage, error) {
+	if !v.HasNextPage() || v.nextPage == nil {
+		return nil, nil
+	}
+	return v.nextPage(ctx)
+}
 
 // ClearableAgentField is the agent members that can be cleared. Open: an older SDK may send a newer
 // value as a string.
@@ -2839,6 +2888,7 @@ type ListAgentVersionsPage struct {
 	NextCursor *string `json:"nextCursor,omitempty"`
 
 	metadata core.ResponseMetadata
+	nextPage func(ctx context.Context) (*ListAgentVersionsPage, error)
 
 	raw core.Raw
 }
@@ -2862,6 +2912,21 @@ func (v *ListAgentVersionsPage) RawJSON() json.RawMessage { return v.raw.JSON() 
 // ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *ListAgentVersionsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// HasNextPage reports whether another page follows (the page has a NextCursor).
+func (v *ListAgentVersionsPage) HasNextPage() bool {
+	return v != nil && v.NextCursor != nil && *v.NextCursor != ""
+}
+
+// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,
+// with no request. Keep NextCursor for state that outlives the page: given as the input's cursor, it reads the same
+// next page. Cursors only go forward, so there is no previous page.
+func (v *ListAgentVersionsPage) NextPage(ctx context.Context) (*ListAgentVersionsPage, error) {
+	if !v.HasNextPage() || v.nextPage == nil {
+		return nil, nil
+	}
+	return v.nextPage(ctx)
+}
 
 // LiveState: Which version live points at, and since when.
 type LiveState struct {
@@ -3579,6 +3644,7 @@ type ListMessagesPage struct {
 	NextCursor *string `json:"nextCursor,omitempty"`
 
 	metadata core.ResponseMetadata
+	nextPage func(ctx context.Context) (*ListMessagesPage, error)
 
 	raw core.Raw
 }
@@ -3602,6 +3668,21 @@ func (v *ListMessagesPage) RawJSON() json.RawMessage { return v.raw.JSON() }
 // ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *ListMessagesPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// HasNextPage reports whether another page follows (the page has a NextCursor).
+func (v *ListMessagesPage) HasNextPage() bool {
+	return v != nil && v.NextCursor != nil && *v.NextCursor != ""
+}
+
+// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,
+// with no request. Keep NextCursor for state that outlives the page: given as the input's cursor, it reads the same
+// next page. Cursors only go forward, so there is no previous page.
+func (v *ListMessagesPage) NextPage(ctx context.Context) (*ListMessagesPage, error) {
+	if !v.HasNextPage() || v.nextPage == nil {
+		return nil, nil
+	}
+	return v.nextPage(ctx)
+}
 
 // ContextItem: One item of structured context, for example the page or record the person is looking
 // at.
@@ -4992,6 +5073,7 @@ type ListDocumentVersionsPage struct {
 	NextCursor *string `json:"nextCursor,omitempty"`
 
 	metadata core.ResponseMetadata
+	nextPage func(ctx context.Context) (*ListDocumentVersionsPage, error)
 
 	raw core.Raw
 }
@@ -5015,6 +5097,21 @@ func (v *ListDocumentVersionsPage) RawJSON() json.RawMessage { return v.raw.JSON
 // ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *ListDocumentVersionsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// HasNextPage reports whether another page follows (the page has a NextCursor).
+func (v *ListDocumentVersionsPage) HasNextPage() bool {
+	return v != nil && v.NextCursor != nil && *v.NextCursor != ""
+}
+
+// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,
+// with no request. Keep NextCursor for state that outlives the page: given as the input's cursor, it reads the same
+// next page. Cursors only go forward, so there is no previous page.
+func (v *ListDocumentVersionsPage) NextPage(ctx context.Context) (*ListDocumentVersionsPage, error) {
+	if !v.HasNextPage() || v.nextPage == nil {
+		return nil, nil
+	}
+	return v.nextPage(ctx)
+}
 
 // IngestionHints: What a client read of a file before uploading it.
 type IngestionHints struct {
@@ -5297,6 +5394,7 @@ type ListDocumentsPage struct {
 	NextCursor *string `json:"nextCursor,omitempty"`
 
 	metadata core.ResponseMetadata
+	nextPage func(ctx context.Context) (*ListDocumentsPage, error)
 
 	raw core.Raw
 }
@@ -5320,6 +5418,21 @@ func (v *ListDocumentsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
 // ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *ListDocumentsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// HasNextPage reports whether another page follows (the page has a NextCursor).
+func (v *ListDocumentsPage) HasNextPage() bool {
+	return v != nil && v.NextCursor != nil && *v.NextCursor != ""
+}
+
+// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,
+// with no request. Keep NextCursor for state that outlives the page: given as the input's cursor, it reads the same
+// next page. Cursors only go forward, so there is no previous page.
+func (v *ListDocumentsPage) NextPage(ctx context.Context) (*ListDocumentsPage, error) {
+	if !v.HasNextPage() || v.nextPage == nil {
+		return nil, nil
+	}
+	return v.nextPage(ctx)
+}
 
 // Job: Work running on a knowledge base: ingesting documents, filling in fields, reprocessing,
 // layout-aware
@@ -6045,6 +6158,7 @@ type ListFieldsPage struct {
 	NextCursor *string `json:"nextCursor,omitempty"`
 
 	metadata core.ResponseMetadata
+	nextPage func(ctx context.Context) (*ListFieldsPage, error)
 
 	raw core.Raw
 }
@@ -6068,6 +6182,21 @@ func (v *ListFieldsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
 // ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *ListFieldsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// HasNextPage reports whether another page follows (the page has a NextCursor).
+func (v *ListFieldsPage) HasNextPage() bool {
+	return v != nil && v.NextCursor != nil && *v.NextCursor != ""
+}
+
+// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,
+// with no request. Keep NextCursor for state that outlives the page: given as the input's cursor, it reads the same
+// next page. Cursors only go forward, so there is no previous page.
+func (v *ListFieldsPage) NextPage(ctx context.Context) (*ListFieldsPage, error) {
+	if !v.HasNextPage() || v.nextPage == nil {
+		return nil, nil
+	}
+	return v.nextPage(ctx)
+}
 
 // CreateFolderResult is generated from the Caitlyn model.
 //
@@ -6213,6 +6342,7 @@ type ListFoldersPage struct {
 	NextCursor *string `json:"nextCursor,omitempty"`
 
 	metadata core.ResponseMetadata
+	nextPage func(ctx context.Context) (*ListFoldersPage, error)
 
 	raw core.Raw
 }
@@ -6236,6 +6366,21 @@ func (v *ListFoldersPage) RawJSON() json.RawMessage { return v.raw.JSON() }
 // ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *ListFoldersPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// HasNextPage reports whether another page follows (the page has a NextCursor).
+func (v *ListFoldersPage) HasNextPage() bool {
+	return v != nil && v.NextCursor != nil && *v.NextCursor != ""
+}
+
+// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,
+// with no request. Keep NextCursor for state that outlives the page: given as the input's cursor, it reads the same
+// next page. Cursors only go forward, so there is no previous page.
+func (v *ListFoldersPage) NextPage(ctx context.Context) (*ListFoldersPage, error) {
+	if !v.HasNextPage() || v.nextPage == nil {
+		return nil, nil
+	}
+	return v.nextPage(ctx)
+}
 
 // UpdateFolderResult is generated from the Caitlyn model.
 //
@@ -6863,6 +7008,7 @@ type ListIngestionBatchItemsPage struct {
 	NextCursor *string `json:"nextCursor,omitempty"`
 
 	metadata core.ResponseMetadata
+	nextPage func(ctx context.Context) (*ListIngestionBatchItemsPage, error)
 
 	raw core.Raw
 }
@@ -6887,6 +7033,21 @@ func (v *ListIngestionBatchItemsPage) RawJSON() json.RawMessage { return v.raw.J
 // (the zero value for a result built in code).
 func (v *ListIngestionBatchItemsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
+// HasNextPage reports whether another page follows (the page has a NextCursor).
+func (v *ListIngestionBatchItemsPage) HasNextPage() bool {
+	return v != nil && v.NextCursor != nil && *v.NextCursor != ""
+}
+
+// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,
+// with no request. Keep NextCursor for state that outlives the page: given as the input's cursor, it reads the same
+// next page. Cursors only go forward, so there is no previous page.
+func (v *ListIngestionBatchItemsPage) NextPage(ctx context.Context) (*ListIngestionBatchItemsPage, error) {
+	if !v.HasNextPage() || v.nextPage == nil {
+		return nil, nil
+	}
+	return v.nextPage(ctx)
+}
+
 // ListIngestionBatchesPage is generated from the Caitlyn model.
 //
 // Header-bound members are filled from the response headers; Raw holds the body as received.
@@ -6905,6 +7066,7 @@ type ListIngestionBatchesPage struct {
 	NextCursor *string `json:"nextCursor,omitempty"`
 
 	metadata core.ResponseMetadata
+	nextPage func(ctx context.Context) (*ListIngestionBatchesPage, error)
 
 	raw core.Raw
 }
@@ -6928,6 +7090,21 @@ func (v *ListIngestionBatchesPage) RawJSON() json.RawMessage { return v.raw.JSON
 // ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *ListIngestionBatchesPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// HasNextPage reports whether another page follows (the page has a NextCursor).
+func (v *ListIngestionBatchesPage) HasNextPage() bool {
+	return v != nil && v.NextCursor != nil && *v.NextCursor != ""
+}
+
+// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,
+// with no request. Keep NextCursor for state that outlives the page: given as the input's cursor, it reads the same
+// next page. Cursors only go forward, so there is no previous page.
+func (v *ListIngestionBatchesPage) NextPage(ctx context.Context) (*ListIngestionBatchesPage, error) {
+	if !v.HasNextPage() || v.nextPage == nil {
+		return nil, nil
+	}
+	return v.nextPage(ctx)
+}
 
 // StartIngestionBatchResult is generated from the Caitlyn model.
 //
@@ -6992,6 +7169,7 @@ type ListKnowledgeBasesPage struct {
 	NextCursor *string `json:"nextCursor,omitempty"`
 
 	metadata core.ResponseMetadata
+	nextPage func(ctx context.Context) (*ListKnowledgeBasesPage, error)
 
 	raw core.Raw
 }
@@ -7016,6 +7194,21 @@ func (v *ListKnowledgeBasesPage) RawJSON() json.RawMessage { return v.raw.JSON()
 // (the zero value for a result built in code).
 func (v *ListKnowledgeBasesPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
 
+// HasNextPage reports whether another page follows (the page has a NextCursor).
+func (v *ListKnowledgeBasesPage) HasNextPage() bool {
+	return v != nil && v.NextCursor != nil && *v.NextCursor != ""
+}
+
+// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,
+// with no request. Keep NextCursor for state that outlives the page: given as the input's cursor, it reads the same
+// next page. Cursors only go forward, so there is no previous page.
+func (v *ListKnowledgeBasesPage) NextPage(ctx context.Context) (*ListKnowledgeBasesPage, error) {
+	if !v.HasNextPage() || v.nextPage == nil {
+		return nil, nil
+	}
+	return v.nextPage(ctx)
+}
+
 // ListOperationsPage is generated from the Caitlyn model.
 //
 // Header-bound members are filled from the response headers; Raw holds the body as received.
@@ -7034,6 +7227,7 @@ type ListOperationsPage struct {
 	NextCursor *string `json:"nextCursor,omitempty"`
 
 	metadata core.ResponseMetadata
+	nextPage func(ctx context.Context) (*ListOperationsPage, error)
 
 	raw core.Raw
 }
@@ -7057,6 +7251,21 @@ func (v *ListOperationsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
 // ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *ListOperationsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// HasNextPage reports whether another page follows (the page has a NextCursor).
+func (v *ListOperationsPage) HasNextPage() bool {
+	return v != nil && v.NextCursor != nil && *v.NextCursor != ""
+}
+
+// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,
+// with no request. Keep NextCursor for state that outlives the page: given as the input's cursor, it reads the same
+// next page. Cursors only go forward, so there is no previous page.
+func (v *ListOperationsPage) NextPage(ctx context.Context) (*ListOperationsPage, error) {
+	if !v.HasNextPage() || v.nextPage == nil {
+		return nil, nil
+	}
+	return v.nextPage(ctx)
+}
 
 // ClearableKnowledgeBaseField: The knowledge base members that can be cleared. Open: an older SDK may
 // send a newer value as a
@@ -7126,6 +7335,7 @@ type ListGuardrailsPage struct {
 	NextCursor *string `json:"nextCursor,omitempty"`
 
 	metadata core.ResponseMetadata
+	nextPage func(ctx context.Context) (*ListGuardrailsPage, error)
 
 	raw core.Raw
 }
@@ -7149,6 +7359,21 @@ func (v *ListGuardrailsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
 // ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *ListGuardrailsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// HasNextPage reports whether another page follows (the page has a NextCursor).
+func (v *ListGuardrailsPage) HasNextPage() bool {
+	return v != nil && v.NextCursor != nil && *v.NextCursor != ""
+}
+
+// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,
+// with no request. Keep NextCursor for state that outlives the page: given as the input's cursor, it reads the same
+// next page. Cursors only go forward, so there is no previous page.
+func (v *ListGuardrailsPage) NextPage(ctx context.Context) (*ListGuardrailsPage, error) {
+	if !v.HasNextPage() || v.nextPage == nil {
+		return nil, nil
+	}
+	return v.nextPage(ctx)
+}
 
 // MemoryStoreSummary is a memory store an agent can remember people in.
 type MemoryStoreSummary struct {
@@ -7194,6 +7419,7 @@ type ListMemoryStoresPage struct {
 	NextCursor *string `json:"nextCursor,omitempty"`
 
 	metadata core.ResponseMetadata
+	nextPage func(ctx context.Context) (*ListMemoryStoresPage, error)
 
 	raw core.Raw
 }
@@ -7217,6 +7443,21 @@ func (v *ListMemoryStoresPage) RawJSON() json.RawMessage { return v.raw.JSON() }
 // ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *ListMemoryStoresPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// HasNextPage reports whether another page follows (the page has a NextCursor).
+func (v *ListMemoryStoresPage) HasNextPage() bool {
+	return v != nil && v.NextCursor != nil && *v.NextCursor != ""
+}
+
+// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,
+// with no request. Keep NextCursor for state that outlives the page: given as the input's cursor, it reads the same
+// next page. Cursors only go forward, so there is no previous page.
+func (v *ListMemoryStoresPage) NextPage(ctx context.Context) (*ListMemoryStoresPage, error) {
+	if !v.HasNextPage() || v.nextPage == nil {
+		return nil, nil
+	}
+	return v.nextPage(ctx)
+}
 
 // ModelReasoning: Whether a model reasons before it answers. Open: new values may be added.
 //
@@ -7296,6 +7537,7 @@ type ListModelsPage struct {
 	NextCursor *string `json:"nextCursor,omitempty"`
 
 	metadata core.ResponseMetadata
+	nextPage func(ctx context.Context) (*ListModelsPage, error)
 
 	raw core.Raw
 }
@@ -7319,6 +7561,21 @@ func (v *ListModelsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
 // ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *ListModelsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// HasNextPage reports whether another page follows (the page has a NextCursor).
+func (v *ListModelsPage) HasNextPage() bool {
+	return v != nil && v.NextCursor != nil && *v.NextCursor != ""
+}
+
+// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,
+// with no request. Keep NextCursor for state that outlives the page: given as the input's cursor, it reads the same
+// next page. Cursors only go forward, so there is no previous page.
+func (v *ListModelsPage) NextPage(ctx context.Context) (*ListModelsPage, error) {
+	if !v.HasNextPage() || v.nextPage == nil {
+		return nil, nil
+	}
+	return v.nextPage(ctx)
+}
 
 // ToolSummary: One of Caitlyn's own tools.
 type ToolSummary struct {
@@ -7364,6 +7621,7 @@ type ListToolsPage struct {
 	NextCursor *string `json:"nextCursor,omitempty"`
 
 	metadata core.ResponseMetadata
+	nextPage func(ctx context.Context) (*ListToolsPage, error)
 
 	raw core.Raw
 }
@@ -7387,6 +7645,21 @@ func (v *ListToolsPage) RawJSON() json.RawMessage { return v.raw.JSON() }
 // ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *ListToolsPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// HasNextPage reports whether another page follows (the page has a NextCursor).
+func (v *ListToolsPage) HasNextPage() bool {
+	return v != nil && v.NextCursor != nil && *v.NextCursor != ""
+}
+
+// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,
+// with no request. Keep NextCursor for state that outlives the page: given as the input's cursor, it reads the same
+// next page. Cursors only go forward, so there is no previous page.
+func (v *ListToolsPage) NextPage(ctx context.Context) (*ListToolsPage, error) {
+	if !v.HasNextPage() || v.nextPage == nil {
+		return nil, nil
+	}
+	return v.nextPage(ctx)
+}
 
 // VoiceSummary is a cloud voice an agent can speak in.
 type VoiceSummary struct {
@@ -7436,6 +7709,7 @@ type ListVoicesPage struct {
 	NextCursor *string `json:"nextCursor,omitempty"`
 
 	metadata core.ResponseMetadata
+	nextPage func(ctx context.Context) (*ListVoicesPage, error)
 
 	raw core.Raw
 }
@@ -7459,6 +7733,21 @@ func (v *ListVoicesPage) RawJSON() json.RawMessage { return v.raw.JSON() }
 // ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from
 // (the zero value for a result built in code).
 func (v *ListVoicesPage) ResponseMetadata() core.ResponseMetadata { return v.metadata }
+
+// HasNextPage reports whether another page follows (the page has a NextCursor).
+func (v *ListVoicesPage) HasNextPage() bool {
+	return v != nil && v.NextCursor != nil && *v.NextCursor != ""
+}
+
+// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,
+// with no request. Keep NextCursor for state that outlives the page: given as the input's cursor, it reads the same
+// next page. Cursors only go forward, so there is no previous page.
+func (v *ListVoicesPage) NextPage(ctx context.Context) (*ListVoicesPage, error) {
+	if !v.HasNextPage() || v.nextPage == nil {
+		return nil, nil
+	}
+	return v.nextPage(ctx)
+}
 
 // UploadPurpose: What an upload is for. At most one member is set.
 type UploadPurpose struct {

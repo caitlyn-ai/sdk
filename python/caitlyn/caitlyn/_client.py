@@ -225,7 +225,7 @@ class AgentsCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"limit": limit}
 
@@ -321,7 +321,7 @@ class OptionsNamespace:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"limit": limit}
 
@@ -356,7 +356,7 @@ class OptionsNamespace:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"limit": limit}
 
@@ -394,7 +394,7 @@ class OptionsNamespace:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"limit": limit}
 
@@ -429,7 +429,7 @@ class OptionsNamespace:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"limit": limit}
 
@@ -464,7 +464,7 @@ class OptionsNamespace:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"limit": limit}
 
@@ -681,7 +681,7 @@ class AgentConversationsNamespace:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"agent_id": self._ids["agentId"], "limit": limit}
 
@@ -1151,7 +1151,7 @@ class HistoryCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"agent_id": self._ids["agentId"], "limit": limit}
 
@@ -1257,7 +1257,7 @@ class AgentVersionsCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"agent_id": self._ids["agentId"], "limit": limit}
 
@@ -1856,7 +1856,7 @@ class MessagesCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"conversation_id": self._ids["conversationId"], "limit": limit}
 
@@ -2001,7 +2001,7 @@ class KnowledgeBasesCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"limit": limit, "status": status}
 
@@ -2590,7 +2590,7 @@ class DocumentsCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"knowledge_base_id": self._ids["knowledgeBaseId"], "limit": limit, "sort": sort, "folder": folder, "deep": deep, "q": q, "status": status, "name_prefix": name_prefix, "external_id": external_id, "content_type_prefix": content_type_prefix, "sha256": sha256, "out_of_date": out_of_date}
 
@@ -3335,7 +3335,7 @@ class DocumentVersionsCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"knowledge_base_id": self._ids["knowledgeBaseId"], "document_id": self._ids["documentId"], "limit": limit}
 
@@ -3563,7 +3563,7 @@ class FieldsCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"knowledge_base_id": self._ids["knowledgeBaseId"], "limit": limit}
 
@@ -3978,7 +3978,7 @@ class FoldersCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"knowledge_base_id": self._ids["knowledgeBaseId"], "limit": limit, "parent": parent, "deep": deep, "q": q}
 
@@ -4436,7 +4436,7 @@ class BatchesCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"knowledge_base_id": self._ids["knowledgeBaseId"], "limit": limit, "status": status}
 
@@ -4960,7 +4960,7 @@ class ItemsCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"knowledge_base_id": self._ids["knowledgeBaseId"], "ingestion_batch_id": self._ids["ingestionBatchId"], "limit": limit, "action": action, "outcome": outcome, "status": status, "resolution": resolution}
 
@@ -5334,7 +5334,7 @@ class OperationsCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"knowledge_base_id": knowledge_base_id, "limit": limit, "target_type": target_type, "target_id": target_id, "kind": kind, "status": status}
 
@@ -5645,7 +5645,7 @@ class AsyncAgentsCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"limit": limit}
 
@@ -5741,7 +5741,7 @@ class AsyncOptionsNamespace:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"limit": limit}
 
@@ -5776,7 +5776,7 @@ class AsyncOptionsNamespace:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"limit": limit}
 
@@ -5814,7 +5814,7 @@ class AsyncOptionsNamespace:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"limit": limit}
 
@@ -5849,7 +5849,7 @@ class AsyncOptionsNamespace:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"limit": limit}
 
@@ -5884,7 +5884,7 @@ class AsyncOptionsNamespace:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"limit": limit}
 
@@ -6101,7 +6101,7 @@ class AsyncAgentConversationsNamespace:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"agent_id": self._ids["agentId"], "limit": limit}
 
@@ -6576,7 +6576,7 @@ class AsyncHistoryCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"agent_id": self._ids["agentId"], "limit": limit}
 
@@ -6682,7 +6682,7 @@ class AsyncAgentVersionsCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"agent_id": self._ids["agentId"], "limit": limit}
 
@@ -7296,7 +7296,7 @@ class AsyncMessagesCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"conversation_id": self._ids["conversationId"], "limit": limit}
 
@@ -7441,7 +7441,7 @@ class AsyncKnowledgeBasesCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"limit": limit, "status": status}
 
@@ -8030,7 +8030,7 @@ class AsyncDocumentsCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"knowledge_base_id": self._ids["knowledgeBaseId"], "limit": limit, "sort": sort, "folder": folder, "deep": deep, "q": q, "status": status, "name_prefix": name_prefix, "external_id": external_id, "content_type_prefix": content_type_prefix, "sha256": sha256, "out_of_date": out_of_date}
 
@@ -8775,7 +8775,7 @@ class AsyncDocumentVersionsCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"knowledge_base_id": self._ids["knowledgeBaseId"], "document_id": self._ids["documentId"], "limit": limit}
 
@@ -9003,7 +9003,7 @@ class AsyncFieldsCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"knowledge_base_id": self._ids["knowledgeBaseId"], "limit": limit}
 
@@ -9418,7 +9418,7 @@ class AsyncFoldersCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"knowledge_base_id": self._ids["knowledgeBaseId"], "limit": limit, "parent": parent, "deep": deep, "q": q}
 
@@ -9886,7 +9886,7 @@ class AsyncBatchesCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"knowledge_base_id": self._ids["knowledgeBaseId"], "limit": limit, "status": status}
 
@@ -10414,7 +10414,7 @@ class AsyncItemsCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"knowledge_base_id": self._ids["knowledgeBaseId"], "ingestion_batch_id": self._ids["ingestionBatchId"], "limit": limit, "action": action, "outcome": outcome, "status": status, "resolution": resolution}
 
@@ -10794,7 +10794,7 @@ class AsyncOperationsCollection:
             CaitlynError: any other error response, after retries. A status the operation does not list, but the API models elsewhere, raises that status's class (NotFoundError for 404).
 
         Returns:
-            A paginator over every item on every page (`.pages()` for the pages). Nothing is requested until it is iterated.
+            A paginator over every item on every page, from `cursor` (`.pages()` for the pages, `.page()` for one page). Nothing is requested until it is used.
         """
         params: dict[str, object] = {"knowledge_base_id": knowledge_base_id, "limit": limit, "target_type": target_type, "target_id": target_id, "kind": kind, "status": status}
 

@@ -33,7 +33,8 @@ func newItems(c *Client, knowledgeBaseID, ingestionBatchID string) *Items {
 // for the items to upload after Start, or `filter[resolution][eq]=unresolved` for those that need a
 // decision.
 //
-// It yields every item, fetching pages as needed; ListPages yields whole pages.
+// It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
+// one.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *Items) List(ctx context.Context, in *ListIngestionBatchItemsInput, opts ...CallOption) iter.Seq2[IngestionBatchItem, error] {
@@ -54,6 +55,12 @@ func (s *Items) ListPages(ctx context.Context, in *ListIngestionBatchItemsInput,
 	p.KnowledgeBaseID = s.knowledgeBaseID
 	p.IngestionBatchID = s.ingestionBatchID
 	return s.c.pagesListIngestionBatchItems(ctx, p, opts)
+}
+
+// ListPage reads one page of List, from the input's Cursor (the first page when it is unset): exactly
+// one request. The page's NextCursor, given as Cursor, reads the page after it.
+func (s *Items) ListPage(ctx context.Context, in *ListIngestionBatchItemsInput, opts ...CallOption) (*ListIngestionBatchItemsPage, error) {
+	return core.First(s.ListPages(ctx, in, opts...))
 }
 
 // ListIngestionBatchItemsInput is what the caller gives ListIngestionBatchItems; the scope it is
@@ -140,19 +147,34 @@ func readListIngestionBatchItems(resp *core.Response) (*ListIngestionBatchItemsP
 	return out, nil
 }
 
+func (c *Client) pageListIngestionBatchItems(ctx context.Context, p *listIngestionBatchItemsParams, opts []CallOption) (*ListIngestionBatchItemsPage, error) {
+	req, err := buildListIngestionBatchItems(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opListIngestionBatchItems, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, err := readListIngestionBatchItems(resp)
+	if err != nil {
+		return nil, err
+	}
+	if out.HasNextPage() {
+		next := *p
+		next.Cursor = out.NextCursor
+		out.nextPage = func(ctx context.Context) (*ListIngestionBatchItemsPage, error) {
+			return c.pageListIngestionBatchItems(ctx, &next, opts)
+		}
+	}
+	return out, nil
+}
+
 func (c *Client) pagesListIngestionBatchItems(ctx context.Context, p *listIngestionBatchItemsParams, opts []CallOption) iter.Seq2[*ListIngestionBatchItemsPage, error] {
 	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListIngestionBatchItemsPage, *string, error) {
 		page := *p
 		page.Cursor = cursor
-		req, err := buildListIngestionBatchItems(&page)
-		if err != nil {
-			return nil, nil, err
-		}
-		resp, err := c.core.Do(ctx, opListIngestionBatchItems, req, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		out, err := readListIngestionBatchItems(resp)
+		out, err := c.pageListIngestionBatchItems(ctx, &page, opts)
 		if err != nil {
 			return nil, nil, err
 		}

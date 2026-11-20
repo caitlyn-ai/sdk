@@ -111,8 +111,16 @@ final class CaitlynGoCodegen implements DirectedCodegen<GoContext, GoSettings, G
         List<ShapeId> unions = facts.sseMemberOf.getOrDefault(shape.getId(), List.of()).stream().distinct().toList();
         boolean thing = facts.things.contains(shape.getId());
         boolean result = facts.resultNames.containsKey(shape.getId()) || thing;
+        // A page of a list (PROTOCOL.md 10): its cursor member, when the shape is a paginated operation's output
+        java.util.Optional<String> pageCursor = ctx.model().getOperationShapesWithTrait(software.amazon.smithy.model.traits.PaginatedTrait.class).stream()
+            .filter(o -> o.getOutputShape().equals(shape.getId()))
+            .findFirst()
+            .map(o -> software.amazon.smithy.model.knowledge.PaginatedIndex.of(ctx.model())
+                .getPaginationInfo(ctx.settings().service(), o).orElseThrow().getOutputTokenMemberPath().get(0).getMemberName())
+            .map(Names::exported);
         ctx.writerDelegator().useFileWriter("types.go", "", w -> {
             w.imp("encoding/json").imp(ctx.settings().coreModule());
+            if (pageCursor.isPresent()) w.imp("context");
             w.l(Names.doc(name, doc(shape), false, ""));
             if (facts.resultNames.containsKey(shape.getId())) {
                 w.l("//\n// Header-bound members are filled from the response headers; Raw holds the body as received.\n");
@@ -161,6 +169,9 @@ final class CaitlynGoCodegen implements DirectedCodegen<GoContext, GoSettings, G
             if (result) {
                 w.l("\n\tmetadata core.ResponseMetadata\n");
             }
+            if (pageCursor.isPresent()) {
+                w.l("\tnextPage func(ctx context.Context) (*" + name + ", error)\n");
+            }
             w.l("\n\traw core.Raw\n}\n\n");
             w.l("// UnmarshalJSON decodes the object and keeps it, unknown fields included, for Raw.\n");
             w.l("func (v *" + name + ") UnmarshalJSON(b []byte) error {\n\ttype plain " + name + "\n"
@@ -177,6 +188,16 @@ final class CaitlynGoCodegen implements DirectedCodegen<GoContext, GoSettings, G
                         : "// ResponseMetadata returns the HTTP status, request id and API version of the response this result was read from\n"
                                 + "// (the zero value for a result built in code).\n");
                 w.l("func (v *" + name + ") ResponseMetadata() core.ResponseMetadata { return v.metadata }\n\n");
+            }
+            if (pageCursor.isPresent()) {
+                String c = pageCursor.get();
+                w.l("// HasNextPage reports whether another page follows (the page has a " + c + ").\n");
+                w.l("func (v *" + name + ") HasNextPage() bool { return v != nil && v." + c + " != nil && *v." + c + " != \"\" }\n\n");
+                w.l("// NextPage reads the page after this one with the same input, in exactly one request: nil, nil on the last page,\n"
+                        + "// with no request. Keep " + c + " for state that outlives the page: given as the input's cursor, it reads the same\n"
+                        + "// next page. Cursors only go forward, so there is no previous page.\n");
+                w.l("func (v *" + name + ") NextPage(ctx context.Context) (*" + name + ", error) {\n"
+                        + "\tif !v.HasNextPage() || v.nextPage == nil {\n\t\treturn nil, nil\n\t}\n\treturn v.nextPage(ctx)\n}\n\n");
             }
             if (!unions.isEmpty()) {
                 w.l("// EventID returns the event's SSE id: empty when the value is not an event itself, such as another event's data.\n");

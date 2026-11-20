@@ -84,6 +84,15 @@ def pagination() -> None:
     # Or page by page
     for page in caitlyn.knowledge_bases("KB4T7YQ2WL").documents.list(limit=100).pages():
         print(len(page.items), page.next_cursor)
+
+    # Or one page at a time, as a table shows them
+    documents = caitlyn.knowledge_bases("KB4T7YQ2WL").documents
+    first = documents.list(limit=25).page()
+    second = first.next_page()  # None on the last page
+    print(first.has_next_page, second and len(second.items))
+    # Later, from a stored position: the same page as `second`
+    if first.next_cursor:
+        documents.list(limit=25, cursor=first.next_cursor).page()
     # #endregion
 
 

@@ -28,7 +28,8 @@ func newAgentConversations(c *Client, agentID string) *AgentConversations {
 // Each says which version it is with. Only the caller's own conversations, and those shared with
 // it, are listed.
 //
-// It yields every item, fetching pages as needed; ListPages yields whole pages.
+// It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
+// one.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *AgentConversations) List(ctx context.Context, in *ListConversationsInput, opts ...CallOption) iter.Seq2[Conversation, error] {
@@ -44,6 +45,12 @@ func (s *AgentConversations) ListPages(ctx context.Context, in *ListConversation
 	}
 	p.AgentID = s.agentID
 	return s.c.pagesListConversations(ctx, p, opts)
+}
+
+// ListPage reads one page of List, from the input's Cursor (the first page when it is unset): exactly
+// one request. The page's NextCursor, given as Cursor, reads the page after it.
+func (s *AgentConversations) ListPage(ctx context.Context, in *ListConversationsInput, opts ...CallOption) (*ListConversationsPage, error) {
+	return core.First(s.ListPages(ctx, in, opts...))
 }
 
 // ListConversationsInput is what the caller gives ListConversations; the scope it is called on fills
@@ -98,19 +105,34 @@ func readListConversations(resp *core.Response) (*ListConversationsPage, error) 
 	return out, nil
 }
 
+func (c *Client) pageListConversations(ctx context.Context, p *listConversationsParams, opts []CallOption) (*ListConversationsPage, error) {
+	req, err := buildListConversations(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opListConversations, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, err := readListConversations(resp)
+	if err != nil {
+		return nil, err
+	}
+	if out.HasNextPage() {
+		next := *p
+		next.Cursor = out.NextCursor
+		out.nextPage = func(ctx context.Context) (*ListConversationsPage, error) {
+			return c.pageListConversations(ctx, &next, opts)
+		}
+	}
+	return out, nil
+}
+
 func (c *Client) pagesListConversations(ctx context.Context, p *listConversationsParams, opts []CallOption) iter.Seq2[*ListConversationsPage, error] {
 	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListConversationsPage, *string, error) {
 		page := *p
 		page.Cursor = cursor
-		req, err := buildListConversations(&page)
-		if err != nil {
-			return nil, nil, err
-		}
-		resp, err := c.core.Do(ctx, opListConversations, req, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		out, err := readListConversations(resp)
+		out, err := c.pageListConversations(ctx, &page, opts)
 		if err != nil {
 			return nil, nil, err
 		}

@@ -54,6 +54,7 @@ import { GetOperationCommand } from "../commands/GetOperationCommand";
 import { GetUploadCommand } from "../commands/GetUploadCommand";
 import { ListAgentVersionsCommand } from "../commands/ListAgentVersionsCommand";
 import { paginateListAgentVersions } from "../pagination/ListAgentVersionsPaginator";
+import { paginated, type Paginated } from "@caitlyn-ai/sdk-core";
 import { ListAgentsCommand } from "../commands/ListAgentsCommand";
 import { paginateListAgents } from "../pagination/ListAgentsPaginator";
 import { ListConversationsCommand } from "../commands/ListConversationsCommand";
@@ -669,56 +670,52 @@ export function getUpload(client: CaitlynClient, input: GetUploadInput, options:
  * members differ from the version it was made from. The draft and live are not entries: read them
  * with `draft` and `live`. Needs the agent's version access grant, as reading any version other than
  * live does. */
-export function listAgentVersions(client: CaitlynClient, input: ListAgentVersionsInput, options: CallOptions = {}): AsyncIterable<WithRaw<AgentVersion>> {
+export function listAgentVersions(client: CaitlynClient, input: ListAgentVersionsInput, options: CallOptions = {}): Paginated<WithRaw<ListAgentVersionsOutput & __MetadataBearer>, WithRaw<AgentVersion>> {
   const { signal, ...rest } = options;
-  return {
-    async *[Symbol.asyncIterator]() {
-      const pages = paginateListAgentVersions({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
-      for await (const page of pages) yield* page.items as WithRaw<AgentVersion>[];
-    },
-  };
+  return paginated(
+    (cursor) => paginateListAgentVersions({ client, pageSize: input.limit }, { ...input, ...rest, ...(cursor === undefined ? {} : { cursor: cursor }) }, { abortSignal: signal }) as AsyncIterable<WithRaw<ListAgentVersionsOutput & __MetadataBearer>>,
+    (page) => (page.items ?? []) as WithRaw<AgentVersion>[],
+    (page) => page.nextCursor,
+  );
 }
 
 /** Lists the agents the caller may see, one page at a time.
  * 
  * Each agent says which version live points at; read a version's configuration with
  * GetAgentVersion. */
-export function listAgents(client: CaitlynClient, input: ListAgentsInput, options: CallOptions = {}): AsyncIterable<WithRaw<Agent>> {
+export function listAgents(client: CaitlynClient, input: ListAgentsInput, options: CallOptions = {}): Paginated<WithRaw<ListAgentsOutput & __MetadataBearer>, WithRaw<Agent>> {
   const { signal, ...rest } = options;
-  return {
-    async *[Symbol.asyncIterator]() {
-      const pages = paginateListAgents({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
-      for await (const page of pages) yield* page.items as WithRaw<Agent>[];
-    },
-  };
+  return paginated(
+    (cursor) => paginateListAgents({ client, pageSize: input.limit }, { ...input, ...rest, ...(cursor === undefined ? {} : { cursor: cursor }) }, { abortSignal: signal }) as AsyncIterable<WithRaw<ListAgentsOutput & __MetadataBearer>>,
+    (page) => (page.items ?? []) as WithRaw<Agent>[],
+    (page) => page.nextCursor,
+  );
 }
 
 /** Lists the caller's conversations with one agent, newest first, across its versions.
  * 
  * Each says which version it is with. Only the caller's own conversations, and those shared with
  * it, are listed. */
-export function listConversations(client: CaitlynClient, input: ListConversationsInput, options: CallOptions = {}): AsyncIterable<WithRaw<Conversation>> {
+export function listConversations(client: CaitlynClient, input: ListConversationsInput, options: CallOptions = {}): Paginated<WithRaw<ListConversationsOutput & __MetadataBearer>, WithRaw<Conversation>> {
   const { signal, ...rest } = options;
-  return {
-    async *[Symbol.asyncIterator]() {
-      const pages = paginateListConversations({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
-      for await (const page of pages) yield* page.items as WithRaw<Conversation>[];
-    },
-  };
+  return paginated(
+    (cursor) => paginateListConversations({ client, pageSize: input.limit }, { ...input, ...rest, ...(cursor === undefined ? {} : { cursor: cursor }) }, { abortSignal: signal }) as AsyncIterable<WithRaw<ListConversationsOutput & __MetadataBearer>>,
+    (page) => (page.items ?? []) as WithRaw<Conversation>[],
+    (page) => page.nextCursor,
+  );
 }
 
 /** Lists a document's versions, newest first.
  * 
  * Each version says whether it is the current one (the one search uses) and whether it is the
  * latest. A caller who may not add versions sees only the current version. */
-export function listDocumentVersions(client: CaitlynClient, input: ListDocumentVersionsInput, options: CallOptions = {}): AsyncIterable<WithRaw<DocumentVersion>> {
+export function listDocumentVersions(client: CaitlynClient, input: ListDocumentVersionsInput, options: CallOptions = {}): Paginated<WithRaw<ListDocumentVersionsOutput & __MetadataBearer>, WithRaw<DocumentVersion>> {
   const { signal, ...rest } = options;
-  return {
-    async *[Symbol.asyncIterator]() {
-      const pages = paginateListDocumentVersions({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
-      for await (const page of pages) yield* page.items as WithRaw<DocumentVersion>[];
-    },
-  };
+  return paginated(
+    (cursor) => paginateListDocumentVersions({ client, pageSize: input.limit }, { ...input, ...rest, ...(cursor === undefined ? {} : { cursor: cursor }) }, { abortSignal: signal }) as AsyncIterable<WithRaw<ListDocumentVersionsOutput & __MetadataBearer>>,
+    (page) => (page.items ?? []) as WithRaw<DocumentVersion>[],
+    (page) => page.nextCursor,
+  );
 }
 
 /** Lists the documents in a knowledge base, one page at a time.
@@ -728,28 +725,26 @@ export function listDocumentVersions(client: CaitlynClient, input: ListDocumentV
  * the documents directly in that folder; with `deep` as well, every document below it. `q` keeps
  * documents whose name contains the text. The list can be sorted by `name`, `updatedAt` (when the
  * document last changed) and `byteSize`. */
-export function listDocuments(client: CaitlynClient, input: ListDocumentsInput, options: CallOptions = {}): AsyncIterable<WithRaw<Document>> {
+export function listDocuments(client: CaitlynClient, input: ListDocumentsInput, options: CallOptions = {}): Paginated<WithRaw<ListDocumentsOutput & __MetadataBearer>, WithRaw<Document>> {
   const { signal, ...rest } = options;
-  return {
-    async *[Symbol.asyncIterator]() {
-      const pages = paginateListDocuments({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
-      for await (const page of pages) yield* page.items as WithRaw<Document>[];
-    },
-  };
+  return paginated(
+    (cursor) => paginateListDocuments({ client, pageSize: input.limit }, { ...input, ...rest, ...(cursor === undefined ? {} : { cursor: cursor }) }, { abortSignal: signal }) as AsyncIterable<WithRaw<ListDocumentsOutput & __MetadataBearer>>,
+    (page) => (page.items ?? []) as WithRaw<Document>[],
+    (page) => page.nextCursor,
+  );
 }
 
 /** Lists a knowledge base's metadata fields, each with how much work it still needs.
  * 
  * `needsWork` says how many documents still need a value, an index write or new search vectors for
  * the field; `fillIn` does that work. */
-export function listFields(client: CaitlynClient, input: ListFieldsInput, options: CallOptions = {}): AsyncIterable<WithRaw<Field>> {
+export function listFields(client: CaitlynClient, input: ListFieldsInput, options: CallOptions = {}): Paginated<WithRaw<ListFieldsOutput & __MetadataBearer>, WithRaw<Field>> {
   const { signal, ...rest } = options;
-  return {
-    async *[Symbol.asyncIterator]() {
-      const pages = paginateListFields({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
-      for await (const page of pages) yield* page.items as WithRaw<Field>[];
-    },
-  };
+  return paginated(
+    (cursor) => paginateListFields({ client, pageSize: input.limit }, { ...input, ...rest, ...(cursor === undefined ? {} : { cursor: cursor }) }, { abortSignal: signal }) as AsyncIterable<WithRaw<ListFieldsOutput & __MetadataBearer>>,
+    (page) => (page.items ?? []) as WithRaw<Field>[],
+    (page) => page.nextCursor,
+  );
 }
 
 /** Lists the folders in a knowledge base, one page at a time.
@@ -757,14 +752,13 @@ export function listFields(client: CaitlynClient, input: ListFieldsInput, option
  * With `filter[parent][eq]`, the folders directly in that folder; with `deep` as well, every folder
  * below it. `q` keeps folders whose name contains the text. List the documents in a folder with
  * ListDocuments. */
-export function listFolders(client: CaitlynClient, input: ListFoldersInput, options: CallOptions = {}): AsyncIterable<WithRaw<Folder>> {
+export function listFolders(client: CaitlynClient, input: ListFoldersInput, options: CallOptions = {}): Paginated<WithRaw<ListFoldersOutput & __MetadataBearer>, WithRaw<Folder>> {
   const { signal, ...rest } = options;
-  return {
-    async *[Symbol.asyncIterator]() {
-      const pages = paginateListFolders({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
-      for await (const page of pages) yield* page.items as WithRaw<Folder>[];
-    },
-  };
+  return paginated(
+    (cursor) => paginateListFolders({ client, pageSize: input.limit }, { ...input, ...rest, ...(cursor === undefined ? {} : { cursor: cursor }) }, { abortSignal: signal }) as AsyncIterable<WithRaw<ListFoldersOutput & __MetadataBearer>>,
+    (page) => (page.items ?? []) as WithRaw<Folder>[],
+    (page) => page.nextCursor,
+  );
 }
 
 /** Lists the guardrails an agent version can screen attached documents with.
@@ -772,14 +766,13 @@ export function listFolders(client: CaitlynClient, input: ListFoldersInput, opti
  * The list holds the platform default and the guardrails available to the workspace. An agent's
  * `contentSafety.guardrail` names one of these by its `id`, or says `default` or `none`. Guardrails
  * are created and changed outside Caitlyn. */
-export function listGuardrails(client: CaitlynClient, input: ListGuardrailsInput, options: CallOptions = {}): AsyncIterable<WithRaw<GuardrailSummary>> {
+export function listGuardrails(client: CaitlynClient, input: ListGuardrailsInput, options: CallOptions = {}): Paginated<WithRaw<ListGuardrailsOutput & __MetadataBearer>, WithRaw<GuardrailSummary>> {
   const { signal, ...rest } = options;
-  return {
-    async *[Symbol.asyncIterator]() {
-      const pages = paginateListGuardrails({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
-      for await (const page of pages) yield* page.items as WithRaw<GuardrailSummary>[];
-    },
-  };
+  return paginated(
+    (cursor) => paginateListGuardrails({ client, pageSize: input.limit }, { ...input, ...rest, ...(cursor === undefined ? {} : { cursor: cursor }) }, { abortSignal: signal }) as AsyncIterable<WithRaw<ListGuardrailsOutput & __MetadataBearer>>,
+    (page) => (page.items ?? []) as WithRaw<GuardrailSummary>[],
+    (page) => page.nextCursor,
+  );
 }
 
 /** Lists an agent's live history, newest first: every time live moved to another version.
@@ -787,14 +780,13 @@ export function listGuardrails(client: CaitlynClient, input: ListGuardrailsInput
  * Each entry names the version live pointed at after the change and before it, what kind of change
  * it was, who made it and when, and which members differ between the two versions. Read the
  * configuration live had with GetHistoryEntry. Entries are never edited or deleted. */
-export function listHistoryEntries(client: CaitlynClient, input: ListHistoryEntriesInput, options: CallOptions = {}): AsyncIterable<WithRaw<HistoryEntry>> {
+export function listHistoryEntries(client: CaitlynClient, input: ListHistoryEntriesInput, options: CallOptions = {}): Paginated<WithRaw<ListHistoryEntriesOutput & __MetadataBearer>, WithRaw<HistoryEntry>> {
   const { signal, ...rest } = options;
-  return {
-    async *[Symbol.asyncIterator]() {
-      const pages = paginateListHistoryEntries({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
-      for await (const page of pages) yield* page.items as WithRaw<HistoryEntry>[];
-    },
-  };
+  return paginated(
+    (cursor) => paginateListHistoryEntries({ client, pageSize: input.limit }, { ...input, ...rest, ...(cursor === undefined ? {} : { cursor: cursor }) }, { abortSignal: signal }) as AsyncIterable<WithRaw<ListHistoryEntriesOutput & __MetadataBearer>>,
+    (page) => (page.items ?? []) as WithRaw<HistoryEntry>[],
+    (page) => page.nextCursor,
+  );
 }
 
 /** Lists a batch's items, in the order they were added.
@@ -802,27 +794,25 @@ export function listHistoryEntries(client: CaitlynClient, input: ListHistoryEntr
  * Filter by action, outcome, status or resolution: for example `filter[status][eq]=awaiting_upload`
  * for the items to upload after Start, or `filter[resolution][eq]=unresolved` for those that need a
  * decision. */
-export function listIngestionBatchItems(client: CaitlynClient, input: ListIngestionBatchItemsInput, options: CallOptions = {}): AsyncIterable<WithRaw<IngestionBatchItem>> {
+export function listIngestionBatchItems(client: CaitlynClient, input: ListIngestionBatchItemsInput, options: CallOptions = {}): Paginated<WithRaw<ListIngestionBatchItemsOutput & __MetadataBearer>, WithRaw<IngestionBatchItem>> {
   const { signal, ...rest } = options;
-  return {
-    async *[Symbol.asyncIterator]() {
-      const pages = paginateListIngestionBatchItems({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
-      for await (const page of pages) yield* page.items as WithRaw<IngestionBatchItem>[];
-    },
-  };
+  return paginated(
+    (cursor) => paginateListIngestionBatchItems({ client, pageSize: input.limit }, { ...input, ...rest, ...(cursor === undefined ? {} : { cursor: cursor }) }, { abortSignal: signal }) as AsyncIterable<WithRaw<ListIngestionBatchItemsOutput & __MetadataBearer>>,
+    (page) => (page.items ?? []) as WithRaw<IngestionBatchItem>[],
+    (page) => page.nextCursor,
+  );
 }
 
 /** Lists one knowledge base's ingestion batches, newest first.
  * 
  * Narrow the list by status. */
-export function listIngestionBatches(client: CaitlynClient, input: ListIngestionBatchesInput, options: CallOptions = {}): AsyncIterable<WithRaw<IngestionBatch>> {
+export function listIngestionBatches(client: CaitlynClient, input: ListIngestionBatchesInput, options: CallOptions = {}): Paginated<WithRaw<ListIngestionBatchesOutput & __MetadataBearer>, WithRaw<IngestionBatch>> {
   const { signal, ...rest } = options;
-  return {
-    async *[Symbol.asyncIterator]() {
-      const pages = paginateListIngestionBatches({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
-      for await (const page of pages) yield* page.items as WithRaw<IngestionBatch>[];
-    },
-  };
+  return paginated(
+    (cursor) => paginateListIngestionBatches({ client, pageSize: input.limit }, { ...input, ...rest, ...(cursor === undefined ? {} : { cursor: cursor }) }, { abortSignal: signal }) as AsyncIterable<WithRaw<ListIngestionBatchesOutput & __MetadataBearer>>,
+    (page) => (page.items ?? []) as WithRaw<IngestionBatch>[],
+    (page) => page.nextCursor,
+  );
 }
 
 /** Lists the knowledge bases the caller may see, in every state.
@@ -830,40 +820,37 @@ export function listIngestionBatches(client: CaitlynClient, input: ListIngestion
  * Knowledge bases still being created, being moved, that failed or that are being deleted are
  * listed too, each with its `status`. Document operations on a knowledge base that is not `ready`
  * are refused with 409 `CONFLICT`. */
-export function listKnowledgeBases(client: CaitlynClient, input: ListKnowledgeBasesInput, options: CallOptions = {}): AsyncIterable<WithRaw<KnowledgeBase>> {
+export function listKnowledgeBases(client: CaitlynClient, input: ListKnowledgeBasesInput, options: CallOptions = {}): Paginated<WithRaw<ListKnowledgeBasesOutput & __MetadataBearer>, WithRaw<KnowledgeBase>> {
   const { signal, ...rest } = options;
-  return {
-    async *[Symbol.asyncIterator]() {
-      const pages = paginateListKnowledgeBases({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
-      for await (const page of pages) yield* page.items as WithRaw<KnowledgeBase>[];
-    },
-  };
+  return paginated(
+    (cursor) => paginateListKnowledgeBases({ client, pageSize: input.limit }, { ...input, ...rest, ...(cursor === undefined ? {} : { cursor: cursor }) }, { abortSignal: signal }) as AsyncIterable<WithRaw<ListKnowledgeBasesOutput & __MetadataBearer>>,
+    (page) => (page.items ?? []) as WithRaw<KnowledgeBase>[],
+    (page) => page.nextCursor,
+  );
 }
 
 /** Lists the memory stores an agent can remember people in.
  * 
  * An agent's `memory.memoryStoreId` names one of these. */
-export function listMemoryStores(client: CaitlynClient, input: ListMemoryStoresInput, options: CallOptions = {}): AsyncIterable<WithRaw<MemoryStoreSummary>> {
+export function listMemoryStores(client: CaitlynClient, input: ListMemoryStoresInput, options: CallOptions = {}): Paginated<WithRaw<ListMemoryStoresOutput & __MetadataBearer>, WithRaw<MemoryStoreSummary>> {
   const { signal, ...rest } = options;
-  return {
-    async *[Symbol.asyncIterator]() {
-      const pages = paginateListMemoryStores({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
-      for await (const page of pages) yield* page.items as WithRaw<MemoryStoreSummary>[];
-    },
-  };
+  return paginated(
+    (cursor) => paginateListMemoryStores({ client, pageSize: input.limit }, { ...input, ...rest, ...(cursor === undefined ? {} : { cursor: cursor }) }, { abortSignal: signal }) as AsyncIterable<WithRaw<ListMemoryStoresOutput & __MetadataBearer>>,
+    (page) => (page.items ?? []) as WithRaw<MemoryStoreSummary>[],
+    (page) => page.nextCursor,
+  );
 }
 
 /** Lists a conversation's messages, oldest first: the caller's and the agent's.
  * 
  * An answer still being written is not listed until it ends; follow it with WatchConversation. */
-export function listMessages(client: CaitlynClient, input: ListMessagesInput, options: CallOptions = {}): AsyncIterable<WithRaw<Message>> {
+export function listMessages(client: CaitlynClient, input: ListMessagesInput, options: CallOptions = {}): Paginated<WithRaw<ListMessagesOutput & __MetadataBearer>, WithRaw<Message>> {
   const { signal, ...rest } = options;
-  return {
-    async *[Symbol.asyncIterator]() {
-      const pages = paginateListMessages({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
-      for await (const page of pages) yield* page.items as WithRaw<Message>[];
-    },
-  };
+  return paginated(
+    (cursor) => paginateListMessages({ client, pageSize: input.limit }, { ...input, ...rest, ...(cursor === undefined ? {} : { cursor: cursor }) }, { abortSignal: signal }) as AsyncIterable<WithRaw<ListMessagesOutput & __MetadataBearer>>,
+    (page) => (page.items ?? []) as WithRaw<Message>[],
+    (page) => page.nextCursor,
+  );
 }
 
 /** Lists the models an agent can use, with the settings each one accepts.
@@ -872,54 +859,50 @@ export function listMessages(client: CaitlynClient, input: ListMessagesInput, op
  * settings it accepts and how many tokens it can write, so an editor shows only the settings that
  * apply. An agent configuration that names a model or setting this list does not offer is refused
  * with 400 `VALIDATION_FAILED`. */
-export function listModels(client: CaitlynClient, input: ListModelsInput, options: CallOptions = {}): AsyncIterable<WithRaw<ModelSummary>> {
+export function listModels(client: CaitlynClient, input: ListModelsInput, options: CallOptions = {}): Paginated<WithRaw<ListModelsOutput & __MetadataBearer>, WithRaw<ModelSummary>> {
   const { signal, ...rest } = options;
-  return {
-    async *[Symbol.asyncIterator]() {
-      const pages = paginateListModels({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
-      for await (const page of pages) yield* page.items as WithRaw<ModelSummary>[];
-    },
-  };
+  return paginated(
+    (cursor) => paginateListModels({ client, pageSize: input.limit }, { ...input, ...rest, ...(cursor === undefined ? {} : { cursor: cursor }) }, { abortSignal: signal }) as AsyncIterable<WithRaw<ListModelsOutput & __MetadataBearer>>,
+    (page) => (page.items ?? []) as WithRaw<ModelSummary>[],
+    (page) => page.nextCursor,
+  );
 }
 
 /** Lists the Operations on one knowledge base, or one thing in it, newest first.
  * 
  * The caller needs read access to the knowledge base. Narrow the list with the target, the kind and
  * the status. */
-export function listOperations(client: CaitlynClient, input: ListOperationsInput, options: CallOptions = {}): AsyncIterable<WithRaw<Operation>> {
+export function listOperations(client: CaitlynClient, input: ListOperationsInput, options: CallOptions = {}): Paginated<WithRaw<ListOperationsOutput & __MetadataBearer>, WithRaw<Operation>> {
   const { signal, ...rest } = options;
-  return {
-    async *[Symbol.asyncIterator]() {
-      const pages = paginateListOperations({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
-      for await (const page of pages) yield* page.items as WithRaw<Operation>[];
-    },
-  };
+  return paginated(
+    (cursor) => paginateListOperations({ client, pageSize: input.limit }, { ...input, ...rest, ...(cursor === undefined ? {} : { cursor: cursor }) }, { abortSignal: signal }) as AsyncIterable<WithRaw<ListOperationsOutput & __MetadataBearer>>,
+    (page) => (page.items ?? []) as WithRaw<Operation>[],
+    (page) => page.nextCursor,
+  );
 }
 
 /** Lists Caitlyn's own tools, which an agent's phases can use.
  * 
  * A phase names one of these tools with `tools[].name`. Tools on an MCP server are not in this list. */
-export function listTools(client: CaitlynClient, input: ListToolsInput, options: CallOptions = {}): AsyncIterable<WithRaw<ToolSummary>> {
+export function listTools(client: CaitlynClient, input: ListToolsInput, options: CallOptions = {}): Paginated<WithRaw<ListToolsOutput & __MetadataBearer>, WithRaw<ToolSummary>> {
   const { signal, ...rest } = options;
-  return {
-    async *[Symbol.asyncIterator]() {
-      const pages = paginateListTools({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
-      for await (const page of pages) yield* page.items as WithRaw<ToolSummary>[];
-    },
-  };
+  return paginated(
+    (cursor) => paginateListTools({ client, pageSize: input.limit }, { ...input, ...rest, ...(cursor === undefined ? {} : { cursor: cursor }) }, { abortSignal: signal }) as AsyncIterable<WithRaw<ListToolsOutput & __MetadataBearer>>,
+    (page) => (page.items ?? []) as WithRaw<ToolSummary>[],
+    (page) => page.nextCursor,
+  );
 }
 
 /** Lists the cloud voices an agent can speak its answers in.
  * 
  * An agent's `voice.voiceId` names one of these when `voice.provider` is `cloud`. */
-export function listVoices(client: CaitlynClient, input: ListVoicesInput, options: CallOptions = {}): AsyncIterable<WithRaw<VoiceSummary>> {
+export function listVoices(client: CaitlynClient, input: ListVoicesInput, options: CallOptions = {}): Paginated<WithRaw<ListVoicesOutput & __MetadataBearer>, WithRaw<VoiceSummary>> {
   const { signal, ...rest } = options;
-  return {
-    async *[Symbol.asyncIterator]() {
-      const pages = paginateListVoices({ client, pageSize: input.limit }, { ...input, ...rest }, { abortSignal: signal });
-      for await (const page of pages) yield* page.items as WithRaw<VoiceSummary>[];
-    },
-  };
+  return paginated(
+    (cursor) => paginateListVoices({ client, pageSize: input.limit }, { ...input, ...rest, ...(cursor === undefined ? {} : { cursor: cursor }) }, { abortSignal: signal }) as AsyncIterable<WithRaw<ListVoicesOutput & __MetadataBearer>>,
+    (page) => (page.items ?? []) as WithRaw<VoiceSummary>[],
+    (page) => page.nextCursor,
+  );
 }
 
 /** Publishes a version: live then points at it.

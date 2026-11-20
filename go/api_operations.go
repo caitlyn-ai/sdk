@@ -27,7 +27,8 @@ func newOperations(c *Client) *Operations {
 // The caller needs read access to the knowledge base. Narrow the list with the target, the kind and
 // the status.
 //
-// It yields every item, fetching pages as needed; ListPages yields whole pages.
+// It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
+// one.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *Operations) List(ctx context.Context, knowledgeBaseID string, in *ListOperationsInput, opts ...CallOption) iter.Seq2[Operation, error] {
@@ -47,6 +48,12 @@ func (s *Operations) ListPages(ctx context.Context, knowledgeBaseID string, in *
 	}
 	p.KnowledgeBaseID = knowledgeBaseID
 	return s.c.pagesListOperations(ctx, p, opts)
+}
+
+// ListPage reads one page of List, from the input's Cursor (the first page when it is unset): exactly
+// one request. The page's NextCursor, given as Cursor, reads the page after it.
+func (s *Operations) ListPage(ctx context.Context, knowledgeBaseID string, in *ListOperationsInput, opts ...CallOption) (*ListOperationsPage, error) {
+	return core.First(s.ListPages(ctx, knowledgeBaseID, in, opts...))
 }
 
 // ListOperationsInput is what the caller gives ListOperations; the scope it is called on fills the
@@ -129,19 +136,32 @@ func readListOperations(resp *core.Response) (*ListOperationsPage, error) {
 	return out, nil
 }
 
+func (c *Client) pageListOperations(ctx context.Context, p *listOperationsParams, opts []CallOption) (*ListOperationsPage, error) {
+	req, err := buildListOperations(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opListOperations, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, err := readListOperations(resp)
+	if err != nil {
+		return nil, err
+	}
+	if out.HasNextPage() {
+		next := *p
+		next.Cursor = out.NextCursor
+		out.nextPage = func(ctx context.Context) (*ListOperationsPage, error) { return c.pageListOperations(ctx, &next, opts) }
+	}
+	return out, nil
+}
+
 func (c *Client) pagesListOperations(ctx context.Context, p *listOperationsParams, opts []CallOption) iter.Seq2[*ListOperationsPage, error] {
 	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListOperationsPage, *string, error) {
 		page := *p
 		page.Cursor = cursor
-		req, err := buildListOperations(&page)
-		if err != nil {
-			return nil, nil, err
-		}
-		resp, err := c.core.Do(ctx, opListOperations, req, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		out, err := readListOperations(resp)
+		out, err := c.pageListOperations(ctx, &page, opts)
 		if err != nil {
 			return nil, nil, err
 		}

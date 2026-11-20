@@ -31,7 +31,8 @@ func newAgentVersions(c *Client, agentID string) *AgentVersions {
 // with `draft` and `live`. Needs the agent's version access grant, as reading any version other than
 // live does.
 //
-// It yields every item, fetching pages as needed; ListPages yields whole pages.
+// It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
+// one.
 //
 // Since Caitlyn 5.115.0; beta.
 func (s *AgentVersions) List(ctx context.Context, in *ListAgentVersionsInput, opts ...CallOption) iter.Seq2[AgentVersion, error] {
@@ -47,6 +48,12 @@ func (s *AgentVersions) ListPages(ctx context.Context, in *ListAgentVersionsInpu
 	}
 	p.AgentID = s.agentID
 	return s.c.pagesListAgentVersions(ctx, p, opts)
+}
+
+// ListPage reads one page of List, from the input's Cursor (the first page when it is unset): exactly
+// one request. The page's NextCursor, given as Cursor, reads the page after it.
+func (s *AgentVersions) ListPage(ctx context.Context, in *ListAgentVersionsInput, opts ...CallOption) (*ListAgentVersionsPage, error) {
+	return core.First(s.ListPages(ctx, in, opts...))
 }
 
 // ListAgentVersionsInput is what the caller gives ListAgentVersions; the scope it is called on fills
@@ -101,19 +108,34 @@ func readListAgentVersions(resp *core.Response) (*ListAgentVersionsPage, error) 
 	return out, nil
 }
 
+func (c *Client) pageListAgentVersions(ctx context.Context, p *listAgentVersionsParams, opts []CallOption) (*ListAgentVersionsPage, error) {
+	req, err := buildListAgentVersions(p)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.core.Do(ctx, opListAgentVersions, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	out, err := readListAgentVersions(resp)
+	if err != nil {
+		return nil, err
+	}
+	if out.HasNextPage() {
+		next := *p
+		next.Cursor = out.NextCursor
+		out.nextPage = func(ctx context.Context) (*ListAgentVersionsPage, error) {
+			return c.pageListAgentVersions(ctx, &next, opts)
+		}
+	}
+	return out, nil
+}
+
 func (c *Client) pagesListAgentVersions(ctx context.Context, p *listAgentVersionsParams, opts []CallOption) iter.Seq2[*ListAgentVersionsPage, error] {
 	return core.Pages(ctx, p.Cursor, func(ctx context.Context, cursor *string) (*ListAgentVersionsPage, *string, error) {
 		page := *p
 		page.Cursor = cursor
-		req, err := buildListAgentVersions(&page)
-		if err != nil {
-			return nil, nil, err
-		}
-		resp, err := c.core.Do(ctx, opListAgentVersions, req, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		out, err := readListAgentVersions(resp)
+		out, err := c.pageListAgentVersions(ctx, &page, opts)
 		if err != nil {
 			return nil, nil, err
 		}

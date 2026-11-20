@@ -3,6 +3,7 @@ unknown fields kept, and open enums."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, ClassVar, Self, cast
@@ -134,6 +135,42 @@ class ResponseMetadata:
 class CaitlynResult(CaitlynModel):
     """Base for the result of a call that is not a thing (an estimate, a comparison, a page): a model that carries the
     response it was read from, as every model a single call returns does (``response_metadata``)."""
+
+
+class CaitlynPage(CaitlynResult):
+    """Base for a page of a list (PROTOCOL.md 10): the operation's output, with the way to the page after it.
+
+    ``next_page()`` (the synchronous client's pages) or ``await next_page_async()`` (the asynchronous client's) reads
+    the page after this one with the same input, in exactly one request, and gives ``None`` on the last page without a
+    request. ``has_next_page`` says whether there is one. Keep ``next_cursor`` for state that outlives the page: passed
+    as ``cursor``, it reads the same next page. Cursors only go forward, so there is no previous page."""
+
+    _next: Callable[[], Any] | None = PrivateAttr(default=None)
+    _next_is_async: bool = PrivateAttr(default=False)
+
+    @property
+    def has_next_page(self) -> bool:
+        """Whether another page follows (this page has a ``next_cursor``)."""
+        return bool(getattr(self, "next_cursor", None))
+
+    def next_page(self) -> Self | None:
+        """The page after this one, from the synchronous client: one request, or ``None`` on the last page."""
+        if self._next_is_async:
+            raise TypeError("this page is from the asynchronous client: use `await page.next_page_async()`")
+        if not self.has_next_page or self._next is None:
+            return None
+        return cast("Self", self._next())
+
+    async def next_page_async(self) -> Self | None:
+        """The page after this one, from the asynchronous client: one request, or ``None`` on the last page."""
+        if not self._next_is_async:
+            raise TypeError("this page is from the synchronous client: use `page.next_page()`")
+        if not self.has_next_page or self._next is None:
+            return None
+        return cast("Self", await self._next())
+
+    def _bind_next(self, fetch: Callable[[], Any], is_async: bool) -> None:
+        self._next, self._next_is_async = fetch, is_async
 
 
 class CaitlynEvent(CaitlynModel):
