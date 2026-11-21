@@ -5144,7 +5144,9 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             Ok(())
         }),
         "sync.cancel" => Box::pin(async move {
-            m.faults(json!({"uploadDelayMs": 300})).await;
+            // The first six uploads are answered; every later one is held until the client lets go of it, so the
+            // uploads in flight are still in flight when the cancel lands.
+            m.faults(json!({"holdUploadsAfter": 6})).await;
             let token = CancellationToken::new();
             let finished = Arc::new(AtomicUsize::new(0));
             let f = finished.clone();
@@ -5172,7 +5174,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let c = client(m);
             let t = token.clone();
             let call = tokio::spawn(async move { c.knowledge_base(KB).ingestion().sync(input).cancel_on(t).await });
-            // Cancel once the first six have finished and the next uploads are held in flight by the mock.
+            // Cancel once the first six have finished and a later upload is held in flight by the mock.
             let t0 = Instant::now();
             while uploaded.load(Ordering::SeqCst) < 6 || m.matching(|r| str_at(r, "path") == "/__s3/").await.len() < 7 {
                 ensure!(t0.elapsed() < Duration::from_secs(5), "uploads never got going");

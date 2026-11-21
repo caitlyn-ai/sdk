@@ -3076,9 +3076,10 @@ test('[sync.progress] onProgress reports each phase in order, and onItem each it
 });
 
 test('[sync.cancel] cancelling during the uploads stops new ones, aborts those in flight and raises AbortError; with cancelIngestion the batch is cancelled', async () => {
-  // Uploads are held 150 ms, two at a time. policy-1.pdf has the bytes the knowledge base already holds: it is skipped
-  // at Start, so it has finished before the cancel.
-  await faults({ uploadDelayMs: 150 });
+  // Two at a time: the first two uploads are answered, and every later one is held until the client lets go of it, so
+  // those in flight are still in flight when the cancel lands. policy-1.pdf has the bytes the knowledge base already
+  // holds: it is skipped at Start, so it has finished before the cancel.
+  await faults({ holdUploadsAfter: 2 });
   const controller = new AbortController();
   const finished: any[] = [];
   const files = { 'policy-1.pdf': enc('doc1'), ...someFiles(6, 'leave') };

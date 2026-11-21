@@ -3241,7 +3241,8 @@ async def uploads_dropped(mock: Mock, uploads: int, finish: Callable[[], Awaitab
 async def test_sync_cancel(mock: Mock, tmp_path: Path, case_id: str) -> None:
     # policy-1.pdf has the bytes the knowledge base's policy-1.pdf has: unchanged, so skipped (finished) at Start.
     root = folder_of(tmp_path, {"policy-1.pdf": b"doc1", **{f"f{n:02}.md": f"file {n}".encode() for n in range(12)}})
-    mock.faults(uploadDelayMs=1000)
+    # Every upload is held until the client lets go of it, so all six in flight are still in flight when the cancel lands.
+    mock.faults(holdUploadsAfter=0)
     finished: list[str] = []
     task = asyncio.create_task(client(mock).knowledge_bases(KB).ingestion.sync(root, folder="/policies/", cancel_ingestion=True, on_item=lambda i: finished.append(f"{i.path} {i.status}")))
     while len(forms(mock)) < 6:
@@ -3249,16 +3250,17 @@ async def test_sync_cancel(mock: Mock, tmp_path: Path, case_id: str) -> None:
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    await asyncio.sleep(1.1)  # the mock notes the aborted uploads once their hold ends
+    deadline = time.monotonic() + 5
+    while aborted(mock) < 6 and time.monotonic() < deadline:  # the mock notes each one as it sees its connection close
+        await asyncio.sleep(0.02)
     assert len(forms(mock)) == 6, "no upload starts after the cancel"
-    aborted = [r for r in mock.requests() if r.get("event") == "upload-aborted"]
-    assert len(aborted) == 6 and mock.uploads()["objects"] == []
+    assert aborted(mock) == 6 and mock.uploads()["objects"] == []
     [cancel] = calls(mock, "/cancel")
     assert json.loads(cancel["body"]) == {"stopRunning": True}
     assert finished == ["/policies/policy-1.pdf skipped"], "every item finished before the cancel reached on_item"
     # The synchronous client, Ctrl-C: the uploads in flight are dropped at once too; SyncInterrupted carries the report.
     mock.reset()
-    mock.faults(uploadDelayMs=1000)
+    mock.faults(holdUploadsAfter=0)
     sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     error = await interrupted(lambda: sync.knowledge_bases(KB).ingestion.sync(root, folder="/policies/", cancel_ingestion=True), mock)
     assert isinstance(error, SyncInterrupted) and error.report is not None and len(error.report.items) == 13, repr(error)

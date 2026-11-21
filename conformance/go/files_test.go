@@ -812,14 +812,30 @@ var filesCases = map[string]func(t *testing.T, m mock){
 	},
 
 	"sync.cancel": func(t *testing.T, m mock) {
-		m.faults(t, map[string]any{"uploadDelayMs": 300})
+		// The first upload is answered; every later one is held until the client lets go of it, so the uploads in
+		// flight are still in flight when the cancel lands.
+		m.faults(t, map[string]any{"holdUploadsAfter": 1})
 		dir, _ := policies(t, 12)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		var mu sync.Mutex
 		var finished []string
 		aborted := 0 // form POSTs this client gave up on in flight
-		c := client(t, m, caitlyn.WithHTTPClient(hook{err: func(r *http.Request, err error) {
+		// Cancel once the first upload has finished and a later one has been sent (and so is held in flight).
+		sent, done := 0, 0
+		cancelWhenReady := func() {
+			if sent >= 2 && done >= 1 {
+				cancel()
+			}
+		}
+		c := client(t, m, caitlyn.WithHTTPClient(hook{before: func(r *http.Request) {
+			if r.URL.Path == "/__s3/" {
+				mu.Lock()
+				sent++
+				cancelWhenReady()
+				mu.Unlock()
+			}
+		}, err: func(r *http.Request, err error) {
 			if r.URL.Path == "/__s3/" && errors.Is(err, context.Canceled) {
 				mu.Lock()
 				aborted++
@@ -828,8 +844,11 @@ var filesCases = map[string]func(t *testing.T, m mock){
 		}}))
 		_, err := c.KnowledgeBase(kb).Ingestion.Sync(ctx, caitlyn.Dir(dir), &caitlyn.SyncOptions{Folder: "/hr/", CancelIngestion: true,
 			OnProgress: func(p caitlyn.IngestionProgress) {
-				if p.Phase == caitlyn.SyncPhaseUpload && p.Done == 1 {
-					cancel()
+				if p.Phase == caitlyn.SyncPhaseUpload {
+					mu.Lock()
+					done = p.Done
+					cancelWhenReady()
+					mu.Unlock()
 				}
 			},
 			OnItem: func(it caitlyn.IngestionBatchItem) { mu.Lock(); finished = append(finished, it.ID); mu.Unlock() },
@@ -838,6 +857,8 @@ var filesCases = map[string]func(t *testing.T, m mock){
 			t.Fatalf("got %v, want context.Canceled", err)
 		}
 		// Uploads in flight were aborted, and no new ones began.
+		mu.Lock()
+		defer mu.Unlock()
 		if aborted == 0 {
 			t.Fatal("no upload was aborted in flight")
 		}
