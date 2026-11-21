@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -18,34 +19,81 @@ import (
 
 const conversationID = "0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47"
 
-// Errors shows how to tell the errors apart.
-func Errors(ctx context.Context, client *caitlyn.Client) {
-	// #region errors
+// ErrorsByClass tells a missing version apart by its class.
+func ErrorsByClass(ctx context.Context, client *caitlyn.Client) error {
+	// #region errors-class
+	// The class follows the HTTP status: a 404 is a *caitlyn.NotFoundError, whichever call made it
 	_, err := client.Agent("GHT7YRWXPL").Version("v99").Get(ctx)
 	var notFound *caitlyn.NotFoundError
-	var invalid *caitlyn.ValidationError
-	var noResponse *caitlyn.ConnectionError
-	var apiErr *caitlyn.Error
-	switch {
-	case err == nil:
-	case errors.As(err, &notFound):
+	if errors.As(err, &notFound) {
 		fmt.Println("No such version")
-	case errors.As(err, &invalid):
-		for _, e := range invalid.Errors {
-			fmt.Println(e.Pointer, e.Code, e.Detail)
-		}
-	case errors.As(err, &noResponse):
-		fmt.Println("No response from Caitlyn:", noResponse.Cause) // after the SDK's retries
-	case errors.As(err, &apiErr):
-		// Any other status. Code is the stable product code; quote RequestID to support.
-		fmt.Println(apiErr.Status, apiErr.Code, apiErr.Detail, apiErr.RequestID)
-		if apiErr.RawBody != "" && apiErr.Title == "" {
-			fmt.Println(apiErr.RawBody) // not a Caitlyn error body: a proxy's page, say
-		}
-	default:
-		log.Fatal(err)
+		return nil
 	}
 	// #endregion
+	return err
+}
+
+// ErrorsByCode matches an error on its code.
+func ErrorsByCode(ctx context.Context, client *caitlyn.Client) {
+	// #region errors-code
+	// Every error is a *caitlyn.Error: match on its Code, and quote its RequestID to Caitlyn support
+	_, err := client.Agent("GHT7YRWXPL").Version("v99").Get(ctx)
+	var apiErr *caitlyn.Error
+	if errors.As(err, &apiErr) {
+		if apiErr.Code == caitlyn.ErrorCodeNotFound {
+			fmt.Println("No such version")
+		}
+		fmt.Println(apiErr.Status, apiErr.Code, apiErr.Detail, apiErr.RequestID)
+		if strings.HasPrefix(apiErr.Code, "HTTP_") {
+			fmt.Println(apiErr.RawBody) // not a Caitlyn error body: a proxy's page, say
+		}
+	}
+	// #endregion
+}
+
+// ErrorsValidation reads the members a refused request got wrong.
+func ErrorsValidation(ctx context.Context, client *caitlyn.Client) {
+	// #region errors-validation
+	// A refused request names each member or parameter at fault
+	_, err := client.KnowledgeBases.ListPage(ctx, &caitlyn.ListKnowledgeBasesInput{Limit: caitlyn.Ptr[int32](500)})
+	var invalid *caitlyn.ValidationError
+	if errors.As(err, &invalid) {
+		for _, e := range invalid.Errors {
+			fmt.Println(e.Parameter, e.Pointer, e.Code, e.Detail)
+		}
+	}
+	// #endregion
+}
+
+// ErrorsConnection tells a call that got no response apart.
+func ErrorsConnection(ctx context.Context, client *caitlyn.Client) {
+	// #region errors-connection
+	// No response at all, after the SDK's retries: the network error is kept as the cause
+	_, err := client.Agent("GHT7YRWXPL").Get(ctx)
+	var noResponse *caitlyn.ConnectionError
+	if errors.As(err, &noResponse) {
+		fmt.Println("No response from Caitlyn:", errors.Unwrap(noResponse))
+	}
+	// #endregion
+}
+
+// ErrorsIfMatch changes a knowledge base only if nobody else has since it was read.
+func ErrorsIfMatch(ctx context.Context, client *caitlyn.Client) error {
+	// #region errors-if-match
+	// Change a thing only if nobody else has since you read it: send back the ETag you read
+	kb := client.KnowledgeBase("KB4T7YQ2WL")
+	current, err := kb.Get(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = kb.Update(ctx, &caitlyn.UpdateKnowledgeBaseInput{Description: caitlyn.Ptr("HR policies, 2026")}, caitlyn.WithIfMatch(current.ETag))
+	var changed *caitlyn.PreconditionFailedError
+	if errors.As(err, &changed) {
+		fmt.Println("It changed since you read it: read it again and reapply your change")
+		return nil
+	}
+	// #endregion
+	return err
 }
 
 // Retries creates a client that tries harder.

@@ -77,6 +77,13 @@ def set_access(kb: KnowledgeBaseScope, document_id: str) -> None:
     kb.folders("/hr/investigations/").access.set(readers={"roles": ["hr-team"]})
     kb.documents(document_id).access.set(readers="inherit")
     # #endregion
+    # #region readers-values
+    # The four kinds of readers, widest first
+    kb.folders("/handbook/").access.set(readers="public")
+    kb.folders("/staff/").access.set(readers="everyone")
+    kb.folders("/hr/").access.set(readers={"roles": ["hr-team"], "people": ["u-1"]})
+    kb.folders("/hr/handbook/").access.set(readers="inherit")
+    # #endregion
 
 
 def set_access_guarded(kb: KnowledgeBaseScope) -> None:

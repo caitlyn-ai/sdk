@@ -93,12 +93,12 @@ println!("{} {:?}", answer.id, stream.request_id());
 
 ## The events
 
-Each event has a `type` (Go `EventType()`, Rust `event_type()`) and its own data. The answer starts with
+Each event has a `type` and its own data (the example above reads both). The answer starts with
 `message.started`, its text comes as `text.delta` fragments, and citations, progress steps and tool calls arrive
 as they happen. It ends with exactly one of:
 
-- `message.completed`, carrying the whole message, which `finalMessage()` (Python and Rust `final_message()`, Go
-  `FinalMessage()`) returns. Call it after the loop, or instead of one: it reads the rest of the stream itself.
+- `message.completed`, carrying the whole message, which the stream's final-message call returns (the example
+  above ends with it). Call it after the loop, or instead of one: it reads the rest of the stream itself.
 - `message.failed`, a problem details object like any [error](/errors/), which the SDK raises as the typed error
   when the loop reaches it.
 

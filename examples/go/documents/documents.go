@@ -129,6 +129,19 @@ func SetAccess(ctx context.Context, client *caitlyn.Client, knowledgeBaseID, doc
 		return err
 	}
 	// #endregion
+	// #region readers-values
+	// The four kinds of readers, widest first
+	for folder, readers := range map[string]*caitlyn.Readers{
+		"/handbook/":    caitlyn.ReadersPublic(),
+		"/staff/":       caitlyn.ReadersEveryone(),
+		"/hr/":          caitlyn.ReadersOf([]string{"hr-team"}, []string{"u-1"}),
+		"/hr/handbook/": caitlyn.ReadersInherit(),
+	} {
+		if _, err := kb.Folder(folder).Access.Set(ctx, &caitlyn.PutAccessInput{Readers: readers}); err != nil {
+			return err
+		}
+	}
+	// #endregion
 	return nil
 }
 

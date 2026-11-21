@@ -699,12 +699,69 @@ kb.folder("/hr/")
 
 A folder's or a document's readers are one of these, widest first:
 
-| Readers | Who may read it | For | TypeScript | Python | Go | Rust |
-| --- | --- | --- | --- | --- | --- | --- |
-| Public | Anyone who can reach the knowledge base, signed in or not: guests and anonymous visitors of a public agent included | Content meant to be shared openly | `'public'` | `"public"` | `caitlyn.ReadersPublic()` | `Readers::public()` |
-| Everyone | Anyone signed in to the workspace who may read the knowledge base, but no guest or anonymous visitor | Content every colleague may see | `'everyone'` | `"everyone"` | `caitlyn.ReadersEveryone()` | `Readers::everyone()` |
-| Specific | Only the roles and people you list | Restricted content | `{ roles, people }` | `{"roles": …, "people": …}` | `caitlyn.ReadersOf(roles, people)` | `Readers::specific(roles, people)` |
-| Inherit | Whoever may read the folder it is in, so a change there applies here too | Following the folder | `'inherit'` | `"inherit"` | `caitlyn.ReadersInherit()` | `Readers::inherit()` |
+| Readers | Who may read it | For |
+| --- | --- | --- |
+| Public | Anyone who can reach the knowledge base, signed in or not: guests and anonymous visitors of a public agent included | Content meant to be shared openly |
+| Everyone | Anyone signed in to the workspace who may read the knowledge base, but no guest or anonymous visitor | Content every colleague may see |
+| Specific | Only the roles and people you list | Restricted content |
+| Inherit | Whoever may read the folder it is in, so a change there applies here too | Following the folder |
+
+Each SDK writes them its own way:
+
+<!-- example: examples/typescript/jobs.ts#readers-values -->
+```ts tab="TypeScript"
+// The four kinds of readers, widest first
+await kb.folders('/handbook/').access.set({ readers: 'public' });
+await kb.folders('/staff/').access.set({ readers: 'everyone' });
+await kb.folders('/hr/').access.set({ readers: { roles: ['hr-team'], people: ['u-1'] } });
+await kb.folders('/hr/handbook/').access.set({ readers: 'inherit' });
+```
+<!-- example: examples/python/jobs.py#readers-values -->
+```python tab="Python"
+# The four kinds of readers, widest first
+kb.folders("/handbook/").access.set(readers="public")
+kb.folders("/staff/").access.set(readers="everyone")
+kb.folders("/hr/").access.set(readers={"roles": ["hr-team"], "people": ["u-1"]})
+kb.folders("/hr/handbook/").access.set(readers="inherit")
+```
+<!-- example: examples/go/documents/documents.go#readers-values -->
+```go tab="Go"
+// The four kinds of readers, widest first
+for folder, readers := range map[string]*caitlyn.Readers{
+	"/handbook/":    caitlyn.ReadersPublic(),
+	"/staff/":       caitlyn.ReadersEveryone(),
+	"/hr/":          caitlyn.ReadersOf([]string{"hr-team"}, []string{"u-1"}),
+	"/hr/handbook/": caitlyn.ReadersInherit(),
+} {
+	if _, err := kb.Folder(folder).Access.Set(ctx, &caitlyn.PutAccessInput{Readers: readers}); err != nil {
+		return err
+	}
+}
+```
+<!-- example: examples/rust/src/documents.rs#readers-values -->
+```rust tab="Rust"
+// The four kinds of readers, widest first
+kb.folder("/handbook/")
+    .access()
+    .set()
+    .readers(Readers::public())
+    .await?;
+kb.folder("/staff/")
+    .access()
+    .set()
+    .readers(Readers::everyone())
+    .await?;
+kb.folder("/hr/")
+    .access()
+    .set()
+    .readers(Readers::specific(["hr-team"], ["u-1"]))
+    .await?;
+kb.folder("/hr/handbook/")
+    .access()
+    .set()
+    .readers(Readers::inherit())
+    .await?;
+```
 
 The difference between `public` and `everyone` is guests: a public agent's guests and anonymous visitors can read
 `public` content, never `everyone` content. The root folder holds the readers every other folder falls back to, so

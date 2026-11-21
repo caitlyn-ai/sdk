@@ -4,6 +4,8 @@ package signin
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 
 	caitlyn "github.com/caitlyn-ai/sdk/go"
@@ -65,6 +67,22 @@ func Clients(ctx context.Context, userID, sessionCookie string) error {
 	if err != nil {
 		return err
 	}
+
+	// #region sign-in-error
+	// A sign-in failure is its own error, apart from the API's: Code is the OAuth error, or the SDK's own
+	_, err = asPerson.Agents.ListPage(ctx, nil)
+	var signIn *caitlyn.AuthError
+	if errors.As(err, &signIn) && signIn.Code == "sign_in_required" {
+		fmt.Println("Send the person to sign in first")
+	}
+	// #endregion
+
+	// #region sign-out
+	// Revoke the refresh token and clear the token store
+	if err := asPerson.Auth().SignOut(ctx); err != nil {
+		return err
+	}
+	// #endregion
 
 	// #region aws-iam
 	worker, err := caitlyn.NewClient("your-company.getcaitlyn.ai",

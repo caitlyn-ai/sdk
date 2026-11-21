@@ -1,30 +1,72 @@
 // The code on the developer docs' Errors, Retries, Streaming, Pagination and Telemetry pages (docs/*.md), one
 // region each. scripts/test-typescript.sh type-checks this file against the SDK.
 import { trace } from '@opentelemetry/api';
-import { Caitlyn, CaitlynConnectionError, CaitlynError, NotFoundError, ValidationError } from '@caitlyn-ai/sdk';
+import { Caitlyn, CaitlynConnectionError, CaitlynError, ErrorCode, NotFoundError, PreconditionFailedError, ValidationError } from '@caitlyn-ai/sdk';
 
 const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! } });
 const agentId = 'GHT7YRWXPL';
 const conversationId = '0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47';
 
-export async function errors(): Promise<void> {
-  // #region errors
+export async function errorsByClass(): Promise<void> {
+  // #region errors-class
+  // The class follows the HTTP status: a 404 is a NotFoundError, whichever call made it
   try {
     await caitlyn.agents(agentId).versions('v99').get();
   } catch (err) {
-    if (err instanceof NotFoundError) {
-      console.log('No such version');
-    } else if (err instanceof ValidationError) {
-      for (const e of err.errors ?? []) console.error(e.pointer, e.code, e.detail);
-    } else if (err instanceof CaitlynConnectionError) {
-      console.error('No response from Caitlyn:', err.cause); // after the SDK's retries
-    } else if (err instanceof CaitlynError) {
-      // Any other status. code is the stable product code; quote requestId to support.
-      console.error(err.status, err.code, err.detail, err.requestId);
-      if (err.code.startsWith('HTTP_')) console.error(err.rawBody); // not a Caitlyn error body: a proxy's page, say
-    } else {
-      throw err;
-    }
+    if (!(err instanceof NotFoundError)) throw err;
+    console.log('No such version');
+  }
+  // #endregion
+}
+
+export async function errorsByCode(): Promise<void> {
+  // #region errors-code
+  // Every error is a CaitlynError: match on its code, and quote its requestId to Caitlyn support
+  try {
+    await caitlyn.agents(agentId).versions('v99').get();
+  } catch (err) {
+    if (!(err instanceof CaitlynError)) throw err;
+    if (err.code === ErrorCode.NOT_FOUND) console.log('No such version');
+    console.error(err.status, err.code, err.detail, err.requestId);
+    if (err.code.startsWith('HTTP_')) console.error(err.rawBody); // not a Caitlyn error body: a proxy's page, say
+  }
+  // #endregion
+}
+
+export async function errorsValidation(): Promise<void> {
+  // #region errors-validation
+  // A refused request names each member or parameter at fault
+  try {
+    await caitlyn.knowledgeBases.list({ limit: 500 }).page();
+  } catch (err) {
+    if (!(err instanceof ValidationError)) throw err;
+    for (const e of err.errors ?? []) console.error(e.parameter ?? e.pointer, e.code, e.detail);
+  }
+  // #endregion
+}
+
+export async function errorsConnection(): Promise<void> {
+  // #region errors-connection
+  // No response at all, after the SDK's retries: the network error is kept as the cause
+  try {
+    await caitlyn.agents(agentId).get();
+  } catch (err) {
+    if (!(err instanceof CaitlynConnectionError)) throw err;
+    console.error('No response from Caitlyn:', err.cause);
+  }
+  // #endregion
+}
+
+export async function errorsIfMatch(): Promise<void> {
+  // #region errors-if-match
+  // Change a thing only if nobody else has since you read it: send back the ETag you read
+  const kb = caitlyn.knowledgeBases('KB4T7YQ2WL');
+  const current = await kb.get();
+  try {
+    await kb.update({ description: 'HR policies, 2026' }, { ifMatch: current.etag });
+  } catch (err) {
+    if (!(err instanceof PreconditionFailedError)) throw err;
+    console.log('It changed since you read it: read it again and reapply your change');
   }
   // #endregion
 }
