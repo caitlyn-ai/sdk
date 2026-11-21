@@ -68,6 +68,13 @@ export async function setAccess(caitlyn: Caitlyn, kbId: string, documentId: stri
   await kb.folders('/hr/investigations/').access.set({ readers: { roles: ['hr-team'] } });
   await kb.documents(documentId).access.set({ readers: 'inherit' });
   // #endregion
+  // #region readers-values
+  // The four kinds of readers, widest first
+  await kb.folders('/handbook/').access.set({ readers: 'public' });
+  await kb.folders('/staff/').access.set({ readers: 'everyone' });
+  await kb.folders('/hr/').access.set({ readers: { roles: ['hr-team'], people: ['u-1'] } });
+  await kb.folders('/hr/handbook/').access.set({ readers: 'inherit' });
+  // #endregion
 }
 
 /** 5a. A guarded write: only if no one changed the folder's readers since you read them (a stale ETag is a 412). */

@@ -177,9 +177,9 @@ To send requests somewhere else, such as a proxy or a Caitlyn running on your ma
 
 Each SDK knows which Caitlyn release introduced each operation and member. Once a client has had a response from
 your workspace, it knows the server's version (the `Caitlyn-Api-Version` header), and it refuses to call an
-operation, or send a member, that the server is too old for: it raises `NotSupportedByServer` (Go
-`NotSupportedByServerError`, Rust `Error::NotSupportedByServer`) before sending anything. Each reference page
-says which release an operation needs.
+operation, or send a member, that the server is too old for: it raises `NotSupportedByServer` before sending
+anything, naming the operation, the release it needs and the server's version. Each reference page says which
+release an operation needs.
 
 The API only grows: a newer server adds operations, members, enum values and events, and never removes or
 renames them. The SDKs keep what they do not know: unknown members are in each result's `raw`, an unknown enum

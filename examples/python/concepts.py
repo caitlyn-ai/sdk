@@ -10,7 +10,9 @@ from caitlyn import (
     CaitlynError,
     CitationAddedEvent,
     Document,
+    ErrorCode,
     NotFoundError,
+    PreconditionFailedError,
     TextDeltaEvent,
     ValidationError,
 )
@@ -21,22 +23,60 @@ agent_id = "GHT7YRWXPL"
 conversation_id = "0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47"
 
 
-def errors() -> None:
-    # #region errors
+def errors_by_class() -> None:
+    # #region errors-class
+    # The class follows the HTTP status: a 404 is a NotFoundError, whichever call made it
     try:
         caitlyn.agents(agent_id).versions("v99").get()
     except NotFoundError:
         print("No such version")
-    except ValidationError as err:
-        for e in err.errors:  # one per member or parameter at fault
-            print(e.pointer, e.code, e.detail)
-    except CaitlynConnectionError as err:
-        print("No response from Caitlyn:", err.__cause__)  # after the SDK's retries
+    # #endregion
+
+
+def errors_by_code() -> None:
+    # #region errors-code
+    # Every error is a CaitlynError: match on its code, and quote its request_id to Caitlyn support
+    try:
+        caitlyn.agents(agent_id).versions("v99").get()
     except CaitlynError as err:
-        # Any other status. code is the stable product code; quote request_id to support.
+        if err.code == ErrorCode.NOT_FOUND:
+            print("No such version")
         print(err.status, err.code, err.detail, err.request_id)
         if err.code.startswith("HTTP_"):
             print(err.raw_body)  # not a Caitlyn error body: a proxy's page, say
+    # #endregion
+
+
+def errors_validation() -> None:
+    # #region errors-validation
+    # A refused request names each member or parameter at fault
+    try:
+        caitlyn.knowledge_bases.list(limit=500).page()
+    except ValidationError as err:
+        for e in err.errors:
+            print(e.parameter or e.pointer, e.code, e.detail)
+    # #endregion
+
+
+def errors_connection() -> None:
+    # #region errors-connection
+    # No response at all, after the SDK's retries: the network error is kept as the cause
+    try:
+        caitlyn.agents(agent_id).get()
+    except CaitlynConnectionError as err:
+        print("No response from Caitlyn:", err.__cause__)
+    # #endregion
+
+
+def errors_if_match() -> None:
+    # #region errors-if-match
+    # Change a thing only if nobody else has since you read it: send back the ETag you read
+    kb = caitlyn.knowledge_bases("KB4T7YQ2WL")
+    current = kb.get()
+    try:
+        kb.update(description="HR policies, 2026", if_match=current.etag)
+    except PreconditionFailedError:
+        print("It changed since you read it: read it again and reapply your change")
     # #endregion
 
 

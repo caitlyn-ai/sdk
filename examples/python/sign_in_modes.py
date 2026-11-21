@@ -2,7 +2,7 @@
 # region; scripts/test-python.sh type-checks this file against the SDK (pyright --strict).
 import os
 
-from caitlyn import Caitlyn
+from caitlyn import Caitlyn, CaitlynAuthError
 from caitlyn.auth import AwsIam, ClientCredentials, OAuth, Session, Token, TokenStore, WorkloadIdentity
 
 
@@ -55,6 +55,20 @@ def callback(code: str, returned_state: str) -> None:
         expected_state=start.state,
         code_verifier=start.code_verifier,
     )
+    # #endregion
+
+    # #region sign-in-error
+    # A sign-in failure is its own error, apart from the API's: code is the OAuth error, or the SDK's own
+    try:
+        as_person.agents.list().page()
+    except CaitlynAuthError as err:
+        if err.code == "sign_in_required":
+            print("Send the person to sign in first")
+    # #endregion
+
+    # #region sign-out
+    # Revoke the refresh token and clear the token store
+    as_person.auth.sign_out()
     # #endregion
 
 

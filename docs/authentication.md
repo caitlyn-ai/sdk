@@ -223,10 +223,79 @@ as_person
   and clears the store: sign the person in again.
 - **The token store** keeps the tokens between processes. On a server, keep them encrypted, one store per person.
   Without one, they live in memory for the life of the client.
-- **Signing out** (`auth.signOut()`, Python `auth.sign_out()`, Go `Auth().SignOut`, Rust `auth().sign_out()`)
-  revokes the refresh token and clears the store.
+- **Signing out** revokes the refresh token and clears the store ([the example below](#signing-out)).
 - **In a browser**, use `oauth` without a client secret. [Sign in from a browser](/guides/sign-in-from-a-browser/)
   covers both patterns, and what the TypeScript SDK refuses in a page.
+
+### A sign-in error
+
+A failure to get a token is the sign-in error, not one of the API's. Its `code` says why
+([When a token is refused](#when-a-token-is-refused) lists them):
+
+<!-- example: examples/typescript/sign-in-modes.ts#sign-in-error -->
+```ts tab="TypeScript"
+// A sign-in failure is its own error, apart from the API's: code is the OAuth error, or the SDK's own
+try {
+  await asPerson.agents.list().page();
+} catch (err) {
+  if (!(err instanceof CaitlynAuthError)) throw err;
+  if (err.code === 'sign_in_required') console.log('Send the person to sign in first');
+}
+```
+<!-- example: examples/python/sign_in_modes.py#sign-in-error -->
+```python tab="Python"
+# A sign-in failure is its own error, apart from the API's: code is the OAuth error, or the SDK's own
+try:
+    as_person.agents.list().page()
+except CaitlynAuthError as err:
+    if err.code == "sign_in_required":
+        print("Send the person to sign in first")
+```
+<!-- example: examples/go/signin/signin.go#sign-in-error -->
+```go tab="Go"
+// A sign-in failure is its own error, apart from the API's: Code is the OAuth error, or the SDK's own
+_, err = asPerson.Agents.ListPage(ctx, nil)
+var signIn *caitlyn.AuthError
+if errors.As(err, &signIn) && signIn.Code == "sign_in_required" {
+	fmt.Println("Send the person to sign in first")
+}
+```
+<!-- example: examples/rust/src/sign_in_modes.rs#sign-in-error -->
+```rust tab="Rust"
+// A sign-in failure is its own error, apart from the API's: code is the OAuth error, or the SDK's own
+if let Err(Error::Auth(err)) = as_person.agents().list().page().await {
+    if err.code == "sign_in_required" {
+        println!("Send the person to sign in first");
+    }
+}
+```
+
+### Signing out
+
+Signing out revokes the person's refresh token and clears the token store:
+
+<!-- example: examples/typescript/sign-in-modes.ts#sign-out -->
+```ts tab="TypeScript"
+// Revoke the refresh token and clear the token store
+await asPerson.auth.signOut();
+```
+<!-- example: examples/python/sign_in_modes.py#sign-out -->
+```python tab="Python"
+# Revoke the refresh token and clear the token store
+as_person.auth.sign_out()
+```
+<!-- example: examples/go/signin/signin.go#sign-out -->
+```go tab="Go"
+// Revoke the refresh token and clear the token store
+if err := asPerson.Auth().SignOut(ctx); err != nil {
+	return err
+}
+```
+<!-- example: examples/rust/src/sign_in_modes.rs#sign-out -->
+```rust tab="Rust"
+// Revoke the refresh token and clear the token store
+as_person.auth().sign_out().await?;
+```
 
 ## A workload on AWS: awsIam
 
@@ -405,8 +474,8 @@ Caitlyn's Help walks through each screen.
   makes the client drop its token, get a new one and send the call once more, whatever the operation. A second
   401 is raised as the [`UNAUTHENTICATED`](/errors/UNAUTHENTICATED/) error. In `token` and `session` mode a 401
   is raised at once.
-- **Sign-in errors** are a separate class from the API's errors: `CaitlynAuthError` in TypeScript and Python,
-  `*caitlyn.AuthError` in Go, `Error::Auth` in Rust. `code` is the OAuth error (`invalid_client`,
+- **Sign-in errors** are a separate class from the API's errors ([the example below](#a-sign-in-error)). `code` is
+  the OAuth error (`invalid_client`,
   `invalid_grant`), or one of the SDK's own: `sign_in_required` (`oauth` with no tokens yet), `invalid_state`
   (the callback's state does not match), `invalid_request` (a missing redirect URI or region), `aws_identity_failed`
   (`awsIam` could not get its AWS token), and in a browser `not_allowed_in_browser`.

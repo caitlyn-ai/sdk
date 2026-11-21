@@ -285,8 +285,7 @@ for item in report
   its failure code and detail if it failed, with the batch's final status and counts. In TypeScript the batch's
   status and counts are on the report itself (`report.status`); in the other SDKs they are on `report.batch`.
 
-The options are named as in TypeScript here; Python spells them `remove_missing` and `on_item`, Go `RemoveMissing`
-and `OnItem`, and Rust `.remove_missing(…)` and `.on_item(…)`. [Load documents](/guides/load-documents/#keep-a-folder-in-step)
+Each SDK spells the options in its own style, as the example shows. [Load documents](/guides/load-documents/#keep-a-folder-in-step)
 covers the rest: choosing files with `include`, `exclude` and `.caitlynignore`, the policy that settles clashes, and
 the resolver.
 
@@ -799,8 +798,7 @@ and stops them too.
 A `confirm` that returns false cancels the batch before anything is uploaded. The call raises `CANCELLED` with status
 0, an error the SDK raises itself, as your language's ordinary error type, never its cancellation type, so code that
 treats cancellation as "the user stopped it" does not mistake one for the other. It carries the report too: the
-planned items. In Go it is a `*caitlyn.SyncDeclinedError`, for which `errors.Is(err, context.Canceled)` does not hold;
-in Rust, `Error::SyncDeclined`.
+planned items.
 
 <!-- example: examples/typescript/ingestion.ts#sync-declined -->
 ```ts tab="TypeScript"

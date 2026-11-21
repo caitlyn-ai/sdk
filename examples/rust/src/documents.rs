@@ -190,6 +190,29 @@ pub async fn set_access(
         .if_match(&current.etag)
         .await?;
     // #endregion
+    // #region readers-values
+    // The four kinds of readers, widest first
+    kb.folder("/handbook/")
+        .access()
+        .set()
+        .readers(Readers::public())
+        .await?;
+    kb.folder("/staff/")
+        .access()
+        .set()
+        .readers(Readers::everyone())
+        .await?;
+    kb.folder("/hr/")
+        .access()
+        .set()
+        .readers(Readers::specific(["hr-team"], ["u-1"]))
+        .await?;
+    kb.folder("/hr/handbook/")
+        .access()
+        .set()
+        .readers(Readers::inherit())
+        .await?;
+    // #endregion
     Ok(())
 }
 

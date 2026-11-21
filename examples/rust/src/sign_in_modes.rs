@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use caitlyn_sdk::auth::WorkloadIdentity;
-use caitlyn_sdk::{Auth, Callback, Client, MemoryTokenStore};
+use caitlyn_sdk::{Auth, Callback, Client, Error, MemoryTokenStore};
 
 /// One client per mode.
 pub async fn clients(
@@ -54,6 +54,20 @@ pub async fn clients(
             ..Default::default()
         })
         .await?;
+    // #endregion
+
+    // #region sign-in-error
+    // A sign-in failure is its own error, apart from the API's: code is the OAuth error, or the SDK's own
+    if let Err(Error::Auth(err)) = as_person.agents().list().page().await {
+        if err.code == "sign_in_required" {
+            println!("Send the person to sign in first");
+        }
+    }
+    // #endregion
+
+    // #region sign-out
+    // Revoke the refresh token and clear the token store
+    as_person.auth().sign_out().await?;
     // #endregion
 
     // #region aws-iam

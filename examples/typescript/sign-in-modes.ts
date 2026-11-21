@@ -1,6 +1,6 @@
 // A client in each sign-in mode. The developer docs' Authentication page (docs/authentication.md) shows each
 // region; scripts/test-typescript.sh type-checks this file against the SDK.
-import { Caitlyn, type TokenStore } from '@caitlyn-ai/sdk';
+import { Caitlyn, CaitlynAuthError, type TokenStore } from '@caitlyn-ai/sdk';
 
 declare function encryptedTokenStoreFor(userId: string): TokenStore;
 declare const userId: string;
@@ -46,6 +46,21 @@ const { url, state, codeVerifier } = await asPerson.auth.authorizationUrl();
 declare const code: string;
 declare const returnedState: string;
 await asPerson.auth.handleCallback({ code, state: returnedState, expectedState: state, codeVerifier });
+// #endregion
+
+// #region sign-in-error
+// A sign-in failure is its own error, apart from the API's: code is the OAuth error, or the SDK's own
+try {
+  await asPerson.agents.list().page();
+} catch (err) {
+  if (!(err instanceof CaitlynAuthError)) throw err;
+  if (err.code === 'sign_in_required') console.log('Send the person to sign in first');
+}
+// #endregion
+
+// #region sign-out
+// Revoke the refresh token and clear the token store
+await asPerson.auth.signOut();
 // #endregion
 
 // #region aws-iam
