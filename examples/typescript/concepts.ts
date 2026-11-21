@@ -78,25 +78,66 @@ export async function cancelling(): Promise<void> {
   // #endregion
 }
 
-export async function pagination(): Promise<void> {
-  // #region pagination
-  // Every document in the folder: the next page is fetched as the loop reaches it
-  for await (const document of caitlyn.knowledgeBases('KB4T7YQ2WL').documents.list({ folder: '/policies/', limit: 100 })) {
-    console.log(document.name, document.status);
-  }
-
-  // Or page by page
-  for await (const page of caitlyn.knowledgeBases('KB4T7YQ2WL').documents.list({ limit: 100 }).pages()) {
-    console.log(page.items.length, page.nextCursor);
-  }
-
-  // Or one page at a time, as a table shows them
+export async function paginationItems(): Promise<void> {
+  // #region pagination-items
+  // Every document in the folder, one at a time: the SDK fetches the next page when the loop reaches it
   const documents = caitlyn.knowledgeBases('KB4T7YQ2WL').documents;
-  const first = await documents.list({ limit: 25 }).page();
-  const second = await first.nextPage(); // null on the last page
-  console.log(first.hasNextPage, second?.items.length);
-  // Later, from a stored position: the same page as `second`
-  if (first.nextCursor) await documents.list({ limit: 25, cursor: first.nextCursor }).page();
+  for await (const document of documents.list({ folder: '/policies/', limit: 100 })) {
+    console.log(document.name, document.status);
+    if (document.name === 'leave-policy.pdf') break; // stops here: no further page is requested
+  }
+  // #endregion
+}
+
+export async function paginationPages(): Promise<void> {
+  // #region pagination-pages
+  // Every page in turn, each with its items and nextCursor: for work done a batch at a time
+  const documents = caitlyn.knowledgeBases('KB4T7YQ2WL').documents;
+  for await (const page of documents.list({ folder: '/policies/', limit: 100 }).pages()) {
+    console.log(`${page.items.length} documents; more to come: ${page.hasNextPage}`);
+  }
+  // #endregion
+}
+
+export async function paginationPage(): Promise<void> {
+  // #region pagination-page
+  // One page, in exactly one request: the first 25 documents
+  const documents = caitlyn.knowledgeBases('KB4T7YQ2WL').documents;
+  const page = await documents.list({ folder: '/policies/', limit: 25 }).page();
+  for (const document of page.items) console.log(document.name);
+  console.log(page.nextCursor); // undefined on the last page
+  // #endregion
+}
+
+export async function paginationNextPage(): Promise<void> {
+  const render = (items: readonly { name: string }[]) => console.log(items.map((d) => d.name));
+  const nextButton = { hidden: true };
+  // #region pagination-has-next-page
+  // Show the first page, and a "Next" button only when another page follows: knowing that takes no request
+  const documents = caitlyn.knowledgeBases('KB4T7YQ2WL').documents;
+  let page = await documents.list({ folder: '/policies/', limit: 25 }).page();
+  render(page.items);
+  nextButton.hidden = !page.hasNextPage;
+  // #endregion
+  // #region pagination-next-page
+  // The "Next" button's click handler: one request, for the page after the one shown
+  async function onNextClick(): Promise<void> {
+    const next = await page.nextPage(); // null after the last page
+    if (!next) return;
+    page = next;
+    render(page.items);
+    nextButton.hidden = !page.hasNextPage;
+  }
+  // #endregion
+  await onNextClick();
+}
+
+export async function paginationCursor(cursor: string | undefined): Promise<void> {
+  // #region pagination-cursor
+  // Carry on from a position saved earlier (a link, a reload): the same input, and the cursor the page gave
+  const documents = caitlyn.knowledgeBases('KB4T7YQ2WL').documents;
+  const page = await documents.list({ folder: '/policies/', limit: 25, cursor }).page();
+  console.log(page.items.length, page.nextCursor); // save page.nextCursor to carry on from here next time
   // #endregion
 }
 
