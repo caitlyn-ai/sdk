@@ -135,6 +135,10 @@ const DEFAULT_FAULTS = {
   // Hold each form POST this long before storing it, so uploads overlap (ingest.concurrency) and can be cancelled
   // in flight (ingest.cancel). A client that disconnects meanwhile stores nothing (`upload-aborted` in the log).
   uploadDelayMs: 0,
+  // Answer this many form POSTs as usual, then hold each later one (no answer) until the client disconnects, which
+  // logs `upload-aborted` and stores nothing, or 10 s pass, when it carries on as usual. A case that cancels a sync
+  // then knows every upload past the first n is still in flight when the cancel lands (sync.cancel). null holds none.
+  holdUploadsAfter: null,
   // Every policy CreateIngestionBatchUploadPolicy gives (not Start's) carries this as its `expiresAt` instead of a
   // timestamp: a string ('not a date'), or null to leave the member out (batch-upload.unreadable-expiry). The policy
   // still works. undefined for the usual mock.
@@ -274,6 +278,7 @@ function reset() {
     objects: new Map(),
     // Form POSTs in flight now, and the most there have been at once (GET /__mock/uploads).
     uploadsInFlight: 0,
+    uploadsArrived: 0,
     maxUploadsInFlight: 0,
   };
 }
@@ -3397,8 +3402,10 @@ async function postObjectForm(req, res, rid, _m, url, body) {
   res.on('close', () => {
     if (!res.writableFinished) aborted = true;
   });
+  const held = faults.holdUploadsAfter != null && state.uploadsArrived++ >= faults.holdUploadsAfter;
   try {
-    if (faults.uploadDelayMs) await sleep(faults.uploadDelayMs);
+    if (held) for (const until = Date.now() + 10_000; !aborted && Date.now() < until; ) await sleep(10);
+    else if (faults.uploadDelayMs) await sleep(faults.uploadDelayMs);
     if (aborted) {
       log.push({ event: 'upload-aborted', requestId: rid, at: Date.now() });
       return;
