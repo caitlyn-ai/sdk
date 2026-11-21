@@ -9,6 +9,7 @@ from caitlyn import (
     CaitlynConnectionError,
     CaitlynError,
     CitationAddedEvent,
+    Document,
     NotFoundError,
     TextDeltaEvent,
     ValidationError,
@@ -75,24 +76,71 @@ def streaming() -> None:
     # #endregion
 
 
-def pagination() -> None:
-    # #region pagination
-    # Every document in the folder: the next page is fetched as the loop reaches it
-    for document in caitlyn.knowledge_bases("KB4T7YQ2WL").documents.list(folder="/hr/", limit=100):
-        print(document.name, document.status)
-
-    # Or page by page
-    for page in caitlyn.knowledge_bases("KB4T7YQ2WL").documents.list(limit=100).pages():
-        print(len(page.items), page.next_cursor)
-
-    # Or one page at a time, as a table shows them
+def pagination_items() -> None:
+    # #region pagination-items
+    # Every document in the folder, one at a time: the SDK fetches the next page when the loop reaches it
     documents = caitlyn.knowledge_bases("KB4T7YQ2WL").documents
-    first = documents.list(limit=25).page()
-    second = first.next_page()  # None on the last page
-    print(first.has_next_page, second and len(second.items))
-    # Later, from a stored position: the same page as `second`
-    if first.next_cursor:
-        documents.list(limit=25, cursor=first.next_cursor).page()
+    for document in documents.list(folder="/policies/", limit=100):
+        print(document.name, document.status)
+        if document.name == "leave-policy.pdf":
+            break  # stops here: no further page is requested
+    # #endregion
+
+
+def pagination_pages() -> None:
+    # #region pagination-pages
+    # Every page in turn, each with its items and next_cursor: for work done a batch at a time
+    documents = caitlyn.knowledge_bases("KB4T7YQ2WL").documents
+    for page in documents.list(folder="/policies/", limit=100).pages():
+        print(f"{len(page.items)} documents; more to come: {page.has_next_page}")
+    # #endregion
+
+
+def pagination_page() -> None:
+    # #region pagination-page
+    # One page, in exactly one request: the first 25 documents
+    documents = caitlyn.knowledge_bases("KB4T7YQ2WL").documents
+    page = documents.list(folder="/policies/", limit=25).page()
+    for document in page.items:
+        print(document.name)
+    print(page.next_cursor)  # None on the last page
+    # #endregion
+
+
+def pagination_next_page() -> None:
+    def render(items: list[Document]) -> None:
+        print([d.name for d in items])
+
+    next_button = {"hidden": True}
+    # #region pagination-has-next-page
+    # Show the first page, and a "Next" button only when another page follows: knowing that takes no request
+    documents = caitlyn.knowledge_bases("KB4T7YQ2WL").documents
+    page = documents.list(folder="/policies/", limit=25).page()
+    render(page.items)
+    next_button["hidden"] = not page.has_next_page
+    # #endregion
+
+    # #region pagination-next-page
+    # The "Next" button's click handler: one request, for the page after the one shown
+    def on_next_click() -> None:
+        nonlocal page
+        following = page.next_page()  # None after the last page; the asynchronous client's is await page.next_page_async()
+        if following is None:
+            return
+        page = following
+        render(page.items)
+        next_button["hidden"] = not page.has_next_page
+    # #endregion
+
+    on_next_click()
+
+
+def pagination_cursor(cursor: str | None) -> None:
+    # #region pagination-cursor
+    # Carry on from a position saved earlier (a link, a reload): the same input, and the cursor the page gave
+    documents = caitlyn.knowledge_bases("KB4T7YQ2WL").documents
+    page = documents.list(folder="/policies/", limit=25, cursor=cursor).page()
+    print(len(page.items), page.next_cursor)  # save page.next_cursor to carry on from here next time
     # #endregion
 
 

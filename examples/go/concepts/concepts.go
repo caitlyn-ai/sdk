@@ -120,43 +120,99 @@ func Cancelling(client *caitlyn.Client) error {
 	return nil
 }
 
-// Pagination lists every document in a folder.
-func Pagination(ctx context.Context, client *caitlyn.Client) error {
-	// #region pagination
-	// Every document in the folder: the next page is fetched as the loop reaches it
+// PaginationItems lists every document in a folder, one at a time.
+func PaginationItems(ctx context.Context, client *caitlyn.Client) error {
+	// #region pagination-items
+	// Every document in the folder, one at a time: the SDK fetches the next page when the loop reaches it
 	documents := client.KnowledgeBase("KB4T7YQ2WL").Documents
-	input := &caitlyn.ListDocumentsInput{Folder: caitlyn.Ptr("/hr/"), Limit: caitlyn.Ptr[int32](100)}
+	input := &caitlyn.ListDocumentsInput{Folder: caitlyn.Ptr("/policies/"), Limit: caitlyn.Ptr[int32](100)}
 	for document, err := range documents.List(ctx, input) {
 		if err != nil {
 			return err
 		}
 		fmt.Println(document.Name, document.Status)
+		if document.Name == "leave-policy.pdf" {
+			break // stops here: no further page is requested
+		}
 	}
+	// #endregion
+	return nil
+}
 
-	// Or page by page
+// PaginationPages reads every page of a folder's documents in turn.
+func PaginationPages(ctx context.Context, client *caitlyn.Client) error {
+	// #region pagination-pages
+	// Every page in turn, each with its Items and NextCursor: for work done a batch at a time
+	documents := client.KnowledgeBase("KB4T7YQ2WL").Documents
+	input := &caitlyn.ListDocumentsInput{Folder: caitlyn.Ptr("/policies/"), Limit: caitlyn.Ptr[int32](100)}
 	for page, err := range documents.ListPages(ctx, input) {
 		if err != nil {
 			return err
 		}
-		fmt.Println(len(page.Items), page.NextCursor)
+		fmt.Printf("%d documents; more to come: %v\n", len(page.Items), page.HasNextPage())
 	}
+	// #endregion
+	return nil
+}
 
-	// Or one page at a time, as a table shows them
-	first, err := documents.ListPage(ctx, &caitlyn.ListDocumentsInput{Limit: caitlyn.Ptr[int32](25)})
+// PaginationPage reads one page of a folder's documents.
+func PaginationPage(ctx context.Context, client *caitlyn.Client) error {
+	// #region pagination-page
+	// One page, in exactly one request: the first 25 documents
+	documents := client.KnowledgeBase("KB4T7YQ2WL").Documents
+	page, err := documents.ListPage(ctx, &caitlyn.ListDocumentsInput{Folder: caitlyn.Ptr("/policies/"), Limit: caitlyn.Ptr[int32](25)})
 	if err != nil {
 		return err
 	}
-	second, err := first.NextPage(ctx) // nil on the last page
+	for _, document := range page.Items {
+		fmt.Println(document.Name)
+	}
+	fmt.Println(page.NextCursor) // nil on the last page
+	// #endregion
+	return nil
+}
+
+// PaginationNextPage shows a page and a Next button, and reads the next page when it is clicked.
+func PaginationNextPage(ctx context.Context, client *caitlyn.Client) error {
+	render := func(items []caitlyn.Document) { fmt.Println(len(items)) }
+	nextButtonHidden := true
+	// #region pagination-has-next-page
+	// Show the first page, and a "Next" button only when another page follows: knowing that takes no request
+	documents := client.KnowledgeBase("KB4T7YQ2WL").Documents
+	page, err := documents.ListPage(ctx, &caitlyn.ListDocumentsInput{Folder: caitlyn.Ptr("/policies/"), Limit: caitlyn.Ptr[int32](25)})
 	if err != nil {
 		return err
 	}
-	fmt.Println(first.HasNextPage(), second != nil)
-	// Later, from a stored position: the same page as second
-	if first.HasNextPage() {
-		if _, err := documents.ListPage(ctx, &caitlyn.ListDocumentsInput{Limit: caitlyn.Ptr[int32](25), Cursor: first.NextCursor}); err != nil {
+	render(page.Items)
+	nextButtonHidden = !page.HasNextPage()
+	// #endregion
+	// #region pagination-next-page
+	// The "Next" button's click handler: one request, for the page after the one shown
+	onNextClick := func() error {
+		next, err := page.NextPage(ctx) // nil, nil after the last page
+		if err != nil || next == nil {
 			return err
 		}
+		page = next
+		render(page.Items)
+		nextButtonHidden = !page.HasNextPage()
+		return nil
 	}
+	// #endregion
+	fmt.Println(nextButtonHidden)
+	return onNextClick()
+}
+
+// PaginationCursor carries on from a saved cursor.
+func PaginationCursor(ctx context.Context, client *caitlyn.Client, cursor *string) error {
+	// #region pagination-cursor
+	// Carry on from a position saved earlier (a link, a reload): the same input, and the cursor the page gave
+	documents := client.KnowledgeBase("KB4T7YQ2WL").Documents
+	page, err := documents.ListPage(ctx, &caitlyn.ListDocumentsInput{Folder: caitlyn.Ptr("/policies/"), Limit: caitlyn.Ptr[int32](25), Cursor: cursor})
+	if err != nil {
+		return err
+	}
+	fmt.Println(len(page.Items), page.NextCursor) // save page.NextCursor to carry on from here next time
 	// #endregion
 	return nil
 }

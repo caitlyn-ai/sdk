@@ -2,7 +2,7 @@
 //! region each. scripts/test-rust.sh runs clippy over it.
 use std::time::Duration;
 
-use caitlyn_sdk::{Auth, Client, ConversationEvent, Error};
+use caitlyn_sdk::{Auth, Client, ConversationEvent, Document, Error};
 
 const CONVERSATION_ID: &str = "0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47";
 
@@ -80,38 +80,99 @@ pub async fn streaming(client: &Client) -> Result<(), Error> {
     Ok(())
 }
 
-/// Listing every document in a folder.
-pub async fn pagination(client: &Client) -> Result<(), Error> {
-    // #region pagination
-    // Every document in the folder: the next page is fetched as the loop reaches it
-    let list = client
-        .knowledge_base("KB4T7YQ2WL")
-        .documents()
-        .list()
-        .folder("/hr/")
-        .limit(100);
-    let mut documents = list.clone().items();
-    while let Some(document) = documents.next().await {
+/// Listing every document in a folder, one at a time.
+pub async fn pagination_items(client: &Client) -> Result<(), Error> {
+    // #region pagination-items
+    // Every document in the folder, one at a time: the SDK fetches the next page when the loop reaches it
+    let documents = client.knowledge_base("KB4T7YQ2WL").documents();
+    let mut items = documents.list().folder("/policies/").limit(100).items();
+    while let Some(document) = items.next().await {
         let document = document?;
         println!("{} {:?}", document.name, document.status);
-    }
-
-    // Or page by page
-    let mut pages = list.pages();
-    while let Some(page) = pages.next().await {
-        let page = page?;
-        println!("{} {:?}", page.items.len(), page.next_cursor);
-    }
-
-    // Or one page at a time, as a table shows them
-    let documents = client.knowledge_base("KB4T7YQ2WL").documents();
-    let first = documents.list().limit(25).page().await?;
-    let second = first.next_page().await?; // None on the last page
-    println!("{} {}", first.has_next_page(), second.is_some());
-    // Later, from a stored position: the same page as `second`
-    if let Some(cursor) = first.next_cursor.clone() {
-        documents.list().limit(25).cursor(cursor).page().await?;
+        if document.name == "leave-policy.pdf" {
+            break; // stops here: no further page is requested
+        }
     }
     // #endregion
+    Ok(())
+}
+
+/// Reading every page of a folder's documents in turn.
+pub async fn pagination_pages(client: &Client) -> Result<(), Error> {
+    // #region pagination-pages
+    // Every page in turn, each with its items and next_cursor: for work done a batch at a time
+    let documents = client.knowledge_base("KB4T7YQ2WL").documents();
+    let mut pages = documents.list().folder("/policies/").limit(100).pages();
+    while let Some(page) = pages.next().await {
+        let page = page?;
+        println!(
+            "{} documents; more to come: {}",
+            page.items.len(),
+            page.has_next_page()
+        );
+    }
+    // #endregion
+    Ok(())
+}
+
+/// Reading one page of a folder's documents.
+pub async fn pagination_page(client: &Client) -> Result<(), Error> {
+    // #region pagination-page
+    // One page, in exactly one request: the first 25 documents
+    let documents = client.knowledge_base("KB4T7YQ2WL").documents();
+    let page = documents
+        .list()
+        .folder("/policies/")
+        .limit(25)
+        .page()
+        .await?;
+    for document in &page.items {
+        println!("{}", document.name);
+    }
+    println!("{:?}", page.next_cursor); // None on the last page
+                                        // #endregion
+    Ok(())
+}
+
+/// Showing a page and a Next button, and reading the next page when it is clicked.
+pub async fn pagination_next_page(client: &Client) -> Result<(), Error> {
+    let render = |items: &[Document]| println!("{}", items.len());
+    // #region pagination-has-next-page
+    // Show the first page, and a "Next" button only when another page follows: knowing that takes no request
+    let documents = client.knowledge_base("KB4T7YQ2WL").documents();
+    let mut page = documents
+        .list()
+        .folder("/policies/")
+        .limit(25)
+        .page()
+        .await?;
+    render(&page.items);
+    let mut next_button_hidden = !page.has_next_page();
+    // #endregion
+    // #region pagination-next-page
+    // When the "Next" button is clicked: one request, for the page after the one shown
+    if let Some(next) = page.next_page().await? {
+        // None after the last page
+        page = next;
+        render(&page.items);
+        next_button_hidden = !page.has_next_page();
+    }
+    // #endregion
+    println!("{next_button_hidden}");
+    Ok(())
+}
+
+/// Carrying on from a saved cursor.
+pub async fn pagination_cursor(client: &Client, cursor: Option<String>) -> Result<(), Error> {
+    // #region pagination-cursor
+    // Carry on from a position saved earlier (a link, a reload): the same input, and the cursor the page gave
+    let documents = client.knowledge_base("KB4T7YQ2WL").documents();
+    let mut list = documents.list().folder("/policies/").limit(25);
+    if let Some(cursor) = cursor {
+        list = list.cursor(cursor);
+    }
+    let page = list.page().await?;
+    println!("{} {:?}", page.items.len(), page.next_cursor); // save page.next_cursor to carry on from here next time
+                                                             // #endregion
     Ok(())
 }
