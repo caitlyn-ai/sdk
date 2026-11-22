@@ -32,6 +32,7 @@ from ._protocol import (
     read_error,
     read_result,
     sdk_error,
+    unknown_operation,
     with_idempotency_token,
 )
 from ._files import FileInput, PreparedFile, UploadFile
@@ -298,6 +299,8 @@ class SyncClientCore(_CoreBase):
                     self.retry_budget.release(retry_cost)
                     return response, call
                 response.close()
+                if (unsupported := unknown_operation(spec, error, response.headers)) is not None:
+                    raise unsupported from error
                 delay = error_retry_delay(policy, spec.retry_safe, call.context.attempt, error)
                 if delay is None or not self.retry_budget.acquire(RETRY_COST):
                     raise error
@@ -470,6 +473,8 @@ class AsyncClientCore(_CoreBase):
                 if error is None:
                     self.retry_budget.release(retry_cost)
                     return response, call
+                if (unsupported := unknown_operation(spec, error, response.headers)) is not None:
+                    raise unsupported from error
                 delay = error_retry_delay(policy, spec.retry_safe, call.context.attempt, error)
                 if delay is None or not self.retry_budget.acquire(RETRY_COST):
                     raise error

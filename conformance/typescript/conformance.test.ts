@@ -2081,6 +2081,22 @@ test('[since.fails-before-sending] an operation newer than the server fails befo
   assert.equal((await api()).length, before);
 });
 
+test("[since.unknown-operation] a 404 UNKNOWN_OPERATION or a 405 METHOD_NOT_ALLOWED is NotSupportedByServer, even on a first call; a 404 NOT_FOUND is not", async () => {
+  await faults({ status: { GetAgentVersion: [{ status: 404, code: 'UNKNOWN_OPERATION' }, { status: 405, code: 'METHOD_NOT_ALLOWED' }, { status: 404, code: 'NOT_FOUND' }] } });
+  const c = client();
+  for (const [i, answer] of ['404 UNKNOWN_OPERATION', '405 METHOD_NOT_ALLOWED'].entries()) {
+    await assert.rejects(c.agents('GHT7YRWXPL').draft.get(), (e: unknown) => {
+      assert.ok(e instanceof NotSupportedByServer, `${answer}: ${String(e)}`);
+      assert.deepEqual([e.operation, e.requires, e.server], ['GetAgentVersion', SDK_MODEL, '5.120.0']);
+      return true;
+    });
+    assert.equal((await api()).length, i + 1, `${answer} is not retried`);
+  }
+  const err = await expectError(c.agents('GHT7YRWXPL').draft.get());
+  assert.ok(!(err instanceof NotSupportedByServer));
+  assert.deepEqual([err.status, err.code], [404, 'NOT_FOUND']);
+});
+
 test('[headers.request-id] Caitlyn-Request-Id and Caitlyn-Api-Version are on successful outputs', async () => {
   const v = await client().agents('GHT7YRWXPL').draft.get();
   // A thing has no header members: the request id and the API version are in its response metadata.
@@ -3973,6 +3989,23 @@ async function abortsSeen(op?: string): Promise<number> {
   for (const until = Date.now() + 2000; Date.now() < until && (await count()) < 3; ) await pause(50);
   return count();
 }
+/**
+ * WebKit (Playwright's, on libsoup) sometimes keeps the connection of a fetch the page aborted open for as long as the
+ * page lives: measured at more than 45 s, in about one call in three, on the first attempt or a later one. The page
+ * cannot close it any other way than by aborting, so in WebKit only the abort is the client's to check.
+ */
+const LEAVES_ABORTED_CONNECTIONS_OPEN =
+  IN_PAGE && /Version\/[\d.]+ .*Safari\//.test(globalThis.navigator?.userAgent ?? '') && !/Chrome|Chromium|Firefox/.test(globalThis.navigator?.userAgent ?? '');
+/** A fetch for `requestHandler.customFetch` that keeps each request it is given, so a case can see which were aborted. */
+function recordingFetch() {
+  const requests: Request[] = [];
+  const f = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const request = input instanceof Request && init === undefined ? input : new Request(input, init);
+    requests.push(request);
+    return fetch(request);
+  }) as typeof fetch;
+  return { fetch: f, requests };
+}
 /** A planned and started batch of these files, through the given client. */
 async function startedWith(c: Caitlyn, files: Record<string, Uint8Array>) {
   const items = await Promise.all(Object.entries(files).map(async ([p, bytes]) => ({ path: p, sha256: await sha256(bytes), byteSize: bytes.length, contentType: 'application/pdf' })));
@@ -3984,7 +4017,8 @@ async function startedWith(c: Caitlyn, files: Record<string, Uint8Array>) {
 const policiesAsked = async () => (await api()).filter((r) => r.method === 'POST' && r.path.endsWith('/upload-policies')).length;
 
 test('[client.request-timeout] a call with no response headers within the request timeout fails with CONNECTION_ERROR after its retries, each attempt closed; a watch with only keep-alives stays open', async () => {
-  const c = client({ requestHandler: { requestTimeout: 300 } });
+  const sent = recordingFetch();
+  const c = client({ requestHandler: { requestTimeout: 300, customFetch: sent.fetch } });
   await faults({ status: { GetKnowledgeBase: [{ hold: true }, { hold: true }, { hold: true }] } });
   const started = Date.now();
   const err = await expectError(c.knowledgeBases(KB).get());
@@ -3994,7 +4028,12 @@ test('[client.request-timeout] a call with no response headers within the reques
   assert.match(err.message, /300 ms/, 'and the timeout');
   assert.equal((await api()).filter((r) => r.path === KB_PATH).length, 3, 'retried as a read is');
   assert.ok(Date.now() - started < 10_000);
-  assert.equal(await abortsSeen(), 3, 'each timed-out attempt was closed, not left open');
+  // The client gave up on each attempt: it aborted its request, which is all a page can do to close it.
+  const attempts = sent.requests.filter((r) => new URL(r.url).pathname.endsWith(KB_PATH));
+  assert.equal(attempts.length, 3);
+  assert.deepEqual(attempts.map((r) => r.signal.aborted), [true, true, true], 'each timed-out attempt was aborted');
+  // And the connection closed: in Node and the browsers that close an aborted fetch's connection, every one of them.
+  if (!LEAVES_ABORTED_CONNECTIONS_OPEN) assert.equal(await abortsSeen(), 3, 'each timed-out attempt was closed, not left open');
   // A watch whose stream goes quiet but for keep-alives, for longer than the timeout, is not cut: only the headers are timed.
   await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
   await faults({ watchKeepAliveMs: 100 });

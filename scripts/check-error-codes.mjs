@@ -10,6 +10,7 @@
 //   Python      ErrorCode.<CODE> (OpenEnum)  python/caitlyn/caitlyn/errors.py
 //   Go          caitlyn.ErrorCode<Pascal>    go/client.go
 //   Rust        ErrorCode::<CODE>            rust/caitlyn-sdk/src/error.rs
+import { ROUTING_CODES } from '../docs/error-codes.mjs';
 import fs from 'node:fs';
 
 const root = new URL('../', import.meta.url);
@@ -60,6 +61,9 @@ const NOT_CODES = new Set([
   'HTTP_SIGNING', 'RETRY', 'TRANSIENT', 'ERROR', 'UNKNOWN',
   // a batch item's failure code from the server (CompleteIngestionBatchUploads), compared, never raised
   'CHECKSUM_MISMATCH',
+  // the server's routing codes (docs/error-codes.mjs ROUTING_CODES, PROTOCOL.md 9), read to raise
+  // NotSupportedByServer, never raised
+  ...Object.keys(ROUTING_CODES),
 ]);
 const notCode = (s) => NOT_CODES.has(s) || /^AWS_/.test(s) || /^HTTP_\d+$/.test(s);
 const runtimes = { typescript: ['typescript/packages/sdk-core/src', /\.ts$/, true], python: ['python/caitlyn-core/src/caitlyn_core', /\.py$/, true], go: ['go', /\.go$/, false], 'go core': ['go/core', /\.go$/, true], rust: ['rust/caitlyn-sdk-core/src', /\.rs$/, true] };

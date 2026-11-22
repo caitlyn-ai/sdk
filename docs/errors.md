@@ -339,8 +339,8 @@ Three come from one SDK only, because their case exists only there: `REDIRECT_UN
 a redirect whose address the browser hid from the page: use `download()` instead), `FILE_ALREADY_READ` (Go, one
 `io.Reader` given to two calls) and `BAD_METHOD` (Rust, an HTTP method its HTTP client cannot use).
 
-Two more are separate classes: `NotSupportedByServer`, raised before sending when the server is too old for the
-call ([Getting started](/getting-started/#versions-and-older-servers)), and the sign-in error, `CaitlynAuthError`,
+Two more are separate classes: `NotSupportedByServer`, raised when the server is too old for the call, before
+sending or from the server's own answer ([Getting started](/getting-started/#versions-and-older-servers)), and the sign-in error, `CaitlynAuthError`,
 when a token could not be got ([Authentication](/authentication/#when-a-token-is-refused)).
 
 ## Error codes
@@ -368,3 +368,11 @@ when a token could not be got ([Authentication](/authentication/#when-a-token-is
 | [`RATE_LIMITED`](/errors/RATE_LIMITED/) | 429 | `TooManyRequestsError` |
 | [`INTERNAL`](/errors/INTERNAL/) | 500 | `InternalError` |
 | [`SERVICE_UNAVAILABLE`](/errors/SERVICE_UNAVAILABLE/) | 503 | `ServiceUnavailableError` |
+
+Two more codes come from the server's routing rather than an operation, so no operation lists them. The SDKs raise
+`NotSupportedByServer` for both ([Getting started](/getting-started/#versions-and-older-servers)):
+
+| Code | Status | Raised as |
+| --- | --- | --- |
+| [`UNKNOWN_OPERATION`](/errors/UNKNOWN_OPERATION/) | 404 | `NotSupportedByServer`: the server has no operation at that address |
+| [`METHOD_NOT_ALLOWED`](/errors/METHOD_NOT_ALLOWED/) | 405 | `NotSupportedByServer`: the address, but not that method |

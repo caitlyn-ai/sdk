@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # The model-version check: is the committed snapshot (model/model.lock.json) the newest published model?
-#   exit 0  the snapshot is the latest published model
+#   exit 0  the snapshot is the latest published model, or no model is published yet (nothing to compare with)
 #   exit 2  behind: a newer model is published (the merge request pipeline shows a warning), or the
-#           snapshot is an unpublished build, or nothing is published yet
+#           snapshot is an unpublished build while a model is published
 #   exit 1  the registry could not be read
-# The regenerate job (on a trigger from an app release) is what brings the snapshot up to date.
+# The model:main job (on a trigger from an app merge to main) is what brings the snapshot up to date.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 api="${CI_API_V4_URL:-https://git.customd.com/api/v4}"
@@ -21,8 +21,8 @@ trap 'rm -f "$tmp"' EXIT
 status=$(curl -sS -o "$tmp" -w '%{http_code}' --header "$header" \
   "${api}/projects/${project}/packages/generic/${package}/latest/model.json") || { echo "Could not reach the package registry." >&2; exit 1; }
 if [ "$status" = 404 ]; then
-  echo "No model is published yet; the snapshot is ${lock_version}."
-  exit 2
+  echo "No model is published yet, so there is nothing to compare the snapshot (${lock_version}) with. Skipped."
+  exit 0
 fi
 if [ "$status" != 200 ]; then
   echo "Could not read ${package}/latest (HTTP ${status}). In CI, the app project must allow this project's job token." >&2

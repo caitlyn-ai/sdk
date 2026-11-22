@@ -271,16 +271,17 @@ pub(crate) fn parse_retry_after(v: &str) -> Option<u64> {
     Some((ms as u64).div_ceil(1000))
 }
 
-/// An operation, or a member the caller set, needs a newer server (PROTOCOL.md section 9).
+/// An operation, or a member the caller set, needs a newer server (PROTOCOL.md section 9): found before anything is
+/// sent, or from the server's answer that it has no such operation (a 404 `UNKNOWN_OPERATION` or a 405 `METHOD_NOT_ALLOWED`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct NotSupportedByServer {
     pub operation: String,
     /// The member, when the operation itself is supported.
     pub member: Option<String>,
-    /// The release the operation or member needs.
+    /// The release the operation or member needs; `unknown` when the operation has no `@since`.
     pub requires: String,
-    /// The server's `Caitlyn-Api-Version`.
+    /// The server's `Caitlyn-Api-Version`; `unknown` when no response has said it.
     pub server: String,
 }
 

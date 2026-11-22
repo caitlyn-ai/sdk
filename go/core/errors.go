@@ -183,13 +183,20 @@ func parseRetryAfter(v string, now time.Time) (time.Duration, bool) {
 }
 
 // NotSupportedByServerError is returned before anything is sent when an operation, or a member the caller
-// set, is newer than the server's Caitlyn-Api-Version (PROTOCOL.md 9).
+// set, is newer than the server's Caitlyn-Api-Version, and when the server answers that it has no such operation
+// (a 404 UNKNOWN_OPERATION or a 405 METHOD_NOT_ALLOWED; Cause is that answer) (PROTOCOL.md 9).
 type NotSupportedByServerError struct {
 	// Operation is the operation name; Member is set when a member, not the operation, is too new.
 	Operation, Member string
-	// Requires is the @since version; Server is the server's version.
+	// Requires is the @since version ("unknown" when the operation has none); Server is the server's version
+	// ("unknown" when no response has said it).
 	Requires, Server string
+	// Cause is the server's answer when it said it has no such operation; nil when nothing was sent.
+	Cause error
 }
+
+// Unwrap returns the server's answer, when there was one.
+func (e *NotSupportedByServerError) Unwrap() error { return e.Cause }
 
 func (e *NotSupportedByServerError) Error() string {
 	what := e.Operation

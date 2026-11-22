@@ -213,6 +213,22 @@ func (c *Client) Do(ctx context.Context, op *Operation, req *Request, opts []Cal
 			c.auth.invalidate(cs.sentAuth)
 			continue
 		}
+		// An operation the server does not have (PROTOCOL.md 9): its routing answers 404 UNKNOWN_OPERATION or 405
+		// METHOD_NOT_ALLOWED, even before this client has seen the server's version. Never retried. A 405 without
+		// that code (a proxy's) stays the generic error.
+		if ae != nil && ((ae.apiError().Status == http.StatusMethodNotAllowed && ae.apiError().Code == "METHOD_NOT_ALLOWED") ||
+			(ae.apiError().Status == http.StatusNotFound && ae.apiError().Code == "UNKNOWN_OPERATION")) {
+			requires, server := op.Since, c.ServerVersion()
+			if requires == "" {
+				requires = "unknown"
+			}
+			if server == "" {
+				server = "unknown"
+			}
+			err = &NotSupportedByServerError{Operation: op.Name, Requires: requires, Server: server, Cause: err}
+			recordFailure(span, err)
+			return nil, err
+		}
 		delay, retry := c.retryDelay(ctx, op, err, attempt)
 		if retry {
 			cost := retryCost

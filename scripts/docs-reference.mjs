@@ -11,7 +11,7 @@ import { namespaceTree, operationTitle, walkTree } from './docs-api.mjs';
 import { LANGUAGES, goChain, snippets } from './docs-snippets.mjs';
 import { placement } from './docs-scopes.mjs';
 import { OPTIONS, sinceVersion } from './docs-metadata.mjs';
-import { ERROR_CODES } from '../docs/error-codes.mjs';
+import { ERROR_CODES, ROUTING_CODES } from '../docs/error-codes.mjs';
 
 
 
@@ -859,7 +859,33 @@ export function referencePages(ast, { unreleased = unreleasedOperations(), next 
       pages.push(errorPage(ast, code, err, listing));
     }
   }
+  for (const [code, text] of Object.entries(ROUTING_CODES)) {
+    if (errors.some((e) => e.codes.includes(code))) throw new Error(`docs-reference: ${code} is a model code; take it out of ROUTING_CODES`);
+    pages.push(routingErrorPage(ast, code, text));
+  }
   return { pages, ops, examples, typePages, tree, helpers, unreleased, next };
+}
+
+/** A page for a code the server's routing sends (docs/error-codes.mjs ROUTING_CODES): no operation declares it. */
+function routingErrorPage(ast, code, text) {
+  const out = [];
+  out.push(text.meaning.trim(), '');
+  out.push('| | |', '| --- | --- |');
+  out.push(`| HTTP status | ${text.status} |`);
+  out.push('| Raised by the SDKs as | `NotSupportedByServer` in TypeScript and Python, `*caitlyn.NotSupportedByServerError` in Go, `Error::NotSupportedByServer` in Rust |');
+  out.push('| Retried by the SDKs | No |');
+  out.push('');
+  out.push('## What to do', '', text.action.trim(), '');
+  out.push('## The error body', '');
+  out.push(`An RFC 9457 problem details object with \`code\` set to \`${code}\` and \`type\` set to this page's address, from the server's routing rather than an operation, so no operation lists it. \`requestId\` identifies the request; quote it to Caitlyn support. [Errors](/errors/) lists every field.`, '');
+  return {
+    slug: `errors/${code}`,
+    title: code,
+    metadata: { pageType: 'error', sinceVersion: Math.min(...operations(ast).map((o) => sinceVersion(o.since))), resources: [], integrations: [], operations: [] },
+    body: out.join('\n'),
+    group: 'errors',
+    label: code,
+  };
 }
 
 // ------------------------------------------------------------------------------------------------ the helpers

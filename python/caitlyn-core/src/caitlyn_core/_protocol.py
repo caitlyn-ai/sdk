@@ -80,6 +80,15 @@ def check_since(spec: OperationSpec, params: Mapping[str, object], server: str |
             raise NotSupportedByServer(f"{spec.name}.{m.wire}", m.since, server)
 
 
+def unknown_operation(spec: OperationSpec, error: CaitlynError, headers: Mapping[str, str]) -> NotSupportedByServer | None:
+    """An operation the server does not have (PROTOCOL.md 9): its routing answers 404 ``UNKNOWN_OPERATION`` or 405
+    ``METHOD_NOT_ALLOWED``, even before the client has seen the server's version. A ``NOT_FOUND`` from an operation it
+    has, or a 405 without that code (a proxy's), is not this."""
+    if (error.status == 404 and error.code == "UNKNOWN_OPERATION") or (error.status == 405 and error.code == "METHOD_NOT_ALLOWED"):
+        return NotSupportedByServer(spec.name, spec.since or "unknown", headers.get(API_VERSION_HEADER) or "unknown")
+    return None
+
+
 def _version(v: str) -> tuple[int, ...]:
     return tuple(int(p) for p in v.split("-")[0].split(".") if p.isdigit())
 

@@ -58,6 +58,12 @@ export function getCaitlynConnectionErrorPlugin(toError: (operation: string, cau
   };
 }
 
+/** A routing answer that says the server has no such operation (PROTOCOL.md 9), not that a thing is missing. */
+function isUnknownOperation(err: unknown): boolean {
+  const e = err as { status?: unknown; code?: unknown };
+  return (e.status === 404 && e.code === 'UNKNOWN_OPERATION') || (e.status === 405 && e.code === 'METHOD_NOT_ALLOWED');
+}
+
 export class NotSupportedByServer extends Error {
   constructor(readonly operation: string, readonly requires: string, readonly server: string) {
     super(`NotSupportedByServer(${operation}, requires ${requires}, server is ${server})`);
@@ -101,7 +107,17 @@ export function getCaitlynSdkPlugin(
         if (memberSince && semver(memberSince, server) > 0) throw new NotSupportedByServer(`${op}.${member}`, memberSince, server);
       }
     }
-    return next(args);
+    try {
+      return await next(args);
+    } catch (err) {
+      // An operation the server does not have (PROTOCOL.md 9): its routing answers 404 UNKNOWN_OPERATION or 405
+      // METHOD_NOT_ALLOWED, even before this client has seen the server's version. A 405 without that code (a
+      // proxy's) stays the generic error.
+      if (op && isUnknownOperation(err)) {
+        throw Object.assign(new NotSupportedByServer(op, since.get(op) ?? 'unknown', server ?? 'unknown'), { cause: err });
+      }
+      throw err;
+    }
   };
   const serverVersion: DeserializeMiddleware<any, any> = (next) => async (args) => {
     try {

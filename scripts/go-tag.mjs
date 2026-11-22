@@ -1,6 +1,6 @@
 // Tags a release for Go: creates go/vX.Y.Z on the commit vX.Y.Z points at.
 //
-//   node scripts/go-tag.mjs <version>    such as 0.8.0 (a leading v is accepted)
+//   node scripts/go-tag.mjs <version>    such as 0.8.0 or 0.12.0-beta.1 (a leading v is accepted)
 //
 // The Go module is github.com/caitlyn-ai/sdk/go, in this repository's go/ subdirectory. Go finds a version of a
 // module in a subdirectory by a tag with the subdirectory as its prefix (https://go.dev/ref/mod#vcs-version), so
@@ -20,7 +20,7 @@
 // Running it again is safe: a go/ tag already on the right commit is left alone, and one on another commit fails.
 const arg = process.argv[2] ?? '';
 const version = arg.replace(/^v/, '');
-if (!/^\d+\.\d+\.\d+$/.test(version)) {
+if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/.test(version)) {
   console.error(`usage: node scripts/go-tag.mjs <version>, such as 0.8.0 (got "${arg}")`);
   process.exit(2);
 }
