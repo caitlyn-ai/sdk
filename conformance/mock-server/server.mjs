@@ -419,7 +419,7 @@ function statusFault(op, res, rid) {
     res.end(f.body ?? '');
     return true;
   }
-  const code = f.status === 429 ? 'RATE_LIMITED' : f.status === 503 ? 'SERVICE_UNAVAILABLE' : f.status === 500 ? 'INTERNAL' : `HTTP_${f.status}`;
+  const code = f.code ?? (f.status === 429 ? 'RATE_LIMITED' : f.status === 503 ? 'SERVICE_UNAVAILABLE' : f.status === 500 ? 'INTERNAL' : `HTTP_${f.status}`);
   problem(res, rid, f.status, code, 'Injected fault', { extra });
   return true;
 }

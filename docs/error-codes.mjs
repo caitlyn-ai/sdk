@@ -148,3 +148,21 @@ export const ERROR_CODES = {
     action: "Check the agent's attachment settings. The SDKs check them before anything is uploaded, so nothing is sent for a file the agent would refuse.",
   },
 };
+
+// Codes the server's routing sends that no operation declares, because they are about the address, not an operation:
+// each gets a page at https://build.caitlyn.ai/errors/{code} like the model's codes (scripts/docs-reference.mjs), and
+// scripts/check-error-codes.mjs reads this list as the codes the SDKs read but never raise. The docs build fails when
+// the server's routing codes (PROTOCOL.md 9) and this list differ.
+export const ROUTING_CODES = {
+  UNKNOWN_OPERATION: {
+    status: 404,
+    meaning: 'This server has no operation at the request\'s address. Usually the operation is newer than the server: the SDK was generated from a later model than the workspace runs.',
+    action: 'The SDKs raise `NotSupportedByServer` for it (Go `NotSupportedByServerError`, Rust `Error::NotSupportedByServer`), naming the operation, the release it needs and the server\'s version; nothing ran. Use an SDK version that matches the server, or wait for the workspace to be updated. A hand-built request should check its path against the operation\'s reference page.',
+  },
+  METHOD_NOT_ALLOWED: {
+    status: 405,
+    meaning: 'The address exists on this server, but not with this HTTP method: usually an operation newer than the server that shares an address with an older one. The response\'s `Allow` header lists the methods the address takes.',
+    action: 'The SDKs raise `NotSupportedByServer` for it, as for `UNKNOWN_OPERATION`; nothing ran. A 405 without this code, from a proxy in front of Caitlyn, is the generic error instead. A hand-built request should check its method against the operation\'s reference page.',
+  },
+};
+

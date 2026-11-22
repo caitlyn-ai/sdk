@@ -10,9 +10,16 @@
 #   scripts/model-pull.sh 5.121.0           a version from the app's package registry
 #   scripts/model-pull.sh latest            the newest published model
 #   scripts/model-pull.sh --from-build DIR  an app checkout's unpublished build (DIR is its smithy/ folder,
-#                                           after `make smithy`); @since("next") is stamped as STAMP_NEXT. Its
-#                                           build/changes.json is kept when the build has one; otherwise
-#                                           model/changes/ is left as it is
+#                                           after `make smithy`); @since("next") is stamped as STAMP_NEXT, or as
+#                                           the previous lock's stampNext. Its build/changes.json is kept when the
+#                                           build has one; otherwise model/changes/ is left as it is
+#   scripts/model-pull.sh --prerelease DIR  the same build, as the model:main job does (CONTRIBUTING.md,
+#                                           "The model snapshot"): @since("next") is stamped as the app version that
+#                                           build's server reports in Caitlyn-Api-Version, its package.json's
+#                                           major.minor.patch (STAMP_NEXT overrides it). So the SDK's @since check
+#                                           (PROTOCOL.md 9) passes on that app build's own server and refuses
+#                                           cleanly on an older one. The lock records it as a prerelease, with the
+#                                           app version and commit
 #
 # The registry is the generic package caitlyn-v3-model in the app project (custom-d/caitlyn/platform/caitlyn,
 # project 653), which every app release publishes to (smithy/scripts/publish.sh in the app). In CI the job
@@ -81,6 +88,11 @@ fetch_changes() {
   esac
 }
 
+prerelease=false
+if [ "${1:-}" = "--prerelease" ]; then
+  prerelease=true
+  set -- --from-build "${2:?Usage: model-pull.sh --prerelease <app smithy/ folder>}"
+fi
 if [ "${1:-}" = "--from-build" ]; then
   dir="${2:?Usage: model-pull.sh --from-build <app smithy/ folder>}"
   cp "$dir/build/smithy/source/model/model.json" "$tmp/model.json"
@@ -99,7 +111,7 @@ if [ "${1:-}" = "--from-build" ]; then
   version=null
   source="local build of branch ${branch} at commit ${commit} (not published)"
 else
-  requested="${1:?Usage: model-pull.sh <version>|latest|--from-build <dir>}"
+  requested="${1:?Usage: model-pull.sh <version>|latest|--from-build <dir>|--prerelease <dir>}"
   fetch "$requested" model.json
   fetch "$requested" openapi.json
   fetch "$requested" caitlyn-v3-model.tar.gz
@@ -122,7 +134,17 @@ if grep -q '"ai.caitlyn.traits#since": "next"' "$tmp/model.json" && [ "$version"
   echo "The published model ${version} contains @since(\"next\"); the app's release should have stamped it." >&2
   exit 1
 fi
-stamp_next="${STAMP_NEXT:-$(node -p "require('$root/model/model.lock.json').stampNext ?? ''")}"
+if [ "$prerelease" = true ]; then
+  # The release the app build's server reports (src/helpers/v3/v3Request.ts in the app): its package.json version,
+  # without a suffix. A prerelease SDK's new operations then need that server or a newer one.
+  app_version="$(node -p "require('$dir/../package.json').version" 2>/dev/null || true)"
+  [[ "$app_version" =~ ^([0-9]+\.[0-9]+\.[0-9]+) ]] || { echo "--prerelease: $dir/../package.json has no release version (\"${app_version}\")." >&2; exit 1; }
+  app_version="${BASH_REMATCH[1]}"
+  stamp_next="${STAMP_NEXT:-$app_version}"
+  source="prerelease: ${source}, app ${app_version}"
+else
+  stamp_next="${STAMP_NEXT:-$(node -p "require('$root/model/model.lock.json').stampNext ?? ''")}"
+fi
 sha="$(shasum -a 256 "$tmp/model.json" 2>/dev/null | cut -d' ' -f1 || sha256sum "$tmp/model.json" | cut -d' ' -f1)"
 cp "$tmp/model.json" "$tmp/openapi.json" "$tmp/PROTOCOL.md" "$root/model/"
 if [ -n "$(ls -A "$tmp/changes")" ]; then
@@ -137,7 +159,7 @@ cat > "$root/model/model.lock.json" <<JSON
   "version": ${version},
   "source": "${source}",
   "sha256": "${sha}",
-  "stampNext": $( [ "$version" = null ] && echo "\"${stamp_next}\"" || echo null )
+  "stampNext": $( [ "$version" = null ] && echo "\"${stamp_next}\"" || echo null )$( [ "$prerelease" = true ] && printf ',\n  "prerelease": {"appVersion": "%s", "appCommit": "%s"}' "$app_version" "$commit" )
 }
 JSON
 echo "model: ${source} (${sha:0:12}). Now run: make generate"

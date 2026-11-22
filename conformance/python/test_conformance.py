@@ -1035,6 +1035,21 @@ async def test_since(mock: Mock, case_id: str) -> None:
     assert len(mock.api()) == before
 
 
+@case("since.unknown-operation")
+async def test_since_unknown_operation(mock: Mock, case_id: str) -> None:
+    mock.faults(status={"GetAgentVersion": [
+        {"status": 404, "code": "UNKNOWN_OPERATION"}, {"status": 405, "code": "METHOD_NOT_ALLOWED"}, {"status": 404, "code": "NOT_FOUND"},
+    ]})
+    c = client(mock)
+    for i, answer in enumerate(["404 UNKNOWN_OPERATION", "405 METHOD_NOT_ALLOWED"]):
+        with pytest.raises(NotSupportedByServer) as info:
+            await c.agents("GHT7YRWXPL").draft.get()
+        assert (info.value.operation, info.value.requires, info.value.server) == ("GetAgentVersion", SDK_MODEL, "5.120.0"), answer
+        assert len(mock.api()) == i + 1, f"{answer} is not retried"
+    err = await expect_error(c.agents("GHT7YRWXPL").draft.get())
+    assert (err.status, err.code) == (404, "NOT_FOUND")
+
+
 @case("headers.request-id")
 async def test_request_id(mock: Mock, case_id: str) -> None:
     v = await client(mock).agents("GHT7YRWXPL").draft.get()

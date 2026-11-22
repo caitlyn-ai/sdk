@@ -74,17 +74,19 @@ jobs:
         env:
           VERSION: ${{ steps.tag.outputs.version }}
         run: |
+          # Python spells a beta as PEP 440 does: 0.12.0-beta.3 is 0.12.0b3 in file names and metadata.
+          PYV="$(printf '%s' "$VERSION" | sed -E 's/-beta\.([0-9]+)$/b\1/')"
           expect() {
             local dir="$1"; shift
             local want; want="$(printf '%s\n' "$@" | sort)"
             local have; have="$(find "$dir" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)"
             [ "$have" = "$want" ] || { printf '%s holds:\n%s\nexpected:\n%s\n' "$dir" "$have" "$want" >&2; exit 1; }
           }
-          expect dist/caitlyn-core "caitlyn_core-$VERSION.tar.gz" "caitlyn_core-$VERSION-py3-none-any.whl"
-          expect dist/caitlyn "caitlyn-$VERSION.tar.gz" "caitlyn-$VERSION-py3-none-any.whl"
-          unzip -p "dist/caitlyn/caitlyn-$VERSION-py3-none-any.whl" '*.dist-info/METADATA' \
-            | grep -qx "Requires-Dist: caitlyn-core==$VERSION" \
-            || { echo "caitlyn's wheel does not pin caitlyn-core==$VERSION" >&2; exit 1; }
+          expect dist/caitlyn-core "caitlyn_core-$PYV.tar.gz" "caitlyn_core-$PYV-py3-none-any.whl"
+          expect dist/caitlyn "caitlyn-$PYV.tar.gz" "caitlyn-$PYV-py3-none-any.whl"
+          unzip -p "dist/caitlyn/caitlyn-$PYV-py3-none-any.whl" '*.dist-info/METADATA' \
+            | grep -qx "Requires-Dist: caitlyn-core==$PYV" \
+            || { echo "caitlyn's wheel does not pin caitlyn-core==$PYV" >&2; exit 1; }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python-dists

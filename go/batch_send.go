@@ -329,9 +329,10 @@ func (u *uploader) run(parent context.Context, policy *UploadPolicy, jobs []uplo
 					mu.Lock()
 					doneFiles++
 					bytesSent += j.file.prepared.Size
-					p := IngestionProgress{Phase: SyncPhaseUpload, Done: doneFiles, Total: len(jobs), BytesSent: bytesSent, BytesTotal: bytesTotal, Item: &j.item}
+					// Reported under the lock, so reports reach the caller in the order they were counted: outside
+					// it, a worker could report Done 1 after another had reported Done 3.
+					u.progress(IngestionProgress{Phase: SyncPhaseUpload, Done: doneFiles, Total: len(jobs), BytesSent: bytesSent, BytesTotal: bytesTotal, Item: &j.item})
 					mu.Unlock()
-					u.progress(p)
 					uploaded <- j
 				}
 			}

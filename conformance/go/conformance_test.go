@@ -1133,6 +1133,26 @@ var protocol = map[string]func(t *testing.T, m mock){
 			t.Fatalf("got %v", err)
 		}
 	},
+	"since.unknown-operation": func(t *testing.T, m mock) {
+		m.faults(t, map[string]any{"status": map[string]any{"GetAgentVersion": []any{
+			map[string]any{"status": 404, "code": "UNKNOWN_OPERATION"},
+			map[string]any{"status": 405, "code": "METHOD_NOT_ALLOWED"},
+			map[string]any{"status": 404, "code": "NOT_FOUND"},
+		}}})
+		c := client(t, m)
+		for i, answer := range []string{"404 UNKNOWN_OPERATION", "405 METHOD_NOT_ALLOWED"} {
+			_, err := c.Agent(agent).Draft().Get(context.Background())
+			var ns *caitlyn.NotSupportedByServerError
+			if !errors.As(err, &ns) || ns.Operation != "GetAgentVersion" || ns.Requires != sdkModel || ns.Server != "5.120.0" || len(m.api(t)) != i+1 {
+				t.Fatalf("%s: got %T %v, %d requests", answer, err, err, len(m.api(t)))
+			}
+		}
+		_, err := c.Agent(agent).Draft().Get(context.Background())
+		var ns *caitlyn.NotSupportedByServerError
+		if e := apiError(t, err); errors.As(err, &ns) || e.Status != 404 || e.Code != "NOT_FOUND" {
+			t.Fatalf("NOT_FOUND: got %T %v", err, err)
+		}
+	},
 	"headers.request-id": func(t *testing.T, m mock) {
 		// A result that is not a thing has both as members; a thing has them in its ResponseMetadata
 		c := client(t, m)

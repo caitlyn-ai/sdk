@@ -14,16 +14,27 @@
 # reviewer, since the one approval is on npmjs.com.
 name: release-npm
 
+# A beta tag (v<version>-beta.<n>, made by the GitLab model:main job) does not start it: npm betas are a
+# maintainer's choice, made by running this workflow by hand with that tag (CONTRIBUTING.md, "Betas"). A beta
+# goes to npm's `beta` dist-tag, so `latest` stays the last stable release.
 on:
   push:
     tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The release or beta tag to stage, such as v0.12.0-beta.3'
+        required: true
 
 permissions:
   contents: read
 
 jobs:
   stage:
+    if: github.event_name == 'workflow_dispatch' || !contains(github.ref_name, '-')
     runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     environment: npm
     permissions:
       contents: read
@@ -34,6 +45,8 @@ jobs:
     steps:
       # v7 of both run on Node 24 (v4 ran on the deprecated Node 20).
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
@@ -47,20 +60,20 @@ jobs:
       # lock files, the User-Agent and tracer version). This is the check that decides a release: fail unless every
       # one of them names the tag's version. Nothing is stamped here.
       - name: Check the tag's files carry its version
-        run: node ../scripts/version.mjs check "${GITHUB_REF_NAME#v}"
+        run: node ../scripts/version.mjs check "${TAG#v}"
       - name: Check both packages carry the tag's version
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${TAG#v}"
           for p in packages/sdk-core packages/sdk; do
             actual="$(node -p "require('./$p/package.json').version")"
-            [ "$actual" = "$version" ] || { echo "$p is $actual, the tag is $GITHUB_REF_NAME" >&2; exit 1; }
+            [ "$actual" = "$version" ] || { echo "$p is $actual, the tag is $TAG" >&2; exit 1; }
           done
       - name: Test, build and check the packages
         run: ../scripts/test-typescript.sh
       # sdk-core first: the SDK depends on that exact version.
       - name: Stage @caitlyn-ai/sdk-core
-        run: npm stage publish --provenance --access public
+        run: npm stage publish --provenance --access public --tag "$(case "$TAG" in *-*) echo beta;; *) echo latest;; esac)"
         working-directory: typescript/packages/sdk-core
       - name: Stage @caitlyn-ai/sdk
-        run: npm stage publish --provenance --access public
+        run: npm stage publish --provenance --access public --tag "$(case "$TAG" in *-*) echo beta;; *) echo latest;; esac)"
         working-directory: typescript/packages/sdk

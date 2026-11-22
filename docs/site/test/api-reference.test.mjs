@@ -86,3 +86,16 @@ test('the live site\'s old addresses for a nested namespace\'s operations (under
     assert.equal(api.anchors[`tag/${tagSlug(ns.split('.')[0])}/${method}${route}`], `/api/${kebab(operation.operationId)}/`);
   }
 });
+
+test('every code the server can send has a page at /errors/<code>/: the model\'s, and the routing codes', async () => {
+  const { ROUTING_CODES } = await import('../../../docs/error-codes.mjs');
+  const pages = new Set(reference.pages.filter((p) => p.group === 'errors').map((p) => p.slug));
+  const modelCodes = Object.values(ast.shapes).flatMap((s) => s.traits?.['ai.caitlyn.traits#errorCodes'] ?? []);
+  assert.ok(modelCodes.length > 0);
+  for (const code of [...modelCodes, ...Object.keys(ROUTING_CODES)]) assert.ok(pages.has(`errors/${code}`), `${code} has no page`);
+  // And every link to an error page from a hand-written page names one that exists
+  const docs = path.join(root, 'docs');
+  for (const f of fs.readdirSync(docs).filter((n) => n.endsWith('.md'))) {
+    for (const [, code] of fs.readFileSync(path.join(docs, f), 'utf8').matchAll(/\]\(\/errors\/([A-Z_]+)\/\)/g)) assert.ok(pages.has(`errors/${code}`), `${f} links to /errors/${code}/, which has no page`);
+  }
+});

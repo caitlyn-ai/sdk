@@ -1801,6 +1801,33 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             );
             Ok(())
         }),
+        "since.unknown-operation" => Box::pin(async move {
+            m.faults(json!({"status": {"GetAgentVersion": [
+                {"status": 404, "code": "UNKNOWN_OPERATION"},
+                {"status": 405, "code": "METHOD_NOT_ALLOWED"},
+                {"status": 404, "code": "NOT_FOUND"}
+            ]}}))
+            .await;
+            let c = client(m);
+            for (i, answer) in ["404 UNKNOWN_OPERATION", "405 METHOD_NOT_ALLOWED"].iter().enumerate() {
+                let r = draft(&c).await;
+                let Err(Error::NotSupportedByServer(e)) = &r else {
+                    return Err(format!("{answer}: got {:?}", r.err()));
+                };
+                let n = m.api().await.len();
+                ensure!(
+                    e.operation == "GetAgentVersion" && e.requires == sdk_model() && e.server == "5.120.0" && n == i + 1,
+                    "{answer}: got {e:?}, {n} requests"
+                );
+            }
+            let r = draft(&c).await;
+            ensure!(
+                matches!(&r, Err(e) if !matches!(e, Error::NotSupportedByServer(_)) && e.status() == Some(404) && e.code() == Some("NOT_FOUND")),
+                "NOT_FOUND: got {:?}",
+                r.err()
+            );
+            Ok(())
+        }),
         "headers.request-id" => Box::pin(async move {
             // A named result has them as members; a thing has them in its response metadata (PROTOCOL.md 4.2).
             let c = client(m);

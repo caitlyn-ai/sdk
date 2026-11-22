@@ -44,6 +44,8 @@ import { gzipSync } from 'node:zlib';
 // 0.10.1 raised every entry that makes a call by 400 bytes (37 657 for one operation): the fetch handler's request
 // timeout, the forwarding of the caller's signal removed once a response's body is read, the renewal margin, and the
 // model's new members (CancelIngestionBatchItem, the upload windows); the Caitlyn class by 500 (55 631).
+// The Caitlyn class by 200 more (55 873) for NotSupportedByServer on the server's routing codes (UNKNOWN_OPERATION,
+// METHOD_NOT_ALLOWED).
 const ENTRIES = {
   'client + one operation': {
     budget: 37_800,
@@ -67,7 +69,7 @@ const client = createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', au
 export const ask = async (conversationId, message, onText) => { for await (const e of sendMessage(client, { conversationId, message })) if (e.type === 'text.delta') onText(e.delta); };`,
   },
   'Caitlyn class (every operation)': {
-    budget: 55_800, // grows with every operation the model gains, and with the stream runtime: raise it with the change that needs it
+    budget: 56_000, // grows with every operation the model gains, and with the stream runtime: raise it with the change that needs it
     code: `import { Caitlyn } from '@caitlyn-ai/sdk';
 export const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 't' } });`,
   },

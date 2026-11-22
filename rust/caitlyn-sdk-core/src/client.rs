@@ -446,6 +446,19 @@ impl Client {
                         self.inner.auth.invalidate(sent_token.as_deref()).await;
                         continue;
                     }
+                    // An operation the server does not have (PROTOCOL.md 9): its routing answers 404 UNKNOWN_OPERATION
+                    // or 405 METHOD_NOT_ALLOWED, even before this client has seen the server's version. Never retried.
+                    // A 405 without that code (a proxy's) stays the generic error.
+                    if (e.status == 405 && e.code == "METHOD_NOT_ALLOWED") || (e.status == 404 && e.code == "UNKNOWN_OPERATION") {
+                        let unsupported = Error::NotSupportedByServer(NotSupportedByServer {
+                            operation: op.name.to_owned(),
+                            member: None,
+                            requires: op.since.unwrap_or("unknown").to_owned(),
+                            server: self.server_version().unwrap_or_else(|| "unknown".to_owned()),
+                        });
+                        crate::telemetry::record_failure(&span, &unsupported, self.inner.sdk.error_shapes);
+                        return Err(unsupported);
+                    }
                 }
                 // The budget pays for the retry, or the call fails at once with this attempt's error.
                 let cost = match err {

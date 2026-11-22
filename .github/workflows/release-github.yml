@@ -90,11 +90,14 @@ jobs:
             | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
           latest=false
           [ "$TAG" = "$highest" ] && latest=true
+          # A beta (v<version>-beta.<n>) is marked a pre-release and is never the latest.
+          prerelease=false
+          case "$TAG" in *-*) prerelease=true;; esac
           echo "$TAG; the highest tag is $highest, so latest=$latest."
           if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release edit "$TAG" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" --latest="$latest"
+            gh release edit "$TAG" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" --latest="$latest" --prerelease="$prerelease"
             echo "Updated the release $TAG."
           else
-            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" --latest="$latest"
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" --latest="$latest" --prerelease="$prerelease"
             echo "Created the release $TAG."
           fi

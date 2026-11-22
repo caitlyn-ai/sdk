@@ -73,8 +73,10 @@ class StreamLostError(CaitlynError):
 
 
 class NotSupportedByServer(Exception):
-    """The operation, or a member that was set, is newer than the server's Caitlyn-Api-Version.
-    Raised before anything is sent."""
+    """The operation, or a member that was set, is newer than the server's Caitlyn-Api-Version (raised before anything
+    is sent), or the server answered that it has no such operation: a 404 ``UNKNOWN_OPERATION`` or a 405
+    ``METHOD_NOT_ALLOWED`` (raised from that answer, which is ``__cause__``). ``requires`` is ``unknown`` for an
+    operation with no ``@since``, and ``server`` is ``unknown`` when no response has said it."""
 
     def __init__(self, operation: str, requires: str, server: str) -> None:
         super().__init__(f"{operation} requires Caitlyn {requires}; the server is {server}")

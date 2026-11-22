@@ -11,8 +11,6 @@
 #   model:version-check    Is the snapshot the latest published model? A warning on merge requests when not.
 #   model:snapshot-only    Merge requests: fails when model/ changes without model/model.lock.json, that is, when the
 #                          snapshot was edited here instead of pulled from the app's smithy/ (CONTRIBUTING.md).
-#   regenerate             An app release that publishes a model triggers this project (multi-project pipeline);
-#                          it pulls the model, regenerates, tests, and opens a merge request.
 #   docs:*                 Developer docs build, merge request previews, publishing to build.caitlyn.ai and to
 #                          the ask.caitlyn.ai knowledge base. Off until DOCS_ENABLED is "true" (docs/README.md).
 #   fetch-semantic-version On main: the version the next release would have (VERSION.txt), from the shared
@@ -25,13 +23,16 @@
 #                          release job's Go tag failed.
 #   release:*              A placeholder for the Homebrew release, and pointers to the GitHub workflows for npm, PyPI
 #                          and crates.io. Off until RELEASES_ENABLED is "true".
+#   model:main             Triggered by a merge to the app's main that changes its model: builds that model, regenerates
+#                          every SDK, and only once all four conformance suites pass commits it to main with a beta tag
+#                          (scripts/model-main.sh); the tag publishes the Python, Rust and Go betas.
 #
 # CI variables this file reads (set on the project, never in this file):
 #   DOCS_ENABLED, DOCS_PUBLISH_ROLE_ARN (protected), DOCS_PREVIEW_ROLE_ARN, DOCS_DISTRIBUTION_ID (protected),
-#   ASK_CAITLYN_CLIENT_ID and ASK_CAITLYN_CLIENT_SECRET (masked, protected), SDK_BOT_TOKEN (masked, protected),
+#   ASK_CAITLYN_CLIENT_ID and ASK_CAITLYN_CLIENT_SECRET (masked, protected),
 #   GITLAB_TOKEN (masked, protected: a project access token with the Maintainer role, which may create the
 #   protected v* and go/v* tags, and the api and write_repository scopes; semantic-release, scripts/go-tag.mjs and
-#   release:go use it), RELEASES_ENABLED, GO_TAG (release:go only).
+#   release:go and model:main use it), RELEASES_ENABLED, GO_TAG (release:go only).
 
 include:
   # fetch-semantic-version and release: semantic-release in the shared image, as the app repository runs it.
@@ -46,7 +47,7 @@ workflow:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_MESSAGE =~ /^chore\(release\): /'
       when: never
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_PIPELINE_SOURCE == "pipeline" # triggered by an app release (regenerate)
+    - if: $CI_PIPELINE_SOURCE == "pipeline" # triggered by an app merge to main (model:main)
     - if: $CI_PIPELINE_SOURCE == "schedule"
     - if: $CI_PIPELINE_SOURCE == "web"
     - if: $CI_PIPELINE_SOURCE == "api" # a pipeline started through the API, such as examples:live (below)
@@ -267,38 +268,29 @@ model:version-check:
   # doesn't exist yet.
   script:
     - scripts/model-check.sh
-  # Exit 2 means "behind, unpublished, or nothing published yet": a warning, not a failure.
+  # Exit 2 means "behind, or an unpublished snapshot": a warning, not a failure. Nothing published yet passes.
   allow_failure:
     exit_codes: [2]
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_PIPELINE_SOURCE == "schedule"
 
-# Triggered by the app's publish:smithy-model job after a release (CONTRIBUTING.md has the app's trigger job):
-#   trigger: { project: custom-d/caitlyn/sdk, branch: main }, optionally with MODEL_VERSION: <release>
-# Pulls that model, regenerates, runs every suite, then pushes branch model/<version> and opens a merge
-# request. Needs SDK_BOT_TOKEN: a project access token (Developer, write_repository and api) for the push and
-# the merge request API.
-regenerate:
+# Triggered by the app's main pipeline after a merge that changes smithy/, with APP_COMMIT (CONTRIBUTING.md, "How a
+# model change reaches the SDK"). Commits straight to main, and tags a beta, only once every suite passes. One at a
+# time, and never cancelled part way through a push.
+model:main:
   extends: .toolchain
   stage: generate
   needs: []
+  interruptible: false
+  resource_group: model-main
   variables:
-    MODEL_VERSION: 'latest'
+    GIT_DEPTH: '0'
   script:
-    - scripts/model-pull.sh "$MODEL_VERSION"
-    - |
-      if git diff --quiet -- model; then
-        echo "The snapshot is already ${MODEL_VERSION}; nothing to regenerate."
-        exit 0
-      fi
-    - scripts/generate.sh
-    - scripts/test-typescript.sh && scripts/test-python.sh && scripts/test-go.sh && scripts/test-rust.sh && node scripts/check-conformance.mjs
-    - scripts/open-model-mr.sh
+    - scripts/model-main.sh
   rules:
-    - if: $CI_PIPELINE_SOURCE == "pipeline"
-    - if: $CI_PIPELINE_SOURCE == "schedule" && $REGENERATE == "true"
-    - if: $CI_PIPELINE_SOURCE == "web" && $REGENERATE == "true"
+    - if: $CI_PIPELINE_SOURCE == "pipeline" && $APP_COMMIT
+    - if: $CI_PIPELINE_SOURCE == "web" && $APP_COMMIT
 
 # ---------------------------------------------------------------------------- developer docs
 
@@ -487,9 +479,9 @@ release:
   rules:
     - if: $SEMVER_DISABLED || $SEMVER_TEST_DISABLED || $CI_DEPLOY_FREEZE
       when: never
-    - if: $SEMVER_MANUAL_RELEASE == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: manual
+    # A stable release is a person's decision: run it by hand from a main pipeline. Betas are automatic (model:main).
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
   variables:
     SEMANTIC_RELEASE_PACKAGE: 'Caitlyn SDKs'
 

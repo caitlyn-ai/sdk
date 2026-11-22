@@ -188,124 +188,70 @@ request pipeline, fails when a file under `model/` changes and `model/model.lock
 says where to make the change. `make model-snapshot-check` runs the same check locally against `origin/main`, and
 `make check` includes it.
 
-To change the protocol or the model: change `smithy/` in the app repository, then pull it here with
-`scripts/model-pull.sh <version>`, or `scripts/model-pull.sh --from-build <app checkout>/smithy` for an unpublished
-build, run `make generate`, and commit the snapshot, the lock file and the generated code together.
+To change the protocol or the model: change `smithy/` in the app repository. When that change merges to the app's
+`main`, the `model:main` job here brings it in (below); nobody pulls a model into `main` by hand.
 
-## How the model version flows in
+`scripts/model-pull.sh --prerelease <app checkout>/smithy` takes an app build, and stamps `@since("next")` as the app
+version that build's server reports in `Caitlyn-Api-Version` (its `package.json` version, without a suffix). So the
+SDK's version check (PROTOCOL.md section 9) passes on that app build's own server and refuses, sending nothing, on an
+older one. The lock records `"prerelease": {"appVersion", "appCommit"}`. `--from-build` copies the same files but
+keeps the previous lock's `stampNext` unless `STAMP_NEXT` is set. A published model never contains `"next"`.
+
+## How a model change reaches the SDK
+
+The model belongs to the app repository; the generator, the runtimes and the docs belong to this one.
 
 ```
-app repository (custom-d/caitlyn/platform/caitlyn)
-  smithy/ model  ──release──>  package registry: caitlyn-v3-model/<version>/ and /latest/
-                                      │
-                                      │  publish:smithy-model triggers this project
-                                      ▼
-this repository: regenerate job
-  scripts/model-pull.sh latest → make generate → every suite → scripts/open-model-mr.sh
-  → merge request "feat(model): regenerate the SDKs from model <version>"
+app repository: a merge to main that changes smithy/
+  │  triggers this project with APP_COMMIT
+  ▼
+this repository: model:main (scripts/model-main.sh)
+  build the app's model at APP_COMMIT → model-pull.sh --prerelease → make generate
+  → the TypeScript, Python, Go and Rust suites and the conformance check
+  → only if every one passes: commit to main, tag v<next>-beta.<n>
+  ▼
+the beta tag: PyPI and crates.io from the GitHub mirror, and go/v<next>-beta.<n> for Go
 ```
 
-- **By hand**: `scripts/model-pull.sh 5.121.0` (or `latest`), then `make generate`, then commit. Locally the
-  script needs `GITLAB_TOKEN`, a personal access token with `read_api`. For an unpublished model,
-  `scripts/model-pull.sh --from-build <app checkout>/smithy` takes a local `make smithy` build instead.
-- **The check**: `scripts/model-check.sh` (`make model-check`, and the `model:version-check` job on merge
-  requests) compares the snapshot's SHA-256 with `caitlyn-v3-model/latest/model.json`. Behind, unpublished or
-  nothing published is a warning, not a failure.
-- **Automatically**: the app's `publish:smithy-model` job triggers this project after each release. That
-  trigger is not in the app repository yet; it is one job in `smithy.gitlab-ci.yml`:
+- **No merge request.** The commit goes straight to `main` because it is generated from a model the app has
+  already merged, and it is pushed only once every suite has passed on it. `model:main` runs one at a time
+  (`resource_group`), starts from the newest `main`, and does nothing when `main` already has that model.
+- **The version.** `<next>` is the minor version after the last stable tag; `<n>` counts that version's betas. The
+  commit stamps the beta's version into every file that carries one, so `main` always names the newest beta.
+- **A change to the SDK's own code** (the generator, a runtime, conformance cases, docs) goes through a merge
+  request as usual.
+- **The app does not use a published SDK.** It pins a commit of this repository in its `sdk.ref` and builds the
+  TypeScript SDK from its own model (the app's internal v3 SDK article). An app merge request that needs an SDK
+  change sets `sdk.ref` to the commit at the head of that SDK merge request's branch; once the SDK merge request
+  merges, the app sets `sdk.ref` to a commit on `main` before it merges too.
+
+Setting it up, once:
+
+- the app's `main` pipeline needs a job that triggers this project when `smithy/` changes:
 
   ```yaml
-  trigger:sdk-regenerate:
+  trigger:sdk:
     stage: release
-    needs: [publish:smithy-model]
     trigger:
       project: custom-d/caitlyn/sdk
       branch: main
+    variables:
+      APP_COMMIT: $CI_COMMIT_SHA
     rules:
-      - if: $CI_DEFAULT_BRANCH == $CI_COMMIT_BRANCH
+      - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+        changes: [smithy/**/*]
   ```
 
-  The regenerate job pulls `latest` unless the trigger passes `MODEL_VERSION`. (Passing the release number
-  needs `publish:smithy-model` to write it to a dotenv report, because a trigger job cannot read
-  `VERSION.txt`.) Every app release publishes the model, changed or not; the regenerate job stops early when
-  the pulled model is the snapshot already.
+- the app project must allow this project's job token to read its repository (app project, Settings, CI/CD, Job
+  token permissions);
+- `GITLAB_TOKEN` (under "Releasing") pushes the commit and the tag, so the bot must be allowed to push to `main`.
 
-Reading the app's registry from this project's CI needs the app project to allow this project's job token
-(app project, Settings, CI/CD, Job token permissions). The regenerate job pushes with `SDK_BOT_TOKEN`, a
-project access token with `write_repository` and `api`.
-
-## Versions
-
-The SDKs send `Caitlyn-Sdk-Model`, the highest `@since` in the model they were generated from, and refuse,
-before sending, an operation or member newer than the server's `Caitlyn-Api-Version` (PROTOCOL.md section 9).
-
-Every SDK shares one version. On `main`, the top-level `VERSION` file holds `0.0.0`, the version of every build
-that is not a release, and nobody edits it. Each release commit (below) stamps the real version, and the release's
-tag points at that commit. `make generate` stamps `VERSION`'s version everywhere it appears (`scripts/version.mjs`
-lists each place):
-
-- TypeScript: both `package.json` files, the SDK's dependency on `sdk-core`, `typescript/package-lock.json`, the
-  `User-Agent` and the OpenTelemetry tracer version;
-- Python: both `pyproject.toml` files, the `caitlyn-core==` pin, both `__version__` values (the `User-Agent` and the
-  tracer version) and `python/uv.lock`;
-- Go: `SDKVersion` (the `User-Agent` and the tracer's instrumentation version). Go module versions are git tags;
-- Rust: both crates, the generated crate's dependency on `caitlyn-sdk-core`, `SDK_VERSION` (the `User-Agent`) and
-  both `Cargo.lock` files.
-
-Generation fails when any of them disagrees with `VERSION`, and the `generate` CI job fails when the committed
-files differ from what generation writes. Each conformance harness checks its `User-Agent` against `VERSION`.
-
-A release stamps its version with Node only, no generators:
-
-```bash
-node scripts/version.mjs release 0.1.1   # VERSION and every file above at 0.1.1, then checked
-node scripts/version.mjs check 0.1.1     # fails unless every one of them names 0.1.1
-node scripts/version.mjs files           # the stamped files, which the release commit carries
-```
-
-`release` writes the version in exactly the places generation does, so the result is what `make generate` at that
-version would commit.
-
-**Installed from git**, an SDK reports the version of the commit it was built from. A release tag's tree is its
-release commit, so every SDK installed from a tag reports that version: Go (`go get
-github.com/caitlyn-ai/sdk/go@v0.1.1`, which resolves the tag `go/v0.1.1` on the same commit), Python
-(`pip install "git+…@v0.1.1#subdirectory=python/caitlyn"`, with `caitlyn-core` from the same tag, since `caitlyn`
-pins `caitlyn-core==0.1.1`) and Rust (a `git` dependency with `tag = "v0.1.1"`). Installed from a branch or another
-commit, they report 0.0.0, except Go, which reads the module version Go records in the binary
-(`core.ModuleVersion`) and falls back to `SDKVersion`.
-
-**Which pipeline tests what.** Merge request and `main` pipelines generate and test every SDK at 0.0.0. The release
-commit runs no `main` pipeline (a workflow rule skips `chore(release):` commits on `main`), because it only changes
-the stamped version. Its tag's pipeline runs `release:version`, which checks that the tag's files carry the tag's
-version, and GitHub's `release-npm` checks the same before it tests, builds and stages the packages at that version.
-
-## How a version is chosen
-
-semantic-release (`.releaserc.yml`, run by the `release` CI job from the shared
-`custom-d/devops-platform/ci-templates/semantic-versioning` template, as in the app repository) runs on every
-`main` pipeline whose conformance passed. From the conventional commits since the last `v*` tag it works out the
-next version:
-
-| Commit | Release |
-| --- | --- |
-| `feat` | minor (0.1.0 → 0.2.0) |
-| `fix`, `perf`, `revert` | patch (0.1.0 → 0.1.1) |
-| a breaking change (`feat!:`, or a `BREAKING CHANGE:` footer) | minor while the version is below 1.0; going to 1.0 is a decision, made by removing that rule in `.releaserc.yml` |
-| `docs`, `ci`, `chore`, `test`, `refactor`, `style`, `build` | none |
-
-Merge requests are squashed, and the squash commit message is the merge request's title alone, so the title is what
-semantic-release reads. Mark a breaking change in the title, `feat(typescript)!: …`: a `BREAKING CHANGE:` footer in a
-commit body is lost in the squash. `.releaserc.yml` teaches the release image's parser to read the `!`.
-
-So the commit type is what releases: a commit that changes what an SDK does is `feat` or `fix`, and one that
-changes only the pipeline, the docs or the tests is not. The release commit is `chore(release): x.y.z`, with no
-release notes in its message, so it can never start another release. The `fetch-semantic-version` job shows on
-`main` what the next version would be (`VERSION.txt`).
+To run it by hand for an app commit: Build → Pipelines → Run pipeline on `main` with `APP_COMMIT` set.
 
 ## Releasing
 
-**Never tag by hand, and never edit `VERSION`.** Merge to `main`; when its commits call for a release, the pipeline
-cuts it, in the order the app repository's pipeline does:
+**Never tag by hand, and never edit `VERSION`.** A stable release is a person's decision: start the manual
+`release` job on a `main` pipeline, and it cuts the release in the order the app repository's pipeline does:
 
 1. `fetch-semantic-version` (a semantic-release dry run) writes the next version to `VERSION.txt`.
 2. `stamp-version` stamps it into every SDK file (`scripts/version.mjs release`), as artifacts.
@@ -363,6 +309,23 @@ the **Maintainer** role and the `api` and `write_repository` scopes. Two protect
 
 The token expires: replace it before then, or releases stop with "HTTP Basic: Access denied" (the template's
 README, https://git.customd.com/custom-d/devops-platform/ci-templates/semantic-versioning).
+
+### Betas
+
+`model:main` tags a beta, `v<next>-beta.<n>`, with each model change it commits ("How a model change reaches the
+SDK"). A beta tag publishes, with no one involved:
+
+- **Python**: `caitlyn-core` and `caitlyn` to PyPI as `<next>b<n>` (PEP 440's spelling), which `pip` installs only
+  when asked for a pre-release;
+- **Rust**: the crates to crates.io as `<next>-beta.<n>`, which Cargo picks only when asked for exactly;
+- **Go**: the tag `go/v<next>-beta.<n>`, which `go get …@latest` passes over;
+- **GitHub**: a release marked as a pre-release.
+
+npm is not automatic. To put a beta on npm, run `release-npm` by hand on the GitHub mirror (Actions → release-npm
+→ Run workflow) with the beta's tag; it stages both packages under the `beta` dist-tag, for a maintainer to approve
+on npmjs.com with two-factor authentication, and `latest` stays the last stable release.
+
+A stable release is the manual `release` job on a `main` pipeline (above).
 
 ### npm
 
