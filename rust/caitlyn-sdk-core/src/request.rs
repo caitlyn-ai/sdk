@@ -31,6 +31,8 @@ pub struct Operation {
     pub if_match_required: bool,
     /// Statuses of the modelled `@retryable` errors.
     pub retryable: &'static [u16],
+    /// The `@range` rules the request carries, checked before sending (PROTOCOL.md 3).
+    pub ranges: &'static [crate::ranges::Range],
 }
 
 /// A member the caller set that carries `@since`, for the version check.

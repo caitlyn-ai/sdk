@@ -48,6 +48,13 @@ final class ServiceGenerator {
     private final GenerationContext ctx;
     private final ServiceShape service;
     private final Model model;
+    private final software.amazon.smithy.model.shapes.ShapeId serviceId;
+    private Map<String, List<ai.caitlyn.codegen.model.Ranges.Rule>> ranges;
+
+    private Map<String, List<ai.caitlyn.codegen.model.Ranges.Rule>> ranges() {
+        if (ranges == null) ranges = ai.caitlyn.codegen.model.Ranges.of(model, serviceId);
+        return ranges;
+    }
     private final PythonSettings settings;
     private final ModelFacts facts;
     private final software.amazon.smithy.codegen.core.SymbolProvider symbols;
@@ -62,6 +69,7 @@ final class ServiceGenerator {
         this.ctx = ctx;
         this.service = service;
         this.model = ctx.model();
+        this.serviceId = ctx.settings().service();
         this.settings = ctx.settings();
         this.facts = ctx.facts();
         this.symbols = ctx.symbolProvider();
@@ -194,6 +202,13 @@ final class ServiceGenerator {
         w.write("errors={$L},", errors.entrySet().stream().map(e -> e.getKey() + ": " + e.getValue()).collect(Collectors.joining(", ")));
         w.write("retry_safe=$L,", o.retrySafe ? "True" : "False");
         o.since.ifPresent(v -> w.write("since=$L,", Names.pyString(v)));
+        // The @range rules the request carries (PROTOCOL.md 3), checked before sending
+        List<ai.caitlyn.codegen.model.Ranges.Rule> rules = ranges().getOrDefault(o.op.getId().getName(), List.of());
+        if (!rules.isEmpty()) {
+            w.write("ranges=($L,),", rules.stream().map(r -> "(" + Names.pyString(r.where()) + ", " + Names.pyString(r.path()) + ", "
+                + r.min().map(ai.caitlyn.codegen.model.Ranges::number).orElse("None") + ", "
+                + r.max().map(ai.caitlyn.codegen.model.Ranges::number).orElse("None") + ")").collect(Collectors.joining(", ")));
+        }
         w.write("stability=$L,", Names.pyString(o.stability));
         if (o.kind == OperationInfo.Kind.STREAM) {
             w.write("streaming=True,");

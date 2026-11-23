@@ -104,7 +104,10 @@ var opListIngestionBatchItems = &core.Operation{
 	Since:     "5.115.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
-	Errors:    errorForStatus,
+	Ranges: []core.Range{
+		{Where: "query", Path: "limit", Min: core.Bound(1), Max: core.Bound(1000)},
+	},
+	Errors: errorForStatus,
 }
 
 func buildListIngestionBatchItems(in *listIngestionBatchItemsParams) (*core.Request, error) {

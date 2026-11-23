@@ -48,6 +48,12 @@ static OP_BATCH_CREATE_INGESTION_BATCH_ITEMS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "body",
+        path: "/items/*/byteSize",
+        min: Some(1.0),
+        max: None,
+    }],
 };
 
 fn build_batch_create_ingestion_batch_items(input: &BatchCreateIngestionBatchItemsInput) -> Result<rt::Request, rt::Error> {
@@ -192,6 +198,7 @@ static OP_BATCH_DELETE_DOCUMENTS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_batch_delete_documents(input: &BatchDeleteDocumentsInput) -> Result<rt::Request, rt::Error> {
@@ -321,6 +328,7 @@ static OP_CANCEL_DOCUMENT_PROCESSING: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_cancel_document_processing(input: &CancelDocumentProcessingInput) -> Result<rt::Request, rt::Error> {
@@ -509,6 +517,7 @@ static OP_CANCEL_INGESTION_BATCH: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_cancel_ingestion_batch(input: &CancelIngestionBatchInput) -> Result<rt::Request, rt::Error> {
@@ -714,6 +723,7 @@ static OP_CANCEL_INGESTION_BATCH_ITEM: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_cancel_ingestion_batch_item(input: &CancelIngestionBatchItemInput) -> Result<rt::Request, rt::Error> {
@@ -863,6 +873,7 @@ static OP_CANCEL_OPERATION: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_cancel_operation(input: &CancelOperationInput) -> Result<rt::Request, rt::Error> {
@@ -999,6 +1010,7 @@ static OP_COMPARE_AGENT_VERSIONS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_compare_agent_versions(input: &CompareAgentVersionsInput) -> Result<rt::Request, rt::Error> {
@@ -1139,6 +1151,7 @@ static OP_COMPLETE_INGESTION_BATCH_UPLOADS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_complete_ingestion_batch_uploads(input: &CompleteIngestionBatchUploadsInput) -> Result<rt::Request, rt::Error> {
@@ -1281,6 +1294,338 @@ static OP_CREATE_AGENT: rt::Operation = rt::Operation {
     idempotency_header: Some("Idempotency-Key"),
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/answer/temperature",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/answer/topP",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/answer/topK",
+            min: Some(0.0),
+            max: Some(250.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/answer/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(16384.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/answer/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/answer/maxContinuations",
+            min: Some(0.0),
+            max: Some(5.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/planning/temperature",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/planning/topP",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/planning/topK",
+            min: Some(0.0),
+            max: Some(250.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/planning/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(16384.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/planning/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/summary/temperature",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/summary/topP",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/summary/topK",
+            min: Some(0.0),
+            max: Some(250.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/summary/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(16384.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/summary/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/classification/temperature",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/classification/topP",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/classification/topK",
+            min: Some(0.0),
+            max: Some(250.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/classification/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(16384.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/classification/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/searchTopics/temperature",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/searchTopics/topP",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/searchTopics/topK",
+            min: Some(0.0),
+            max: Some(250.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/searchTopics/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(16384.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/searchTopics/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/title/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(512.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/models/title/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/knowledgeBases/*/maxQueries",
+            min: Some(1.0),
+            max: Some(20.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/knowledgeBases/*/numberOfResults",
+            min: Some(1.0),
+            max: Some(50.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/knowledgeBases/*/minimumScore",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/knowledgeBases/*/minimumRelevance",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/knowledgeBases/*/evaluation/maxSearchResults",
+            min: Some(1.0),
+            max: Some(100.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/knowledgeBases/*/evaluation/maxResults",
+            min: Some(1.0),
+            max: Some(100.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/knowledgeBases/*/evaluation/judge/temperature",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/knowledgeBases/*/evaluation/judge/topP",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/knowledgeBases/*/evaluation/judge/topK",
+            min: Some(0.0),
+            max: Some(250.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/knowledgeBases/*/evaluation/judge/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(16384.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/knowledgeBases/*/evaluation/judge/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/workflow/phases/*/maxSteps",
+            min: Some(1.0),
+            max: Some(50.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/workflow/phases/*/toolCallChecks/maxRetries",
+            min: Some(0.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/workflow/phases/*/attributionChecks/maxRetries",
+            min: Some(0.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/workflow/phases/*/fields/*/maxByteSize",
+            min: Some(1.0),
+            max: None,
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/answers/mediaEmbeds/reservedResults",
+            min: Some(0.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/attachments/maxFiles",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/attachments/maxByteSize",
+            min: Some(102400.0),
+            max: Some(10485760.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/memory/minimumRelevance",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/memory/maxResults",
+            min: Some(1.0),
+            max: Some(100.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/liveAvatar/holdingPhrases/intervalMs",
+            min: Some(1000.0),
+            max: Some(60000.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/liveAvatar/holdingPhrases/skipChance",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/liveAvatar/inactivityTimeoutMs",
+            min: Some(0.0),
+            max: None,
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/liveAvatar/voiceTuning/speed",
+            min: Some(0.8),
+            max: Some(1.2),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/liveAvatar/voiceTuning/stability",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/liveAvatar/voiceTuning/style",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/configuration/liveAvatar/pauseAndResume/pausedTimeoutMs",
+            min: Some(60000.0),
+            max: Some(3600000.0),
+        },
+    ],
 };
 
 fn build_create_agent(input: &CreateAgentInput) -> Result<rt::Request, rt::Error> {
@@ -1449,6 +1794,7 @@ static OP_CREATE_CONVERSATION: rt::Operation = rt::Operation {
     idempotency_header: Some("Idempotency-Key"),
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_create_conversation(input: &CreateConversationInput) -> Result<rt::Request, rt::Error> {
@@ -1630,6 +1976,7 @@ static OP_CREATE_DOCUMENT: rt::Operation = rt::Operation {
     idempotency_header: Some("Idempotency-Key"),
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_create_document(input: &CreateDocumentInput) -> Result<rt::Request, rt::Error> {
@@ -1865,6 +2212,7 @@ static OP_CREATE_DOCUMENT_VERSION: rt::Operation = rt::Operation {
     idempotency_header: Some("Idempotency-Key"),
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_create_document_version(input: &CreateDocumentVersionInput) -> Result<rt::Request, rt::Error> {
@@ -2133,6 +2481,7 @@ static OP_CREATE_FIELD: rt::Operation = rt::Operation {
     idempotency_header: Some("Idempotency-Key"),
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_create_field(input: &CreateFieldInput) -> Result<rt::Request, rt::Error> {
@@ -2311,6 +2660,7 @@ static OP_CREATE_FOLDER: rt::Operation = rt::Operation {
     idempotency_header: Some("Idempotency-Key"),
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_create_folder(input: &CreateFolderInput) -> Result<rt::Request, rt::Error> {
@@ -2479,6 +2829,20 @@ static OP_CREATE_INGESTION_BATCH: rt::Operation = rt::Operation {
     idempotency_header: Some("Idempotency-Key"),
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[
+        rt::Range {
+            place: "body",
+            path: "/items/*/byteSize",
+            min: Some(1.0),
+            max: None,
+        },
+        rt::Range {
+            place: "body",
+            path: "/uploadWindowSeconds",
+            min: Some(60.0),
+            max: Some(3600.0),
+        },
+    ],
 };
 
 fn build_create_ingestion_batch(input: &CreateIngestionBatchInput) -> Result<rt::Request, rt::Error> {
@@ -2670,6 +3034,7 @@ static OP_CREATE_INGESTION_BATCH_UPLOAD_POLICY: rt::Operation = rt::Operation {
     idempotency_header: Some("Idempotency-Key"),
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_create_ingestion_batch_upload_policy(input: &CreateIngestionBatchUploadPolicyInput) -> Result<rt::Request, rt::Error> {
@@ -2822,6 +3187,32 @@ static OP_CREATE_KNOWLEDGE_BASE: rt::Operation = rt::Operation {
     idempotency_header: Some("Idempotency-Key"),
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[
+        rt::Range {
+            place: "body",
+            path: "/retrieval/resultsPerSearch",
+            min: Some(1.0),
+            max: Some(50.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/retrieval/minimumMatch",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/retrieval/minimumRelevance",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/features/nearbyPassages/count",
+            min: Some(0.0),
+            max: Some(2.0),
+        },
+    ],
 };
 
 fn build_create_knowledge_base(input: &CreateKnowledgeBaseInput) -> Result<rt::Request, rt::Error> {
@@ -2998,6 +3389,20 @@ static OP_CREATE_UPLOAD: rt::Operation = rt::Operation {
     idempotency_header: Some("Idempotency-Key"),
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[
+        rt::Range {
+            place: "body",
+            path: "/byteSize",
+            min: Some(1.0),
+            max: None,
+        },
+        rt::Range {
+            place: "body",
+            path: "/expiresInSeconds",
+            min: Some(60.0),
+            max: Some(3600.0),
+        },
+    ],
 };
 
 fn build_create_upload(input: &CreateUploadInput) -> Result<rt::Request, rt::Error> {
@@ -3129,6 +3534,7 @@ static OP_DELETE_AGENT: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_delete_agent(input: &DeleteAgentInput) -> Result<rt::Request, rt::Error> {
@@ -3250,6 +3656,7 @@ static OP_DELETE_AGENT_VERSION: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_delete_agent_version(input: &DeleteAgentVersionInput) -> Result<rt::Request, rt::Error> {
@@ -3385,6 +3792,7 @@ static OP_DELETE_DOCUMENT: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_delete_document(input: &DeleteDocumentInput) -> Result<rt::Request, rt::Error> {
@@ -3554,6 +3962,7 @@ static OP_DELETE_DOCUMENT_VERSION: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_delete_document_version(input: &DeleteDocumentVersionInput) -> Result<rt::Request, rt::Error> {
@@ -3698,6 +4107,7 @@ static OP_DELETE_FIELD: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_delete_field(input: &DeleteFieldInput) -> Result<rt::Request, rt::Error> {
@@ -3833,6 +4243,7 @@ static OP_DELETE_FOLDER: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_delete_folder(input: &DeleteFolderInput) -> Result<rt::Request, rt::Error> {
@@ -4002,6 +4413,7 @@ static OP_DELETE_KNOWLEDGE_BASE: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_delete_knowledge_base(input: &DeleteKnowledgeBaseInput) -> Result<rt::Request, rt::Error> {
@@ -4157,6 +4569,7 @@ static OP_ENABLE_LAYOUT_AWARE_SEARCH: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_enable_layout_aware_search(input: &EnableLayoutAwareSearchInput) -> Result<rt::Request, rt::Error> {
@@ -4349,6 +4762,56 @@ static OP_ESTIMATE_DOCUMENT_VERSION: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[
+        rt::Range {
+            place: "body",
+            path: "/file/byteSize",
+            min: Some(1.0),
+            max: None,
+        },
+        rt::Range {
+            place: "body",
+            path: "/file/hints/pages",
+            min: Some(0.0),
+            max: Some(1000000.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/file/hints/textPages",
+            min: Some(0.0),
+            max: Some(1000000.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/file/hints/graphicPages",
+            min: Some(0.0),
+            max: Some(1000000.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/file/hints/scannedPages",
+            min: Some(0.0),
+            max: Some(1000000.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/file/hints/pictures",
+            min: Some(0.0),
+            max: Some(10000000.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/file/hints/mediaSeconds",
+            min: Some(0.0),
+            max: Some(10000000.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/file/hints/characters",
+            min: Some(0.0),
+            max: Some(1000000000.0),
+        },
+    ],
 };
 
 fn build_estimate_document_version(input: &EstimateDocumentVersionInput) -> Result<rt::Request, rt::Error> {
@@ -4510,6 +4973,7 @@ static OP_ESTIMATE_FILL_IN_FIELDS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_estimate_fill_in_fields(input: &EstimateFillInFieldsInput) -> Result<rt::Request, rt::Error> {
@@ -4637,6 +5101,56 @@ static OP_ESTIMATE_INGESTION: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[
+        rt::Range {
+            place: "body",
+            path: "/documents/*/byteSize",
+            min: Some(1.0),
+            max: None,
+        },
+        rt::Range {
+            place: "body",
+            path: "/documents/*/hints/pages",
+            min: Some(0.0),
+            max: Some(1000000.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/documents/*/hints/textPages",
+            min: Some(0.0),
+            max: Some(1000000.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/documents/*/hints/graphicPages",
+            min: Some(0.0),
+            max: Some(1000000.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/documents/*/hints/scannedPages",
+            min: Some(0.0),
+            max: Some(1000000.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/documents/*/hints/pictures",
+            min: Some(0.0),
+            max: Some(10000000.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/documents/*/hints/mediaSeconds",
+            min: Some(0.0),
+            max: Some(10000000.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/documents/*/hints/characters",
+            min: Some(0.0),
+            max: Some(1000000000.0),
+        },
+    ],
 };
 
 fn build_estimate_ingestion(input: &EstimateIngestionInput) -> Result<rt::Request, rt::Error> {
@@ -4781,6 +5295,7 @@ static OP_ESTIMATE_LAYOUT_AWARE_SEARCH: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_estimate_layout_aware_search(input: &EstimateLayoutAwareSearchInput) -> Result<rt::Request, rt::Error> {
@@ -4910,6 +5425,7 @@ static OP_ESTIMATE_REPROCESS_DOCUMENTS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_estimate_reprocess_documents(input: &EstimateReprocessDocumentsInput) -> Result<rt::Request, rt::Error> {
@@ -5050,6 +5566,7 @@ static OP_FILL_IN_FIELDS: rt::Operation = rt::Operation {
     idempotency_header: Some("Idempotency-Key"),
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_fill_in_fields(input: &FillInFieldsInput) -> Result<rt::Request, rt::Error> {
@@ -5238,6 +5755,7 @@ static OP_GET_ACCESS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_get_access(input: &GetAccessInput) -> Result<rt::Request, rt::Error> {
@@ -5366,6 +5884,7 @@ static OP_GET_AGENT: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_get_agent(input: &GetAgentInput) -> Result<rt::Request, rt::Error> {
@@ -5485,6 +6004,7 @@ static OP_GET_AGENT_VERSION: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_get_agent_version(input: &GetAgentVersionInput) -> Result<rt::Request, rt::Error> {
@@ -5608,6 +6128,7 @@ static OP_GET_CALLER: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_get_caller(input: &GetCallerInput) -> Result<rt::Request, rt::Error> {
@@ -5718,6 +6239,7 @@ static OP_GET_CONVERSATION: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_get_conversation(input: &GetConversationInput) -> Result<rt::Request, rt::Error> {
@@ -5834,6 +6356,7 @@ static OP_GET_DOCUMENT: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_get_document(input: &GetDocumentInput) -> Result<rt::Request, rt::Error> {
@@ -5972,6 +6495,7 @@ static OP_GET_DOCUMENT_CONTENT: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_get_document_content(input: &GetDocumentContentInput) -> Result<rt::Request, rt::Error> {
@@ -6123,6 +6647,7 @@ static OP_GET_DOCUMENT_DOWNLOAD: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_get_document_download(input: &GetDocumentDownloadInput) -> Result<rt::Request, rt::Error> {
@@ -6272,6 +6797,7 @@ static OP_GET_DOCUMENT_VERSION: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_get_document_version(input: &GetDocumentVersionInput) -> Result<rt::Request, rt::Error> {
@@ -6411,6 +6937,7 @@ static OP_GET_FIELD: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_get_field(input: &GetFieldInput) -> Result<rt::Request, rt::Error> {
@@ -6544,6 +7071,7 @@ static OP_GET_HISTORY_ENTRY: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_get_history_entry(input: &GetHistoryEntryInput) -> Result<rt::Request, rt::Error> {
@@ -6674,6 +7202,7 @@ static OP_GET_INGESTION_BATCH: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_get_ingestion_batch(input: &GetIngestionBatchInput) -> Result<rt::Request, rt::Error> {
@@ -6812,6 +7341,7 @@ static OP_GET_INGESTION_BATCH_ITEM: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_get_ingestion_batch_item(input: &GetIngestionBatchItemInput) -> Result<rt::Request, rt::Error> {
@@ -6949,6 +7479,7 @@ static OP_GET_KNOWLEDGE_BASE: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_get_knowledge_base(input: &GetKnowledgeBaseInput) -> Result<rt::Request, rt::Error> {
@@ -7068,6 +7599,7 @@ static OP_GET_OPERATION: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_get_operation(input: &GetOperationInput) -> Result<rt::Request, rt::Error> {
@@ -7193,6 +7725,7 @@ static OP_GET_UPLOAD: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_get_upload(input: &GetUploadInput) -> Result<rt::Request, rt::Error> {
@@ -7309,6 +7842,12 @@ static OP_LIST_AGENTS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "query",
+        path: "limit",
+        min: Some(1.0),
+        max: Some(100.0),
+    }],
 };
 
 fn build_list_agents(input: &ListAgentsInput) -> Result<rt::Request, rt::Error> {
@@ -7466,6 +8005,12 @@ static OP_LIST_AGENT_VERSIONS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "query",
+        path: "limit",
+        min: Some(1.0),
+        max: Some(100.0),
+    }],
 };
 
 fn build_list_agent_versions(input: &ListAgentVersionsInput) -> Result<rt::Request, rt::Error> {
@@ -7633,6 +8178,12 @@ static OP_LIST_CONVERSATIONS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "query",
+        path: "limit",
+        min: Some(1.0),
+        max: Some(100.0),
+    }],
 };
 
 fn build_list_conversations(input: &ListConversationsInput) -> Result<rt::Request, rt::Error> {
@@ -7853,6 +8404,12 @@ static OP_LIST_DOCUMENTS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "query",
+        path: "limit",
+        min: Some(1.0),
+        max: Some(100.0),
+    }],
 };
 
 fn build_list_documents(input: &ListDocumentsInput) -> Result<rt::Request, rt::Error> {
@@ -8118,6 +8675,12 @@ static OP_LIST_DOCUMENT_VERSIONS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "query",
+        path: "limit",
+        min: Some(1.0),
+        max: Some(100.0),
+    }],
 };
 
 fn build_list_document_versions(input: &ListDocumentVersionsInput) -> Result<rt::Request, rt::Error> {
@@ -8301,6 +8864,12 @@ static OP_LIST_FIELDS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "query",
+        path: "limit",
+        min: Some(1.0),
+        max: Some(100.0),
+    }],
 };
 
 fn build_list_fields(input: &ListFieldsInput) -> Result<rt::Request, rt::Error> {
@@ -8479,6 +9048,12 @@ static OP_LIST_FOLDERS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "query",
+        path: "limit",
+        min: Some(1.0),
+        max: Some(100.0),
+    }],
 };
 
 fn build_list_folders(input: &ListFoldersInput) -> Result<rt::Request, rt::Error> {
@@ -8668,6 +9243,12 @@ static OP_LIST_GUARDRAILS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "query",
+        path: "limit",
+        min: Some(1.0),
+        max: Some(100.0),
+    }],
 };
 
 fn build_list_guardrails(input: &ListGuardrailsInput) -> Result<rt::Request, rt::Error> {
@@ -8829,6 +9410,12 @@ static OP_LIST_HISTORY_ENTRIES: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "query",
+        path: "limit",
+        min: Some(1.0),
+        max: Some(100.0),
+    }],
 };
 
 fn build_list_history_entries(input: &ListHistoryEntriesInput) -> Result<rt::Request, rt::Error> {
@@ -9001,6 +9588,12 @@ static OP_LIST_INGESTION_BATCHES: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "query",
+        path: "limit",
+        min: Some(1.0),
+        max: Some(100.0),
+    }],
 };
 
 fn build_list_ingestion_batches(input: &ListIngestionBatchesInput) -> Result<rt::Request, rt::Error> {
@@ -9210,6 +9803,12 @@ static OP_LIST_INGESTION_BATCH_ITEMS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "query",
+        path: "limit",
+        min: Some(1.0),
+        max: Some(1000.0),
+    }],
 };
 
 fn build_list_ingestion_batch_items(input: &ListIngestionBatchItemsInput) -> Result<rt::Request, rt::Error> {
@@ -9429,6 +10028,12 @@ static OP_LIST_KNOWLEDGE_BASES: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "query",
+        path: "limit",
+        min: Some(1.0),
+        max: Some(100.0),
+    }],
 };
 
 fn build_list_knowledge_bases(input: &ListKnowledgeBasesInput) -> Result<rt::Request, rt::Error> {
@@ -9594,6 +10199,12 @@ static OP_LIST_MEMORY_STORES: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "query",
+        path: "limit",
+        min: Some(1.0),
+        max: Some(100.0),
+    }],
 };
 
 fn build_list_memory_stores(input: &ListMemoryStoresInput) -> Result<rt::Request, rt::Error> {
@@ -9755,6 +10366,12 @@ static OP_LIST_MESSAGES: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "query",
+        path: "limit",
+        min: Some(1.0),
+        max: Some(100.0),
+    }],
 };
 
 fn build_list_messages(input: &ListMessagesInput) -> Result<rt::Request, rt::Error> {
@@ -9917,6 +10534,12 @@ static OP_LIST_MODELS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "query",
+        path: "limit",
+        min: Some(1.0),
+        max: Some(100.0),
+    }],
 };
 
 fn build_list_models(input: &ListModelsInput) -> Result<rt::Request, rt::Error> {
@@ -10094,6 +10717,12 @@ static OP_LIST_OPERATIONS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "query",
+        path: "limit",
+        min: Some(1.0),
+        max: Some(100.0),
+    }],
 };
 
 fn build_list_operations(input: &ListOperationsInput) -> Result<rt::Request, rt::Error> {
@@ -10292,6 +10921,12 @@ static OP_LIST_TOOLS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "query",
+        path: "limit",
+        min: Some(1.0),
+        max: Some(100.0),
+    }],
 };
 
 fn build_list_tools(input: &ListToolsInput) -> Result<rt::Request, rt::Error> {
@@ -10444,6 +11079,12 @@ static OP_LIST_VOICES: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[rt::Range {
+        place: "query",
+        path: "limit",
+        min: Some(1.0),
+        max: Some(100.0),
+    }],
 };
 
 fn build_list_voices(input: &ListVoicesInput) -> Result<rt::Request, rt::Error> {
@@ -10610,6 +11251,7 @@ static OP_PUBLISH_AGENT_VERSION: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_publish_agent_version(input: &PublishAgentVersionInput) -> Result<rt::Request, rt::Error> {
@@ -10788,6 +11430,7 @@ static OP_PUT_ACCESS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_put_access(input: &PutAccessInput) -> Result<rt::Request, rt::Error> {
@@ -10992,6 +11635,338 @@ static OP_REPLACE_DRAFT_VERSION: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[
+        rt::Range {
+            place: "body",
+            path: "/models/answer/temperature",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/answer/topP",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/answer/topK",
+            min: Some(0.0),
+            max: Some(250.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/answer/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(16384.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/answer/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/answer/maxContinuations",
+            min: Some(0.0),
+            max: Some(5.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/planning/temperature",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/planning/topP",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/planning/topK",
+            min: Some(0.0),
+            max: Some(250.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/planning/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(16384.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/planning/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/summary/temperature",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/summary/topP",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/summary/topK",
+            min: Some(0.0),
+            max: Some(250.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/summary/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(16384.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/summary/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/classification/temperature",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/classification/topP",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/classification/topK",
+            min: Some(0.0),
+            max: Some(250.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/classification/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(16384.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/classification/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/searchTopics/temperature",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/searchTopics/topP",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/searchTopics/topK",
+            min: Some(0.0),
+            max: Some(250.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/searchTopics/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(16384.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/searchTopics/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/title/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(512.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/title/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/maxQueries",
+            min: Some(1.0),
+            max: Some(20.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/numberOfResults",
+            min: Some(1.0),
+            max: Some(50.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/minimumScore",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/minimumRelevance",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/evaluation/maxSearchResults",
+            min: Some(1.0),
+            max: Some(100.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/evaluation/maxResults",
+            min: Some(1.0),
+            max: Some(100.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/evaluation/judge/temperature",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/evaluation/judge/topP",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/evaluation/judge/topK",
+            min: Some(0.0),
+            max: Some(250.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/evaluation/judge/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(16384.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/evaluation/judge/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/workflow/phases/*/maxSteps",
+            min: Some(1.0),
+            max: Some(50.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/workflow/phases/*/toolCallChecks/maxRetries",
+            min: Some(0.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/workflow/phases/*/attributionChecks/maxRetries",
+            min: Some(0.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/workflow/phases/*/fields/*/maxByteSize",
+            min: Some(1.0),
+            max: None,
+        },
+        rt::Range {
+            place: "body",
+            path: "/answers/mediaEmbeds/reservedResults",
+            min: Some(0.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/attachments/maxFiles",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/attachments/maxByteSize",
+            min: Some(102400.0),
+            max: Some(10485760.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/memory/minimumRelevance",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/memory/maxResults",
+            min: Some(1.0),
+            max: Some(100.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/liveAvatar/holdingPhrases/intervalMs",
+            min: Some(1000.0),
+            max: Some(60000.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/liveAvatar/holdingPhrases/skipChance",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/liveAvatar/inactivityTimeoutMs",
+            min: Some(0.0),
+            max: None,
+        },
+        rt::Range {
+            place: "body",
+            path: "/liveAvatar/voiceTuning/speed",
+            min: Some(0.8),
+            max: Some(1.2),
+        },
+        rt::Range {
+            place: "body",
+            path: "/liveAvatar/voiceTuning/stability",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/liveAvatar/voiceTuning/style",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/liveAvatar/pauseAndResume/pausedTimeoutMs",
+            min: Some(60000.0),
+            max: Some(3600000.0),
+        },
+    ],
 };
 
 fn build_replace_draft_version(input: &ReplaceDraftVersionInput) -> Result<rt::Request, rt::Error> {
@@ -11224,6 +12199,7 @@ static OP_REPROCESS_DOCUMENTS: rt::Operation = rt::Operation {
     idempotency_header: Some("Idempotency-Key"),
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_reprocess_documents(input: &ReprocessDocumentsInput) -> Result<rt::Request, rt::Error> {
@@ -11427,6 +12403,7 @@ static OP_RESET_DRAFT_VERSION: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: true,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_reset_draft_version(input: &ResetDraftVersionInput) -> Result<rt::Request, rt::Error> {
@@ -11553,6 +12530,7 @@ static OP_RETRY_DOCUMENT: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_retry_document(input: &RetryDocumentInput) -> Result<rt::Request, rt::Error> {
@@ -11751,6 +12729,7 @@ static OP_SAVE_DRAFT_VERSION: rt::Operation = rt::Operation {
     idempotency_header: Some("Idempotency-Key"),
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_save_draft_version(input: &SaveDraftVersionInput) -> Result<rt::Request, rt::Error> {
@@ -11901,6 +12880,7 @@ static OP_SEND_MESSAGE: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_send_message(input: &SendMessageInput) -> Result<rt::Request, rt::Error> {
@@ -12078,6 +13058,7 @@ static OP_START_INGESTION_BATCH: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_start_ingestion_batch(input: &StartIngestionBatchInput) -> Result<rt::Request, rt::Error> {
@@ -12287,6 +13268,7 @@ static OP_UPDATE_AGENT: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: true,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_update_agent(input: &UpdateAgentInput) -> Result<rt::Request, rt::Error> {
@@ -12489,6 +13471,7 @@ static OP_UPDATE_DOCUMENT: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: true,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_update_document(input: &UpdateDocumentInput) -> Result<rt::Request, rt::Error> {
@@ -12792,6 +13775,338 @@ static OP_UPDATE_DRAFT_VERSION: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[
+        rt::Range {
+            place: "body",
+            path: "/models/answer/temperature",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/answer/topP",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/answer/topK",
+            min: Some(0.0),
+            max: Some(250.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/answer/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(16384.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/answer/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/answer/maxContinuations",
+            min: Some(0.0),
+            max: Some(5.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/planning/temperature",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/planning/topP",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/planning/topK",
+            min: Some(0.0),
+            max: Some(250.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/planning/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(16384.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/planning/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/summary/temperature",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/summary/topP",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/summary/topK",
+            min: Some(0.0),
+            max: Some(250.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/summary/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(16384.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/summary/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/classification/temperature",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/classification/topP",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/classification/topK",
+            min: Some(0.0),
+            max: Some(250.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/classification/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(16384.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/classification/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/searchTopics/temperature",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/searchTopics/topP",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/searchTopics/topK",
+            min: Some(0.0),
+            max: Some(250.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/searchTopics/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(16384.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/searchTopics/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/title/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(512.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/models/title/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/maxQueries",
+            min: Some(1.0),
+            max: Some(20.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/numberOfResults",
+            min: Some(1.0),
+            max: Some(50.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/minimumScore",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/minimumRelevance",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/evaluation/maxSearchResults",
+            min: Some(1.0),
+            max: Some(100.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/evaluation/maxResults",
+            min: Some(1.0),
+            max: Some(100.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/evaluation/judge/temperature",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/evaluation/judge/topP",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/evaluation/judge/topK",
+            min: Some(0.0),
+            max: Some(250.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/evaluation/judge/maxOutputTokens",
+            min: Some(1.0),
+            max: Some(16384.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/knowledgeBases/*/evaluation/judge/maxAttempts",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/workflow/phases/*/maxSteps",
+            min: Some(1.0),
+            max: Some(50.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/workflow/phases/*/toolCallChecks/maxRetries",
+            min: Some(0.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/workflow/phases/*/attributionChecks/maxRetries",
+            min: Some(0.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/workflow/phases/*/fields/*/maxByteSize",
+            min: Some(1.0),
+            max: None,
+        },
+        rt::Range {
+            place: "body",
+            path: "/answers/mediaEmbeds/reservedResults",
+            min: Some(0.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/attachments/maxFiles",
+            min: Some(1.0),
+            max: Some(10.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/attachments/maxByteSize",
+            min: Some(102400.0),
+            max: Some(10485760.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/memory/minimumRelevance",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/memory/maxResults",
+            min: Some(1.0),
+            max: Some(100.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/liveAvatar/holdingPhrases/intervalMs",
+            min: Some(1000.0),
+            max: Some(60000.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/liveAvatar/holdingPhrases/skipChance",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/liveAvatar/inactivityTimeoutMs",
+            min: Some(0.0),
+            max: None,
+        },
+        rt::Range {
+            place: "body",
+            path: "/liveAvatar/voiceTuning/speed",
+            min: Some(0.8),
+            max: Some(1.2),
+        },
+        rt::Range {
+            place: "body",
+            path: "/liveAvatar/voiceTuning/stability",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/liveAvatar/voiceTuning/style",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/liveAvatar/pauseAndResume/pausedTimeoutMs",
+            min: Some(60000.0),
+            max: Some(3600000.0),
+        },
+    ],
 };
 
 fn build_update_draft_version(input: &UpdateDraftVersionInput) -> Result<rt::Request, rt::Error> {
@@ -13061,6 +14376,7 @@ static OP_UPDATE_FIELD: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_update_field(input: &UpdateFieldInput) -> Result<rt::Request, rt::Error> {
@@ -13271,6 +14587,7 @@ static OP_UPDATE_FOLDER: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: true,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_update_folder(input: &UpdateFolderInput) -> Result<rt::Request, rt::Error> {
@@ -13489,6 +14806,7 @@ static OP_UPDATE_INGESTION_BATCH: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: true,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_update_ingestion_batch(input: &UpdateIngestionBatchInput) -> Result<rt::Request, rt::Error> {
@@ -13646,6 +14964,7 @@ static OP_UPDATE_INGESTION_BATCH_ITEM: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_update_ingestion_batch_item(input: &UpdateIngestionBatchItemInput) -> Result<rt::Request, rt::Error> {
@@ -13810,6 +15129,32 @@ static OP_UPDATE_KNOWLEDGE_BASE: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: true,
     retryable: &[503, 429],
+    ranges: &[
+        rt::Range {
+            place: "body",
+            path: "/retrieval/resultsPerSearch",
+            min: Some(1.0),
+            max: Some(50.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/retrieval/minimumMatch",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/retrieval/minimumRelevance",
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        rt::Range {
+            place: "body",
+            path: "/features/nearbyPassages/count",
+            min: Some(0.0),
+            max: Some(2.0),
+        },
+    ],
 };
 
 fn build_update_knowledge_base(input: &UpdateKnowledgeBaseInput) -> Result<rt::Request, rt::Error> {
@@ -13972,6 +15317,7 @@ static OP_WATCH_CONVERSATION: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_watch_conversation(input: &WatchConversationInput) -> Result<rt::Request, rt::Error> {
@@ -14119,6 +15465,7 @@ static OP_WATCH_KNOWLEDGE_BASE: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_watch_knowledge_base(input: &WatchKnowledgeBaseInput) -> Result<rt::Request, rt::Error> {
@@ -14292,6 +15639,7 @@ static OP_WATCH_OPERATION: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_watch_operation(input: &WatchOperationInput) -> Result<rt::Request, rt::Error> {
@@ -14454,6 +15802,7 @@ static OP_WATCH_WORKSPACE_EVENTS: rt::Operation = rt::Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[503, 429],
+    ranges: &[],
 };
 
 fn build_watch_workspace_events(input: &WatchWorkspaceEventsInput) -> Result<rt::Request, rt::Error> {

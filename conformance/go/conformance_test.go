@@ -288,6 +288,25 @@ var protocol = map[string]func(t *testing.T, m mock){
 	},
 
 	// ------------------------------------------------------------------ pagination
+	"requests.range": func(t *testing.T, m mock) {
+		c := client(t, m)
+		ctx := context.Background()
+		_, err := c.KnowledgeBase(kb).Documents.ListPage(ctx, &caitlyn.ListDocumentsInput{Limit: caitlyn.Ptr[int32](500)})
+		var ve *caitlyn.ValidationError
+		if e := apiError(t, err); !errors.As(err, &ve) || e.Status != 0 || e.Code != "VALIDATION_FAILED" || len(e.Errors) != 1 || e.Errors[0].Parameter != "limit" || e.Errors[0].Pointer != "" {
+			t.Fatalf("limit: %T %+v", err, err)
+		}
+		_, err = c.Core.Uploads.Reserve(ctx, &caitlyn.CreateUploadInput{FileName: "a.txt", ContentType: "text/plain", ByteSize: 1, SHA256: "x", ExpiresInSeconds: caitlyn.Ptr[int32](30)})
+		if e := apiError(t, err); e.Status != 0 || e.Code != "VALIDATION_FAILED" || len(e.Errors) != 1 || e.Errors[0].Pointer != "/expiresInSeconds" {
+			t.Fatalf("expiresInSeconds: %T %+v", err, err)
+		}
+		if n := len(m.api(t)); n != 0 {
+			t.Fatalf("%d requests sent", n)
+		}
+		if _, err := c.KnowledgeBase(kb).Documents.ListPage(ctx, &caitlyn.ListDocumentsInput{Limit: caitlyn.Ptr[int32](100)}); err != nil || len(m.api(t)) != 1 {
+			t.Fatalf("a value inside its range: %v", err)
+		}
+	},
 	"pagination.to-last-page": func(t *testing.T, m mock) {
 		docs, err := listAll(context.Background(), client(t, m), &caitlyn.ListDocumentsInput{Limit: caitlyn.Ptr[int32](3)})
 		reqs := m.api(t)

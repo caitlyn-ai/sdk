@@ -213,6 +213,11 @@ final class ServiceGenerator {
         w.l("}\n\n");
     }
 
+    /** A number as a Rust f64 literal: `1` is `1.0`. */
+    private static String rustFloat(String n) {
+        return n.contains(".") ? n : n + ".0";
+    }
+
     private void descriptor(RustWriter w, OperationInfo op) {
         List<String> retryable = new ArrayList<>();
         for (StructureShape e : OperationIndex.of(model).getErrors(service, op.op)) {
@@ -228,7 +233,17 @@ final class ServiceGenerator {
         d.append("    sse: ").append(op.kind == OperationInfo.Kind.STREAM).append(",\n");
         d.append("    idempotency_header: ").append(op.idempotency.map(p -> "Some(" + Names.str(p.wire()) + ")").orElse("None")).append(",\n");
         d.append("    if_match_required: ").append(op.ifMatch.map(p -> p.member().isRequired()).orElse(false)).append(",\n");
-        d.append("    retryable: &[").append(String.join(", ", retryable)).append("],\n};\n\n");
+        d.append("    retryable: &[").append(String.join(", ", retryable)).append("],\n");
+        // The @range rules the request carries, checked before sending (PROTOCOL.md 3)
+        d.append("    ranges: &[");
+        List<ai.caitlyn.codegen.model.Ranges.Rule> rules = ai.caitlyn.codegen.model.Ranges.of(model, service.getId()).getOrDefault(op.name, List.of());
+        for (ai.caitlyn.codegen.model.Ranges.Rule r : rules) {
+            d.append("\n        rt::Range { place: ").append(Names.str(r.where())).append(", path: ").append(Names.str(r.path()))
+                .append(", min: ").append(r.min().map(v -> "Some(" + rustFloat(ai.caitlyn.codegen.model.Ranges.number(v)) + ")").orElse("None"))
+                .append(", max: ").append(r.max().map(v -> "Some(" + rustFloat(ai.caitlyn.codegen.model.Ranges.number(v)) + ")").orElse("None"))
+                .append(" },");
+        }
+        d.append(rules.isEmpty() ? "],\n};\n\n" : "\n    ],\n};\n\n");
         w.l(d.toString());
     }
 
@@ -1300,6 +1315,7 @@ fn running(j: &Job) -> bool {
                     + "            rt::Error::Api(a) if statuses.contains(&a.status) => match a.status {\n" + from
                     + "                _ => Error::Api(a),\n            },\n            rt::Error::Api(a) => Error::Api(a),\n"
                     + "            rt::Error::NotSupportedByServer(e) => Error::NotSupportedByServer(e),\n"
+                    + "            rt::Error::Invalid(a) => " + (errorsByStatus.containsKey(400) ? "Error::" + variant(errorsByStatus.get(400)) + "(a)" : "Error::Api(a)") + ",\n"
                     + "            rt::Error::Input(e) => Error::Input(e),\n            rt::Error::Auth(e) => Error::Auth(e),\n"
                     + "            rt::Error::Connection(e) => Error::Connection(e),\n            rt::Error::Timeout => Error::Timeout,\n"
                     + (hasSync() ? "            rt::Error::CancelledWith(p) => match p.0.downcast::<crate::SyncReport>() {\n"

@@ -56,6 +56,7 @@ pub fn error_type(e: &Error, shapes: &[(u16, &'static str)]) -> &'static str {
             .iter()
             .find(|(s, _)| *s == a.status && a.status != 0)
             .map_or("CaitlynError", |(_, n)| n),
+        Error::Invalid(_) => shapes.iter().find(|(s, _)| *s == 400).map_or("CaitlynError", |(_, n)| n),
         Error::Connection(_) => "CaitlynConnectionError",
         Error::Auth(_) => "CaitlynAuthError",
         Error::NotSupportedByServer(_) => "NotSupportedByServer",
@@ -69,7 +70,7 @@ pub fn error_type(e: &Error, shapes: &[(u16, &'static str)]) -> &'static str {
 /// `exception` event (PROTOCOL.md 13).
 pub(crate) fn record_failure(span: &tracing::Span, e: &Error, shapes: &[(u16, &'static str)]) {
     let code = match e {
-        Error::Api(a) | Error::ApiWith(a, _) => Some(a.code.as_str()),
+        Error::Api(a) | Error::ApiWith(a, _) | Error::Invalid(a) => Some(a.code.as_str()),
         Error::Auth(a) => Some(a.code.as_str()),
         Error::Connection(_) => Some(CONNECTION_ERROR),
         _ => None,

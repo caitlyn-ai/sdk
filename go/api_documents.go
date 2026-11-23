@@ -369,7 +369,17 @@ var opEstimateIngestion = &core.Operation{
 	Since:     "5.115.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
-	Errors:    errorForStatus,
+	Ranges: []core.Range{
+		{Where: "body", Path: "/documents/*/byteSize", Min: core.Bound(1)},
+		{Where: "body", Path: "/documents/*/hints/pages", Min: core.Bound(0), Max: core.Bound(1000000)},
+		{Where: "body", Path: "/documents/*/hints/textPages", Min: core.Bound(0), Max: core.Bound(1000000)},
+		{Where: "body", Path: "/documents/*/hints/graphicPages", Min: core.Bound(0), Max: core.Bound(1000000)},
+		{Where: "body", Path: "/documents/*/hints/scannedPages", Min: core.Bound(0), Max: core.Bound(1000000)},
+		{Where: "body", Path: "/documents/*/hints/pictures", Min: core.Bound(0), Max: core.Bound(10000000)},
+		{Where: "body", Path: "/documents/*/hints/mediaSeconds", Min: core.Bound(0), Max: core.Bound(10000000)},
+		{Where: "body", Path: "/documents/*/hints/characters", Min: core.Bound(0), Max: core.Bound(1000000000)},
+	},
+	Errors: errorForStatus,
 }
 
 func buildEstimateIngestion(in *estimateIngestionParams) (*core.Request, error) {
@@ -523,7 +533,10 @@ var opListDocuments = &core.Operation{
 	Since:     "5.115.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
-	Errors:    errorForStatus,
+	Ranges: []core.Range{
+		{Where: "query", Path: "limit", Min: core.Bound(1), Max: core.Bound(100)},
+	},
+	Errors: errorForStatus,
 }
 
 func buildListDocuments(in *listDocumentsParams) (*core.Request, error) {

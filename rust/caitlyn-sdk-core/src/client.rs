@@ -373,6 +373,7 @@ impl Client {
 
     async fn send_inner(&self, op: &'static Operation, req: Request, opts: &CallOptions) -> Result<Response, Error> {
         self.check_since(op, &req)?;
+        crate::ranges::check(op.ranges, &req)?;
         if op.if_match_required && opts.if_match.is_none() {
             return Err(Error::Input(crate::error::InputError {
                 operation: op.name.to_owned(),

@@ -199,6 +199,7 @@ impl Error {
             },
             rt::Error::Api(a) => Error::Api(a),
             rt::Error::NotSupportedByServer(e) => Error::NotSupportedByServer(e),
+            rt::Error::Invalid(a) => Error::Validation(a),
             rt::Error::Input(e) => Error::Input(e),
             rt::Error::Auth(e) => Error::Auth(e),
             rt::Error::Connection(e) => Error::Connection(e),

@@ -42,6 +42,8 @@ type Operation struct {
 	Retryable []int
 	// Errors builds typed errors by status.
 	Errors ErrorFor
+	// Ranges are the @range rules the request carries, checked before sending (PROTOCOL.md 3).
+	Ranges []Range
 }
 
 // Since names a member the caller set and the release that introduced it.
@@ -177,6 +179,13 @@ func (c *Client) Do(ctx context.Context, op *Operation, req *Request, opts []Cal
 		return nil, err
 	}
 	if err := cs.requireIfMatch(op); err != nil {
+		return nil, err
+	}
+	if err := checkRanges(op.Ranges, req); err != nil {
+		// The operation's 400 error (ValidationError), as the server's refusal would be, with status 0 (PROTOCOL.md 6.3)
+		if op.Errors != nil {
+			return nil, op.Errors(http.StatusBadRequest, err)
+		}
 		return nil, err
 	}
 	idemKey := ""

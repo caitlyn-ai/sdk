@@ -82,7 +82,11 @@ var opCreateUpload = &core.Operation{
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},
-	Errors:            errorForStatus,
+	Ranges: []core.Range{
+		{Where: "body", Path: "/byteSize", Min: core.Bound(1)},
+		{Where: "body", Path: "/expiresInSeconds", Min: core.Bound(60), Max: core.Bound(3600)},
+	},
+	Errors: errorForStatus,
 }
 
 func buildCreateUpload(in *createUploadParams) (*core.Request, error) {

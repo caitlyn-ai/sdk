@@ -109,7 +109,13 @@ var opCreateKnowledgeBase = &core.Operation{
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},
-	Errors:            errorForStatus,
+	Ranges: []core.Range{
+		{Where: "body", Path: "/retrieval/resultsPerSearch", Min: core.Bound(1), Max: core.Bound(50)},
+		{Where: "body", Path: "/retrieval/minimumMatch", Min: core.Bound(0), Max: core.Bound(1)},
+		{Where: "body", Path: "/retrieval/minimumRelevance", Min: core.Bound(0), Max: core.Bound(1)},
+		{Where: "body", Path: "/features/nearbyPassages/count", Min: core.Bound(0), Max: core.Bound(2)},
+	},
+	Errors: errorForStatus,
 }
 
 func buildCreateKnowledgeBase(in *createKnowledgeBaseParams) (*core.Request, error) {
@@ -171,7 +177,10 @@ var opListKnowledgeBases = &core.Operation{
 	Since:     "5.115.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
-	Errors:    errorForStatus,
+	Ranges: []core.Range{
+		{Where: "query", Path: "limit", Min: core.Bound(1), Max: core.Bound(100)},
+	},
+	Errors: errorForStatus,
 }
 
 func buildListKnowledgeBases(in *listKnowledgeBasesParams) (*core.Request, error) {

@@ -577,7 +577,17 @@ var opEstimateDocumentVersion = &core.Operation{
 	Since:     "5.115.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
-	Errors:    errorForStatus,
+	Ranges: []core.Range{
+		{Where: "body", Path: "/file/byteSize", Min: core.Bound(1)},
+		{Where: "body", Path: "/file/hints/pages", Min: core.Bound(0), Max: core.Bound(1000000)},
+		{Where: "body", Path: "/file/hints/textPages", Min: core.Bound(0), Max: core.Bound(1000000)},
+		{Where: "body", Path: "/file/hints/graphicPages", Min: core.Bound(0), Max: core.Bound(1000000)},
+		{Where: "body", Path: "/file/hints/scannedPages", Min: core.Bound(0), Max: core.Bound(1000000)},
+		{Where: "body", Path: "/file/hints/pictures", Min: core.Bound(0), Max: core.Bound(10000000)},
+		{Where: "body", Path: "/file/hints/mediaSeconds", Min: core.Bound(0), Max: core.Bound(10000000)},
+		{Where: "body", Path: "/file/hints/characters", Min: core.Bound(0), Max: core.Bound(1000000000)},
+	},
+	Errors: errorForStatus,
 }
 
 func buildEstimateDocumentVersion(in *estimateDocumentVersionParams) (*core.Request, error) {

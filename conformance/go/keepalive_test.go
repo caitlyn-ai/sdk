@@ -89,13 +89,12 @@ func init() {
 	}
 
 	protocol["batch-upload.short-window"] = func(t *testing.T, m mock) {
-		// A 2-second window (under the server's 60-second least: the mock's test mode) and one file that takes 2.5 s to
-		// arrive. Each policy lasts 2 s, so its renewal margin is 1 s, not 5 minutes: renewals about 1 s apart.
+		// A 60-second window that the mock's test mode makes 2 s long, and one file that takes 2.5 s to arrive. Each policy lasts 2 s, so its renewal margin is 1 s, not 5 minutes: renewals about 1 s apart.
 		m.faults(t, map[string]any{"shortWindows": true, "uploadDelayMs": 2500})
 		c := client(t, m)
 		report, err := c.KnowledgeBase(kb).Ingestion.Sync(within(t), caitlyn.Files{
 			{RelativePath: "annual-leave.pdf", File: caitlyn.FileFromBytes("annual-leave.pdf", pdf("annual leave"))},
-		}, &caitlyn.SyncOptions{Folder: "/window/", UploadWindowSeconds: 2})
+		}, &caitlyn.SyncOptions{Folder: "/window/", UploadWindowSeconds: 60})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -104,8 +103,8 @@ func init() {
 		}
 		created := m.matching(t, func(r logged) bool { return r.Method == "POST" && strings.HasSuffix(r.Path, "/ingestion-batches") })
 		var body map[string]any
-		if len(created) == 0 || json.Unmarshal([]byte(created[0].Body), &body) != nil || body["uploadWindowSeconds"] != float64(2) {
-			t.Fatalf("CreateIngestionBatch sent %v; want uploadWindowSeconds 2", body)
+		if len(created) == 0 || json.Unmarshal([]byte(created[0].Body), &body) != nil || body["uploadWindowSeconds"] != float64(60) {
+			t.Fatalf("CreateIngestionBatch sent %v; want uploadWindowSeconds 60", body)
 		}
 		var at []int64
 		for _, r := range m.matching(t, func(r logged) bool { return r.Method == "POST" && pathHasSuffix("/upload-policies")(r) }) {
