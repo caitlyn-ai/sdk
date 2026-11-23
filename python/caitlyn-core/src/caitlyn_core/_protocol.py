@@ -17,6 +17,7 @@ import pydantic
 from pydantic import BaseModel
 
 from ._errors import CaitlynError, NotSupportedByServer
+from ._ranges import check_ranges
 from ._models import CaitlynModel, FieldError, ResponseMetadata
 from ._retry import parse_retry_after
 from ._spec import OperationSpec
@@ -100,13 +101,15 @@ def build_request(
     client's endpoint applies whatever ``http``'s own ``base_url`` is. A value that cannot be serialised is
     ``SERIALIZATION_FAILED``, and a request the HTTP client cannot make ``HTTP_CLIENT_FAILED`` (PROTOCOL.md 6.3)."""
     try:
-        return _build_request(http, endpoint, spec, params, headers)
+        request = _build_request(http, endpoint, spec, params, headers)
     except CaitlynError:
         raise
     except (httpx.InvalidURL, httpx.UnsupportedProtocol) as e:
         raise sdk_error("HTTP_CLIENT_FAILED", "The HTTP client could not make the request", f"{spec.name}: {e}") from e
     except (TypeError, ValueError, OverflowError) as e:
         raise sdk_error("SERIALIZATION_FAILED", "The request could not be serialised", f"{spec.name}: {e}") from e
+    check_ranges(spec.ranges, request, spec.errors.get(400, CaitlynError))
+    return request
 
 
 def _build_request(

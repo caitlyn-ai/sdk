@@ -36,6 +36,8 @@ class OperationSpec:
     retry_safe: bool = False
     """@readonly, @idempotent, or has an @idempotencyToken member."""
     since: str | None = None
+    ranges: tuple[tuple[str, str, float | None, float | None], ...] = ()
+    """The @range rules the request carries (PROTOCOL.md 3): ``(where, path, min, max)``, as ``_ranges`` reads them."""
     stability: str = "ga"
     streaming: bool = False
     payload_media_type: str | None = None

@@ -34,13 +34,16 @@ pub enum Error {
     ApiWith(Box<ApiError>, Partial),
     /// A wait's time limit passed (PROTOCOL.md 16): status 0, code `WAIT_TIMEOUT`. The watch it was reading is closed.
     Timeout,
+    /// A value outside its member's `@range`, refused before sending (PROTOCOL.md 3): `VALIDATION_FAILED` with its
+    /// field errors, status 0. The generated crate raises it as its 400 variant, as the server's refusal would be.
+    Invalid(Box<ApiError>),
 }
 
 impl Error {
     /// The problem details, for an [`Error::Api`].
     pub fn api(&self) -> Option<&ApiError> {
         match self {
-            Error::Api(e) | Error::ApiWith(e, _) => Some(e),
+            Error::Api(e) | Error::ApiWith(e, _) | Error::Invalid(e) => Some(e),
             _ => None,
         }
     }
@@ -48,7 +51,7 @@ impl Error {
     /// The HTTP status of a problem, and 0 for a connection error or a problem the SDK raised itself.
     pub fn status(&self) -> Option<u16> {
         match self {
-            Error::Api(e) | Error::ApiWith(e, _) => Some(e.status),
+            Error::Api(e) | Error::ApiWith(e, _) | Error::Invalid(e) => Some(e.status),
             Error::Connection(_) | Error::Timeout => Some(0),
             _ => None,
         }
@@ -57,7 +60,7 @@ impl Error {
     /// The stable code of a problem (`NOT_FOUND`), or `CONNECTION_ERROR`.
     pub fn code(&self) -> Option<&str> {
         match self {
-            Error::Api(e) | Error::ApiWith(e, _) => Some(&e.code),
+            Error::Api(e) | Error::ApiWith(e, _) | Error::Invalid(e) => Some(&e.code),
             Error::Connection(_) => Some(CONNECTION_ERROR),
             Error::Timeout => Some(WAIT_TIMEOUT),
             _ => None,
@@ -87,7 +90,7 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Api(e) | Error::ApiWith(e, _) => e.fmt(f),
+            Error::Api(e) | Error::ApiWith(e, _) | Error::Invalid(e) => e.fmt(f),
             Error::NotSupportedByServer(e) => e.fmt(f),
             Error::Input(e) => e.fmt(f),
             Error::Auth(e) => e.fmt(f),
@@ -101,7 +104,7 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::Api(e) | Error::ApiWith(e, _) => e.source.as_deref().map(|s| s as _),
+            Error::Api(e) | Error::ApiWith(e, _) | Error::Invalid(e) => e.source.as_deref().map(|s| s as _),
             Error::Connection(e) => Some(&e.source),
             _ => None,
         }

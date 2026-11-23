@@ -10,6 +10,7 @@
     {"id": "retry.idempotency-key-kept", "section": "7", "title": "The idempotency key is generated once and kept across retries"},
     {"id": "retry.unsafe-not-retried", "section": "6.4", "title": "An operation that is not retry-safe (SendMessage) is sent once on a 503"},
     {"id": "retry.above-max-retry-delay", "section": "6.4", "title": "A Retry-After above maxRetryDelay fails at once with the typed error"},
+    {"id": "requests.range", "section": "3", "title": "A value outside its member's @range (a query parameter, a body member) is refused before sending: the 400 class (ValidationError) with VALIDATION_FAILED and status 0, with a field error naming the parameter or the body pointer; a value inside it is sent"},
     {"id": "pagination.to-last-page", "section": "10", "title": "A list runs to the last page, following nextCursor"},
     {"id": "pagination.page", "section": "10", "title": "A list's page() is one request from the input's cursor, giving the page's items and nextCursor; that nextCursor, as cursor, reads the next page"},
     {"id": "pagination.next-page", "section": "10", "title": "A page's nextPage() reads the page after it with the same input, in one request; hasNextPage says whether one follows; on the last page nextPage() gives none and sends nothing"},

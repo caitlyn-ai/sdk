@@ -16,6 +16,7 @@ mod budget;
 mod client;
 pub mod error;
 pub mod paginate;
+pub mod ranges;
 pub mod raw;
 pub mod request;
 pub mod stream;
@@ -32,6 +33,7 @@ pub use error::{
     ApiError, AuthError, ConnectionError, Error, FieldError, InputError, NotSupportedByServer, Partial, CONNECTION_ERROR, WAIT_TIMEOUT,
 };
 pub use paginate::{Items, NextPage, Pages};
+pub use ranges::Range;
 pub use raw::Raw;
 pub use request::{
     path_greedy_label, path_label, trim_slashes, BoxFuture, Call, CallOptions, Operation, Request, Response, ResponseMetadata,

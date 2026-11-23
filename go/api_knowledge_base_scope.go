@@ -306,7 +306,13 @@ var opUpdateKnowledgeBase = &core.Operation{
 	RetrySafe:       true,
 	IfMatchRequired: true,
 	Retryable:       []int{503, 429},
-	Errors:          errorForStatus,
+	Ranges: []core.Range{
+		{Where: "body", Path: "/retrieval/resultsPerSearch", Min: core.Bound(1), Max: core.Bound(50)},
+		{Where: "body", Path: "/retrieval/minimumMatch", Min: core.Bound(0), Max: core.Bound(1)},
+		{Where: "body", Path: "/retrieval/minimumRelevance", Min: core.Bound(0), Max: core.Bound(1)},
+		{Where: "body", Path: "/features/nearbyPassages/count", Min: core.Bound(0), Max: core.Bound(2)},
+	},
+	Errors: errorForStatus,
 }
 
 func buildUpdateKnowledgeBase(in *updateKnowledgeBaseParams) (*core.Request, error) {

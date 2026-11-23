@@ -319,6 +319,7 @@ as the connection error's is. Every SDK raises each of them wherever its case ca
 | `NO_FINAL_EVENT` | `finalMessage()` on a stream that ended without its final event, such as a resumed stream whose answer had already finished. |
 | `WAIT_TIMEOUT` | A wait's time limit passed. |
 | `CANCELLED` | The work a wait followed was cancelled, or a sync's plan was declined. |
+| `VALIDATION_FAILED` | A value is outside the range its member declares (a `limit` of 500 where the most is 100): refused before anything is sent, as the same validation error the server's 400 raises, but with `status` 0, and one entry in `errors` per value naming the query parameter (`parameter`) or the body value (`pointer`) as the server would. One check handles both. |
 | `DECODE_FAILED` | A response or an event could not be read as the operation's output. |
 | `SERIALIZATION_FAILED` | A request could not be serialised. |
 | `HTTP_CLIENT_FAILED` | The HTTP client could not be built, or could not make the request. Not in TypeScript, which sends with `fetch`. |

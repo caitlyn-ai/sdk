@@ -143,7 +143,8 @@ public final class CaitlynTypeScriptIntegration implements TypeScriptIntegration
                 .pluginFunction(plugin, (model, service, operation) -> Map.of(
                     "sdkModel", highestSince(model, service),
                     "retrySafeOperations", retrySafeOperations(model, service),
-                    "since", sinceEntries(model, service)))
+                    "since", sinceEntries(model, service),
+                    "ranges", rangeEntries(model, service)))
                 .servicePredicate((model, service) -> service.hasTrait(PROTOCOL))
                 .build()
         );
@@ -182,6 +183,14 @@ public final class CaitlynTypeScriptIntegration implements TypeScriptIntegration
     }
 
     /** "Operation=5.120.0" and "Operation.member=5.124.0" entries, for the runtime @since check. */
+    /** The @range rules a request carries (PROTOCOL.md 3), as sdk-core's ranges.ts reads them. */
+    static List<String> rangeEntries(Model model, ServiceShape service) {
+        List<String> out = new ArrayList<>();
+        ai.caitlyn.codegen.model.Ranges.of(model, service.getId()).forEach((op, rules) -> rules.forEach(r -> out.add(String.join("|", op, r.where(), r.path(),
+            r.min().map(ai.caitlyn.codegen.model.Ranges::number).orElse(""), r.max().map(ai.caitlyn.codegen.model.Ranges::number).orElse("")))));
+        return out;
+    }
+
     static List<String> sinceEntries(Model model, ServiceShape service) {
         List<String> out = new ArrayList<>();
         for (OperationShape op : TopDownIndex.of(model).getContainedOperations(service)) {

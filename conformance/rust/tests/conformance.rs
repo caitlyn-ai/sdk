@@ -445,6 +445,41 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
         }),
 
         // ------------------------------------------------------------------ pagination
+        "requests.range" => Box::pin(async move {
+            let c = client(m);
+            let r = c.knowledge_base(KB).documents().list().limit(500).page().await;
+            let Err(Error::Validation(e)) = &r else {
+                return Err(format!("limit: got {:?}", r.err()));
+            };
+            ensure!(
+                e.status == 0
+                    && e.code == "VALIDATION_FAILED"
+                    && e.errors.len() == 1
+                    && e.errors[0].parameter.as_deref() == Some("limit")
+                    && e.errors[0].pointer.is_none(),
+                "limit: {e:?}"
+            );
+            let r = c
+                .core()
+                .uploads()
+                .reserve("a.txt", "text/plain", 1, "x")
+                .expires_in_seconds(30)
+                .await;
+            let Err(Error::Validation(e)) = &r else {
+                return Err(format!("expiresInSeconds: got {:?}", r.err()));
+            };
+            ensure!(
+                e.status == 0
+                    && e.code == "VALIDATION_FAILED"
+                    && e.errors.len() == 1
+                    && e.errors[0].pointer.as_deref() == Some("/expiresInSeconds"),
+                "expiresInSeconds: {e:?}"
+            );
+            ensure!(m.api().await.is_empty(), "nothing is sent");
+            c.knowledge_base(KB).documents().list().limit(100).page().await.map_err(s)?;
+            ensure!(m.api().await.len() == 1, "a value inside its range is sent");
+            Ok(())
+        }),
         "pagination.to-last-page" => Box::pin(async move {
             let docs = list_all(&client(m), KB, Some(3)).await.map_err(s)?;
             let reqs = m.api().await;
@@ -4338,22 +4373,21 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             Ok(())
         }),
         "batch-upload.short-window" => Box::pin(async move {
-            // A 2-second window (under the server's 60-second least: the mock's test mode) and one file that takes 2.5 s
-            // to arrive. Each policy lasts 2 s, so its renewal margin is 1 s, not 5 minutes: renewals about 1 s apart.
+            // A 60-second window that the mock's test mode makes 2 s long, and one file that takes 2.5 s to arrive. Each policy lasts 2 s, so its renewal margin is 1 s, not 5 minutes: renewals about 1 s apart.
             m.faults(json!({"shortWindows": true, "uploadDelayMs": 2500})).await;
             let c = client(m);
             let input = SyncInput::items(vec![SyncItem::file(
                 "/window/annual-leave.pdf",
                 pdf("annual-leave.pdf", b"%PDF annual"),
             )])
-            .upload_window_seconds(2);
+            .upload_window_seconds(60);
             let report = c.knowledge_base(KB).ingestion().sync(input).await.map_err(s)?;
             ensure!(report.batch.status.as_str() == "succeeded", "batch {:?}", report.batch.status);
             let created = m
                 .matching(|r| str_at(r, "method") == "POST" && str_at(r, "path").ends_with("/ingestion-batches"))
                 .await;
             let body: Value = serde_json::from_str(created.first().map(|r| str_at(r, "body")).unwrap_or("{}")).unwrap_or_default();
-            ensure!(body["uploadWindowSeconds"] == json!(2), "CreateIngestionBatch sent {body}");
+            ensure!(body["uploadWindowSeconds"] == json!(60), "CreateIngestionBatch sent {body}");
             let at: Vec<i64> = m
                 .matching(|r| str_at(r, "method") == "POST" && str_at(r, "path").ends_with("/upload-policies"))
                 .await

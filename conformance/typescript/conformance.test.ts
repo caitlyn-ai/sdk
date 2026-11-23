@@ -247,6 +247,20 @@ test('[retry.above-max-retry-delay] a Retry-After above maxRetryDelay fails at o
 
 // ---------------------------------------------------------------- pagination
 
+test('[requests.range] a value outside its @range is refused before sending, with VALIDATION_FAILED naming it', async () => {
+  const c = client();
+  const listed = await expectError(collect(c.knowledgeBases('KB4T7YQ2WL').documents.list({ limit: 500 })));
+  assert.ok(listed instanceof ValidationError, String(listed));
+  assert.deepEqual([listed.status, listed.code], [0, 'VALIDATION_FAILED']);
+  assert.deepEqual(listed.errors?.map((e) => [e.parameter, e.pointer, e.code]), [['limit', undefined, 'VALIDATION_FAILED']]);
+  const reserved = await expectError(c.core.uploads.reserve({ fileName: 'a.txt', contentType: 'text/plain', byteSize: 1, sha256: 'x', expiresInSeconds: 30 }));
+  assert.deepEqual([reserved.status, reserved.code], [0, 'VALIDATION_FAILED']);
+  assert.deepEqual(reserved.errors?.map((e) => [e.parameter, e.pointer]), [[undefined, '/expiresInSeconds']]);
+  assert.equal((await api()).length, 0, 'nothing is sent');
+  await c.knowledgeBases('KB4T7YQ2WL').documents.list({ limit: 100 }).page();
+  assert.equal((await api()).length, 1, 'a value inside its range is sent');
+});
+
 test('[pagination.to-last-page] a list runs to the last page, following nextCursor', async () => {
   const docs = await collect(client().knowledgeBases('KB4T7YQ2WL').documents.list({ limit: 3 }));
   assert.equal(docs.length, 7);
@@ -3417,15 +3431,14 @@ test('[batch-upload.keep-alive-floor] a policy due every half second is renewed 
 });
 
 test('[batch-upload.short-window] uploadWindowSeconds and expiresInSeconds pass straight through, and a short policy is renewed once half its life has passed', async () => {
-  // A 2-second window (under the server's 60-second least: the mock's test mode) and one file that takes 2.5 s to
-  // arrive. Each policy lasts 2 s, so its renewal margin is 1 s, not 5 minutes: renewals about 1 s apart, not at once
+  // A 60-second window that the mock's test mode makes 2 s long, and one file that takes 2.5 s to arrive. Each policy lasts 2 s, so its renewal margin is 1 s, not 5 minutes: renewals about 1 s apart, not at once
   // and then on each of the keep-alive's ticks.
   await faults({ shortWindows: true, uploadDelayMs: 2500 });
   const t0 = Date.now();
-  const report = await kbScope().ingestion.sync(await syncSource({ 'annual-leave.pdf': enc('%PDF annual') }), { folder: '/window/', uploadWindowSeconds: 2 });
+  const report = await kbScope().ingestion.sync(await syncSource({ 'annual-leave.pdf': enc('%PDF annual') }), { folder: '/window/', uploadWindowSeconds: 60 });
   assert.equal(report.batch.status, 'succeeded');
   const created = (await api()).find((r) => r.method === 'POST' && r.path === BATCHES)!;
-  assert.equal(JSON.parse(created.body).uploadWindowSeconds, 2, 'sent as given');
+  assert.equal(JSON.parse(created.body).uploadWindowSeconds, 60, 'sent as given');
   const at = (await api()).filter((r) => r.method === 'POST' && r.path.endsWith('/upload-policies')).map((r) => (r.at as number) - t0);
   assert.ok(at.length >= 1 && at.length <= 3, `${at.length} renewals in a 2.5 s upload under 2 s policies (at ${at.join(', ')} ms)`);
   for (let i = 1; i < at.length; i++) assert.ok(at[i] - at[i - 1] >= 750, `renewals ${at[i] - at[i - 1]} ms apart`);

@@ -391,11 +391,30 @@ macro_rules! op {
             idempotency_header: $idem,
             if_match_required: $if_match,
             retryable: &[429, 503],
+            ranges: &[],
         };
     };
 }
 
-op!(OP_CREATE, "CreateIngestionBatch", "POST", true, Some("Idempotency-Key"), false);
+// CreateIngestionBatch's one caller-set value with a range (PROTOCOL.md 3): the model's `uploadWindowSeconds`, 60 to 3600.
+// The other values sync sends are its own, inside their ranges. These operations are the runtime's, so the generated
+// rules do not reach them.
+static OP_CREATE: Operation = Operation {
+    name: "CreateIngestionBatch",
+    method: "POST",
+    since: None,
+    retry_safe: true,
+    sse: false,
+    idempotency_header: Some("Idempotency-Key"),
+    if_match_required: false,
+    retryable: &[429, 503],
+    ranges: &[crate::ranges::Range {
+        place: "body",
+        path: "/uploadWindowSeconds",
+        min: Some(60.0),
+        max: Some(3600.0),
+    }],
+};
 op!(OP_ADD_ITEMS, "BatchCreateIngestionBatchItems", "POST", false, None, false);
 op!(OP_GET, "GetIngestionBatch", "GET", true, None, false);
 op!(OP_LIST_ITEMS, "ListIngestionBatchItems", "GET", true, None, false);
@@ -423,6 +442,7 @@ static OP_WATCH: Operation = Operation {
     idempotency_header: None,
     if_match_required: false,
     retryable: &[429, 503],
+    ranges: &[],
 };
 
 fn batch_path(kb: &str, id: &str, rest: &str) -> String {

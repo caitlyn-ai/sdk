@@ -191,7 +191,10 @@ var opListGuardrails = &core.Operation{
 	Since:     "5.115.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
-	Errors:    errorForStatus,
+	Ranges: []core.Range{
+		{Where: "query", Path: "limit", Min: core.Bound(1), Max: core.Bound(100)},
+	},
+	Errors: errorForStatus,
 }
 
 func buildListGuardrails(in *listGuardrailsParams) (*core.Request, error) {
@@ -272,7 +275,10 @@ var opListMemoryStores = &core.Operation{
 	Since:     "5.115.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
-	Errors:    errorForStatus,
+	Ranges: []core.Range{
+		{Where: "query", Path: "limit", Min: core.Bound(1), Max: core.Bound(100)},
+	},
+	Errors: errorForStatus,
 }
 
 func buildListMemoryStores(in *listMemoryStoresParams) (*core.Request, error) {
@@ -355,7 +361,10 @@ var opListModels = &core.Operation{
 	Since:     "5.115.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
-	Errors:    errorForStatus,
+	Ranges: []core.Range{
+		{Where: "query", Path: "limit", Min: core.Bound(1), Max: core.Bound(100)},
+	},
+	Errors: errorForStatus,
 }
 
 func buildListModels(in *listModelsParams) (*core.Request, error) {
@@ -435,7 +444,10 @@ var opListTools = &core.Operation{
 	Since:     "5.115.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
-	Errors:    errorForStatus,
+	Ranges: []core.Range{
+		{Where: "query", Path: "limit", Min: core.Bound(1), Max: core.Bound(100)},
+	},
+	Errors: errorForStatus,
 }
 
 func buildListTools(in *listToolsParams) (*core.Request, error) {
@@ -516,7 +528,10 @@ var opListVoices = &core.Operation{
 	Since:     "5.115.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
-	Errors:    errorForStatus,
+	Ranges: []core.Range{
+		{Where: "query", Path: "limit", Min: core.Bound(1), Max: core.Bound(100)},
+	},
+	Errors: errorForStatus,
 }
 
 func buildListVoices(in *listVoicesParams) (*core.Request, error) {

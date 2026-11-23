@@ -101,7 +101,10 @@ var opBatchCreateIngestionBatchItems = &core.Operation{
 	Method:    "POST",
 	Since:     "5.115.0",
 	Retryable: []int{503, 429},
-	Errors:    errorForStatus,
+	Ranges: []core.Range{
+		{Where: "body", Path: "/items/*/byteSize", Min: core.Bound(1)},
+	},
+	Errors: errorForStatus,
 }
 
 func buildBatchCreateIngestionBatchItems(in *batchCreateIngestionBatchItemsParams) (*core.Request, error) {

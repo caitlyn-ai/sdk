@@ -311,6 +311,18 @@ final class ServiceGenerator {
         if (!retryable.isEmpty()) {
             d.append("\tRetryable: []int{").append(String.join(", ", retryable)).append("},\n");
         }
+        // The @range rules the request carries, checked before sending (PROTOCOL.md 3)
+        List<ai.caitlyn.codegen.model.Ranges.Rule> rules = ai.caitlyn.codegen.model.Ranges.of(model, service.getId()).getOrDefault(op.name, List.of());
+        if (!rules.isEmpty()) {
+            d.append("\tRanges: []core.Range{\n");
+            for (ai.caitlyn.codegen.model.Ranges.Rule r : rules) {
+                d.append("\t\t{Where: ").append(Names.str(r.where())).append(", Path: ").append(Names.str(r.path()))
+                    .append(r.min().map(v -> ", Min: core.Bound(" + ai.caitlyn.codegen.model.Ranges.number(v) + ")").orElse(""))
+                    .append(r.max().map(v -> ", Max: core.Bound(" + ai.caitlyn.codegen.model.Ranges.number(v) + ")").orElse(""))
+                    .append("},\n");
+            }
+            d.append("\t},\n");
+        }
         d.append("\tErrors: errorForStatus,\n}\n\n");
         w.l(d.toString());
     }

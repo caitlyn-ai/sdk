@@ -51,6 +51,7 @@ BATCH_CREATE_INGESTION_BATCH_ITEMS: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=False,
     since="5.115.0",
+    ranges=(("body", "/items/*/byteSize", 1, None),),
     stability="beta",
 )
 
@@ -191,6 +192,7 @@ CREATE_AGENT: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("body", "/configuration/models/answer/temperature", 0, 1), ("body", "/configuration/models/answer/topP", 0, 1), ("body", "/configuration/models/answer/topK", 0, 250), ("body", "/configuration/models/answer/maxOutputTokens", 1, 16384), ("body", "/configuration/models/answer/maxAttempts", 1, 10), ("body", "/configuration/models/answer/maxContinuations", 0, 5), ("body", "/configuration/models/planning/temperature", 0, 1), ("body", "/configuration/models/planning/topP", 0, 1), ("body", "/configuration/models/planning/topK", 0, 250), ("body", "/configuration/models/planning/maxOutputTokens", 1, 16384), ("body", "/configuration/models/planning/maxAttempts", 1, 10), ("body", "/configuration/models/summary/temperature", 0, 1), ("body", "/configuration/models/summary/topP", 0, 1), ("body", "/configuration/models/summary/topK", 0, 250), ("body", "/configuration/models/summary/maxOutputTokens", 1, 16384), ("body", "/configuration/models/summary/maxAttempts", 1, 10), ("body", "/configuration/models/classification/temperature", 0, 1), ("body", "/configuration/models/classification/topP", 0, 1), ("body", "/configuration/models/classification/topK", 0, 250), ("body", "/configuration/models/classification/maxOutputTokens", 1, 16384), ("body", "/configuration/models/classification/maxAttempts", 1, 10), ("body", "/configuration/models/searchTopics/temperature", 0, 1), ("body", "/configuration/models/searchTopics/topP", 0, 1), ("body", "/configuration/models/searchTopics/topK", 0, 250), ("body", "/configuration/models/searchTopics/maxOutputTokens", 1, 16384), ("body", "/configuration/models/searchTopics/maxAttempts", 1, 10), ("body", "/configuration/models/title/maxOutputTokens", 1, 512), ("body", "/configuration/models/title/maxAttempts", 1, 10), ("body", "/configuration/knowledgeBases/*/maxQueries", 1, 20), ("body", "/configuration/knowledgeBases/*/numberOfResults", 1, 50), ("body", "/configuration/knowledgeBases/*/minimumScore", 0, 1), ("body", "/configuration/knowledgeBases/*/minimumRelevance", 0, 1), ("body", "/configuration/knowledgeBases/*/evaluation/maxSearchResults", 1, 100), ("body", "/configuration/knowledgeBases/*/evaluation/maxResults", 1, 100), ("body", "/configuration/knowledgeBases/*/evaluation/judge/temperature", 0, 1), ("body", "/configuration/knowledgeBases/*/evaluation/judge/topP", 0, 1), ("body", "/configuration/knowledgeBases/*/evaluation/judge/topK", 0, 250), ("body", "/configuration/knowledgeBases/*/evaluation/judge/maxOutputTokens", 1, 16384), ("body", "/configuration/knowledgeBases/*/evaluation/judge/maxAttempts", 1, 10), ("body", "/configuration/workflow/phases/*/maxSteps", 1, 50), ("body", "/configuration/workflow/phases/*/toolCallChecks/maxRetries", 0, 10), ("body", "/configuration/workflow/phases/*/attributionChecks/maxRetries", 0, 10), ("body", "/configuration/workflow/phases/*/fields/*/maxByteSize", 1, None), ("body", "/configuration/answers/mediaEmbeds/reservedResults", 0, 10), ("body", "/configuration/attachments/maxFiles", 1, 10), ("body", "/configuration/attachments/maxByteSize", 102400, 10485760), ("body", "/configuration/memory/minimumRelevance", 0, 1), ("body", "/configuration/memory/maxResults", 1, 100), ("body", "/configuration/liveAvatar/holdingPhrases/intervalMs", 1000, 60000), ("body", "/configuration/liveAvatar/holdingPhrases/skipChance", 0, 1), ("body", "/configuration/liveAvatar/inactivityTimeoutMs", 0, None), ("body", "/configuration/liveAvatar/voiceTuning/speed", 0.8, 1.2), ("body", "/configuration/liveAvatar/voiceTuning/stability", 0, 1), ("body", "/configuration/liveAvatar/voiceTuning/style", 0, 1), ("body", "/configuration/liveAvatar/pauseAndResume/pausedTimeoutMs", 60000, 3600000),),
     stability="beta",
     thing=True,
 )
@@ -321,6 +323,7 @@ CREATE_INGESTION_BATCH: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("body", "/items/*/byteSize", 1, None), ("body", "/uploadWindowSeconds", 60, 3600),),
     stability="beta",
     thing=True,
 )
@@ -359,6 +362,7 @@ CREATE_KNOWLEDGE_BASE: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("body", "/retrieval/resultsPerSearch", 1, 50), ("body", "/retrieval/minimumMatch", 0, 1), ("body", "/retrieval/minimumRelevance", 0, 1), ("body", "/features/nearbyPassages/count", 0, 2),),
     stability="beta",
     thing=True,
 )
@@ -381,6 +385,7 @@ CREATE_UPLOAD: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("body", "/byteSize", 1, None), ("body", "/expiresInSeconds", 60, 3600),),
     stability="beta",
 )
 
@@ -526,6 +531,7 @@ ESTIMATE_DOCUMENT_VERSION: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("body", "/file/byteSize", 1, None), ("body", "/file/hints/pages", 0, 1000000), ("body", "/file/hints/textPages", 0, 1000000), ("body", "/file/hints/graphicPages", 0, 1000000), ("body", "/file/hints/scannedPages", 0, 1000000), ("body", "/file/hints/pictures", 0, 10000000), ("body", "/file/hints/mediaSeconds", 0, 10000000), ("body", "/file/hints/characters", 0, 1000000000),),
     stability="beta",
 )
 
@@ -558,6 +564,7 @@ ESTIMATE_INGESTION: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("body", "/documents/*/byteSize", 1, None), ("body", "/documents/*/hints/pages", 0, 1000000), ("body", "/documents/*/hints/textPages", 0, 1000000), ("body", "/documents/*/hints/graphicPages", 0, 1000000), ("body", "/documents/*/hints/scannedPages", 0, 1000000), ("body", "/documents/*/hints/pictures", 0, 10000000), ("body", "/documents/*/hints/mediaSeconds", 0, 10000000), ("body", "/documents/*/hints/characters", 0, 1000000000),),
     stability="beta",
 )
 
@@ -891,6 +898,7 @@ LIST_AGENTS: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("query", "limit", 1, 100),),
     stability="beta",
 )
 
@@ -908,6 +916,7 @@ LIST_AGENT_VERSIONS: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("query", "limit", 1, 100),),
     stability="beta",
 )
 
@@ -925,6 +934,7 @@ LIST_CONVERSATIONS: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("query", "limit", 1, 100),),
     stability="beta",
 )
 
@@ -952,6 +962,7 @@ LIST_DOCUMENTS: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("query", "limit", 1, 100),),
     stability="beta",
 )
 
@@ -970,6 +981,7 @@ LIST_DOCUMENT_VERSIONS: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("query", "limit", 1, 100),),
     stability="beta",
 )
 
@@ -987,6 +999,7 @@ LIST_FIELDS: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("query", "limit", 1, 100),),
     stability="beta",
 )
 
@@ -1007,6 +1020,7 @@ LIST_FOLDERS: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("query", "limit", 1, 100),),
     stability="beta",
 )
 
@@ -1023,6 +1037,7 @@ LIST_GUARDRAILS: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("query", "limit", 1, 100),),
     stability="beta",
 )
 
@@ -1040,6 +1055,7 @@ LIST_HISTORY_ENTRIES: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("query", "limit", 1, 100),),
     stability="beta",
 )
 
@@ -1058,6 +1074,7 @@ LIST_INGESTION_BATCHES: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("query", "limit", 1, 100),),
     stability="beta",
 )
 
@@ -1080,6 +1097,7 @@ LIST_INGESTION_BATCH_ITEMS: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("query", "limit", 1, 1000),),
     stability="beta",
 )
 
@@ -1097,6 +1115,7 @@ LIST_KNOWLEDGE_BASES: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("query", "limit", 1, 100),),
     stability="beta",
 )
 
@@ -1113,6 +1132,7 @@ LIST_MEMORY_STORES: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("query", "limit", 1, 100),),
     stability="beta",
 )
 
@@ -1130,6 +1150,7 @@ LIST_MESSAGES: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("query", "limit", 1, 100),),
     stability="beta",
 )
 
@@ -1146,6 +1167,7 @@ LIST_MODELS: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("query", "limit", 1, 100),),
     stability="beta",
 )
 
@@ -1167,6 +1189,7 @@ LIST_OPERATIONS: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("query", "limit", 1, 100),),
     stability="beta",
 )
 
@@ -1183,6 +1206,7 @@ LIST_TOOLS: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("query", "limit", 1, 100),),
     stability="beta",
 )
 
@@ -1199,6 +1223,7 @@ LIST_VOICES: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("query", "limit", 1, 100),),
     stability="beta",
 )
 
@@ -1272,6 +1297,7 @@ REPLACE_DRAFT_VERSION: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("body", "/models/answer/temperature", 0, 1), ("body", "/models/answer/topP", 0, 1), ("body", "/models/answer/topK", 0, 250), ("body", "/models/answer/maxOutputTokens", 1, 16384), ("body", "/models/answer/maxAttempts", 1, 10), ("body", "/models/answer/maxContinuations", 0, 5), ("body", "/models/planning/temperature", 0, 1), ("body", "/models/planning/topP", 0, 1), ("body", "/models/planning/topK", 0, 250), ("body", "/models/planning/maxOutputTokens", 1, 16384), ("body", "/models/planning/maxAttempts", 1, 10), ("body", "/models/summary/temperature", 0, 1), ("body", "/models/summary/topP", 0, 1), ("body", "/models/summary/topK", 0, 250), ("body", "/models/summary/maxOutputTokens", 1, 16384), ("body", "/models/summary/maxAttempts", 1, 10), ("body", "/models/classification/temperature", 0, 1), ("body", "/models/classification/topP", 0, 1), ("body", "/models/classification/topK", 0, 250), ("body", "/models/classification/maxOutputTokens", 1, 16384), ("body", "/models/classification/maxAttempts", 1, 10), ("body", "/models/searchTopics/temperature", 0, 1), ("body", "/models/searchTopics/topP", 0, 1), ("body", "/models/searchTopics/topK", 0, 250), ("body", "/models/searchTopics/maxOutputTokens", 1, 16384), ("body", "/models/searchTopics/maxAttempts", 1, 10), ("body", "/models/title/maxOutputTokens", 1, 512), ("body", "/models/title/maxAttempts", 1, 10), ("body", "/knowledgeBases/*/maxQueries", 1, 20), ("body", "/knowledgeBases/*/numberOfResults", 1, 50), ("body", "/knowledgeBases/*/minimumScore", 0, 1), ("body", "/knowledgeBases/*/minimumRelevance", 0, 1), ("body", "/knowledgeBases/*/evaluation/maxSearchResults", 1, 100), ("body", "/knowledgeBases/*/evaluation/maxResults", 1, 100), ("body", "/knowledgeBases/*/evaluation/judge/temperature", 0, 1), ("body", "/knowledgeBases/*/evaluation/judge/topP", 0, 1), ("body", "/knowledgeBases/*/evaluation/judge/topK", 0, 250), ("body", "/knowledgeBases/*/evaluation/judge/maxOutputTokens", 1, 16384), ("body", "/knowledgeBases/*/evaluation/judge/maxAttempts", 1, 10), ("body", "/workflow/phases/*/maxSteps", 1, 50), ("body", "/workflow/phases/*/toolCallChecks/maxRetries", 0, 10), ("body", "/workflow/phases/*/attributionChecks/maxRetries", 0, 10), ("body", "/workflow/phases/*/fields/*/maxByteSize", 1, None), ("body", "/answers/mediaEmbeds/reservedResults", 0, 10), ("body", "/attachments/maxFiles", 1, 10), ("body", "/attachments/maxByteSize", 102400, 10485760), ("body", "/memory/minimumRelevance", 0, 1), ("body", "/memory/maxResults", 1, 100), ("body", "/liveAvatar/holdingPhrases/intervalMs", 1000, 60000), ("body", "/liveAvatar/holdingPhrases/skipChance", 0, 1), ("body", "/liveAvatar/inactivityTimeoutMs", 0, None), ("body", "/liveAvatar/voiceTuning/speed", 0.8, 1.2), ("body", "/liveAvatar/voiceTuning/stability", 0, 1), ("body", "/liveAvatar/voiceTuning/style", 0, 1), ("body", "/liveAvatar/pauseAndResume/pausedTimeoutMs", 60000, 3600000),),
     stability="beta",
     thing=True,
 )
@@ -1459,6 +1485,7 @@ UPDATE_DRAFT_VERSION: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("body", "/models/answer/temperature", 0, 1), ("body", "/models/answer/topP", 0, 1), ("body", "/models/answer/topK", 0, 250), ("body", "/models/answer/maxOutputTokens", 1, 16384), ("body", "/models/answer/maxAttempts", 1, 10), ("body", "/models/answer/maxContinuations", 0, 5), ("body", "/models/planning/temperature", 0, 1), ("body", "/models/planning/topP", 0, 1), ("body", "/models/planning/topK", 0, 250), ("body", "/models/planning/maxOutputTokens", 1, 16384), ("body", "/models/planning/maxAttempts", 1, 10), ("body", "/models/summary/temperature", 0, 1), ("body", "/models/summary/topP", 0, 1), ("body", "/models/summary/topK", 0, 250), ("body", "/models/summary/maxOutputTokens", 1, 16384), ("body", "/models/summary/maxAttempts", 1, 10), ("body", "/models/classification/temperature", 0, 1), ("body", "/models/classification/topP", 0, 1), ("body", "/models/classification/topK", 0, 250), ("body", "/models/classification/maxOutputTokens", 1, 16384), ("body", "/models/classification/maxAttempts", 1, 10), ("body", "/models/searchTopics/temperature", 0, 1), ("body", "/models/searchTopics/topP", 0, 1), ("body", "/models/searchTopics/topK", 0, 250), ("body", "/models/searchTopics/maxOutputTokens", 1, 16384), ("body", "/models/searchTopics/maxAttempts", 1, 10), ("body", "/models/title/maxOutputTokens", 1, 512), ("body", "/models/title/maxAttempts", 1, 10), ("body", "/knowledgeBases/*/maxQueries", 1, 20), ("body", "/knowledgeBases/*/numberOfResults", 1, 50), ("body", "/knowledgeBases/*/minimumScore", 0, 1), ("body", "/knowledgeBases/*/minimumRelevance", 0, 1), ("body", "/knowledgeBases/*/evaluation/maxSearchResults", 1, 100), ("body", "/knowledgeBases/*/evaluation/maxResults", 1, 100), ("body", "/knowledgeBases/*/evaluation/judge/temperature", 0, 1), ("body", "/knowledgeBases/*/evaluation/judge/topP", 0, 1), ("body", "/knowledgeBases/*/evaluation/judge/topK", 0, 250), ("body", "/knowledgeBases/*/evaluation/judge/maxOutputTokens", 1, 16384), ("body", "/knowledgeBases/*/evaluation/judge/maxAttempts", 1, 10), ("body", "/workflow/phases/*/maxSteps", 1, 50), ("body", "/workflow/phases/*/toolCallChecks/maxRetries", 0, 10), ("body", "/workflow/phases/*/attributionChecks/maxRetries", 0, 10), ("body", "/workflow/phases/*/fields/*/maxByteSize", 1, None), ("body", "/answers/mediaEmbeds/reservedResults", 0, 10), ("body", "/attachments/maxFiles", 1, 10), ("body", "/attachments/maxByteSize", 102400, 10485760), ("body", "/memory/minimumRelevance", 0, 1), ("body", "/memory/maxResults", 1, 100), ("body", "/liveAvatar/holdingPhrases/intervalMs", 1000, 60000), ("body", "/liveAvatar/holdingPhrases/skipChance", 0, 1), ("body", "/liveAvatar/inactivityTimeoutMs", 0, None), ("body", "/liveAvatar/voiceTuning/speed", 0.8, 1.2), ("body", "/liveAvatar/voiceTuning/stability", 0, 1), ("body", "/liveAvatar/voiceTuning/style", 0, 1), ("body", "/liveAvatar/pauseAndResume/pausedTimeoutMs", 60000, 3600000),),
     stability="beta",
     thing=True,
 )
@@ -1568,6 +1595,7 @@ UPDATE_KNOWLEDGE_BASE: Final = OperationSpec(
     errors={400: ValidationError, 401: UnauthenticatedError, 403: PermissionDeniedError, 404: NotFoundError, 409: ConflictError, 412: PreconditionFailedError, 413: PayloadTooLargeError, 422: UnprocessableContentError, 428: PreconditionRequiredError, 429: TooManyRequestsError, 500: InternalError, 503: ServiceUnavailableError},
     retry_safe=True,
     since="5.115.0",
+    ranges=(("body", "/retrieval/resultsPerSearch", 1, 50), ("body", "/retrieval/minimumMatch", 0, 1), ("body", "/retrieval/minimumRelevance", 0, 1), ("body", "/features/nearbyPassages/count", 0, 2),),
     stability="beta",
     thing=True,
 )

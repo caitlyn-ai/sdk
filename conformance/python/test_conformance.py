@@ -207,6 +207,22 @@ async def test_above_max_retry_delay(mock: Mock, case_id: str) -> None:
 # ------------------------------------------------------------------ pagination
 
 
+@case("requests.range")
+async def test_requests_range(mock: Mock, case_id: str) -> None:
+    c = client(mock)
+    listed = await expect_error(c.knowledge_bases("KB4T7YQ2WL").documents.list(limit=500).page())
+    assert (type(listed), listed.status, listed.code) == (ValidationError, 0, "VALIDATION_FAILED")
+    assert [(e.parameter, e.pointer, e.code) for e in listed.errors] == [("limit", None, "VALIDATION_FAILED")]
+    reserved = await expect_error(
+        c.core.uploads.reserve(file_name="a.txt", content_type="text/plain", byte_size=1, sha256="x", expires_in_seconds=30)
+    )
+    assert (reserved.status, reserved.code) == (0, "VALIDATION_FAILED")
+    assert [(e.parameter, e.pointer) for e in reserved.errors] == [(None, "/expiresInSeconds")]
+    assert len(mock.api()) == 0, "nothing is sent"
+    await c.knowledge_bases("KB4T7YQ2WL").documents.list(limit=100).page()
+    assert len(mock.api()) == 1, "a value inside its range is sent"
+
+
 @case("pagination.to-last-page")
 async def test_pagination(mock: Mock, case_id: str) -> None:
     docs = await collect(client(mock).knowledge_bases("KB4T7YQ2WL").documents.list(limit=3))
@@ -3743,16 +3759,15 @@ async def test_batch_upload_keep_alive(mock: Mock, case_id: str) -> None:
 
 @case("batch-upload.short-window")
 async def test_batch_upload_short_window(mock: Mock, case_id: str) -> None:
-    # A 2-second window (under the server's 60-second least: the mock's test mode) and one file that takes 2.5 s to
-    # arrive. Each policy lasts 2 s, so its renewal margin is 1 s, not 5 minutes: renewals about 1 s apart, not at once
+    # A 60-second window that the mock's test mode makes 2 s long, and one file that takes 2.5 s to arrive. Each policy lasts 2 s, so its renewal margin is 1 s, not 5 minutes: renewals about 1 s apart, not at once
     # and then on each of the keep-alive's ticks.
     mock.faults(shortWindows=True, uploadDelayMs=2500)
     c = client(mock)
     files = [SyncFile("annual-leave.pdf", UploadFile.from_bytes(b"%PDF annual", name="annual-leave.pdf"))]
-    report = await c.knowledge_bases(KB).ingestion.sync(files, folder="/window/", upload_window_seconds=2)
+    report = await c.knowledge_bases(KB).ingestion.sync(files, folder="/window/", upload_window_seconds=60)
     assert str(report.batch.status) == "succeeded"
     created = [r for r in mock.api() if r["method"] == "POST" and str(r["path"]).endswith("/ingestion-batches")][0]
-    assert json.loads(created["body"])["uploadWindowSeconds"] == 2, "sent as given"
+    assert json.loads(created["body"])["uploadWindowSeconds"] == 60, "sent as given"
     at = [int(r["at"]) for r in calls(mock, "/upload-policies")]
     assert 1 <= len(at) <= 3, f"{len(at)} renewals in a 2.5 s upload under 2 s policies"
     gaps = [b - a for a, b in zip(at, at[1:])]

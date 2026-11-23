@@ -1073,17 +1073,17 @@ const MAX_FILE = 2_147_483_648; // 2 GB (PROTOCOL.md 14)
 
 /**
  * A caller-set window (uploadWindowSeconds on CreateIngestionBatch, expiresInSeconds on CreateUpload): 60 to 3600
- * seconds, as the server takes them, or down to 1 second under faults.shortWindows, so a test of a deadline runs in
- * seconds. Returns [seconds | undefined, problem | undefined].
+ * seconds, as the server takes them. Under faults.shortWindows an uploadWindowSeconds counts thirtieths of a second
+ * (the least, 60, lasts 2 s), so a test of a deadline runs in seconds while sending a value the SDKs' range check
+ * (PROTOCOL.md 3) lets through. Returns [seconds | undefined, problem | undefined].
  */
 function windowSeconds(input, member) {
   const v = input?.[member];
   if (v === undefined || v === null) return [undefined, undefined];
-  const least = faults.shortWindows ? 1 : 60;
-  if (!Number.isInteger(v) || v < least || v > 3600) {
-    return [undefined, { status: 400, problem: ['VALIDATION_FAILED', `${member} is from ${least} to 3600 seconds`, { fieldErrors: [{ pointer: `/${member}`, code: 'VALIDATION_FAILED' }] }] }];
+  if (!Number.isInteger(v) || v < 60 || v > 3600) {
+    return [undefined, { status: 400, problem: ['VALIDATION_FAILED', `${member} is from 60 to 3600 seconds`, { fieldErrors: [{ pointer: `/${member}`, code: 'VALIDATION_FAILED' }] }] }];
   }
-  return [v, undefined];
+  return [faults.shortWindows && member === 'uploadWindowSeconds' ? v / 30 : v, undefined];
 }
 const AVATAR_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const AVATAR_MAX = 1_048_576; // 1 MB
