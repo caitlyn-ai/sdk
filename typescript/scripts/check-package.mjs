@@ -49,14 +49,19 @@ import { gzipSync } from 'node:zlib';
 // The @range check (PROTOCOL.md 3) raised every entry by 2 200 bytes (39 763 for one operation): its 212 rules, one
 // for each value with a range in each operation's request (1.5 KB gzipped, most of them the agent configuration's,
 // in the four operations that send one), and the check itself.
+// Since 2026-11-25 each budget keeps about 1 KB (1 000 to 1 100 bytes) above its size, measured against the app's
+// deprecations model (caitlyn!2113: one operation 39 949, the Caitlyn class 58 132, bundled for Node 43 102): model:main
+// regenerates on every app model change and runs these, so a budget set a few bytes above today's size would fail it on
+// the next operation or member the app adds. Raise a budget, again with about 1 KB to spare, when a change leaves less
+// than 300 bytes.
 const ENTRIES = {
   'client + one operation': {
-    budget: 40_000,
+    budget: 41_000,
     code: `import { createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk';
 export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
   },
   'client + one operation + oauth sign-in': {
-    budget: 40_100,
+    budget: 41_100,
     code: `import { createAuth, createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk';
 const options = { workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'oauth', clientId: 'app', redirectUri: location.origin + '/callback' } };
 const auth = createAuth(options);
@@ -66,14 +71,14 @@ export const finish = (p) => auth.handleCallback(p);
 export const run = () => getAgentVersion(client, { agentId: 'A', version: 'draft' });`,
   },
   'client + streaming chat': {
-    budget: 45_200, // 0.10.1: a message's attachments are sent with the storage stall timer (files.ts); the stream runtime's resume from a
+    budget: 46_200, // 0.10.1: a message's attachments are sent with the storage stall timer (files.ts); the stream runtime's resume from a
     // watch's own Last-Event-ID (45 109)
     code: `import { createCaitlynClient, sendMessage } from '@caitlyn-ai/sdk';
 const client = createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'session' } });
 export const ask = async (conversationId, message, onText) => { for await (const e of sendMessage(client, { conversationId, message })) if (e.type === 'text.delta') onText(e.delta); };`,
   },
   'Caitlyn class (every operation)': {
-    budget: 58_200, // grows with every operation the model gains, and with the stream runtime: raise it with the change that needs it
+    budget: 59_200, // grows with every operation the model gains, and with the stream runtime: raise it with the change that needs it
     code: `import { Caitlyn } from '@caitlyn-ai/sdk';
 export const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 't' } });`,
   },
@@ -81,13 +86,13 @@ export const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', au
   // and the browser build when it imports '@caitlyn-ai/sdk/browser'.
   // A Node bundle (a Lambda, say): the Node build, on fetch, with nothing from the Smithy HTTP handlers.
   'client + one operation, bundled for Node': {
-    budget: 43_100,
+    budget: 44_200,
     platform: 'node',
     code: `import { createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk';
 export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
   },
   'client + one operation, @caitlyn-ai/sdk/browser in a web worker': {
-    budget: 40_000,
+    budget: 41_000,
     conditions: ['worker'],
     code: `import { createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk/browser';
 export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
