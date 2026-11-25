@@ -575,6 +575,12 @@ final class ScopeWriter {
                 + "    /// carries on while its bytes keep moving.\n"
                 + "    pub fn storage_stall_timeout(self, timeout: Option<Duration>) -> Self {\n        ClientBuilder(self.0.storage_stall_timeout(timeout))\n    }\n\n");
         w.l("    /// Adds `app/<id>` to the user agent.\n    pub fn app_id(self, id: impl Into<String>) -> Self {\n        ClientBuilder(self.0.app_id(id))\n    }\n\n");
+        w.l("    /// Adds `ci/<provider>` to the user agent, after `app/`: the CI system your application recognises it runs in\n"
+                + "    /// (github, gitlab, buildkite, circleci, jenkins, azure-pipelines, bitbucket, or generic). 1 to 32 of a-z, 0-9\n"
+                + "    /// and -, or `build` fails.\n    pub fn ci(self, provider: impl Into<String>) -> Self {\n        ClientBuilder(self.0.ci(provider))\n    }\n\n");
+        w.l("    /// Adds `agent/<name>` to the user agent, after `app/` and `ci/`: the AI agent your application recognises is\n"
+                + "    /// driving it, such as claude-code. 1 to 32 of a-z, 0-9 and -, or `build` fails.\n"
+                + "    pub fn agent(self, name: impl Into<String>) -> Self {\n        ClientBuilder(self.0.agent(name))\n    }\n\n");
         w.l("    /// Writes trace context into each attempt's headers (see [`Propagator`](rt::Propagator)).\n"
                 + "    pub fn propagator(self, p: impl rt::Propagator + 'static) -> Self {\n        ClientBuilder(self.0.propagator(p))\n    }\n\n");
         w.l("    /// Where a one-shot reader past 8 MiB is spooled while it is hashed: a file only its owner can read, deleted\n"

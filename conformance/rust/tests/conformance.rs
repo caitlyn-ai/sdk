@@ -1762,6 +1762,38 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
         }),
 
         // ------------------------------------------------------------------ wire and environment
+        "wire.user-agent-suffixes" => Box::pin(async move {
+            let c = Client::builder(WORKSPACE, Auth::token(PAT))
+                .endpoint(&m.base)
+                .app_id("acme-intake#2.1")
+                .ci("gitlab")
+                .agent("claude-code")
+                .build()
+                .map_err(s)?;
+            draft(&c).await.map_err(s)?;
+            let sent = m.api().await;
+            ensure!(sent.len() == 1, "requests={}", sent.len());
+            let ua = header(&sent[0], "user-agent").unwrap_or_default();
+            ensure!(
+                ua.ends_with(" app/acme-intake#2.1 ci/gitlab agent/claude-code"),
+                "user agent {ua:?}"
+            );
+            for (ci, agent) in [
+                ("GitLab", "claude-code"),
+                ("gitlab", "claude code"),
+                (&*"x".repeat(33), "claude-code"),
+                ("gitlab", ""),
+            ] {
+                let built = Client::builder(WORKSPACE, Auth::token(PAT))
+                    .endpoint(&m.base)
+                    .ci(ci)
+                    .agent(agent)
+                    .build();
+                ensure!(matches!(built, Err(Error::Input(_))), "ci {ci:?} agent {agent:?} built a client");
+            }
+            ensure!(m.api().await.len() == 1, "an invalid value sent nothing");
+            Ok(())
+        }),
         "wire.headers" => Box::pin(async move {
             m.faults(status("GetAgentVersion", &[(503, 0)])).await;
             draft(&client(m)).await.map_err(s)?;

@@ -1121,6 +1121,21 @@ var protocol = map[string]func(t *testing.T, m mock){
 	},
 
 	// ------------------------------------------------------------------ wire and environment
+	"wire.user-agent-suffixes": func(t *testing.T, m mock) {
+		draft(t, client(t, m, caitlyn.WithAppID("acme-intake#2.1"), caitlyn.WithCI("gitlab"), caitlyn.WithAgent("claude-code")))
+		sent := m.api(t)
+		if len(sent) != 1 || !strings.HasSuffix(sent[0].Headers["user-agent"], " app/acme-intake#2.1 ci/gitlab agent/claude-code") {
+			t.Fatalf("user agent %v", sent)
+		}
+		for _, bad := range []caitlyn.Option{caitlyn.WithCI("GitLab"), caitlyn.WithAgent("claude code"), caitlyn.WithCI(strings.Repeat("x", 33))} {
+			if _, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token("pat_test"), caitlyn.WithEndpoint(m.base), bad); err == nil {
+				t.Fatal("an invalid ci/ or agent/ value built a client")
+			}
+		}
+		if n := len(m.api(t)); n != 1 {
+			t.Fatalf("%d requests; an invalid value sent one", n)
+		}
+	},
 	"wire.headers": func(t *testing.T, m mock) {
 		m.faults(t, status("GetAgentVersion", fault(503, 0)))
 		draft(t, client(t, m))

@@ -8,6 +8,7 @@ import dataclasses
 import json
 import platform
 import random
+import re
 import threading
 import time
 from collections import deque
@@ -53,6 +54,8 @@ from ._sse import SseDecoder, SseMessage
 from .auth import AsyncAuthSession, Auth, SyncAuthSession, workspace_host
 
 USER_AGENT_PREFIX = "caitlyn-sdk-python"
+_USER_AGENT_TOKEN = re.compile(r"[a-z0-9-]{1,32}")
+"""A ci/ or agent/ user-agent value (PROTOCOL.md 3.2)."""
 
 
 def workspace_endpoint(workspace: str) -> str:
@@ -86,6 +89,10 @@ class ClientConfig:
     interceptors: tuple[Interceptor, ...] = ()
     app_id: str | None = None
     """Appended to the user agent as ``app/<app_id>``. Declared only; never used for authorisation."""
+    ci: str | None = None
+    """Appended after ``app/`` as ``ci/<ci>``: the CI system the application recognises it runs in (PROTOCOL.md 3.2)."""
+    agent: str | None = None
+    """Appended after ``ci/`` as ``agent/<agent>``: the AI agent the application recognises is driving it."""
     max_reconnects: int = 3
     workspace: str = ""
     """The workspace hostname: it sets the token audience, ``https://<workspace>/api``, whatever the endpoint."""
@@ -108,7 +115,12 @@ class ClientConfig:
         tracer_provider: TracerProvider | None,
         interceptors: Sequence[Interceptor],
         app_id: str | None,
+        ci: str | None = None,
+        agent: str | None = None,
     ) -> ClientConfig:
+        for name, value in (("ci", ci), ("agent", agent)):
+            if value is not None and not _USER_AGENT_TOKEN.fullmatch(value):
+                raise ValueError(f"The {name}/ user-agent value {value!r} must be 1 to 32 of a-z, 0-9 and -")
         # Endpoints, retries and timeouts come from these options only: no environment, no AWS configuration.
         if endpoint is None:
             if workspace is None:
@@ -134,6 +146,8 @@ class ClientConfig:
             tracer_provider=tracer_provider,
             interceptors=tuple(interceptors),
             app_id=app_id,
+            ci=ci,
+            agent=agent,
             workspace=host,
         )
 
@@ -146,6 +160,10 @@ class ClientConfig:
         )
         if self.app_id:
             ua += f" app/{self.app_id}"
+        if self.ci:
+            ua += f" ci/{self.ci}"
+        if self.agent:
+            ua += f" agent/{self.agent}"
         return {"User-Agent": ua, SDK_MODEL_HEADER: self.sdk_model}
 
 

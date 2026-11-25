@@ -1022,6 +1022,17 @@ async def test_wire_headers(mock: Mock, case_id: str) -> None:
         assert "traceparent" not in r["headers"]  # no propagator configured, nothing sent
 
 
+@case("wire.user-agent-suffixes")
+async def test_wire_user_agent_suffixes(mock: Mock, case_id: str) -> None:
+    await client(mock, app_id="acme-intake#2.1", ci="gitlab", agent="claude-code").agents("GHT7YRWXPL").draft.get()
+    [sent] = mock.api()
+    assert sent["headers"]["user-agent"].endswith(" app/acme-intake#2.1 ci/gitlab agent/claude-code"), sent["headers"]["user-agent"]
+    for bad in ({"ci": "GitLab"}, {"agent": "claude code"}, {"ci": "x" * 33}, {"agent": ""}):
+        with pytest.raises(ValueError):
+            client(mock, **bad)
+    assert len(mock.api()) == 1, "an invalid value sent nothing"
+
+
 @case("environment.hostile-aws")
 async def test_hostile_aws(mock: Mock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case_id: str) -> None:
     hostile = "max_attempts = 1\nretry_mode = adaptive\ndefaults_mode = auto\nendpoint_url = http://127.0.0.1:9\nregion = xx-hostile-1\n"

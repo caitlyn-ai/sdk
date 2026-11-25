@@ -115,6 +115,16 @@ func WithPropagator(p propagation.TextMapPropagator) Option { return core.WithPr
 // WithAppID adds app/<id> to the user agent.
 func WithAppID(id string) Option { return core.WithAppID(id) }
 
+// WithCI adds ci/<provider> to the user agent, after app/: the CI system the application recognises it is running in
+// (github, gitlab, buildkite, circleci, jenkins, azure-pipelines, bitbucket, or generic). Declared only; never used for
+// authorisation. The value is 1 to 32 of a-z, 0-9 and -, or New fails.
+func WithCI(provider string) Option { return core.WithCI(provider) }
+
+// WithAgent adds agent/<name> to the user agent, after app/ and ci/: the AI agent the application recognises is
+// driving it, such as claude-code. Declared only; never used for authorisation. The value is 1 to 32 of a-z, 0-9 and
+// -, or New fails.
+func WithAgent(name string) Option { return core.WithAgent(name) }
+
 // WithIfMatch sends If-Match: etag.
 func WithIfMatch(etag string) CallOption { return core.WithIfMatch(etag) }
 

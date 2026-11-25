@@ -44,6 +44,29 @@ export interface CaitlynOptions {
    */
   retryBudget?: number;
   telemetry?: { tracerProvider?: TracerProvider; enabled?: boolean };
+  /** Your application's name, sent in the user agent as `app/<appId>`: `<name>` or `<name>#<version>`. Declared only; never used for authorisation. */
+  appId?: string;
+  /**
+   * The CI system your application recognises it runs in, sent after `app/` as `ci/<ci>` (github, gitlab, buildkite,
+   * circleci, jenkins, azure-pipelines, bitbucket, or generic). 1 to 32 of a-z, 0-9 and -, or creating the client throws.
+   */
+  ci?: string;
+  /**
+   * The AI agent your application recognises is driving it, sent last as `agent/<agent>` (for example claude-code).
+   * 1 to 32 of a-z, 0-9 and -, or creating the client throws.
+   */
+  agent?: string;
+}
+
+/** The caller's own user-agent tokens (PROTOCOL.md 3.1 and 3.2): `app/`, then `ci/`, then `agent/`, each only when given. */
+export function callerUserAgent(opts: Pick<CaitlynOptions, 'appId' | 'ci' | 'agent'>): string | undefined {
+  for (const [name, value] of [['ci', opts.ci], ['agent', opts.agent]] as const) {
+    if (value !== undefined && !/^[a-z0-9-]{1,32}$/.test(value)) {
+      throw new TypeError(`The ${name}/ user-agent value ${JSON.stringify(value)} must be 1 to 32 of a-z, 0-9 and -.`);
+    }
+  }
+  const tokens = [opts.appId && `app/${opts.appId}`, opts.ci && `ci/${opts.ci}`, opts.agent && `agent/${opts.agent}`].filter(Boolean);
+  return tokens.length ? tokens.join(' ') : undefined;
 }
 
 export interface CallOptions {
@@ -62,6 +85,7 @@ export function createAuth(opts: CaitlynOptions): AuthSession {
 
 /** The generated client's configuration for a set of options. */
 export function clientConfig(opts: CaitlynOptions, auth: AuthSession = createAuth(opts)) {
+  const customUserAgent = callerUserAgent(opts);
   return {
     /** The workspace this client is for; readable as client.config.workspace. */
     workspace: workspaceHost(opts.workspace),
@@ -71,6 +95,7 @@ export function clientConfig(opts: CaitlynOptions, auth: AuthSession = createAut
     caitlynTracer: opts.telemetry?.enabled === false ? undefined : caitlynTracer(opts.telemetry?.tracerProvider),
     /** How file helpers retry the bytes they send to storage (PROTOCOL.md 14): the client's own limits. */
     caitlynStorage: { maxAttempts: opts.maxAttempts, maxRetryDelayMs: opts.maxRetryDelayMs, stallTimeoutMs: opts.storageStallTimeoutMs },
+    ...(customUserAgent !== undefined ? { customUserAgent } : {}),
     ...(opts.requestHandler !== undefined ? { requestHandler: opts.requestHandler } : {}),
     ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
     ...(opts.maxRetryDelayMs !== undefined || opts.retryBudget !== undefined
