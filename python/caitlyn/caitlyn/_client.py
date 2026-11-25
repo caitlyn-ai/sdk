@@ -11096,6 +11096,10 @@ class Caitlyn:
         tracer_provider: OpenTelemetry tracer provider (default: the global one).
         interceptors: hooks run around every call and attempt.
         app_id: your application's name, sent in the user agent as `app/<app_id>`.
+        ci: the CI system your application recognises it runs in, sent after it as `ci/<ci>` (github, gitlab, buildkite,
+            circleci, jenkins, azure-pipelines, bitbucket, or generic). 1 to 32 of a-z, 0-9 and -.
+        agent: the AI agent your application recognises is driving it, sent last as `agent/<agent>` (for example
+            claude-code). 1 to 32 of a-z, 0-9 and -.
         http_client: your own httpx client, for its transport, proxy or TLS settings. Requests go to the workspace or `endpoint`; its `base_url` is not used.
             With your own httpx.Client, Ctrl-C stops an upload still sending at once, but one that has finished sending waits for
             storage's answer, up to `storage_stall_timeout`.
@@ -11124,6 +11128,8 @@ class Caitlyn:
         tracer_provider: TracerProvider | None = None,
         interceptors: Sequence[Interceptor] = (),
         app_id: str | None = None,
+        ci: str | None = None,
+        agent: str | None = None,
         http_client: httpx.Client | None = None,
     ) -> None:
         config = ClientConfig.create(
@@ -11141,6 +11147,8 @@ class Caitlyn:
             tracer_provider=tracer_provider,
             interceptors=interceptors,
             app_id=app_id,
+            ci=ci,
+            agent=agent,
         )
         self._core = SyncClientCore(config, http_client)
         self.auth = self._core.auth
@@ -11215,6 +11223,10 @@ class AsyncCaitlyn:
         tracer_provider: OpenTelemetry tracer provider (default: the global one).
         interceptors: hooks run around every call and attempt.
         app_id: your application's name, sent in the user agent as `app/<app_id>`.
+        ci: the CI system your application recognises it runs in, sent after it as `ci/<ci>` (github, gitlab, buildkite,
+            circleci, jenkins, azure-pipelines, bitbucket, or generic). 1 to 32 of a-z, 0-9 and -.
+        agent: the AI agent your application recognises is driving it, sent last as `agent/<agent>` (for example
+            claude-code). 1 to 32 of a-z, 0-9 and -.
         http_client: your own httpx client, for its transport, proxy or TLS settings. Requests go to the workspace or `endpoint`; its `base_url` is not used.
     """
 
@@ -11241,6 +11253,8 @@ class AsyncCaitlyn:
         tracer_provider: TracerProvider | None = None,
         interceptors: Sequence[Interceptor] = (),
         app_id: str | None = None,
+        ci: str | None = None,
+        agent: str | None = None,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         config = ClientConfig.create(
@@ -11258,6 +11272,8 @@ class AsyncCaitlyn:
             tracer_provider=tracer_provider,
             interceptors=interceptors,
             app_id=app_id,
+            ci=ci,
+            agent=agent,
         )
         self._core = AsyncClientCore(config, http_client)
         self.auth = self._core.auth

@@ -987,6 +987,15 @@ test('[wire.headers] exactly the SDK headers: Caitlyn user agent, Caitlyn-Sdk-Mo
   }
 });
 
+test('[wire.user-agent-suffixes] the caller\'s app/, ci/ and agent/ come last, in that order; an invalid ci/ or agent/ value fails when the client is built', async () => {
+  await client({ appId: 'acme-intake#2.1', ci: 'gitlab', agent: 'claude-code' }).agents('GHT7YRWXPL').draft.get();
+  const [sent] = await api();
+  // A page sends the SDK's User-Agent where the browser allows it (Firefox), and its own where it does not.
+  if (!IN_PAGE || sent.headers['user-agent'].startsWith('caitlyn-sdk-ts/')) assert.match(sent.headers['user-agent'], / app\/acme-intake#2\.1 ci\/gitlab agent\/claude-code$/);
+  for (const bad of [{ ci: 'GitLab' }, { agent: 'claude code' }, { ci: 'x'.repeat(33) }, { agent: '' }]) assert.throws(() => client(bad), TypeError);
+  assert.equal((await api()).length, 1, 'an invalid value sent nothing');
+});
+
 test('[environment.hostile-aws] hostile AWS_* variables and ~/.aws files change nothing', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'caitlyn-hostile-'));
   const hostile = '[default]\nmax_attempts = 1\nretry_mode = adaptive\ndefaults_mode = auto\nendpoint_url = http://127.0.0.1:9\nregion = xx-hostile-1\n';

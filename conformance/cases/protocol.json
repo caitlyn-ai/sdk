@@ -61,6 +61,7 @@
     {"id": "update.if-match", "section": "10", "title": "If-Match is sent from the call option and the new ETag comes back"},
     {"id": "update.clear", "section": "8", "title": "clear sends only the clear list, and the field is cleared"},
     {"id": "wire.headers", "section": "3.1", "title": "Exactly the SDK headers: Caitlyn user agent, Caitlyn-Sdk-Model, no AWS headers"},
+    {"id": "wire.user-agent-suffixes", "section": "3.2", "title": "The SDK appends the caller's ci/ and agent/ values after app/, in that order, and refuses a value outside [a-z0-9-]{1,32} when the client is built, sending nothing"},
     {"id": "environment.hostile-aws", "section": "3.1", "title": "Hostile AWS_* variables and ~/.aws files change nothing"},
     {"id": "since.fails-before-sending", "section": "9", "title": "An operation newer than the server's Caitlyn-Api-Version fails before anything is sent"},
     {"id": "since.unknown-operation", "section": "9", "title": "A 404 UNKNOWN_OPERATION or a 405 METHOD_NOT_ALLOWED, even on a client's first call, is NotSupportedByServer with the operation's @since and the response's Caitlyn-Api-Version, not retried; a 404 NOT_FOUND stays the not-found error"},

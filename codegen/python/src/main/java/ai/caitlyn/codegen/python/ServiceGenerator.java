@@ -1766,6 +1766,10 @@ final class ServiceGenerator {
                 + "    tracer_provider: OpenTelemetry tracer provider (default: the global one).\n"
                 + "    interceptors: hooks run around every call and attempt.\n"
                 + "    app_id: your application's name, sent in the user agent as `app/<app_id>`.\n"
+                + "    ci: the CI system your application recognises it runs in, sent after it as `ci/<ci>` (github, gitlab, buildkite,\n"
+                + "        circleci, jenkins, azure-pipelines, bitbucket, or generic). 1 to 32 of a-z, 0-9 and -.\n"
+                + "    agent: the AI agent your application recognises is driving it, sent last as `agent/<agent>` (for example\n"
+                + "        claude-code). 1 to 32 of a-z, 0-9 and -.\n"
                 + "    http_client: your own httpx client, for its transport, proxy or TLS settings. Requests go to the workspace or `endpoint`; its `base_url` is not used."
                 + (async ? "" : "\n        With your own httpx.Client, Ctrl-C stops an upload still sending at once, but one that has finished sending waits for\n"
                         + "        storage's answer, up to `storage_stall_timeout`.");
@@ -1792,6 +1796,8 @@ final class ServiceGenerator {
         w.write("tracer_provider: TracerProvider | None = None,");
         w.write("interceptors: Sequence[Interceptor] = (),");
         w.write("app_id: str | None = None,");
+        w.write("ci: str | None = None,");
+        w.write("agent: str | None = None,");
         w.write("http_client: $L | None = None,", async ? "httpx.AsyncClient" : "httpx.Client");
         w.dedent();
         w.write(") -> None:");
@@ -1812,6 +1818,8 @@ final class ServiceGenerator {
         w.write("tracer_provider=tracer_provider,");
         w.write("interceptors=interceptors,");
         w.write("app_id=app_id,");
+        w.write("ci=ci,");
+        w.write("agent=agent,");
         w.dedent();
         w.write(")");
         w.write("self._core = $L(config, http_client)", core);

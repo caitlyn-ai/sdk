@@ -12,6 +12,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -45,6 +46,8 @@ type settings struct {
 	tracerProvider trace.TracerProvider
 	propagator     propagation.TextMapPropagator
 	appID          string
+	ci             string
+	agent          string
 	retryBudget    int
 	// requestTimeout is how long an attempt waits for its response's headers; 0 waits as long as it takes.
 	requestTimeout time.Duration
@@ -121,6 +124,29 @@ func WithPropagator(p propagation.TextMapPropagator) Option {
 // WithAppID adds app/<id> to the user agent.
 func WithAppID(id string) Option { return func(s *settings) { s.appID = id } }
 
+// WithCI adds ci/<provider> to the user agent, after app/: the CI system the application recognises it is running in
+// (github, gitlab, buildkite, circleci, jenkins, azure-pipelines, bitbucket, or generic). Declared only, never used for
+// authorisation (PROTOCOL.md 3.2). The value is 1 to 32 of a-z, 0-9 and -, or New fails.
+func WithCI(provider string) Option { return func(s *settings) { s.ci = provider } }
+
+// WithAgent adds agent/<name> to the user agent, after app/ and ci/: the AI agent the application recognises is
+// driving it, such as claude-code. Declared only, never used for authorisation (PROTOCOL.md 3.2). The value is 1 to 32
+// of a-z, 0-9 and -, or New fails.
+func WithAgent(name string) Option { return func(s *settings) { s.agent = name } }
+
+// userAgentToken reports whether v is a valid ci/ or agent/ value: 1 to 32 of a-z, 0-9 and - (PROTOCOL.md 3.2).
+func userAgentToken(v string) bool {
+	if len(v) < 1 || len(v) > 32 {
+		return false
+	}
+	for _, r := range v {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
+			return false
+		}
+	}
+	return true
+}
+
 // Client is the runtime half of a generated client. It is safe for concurrent use.
 type Client struct {
 	s         settings
@@ -170,6 +196,11 @@ func NewClient(sdk SDKInfo, workspace string, auth Auth, opts ...Option) (*Clien
 		}
 		s.endpoint = WorkspaceEndpoint(workspace)
 	}
+	for _, t := range [][2]string{{"ci", s.ci}, {"agent", s.agent}} {
+		if t[1] != "" && !userAgentToken(t[1]) {
+			return nil, fmt.Errorf("caitlyn: the %s/ user-agent value %q must be 1 to 32 of a-z, 0-9 and -", t[0], t[1])
+		}
+	}
 	if auth == nil {
 		return nil, errors.New("caitlyn: auth is required (for example caitlyn.Token(\"cait-pat-…\"))")
 	}
@@ -194,14 +225,15 @@ func NewClient(sdk SDKInfo, workspace string, auth Auth, opts ...Option) (*Clien
 		s.propagator = otel.GetTextMapPropagator()
 	}
 	c := &Client{s: s, sdk: sdk, budget: newRetryBudget(s.retryBudget)}
-	c.userAgent = userAgent(sdk.Version, s.appID)
+	c.userAgent = userAgent(sdk.Version, s.appID, s.ci, s.agent)
 	c.auth = newAuthSession(auth, s.endpoint, workspace, s.httpClient, c.userAgent)
 	c.tracer = s.tracerProvider.Tracer("github.com/caitlyn-ai/sdk/go", trace.WithInstrumentationVersion(sdk.Version))
 	return c, nil
 }
 
-// userAgent follows PROTOCOL.md 3.1: caitlyn-sdk-go/<v> lang/go#<goVersion> md/<compiler> os/<os> [app/<id>].
-func userAgent(version, appID string) string {
+// userAgent follows PROTOCOL.md 3.1: caitlyn-sdk-go/<v> lang/go#<goVersion> md/<compiler> os/<os> [app/<id>] [ci/<provider>]
+// [agent/<name>].
+func userAgent(version, appID, ci, agent string) string {
 	goVersion := strings.TrimPrefix(runtime.Version(), "go")
 	if i := strings.IndexAny(goVersion, " "); i >= 0 {
 		goVersion = goVersion[:i]
@@ -209,6 +241,12 @@ func userAgent(version, appID string) string {
 	ua := "caitlyn-sdk-go/" + version + " lang/go#" + goVersion + " md/" + runtime.Compiler + " os/" + runtime.GOOS
 	if appID != "" {
 		ua += " app/" + appID
+	}
+	if ci != "" {
+		ua += " ci/" + ci
+	}
+	if agent != "" {
+		ua += " agent/" + agent
 	}
 	return ua
 }

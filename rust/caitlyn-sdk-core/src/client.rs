@@ -103,6 +103,8 @@ pub struct ClientBuilder {
     max_attempts: u32,
     max_retry_delay: Duration,
     app_id: Option<String>,
+    ci: Option<String>,
+    agent: Option<String>,
     propagator: Option<Arc<dyn Propagator>>,
     retry_budget: u32,
     spool_dir: Option<std::path::PathBuf>,
@@ -130,6 +132,8 @@ impl ClientBuilder {
             max_attempts: 3,
             max_retry_delay: Duration::from_secs(60),
             app_id: None,
+            ci: None,
+            agent: None,
             propagator: None,
             retry_budget: crate::budget::DEFAULT_RETRY_BUDGET,
             spool_dir: None,
@@ -194,6 +198,22 @@ impl ClientBuilder {
         self
     }
 
+    /// Adds `ci/<provider>` to the user agent, after `app/`: the CI system the application recognises it is running in
+    /// (github, gitlab, buildkite, circleci, jenkins, azure-pipelines, bitbucket, or generic). Declared only, never used
+    /// for authorisation (PROTOCOL.md 3.2). The value is 1 to 32 of a-z, 0-9 and -, or `build` fails.
+    pub fn ci(mut self, provider: impl Into<String>) -> Self {
+        self.ci = Some(provider.into());
+        self
+    }
+
+    /// Adds `agent/<name>` to the user agent, after `app/` and `ci/`: the AI agent the application recognises is
+    /// driving it, such as claude-code. Declared only, never used for authorisation (PROTOCOL.md 3.2). The value is 1 to
+    /// 32 of a-z, 0-9 and -, or `build` fails.
+    pub fn agent(mut self, name: impl Into<String>) -> Self {
+        self.agent = Some(name.into());
+        self
+    }
+
     /// Writes `traceparent`, `tracestate` and `baggage` into each attempt's headers. With none, nothing is sent.
     pub fn propagator(mut self, p: impl Propagator + 'static) -> Self {
         self.propagator = Some(Arc::new(p));
@@ -208,6 +228,18 @@ impl ClientBuilder {
     }
 
     pub fn build(self) -> Result<Client, Error> {
+        for (member, value) in [("ci", &self.ci), ("agent", &self.agent)] {
+            if let Some(v) = value {
+                let valid = (1..=32).contains(&v.len()) && v.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+                if !valid {
+                    return Err(Error::Input(crate::error::InputError {
+                        operation: "Client".to_owned(),
+                        member: member.to_owned(),
+                        reason: format!("the {member}/ user-agent value {v:?} must be 1 to 32 of a-z, 0-9 and -"),
+                    }));
+                }
+            }
+        }
         let workspace = parse_workspace(&self.workspace).map_err(|reason| {
             Error::Input(crate::error::InputError {
                 operation: "Client".to_owned(),
@@ -223,7 +255,7 @@ impl ClientBuilder {
         let auth = AuthSession::new(self.auth, &endpoint, &workspace, http.clone());
         Ok(Client {
             inner: Arc::new(Inner {
-                user_agent: user_agent(self.sdk.version, self.app_id.as_deref()),
+                user_agent: user_agent(self.sdk.version, self.app_id.as_deref(), self.ci.as_deref(), self.agent.as_deref()),
                 sdk: self.sdk,
                 workspace,
                 endpoint,
@@ -257,16 +289,17 @@ pub(crate) fn http_client_with(timeout: Option<Duration>) -> Result<reqwest::Cli
         .map_err(|e| Error::sdk("HTTP_CLIENT_FAILED", "The HTTP client could not be built", Some(Box::new(e))))
 }
 
-/// `caitlyn-sdk-rust/<v> lang/rust#<rustc> md/rustc os/<os> [app/<id>]` (PROTOCOL.md 3.1).
-fn user_agent(version: &str, app_id: Option<&str>) -> String {
+/// `caitlyn-sdk-rust/<v> lang/rust#<rustc> md/rustc os/<os> [app/<id>] [ci/<provider>] [agent/<name>]` (PROTOCOL.md 3.1).
+fn user_agent(version: &str, app_id: Option<&str>, ci: Option<&str>, agent: Option<&str>) -> String {
     let mut ua = format!(
         "caitlyn-sdk-rust/{version} lang/rust#{} md/rustc os/{}",
         env!("CAITLYN_RUSTC_VERSION"),
         std::env::consts::OS
     );
-    if let Some(id) = app_id {
-        ua.push_str(" app/");
-        ua.push_str(id);
+    for (token, value) in [("app", app_id), ("ci", ci), ("agent", agent)] {
+        if let Some(v) = value {
+            ua.push_str(&format!(" {token}/{v}"));
+        }
     }
     ua
 }
