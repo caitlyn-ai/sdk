@@ -34,5 +34,5 @@ if [ "$latest_sha" = "$lock_sha" ]; then
   exit 0
 fi
 echo "The snapshot (${lock_version}, ${lock_sha:0:12}) is not the latest published model (${latest_sha:0:12})."
-echo "Run scripts/model-pull.sh latest && make generate, or wait for the regenerate merge request."
+echo "Nothing to do in a merge request: model:main brings the app's model to main when the app merges a change to it."
 exit 2

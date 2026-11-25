@@ -47,6 +47,10 @@ export const ERROR_CODES = {
     meaning: "The resource's current state does not allow the request: for example, an upload that has already been used, or a message sent while an answer to the previous one is still being written.",
     action: '`detail` says what the conflict is. Wait for the other work to finish, or start from a fresh state (a new upload, for example), then try again.',
   },
+  RETIRED: {
+    meaning: 'The operation, or a field the request set, was deprecated and its sunset day has passed: it no longer works. The `detail` names what was retired and what to use instead.',
+    action: "Move to the replacement the `detail` and the operation's reference page name. Sending the request again fails the same way, so the SDKs never retry it.",
+  },
   ALREADY_EXISTS: {
     meaning: 'A name that must be unique is already taken.',
     action: 'Choose another name, or fetch and use the record that already has it.',
