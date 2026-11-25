@@ -57,6 +57,12 @@ const ROOT = process.env.CAITLYN_REPO_ROOT ?? path.resolve(import.meta.dirname, 
 const EXAMPLES: ExampleCase[] = JSON.parse(fs.readFileSync(path.join(ROOT, 'conformance/cases/examples.json'), 'utf8')).cases;
 const SDK_VERSION = fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim(); // every SDK sends it in its user agent
 const SDK_MODEL = JSON.parse(fs.readFileSync(path.join(ROOT, 'model/model.lock.json'), 'utf8')).stampNext as string;
+/** The version the mock reports: 5.120.0, or the model's @since("next") stamp when that is later. */
+const SERVER_VERSION = [SDK_MODEL, '5.120.0'].filter(Boolean).sort((a, b) => b.localeCompare(a, 'en', { numeric: true }))[0]!;
+/** GetAgentVersion's @since, as the SDK reads it: the model's release, or SDK_MODEL where the model says "next". */
+const GET_AGENT_VERSION_SINCE = ((since: string | undefined) => (since === 'next' || since === undefined ? SDK_MODEL : since))(
+  JSON.parse(fs.readFileSync(path.join(ROOT, 'model/model.json'), 'utf8')).shapes['ai.caitlyn.v3#GetAgentVersion']?.traits?.['ai.caitlyn.traits#since'],
+);
 const PORT = Number(process.env.CAITLYN_MOCK_PORT) || 4100 + Math.floor(Math.random() * 500);
 const BASE = `http://127.0.0.1:${PORT}`;
 let server: ChildProcess | undefined;
@@ -2088,7 +2094,7 @@ test('[since.fails-before-sending] an operation newer than the server fails befo
   const before = (await api()).length;
   await assert.rejects(c.agents('GHT7YRWXPL').draft.get(), (e: unknown) => {
     assert.ok(e instanceof NotSupportedByServer);
-    assert.equal(e.requires, SDK_MODEL);
+    assert.equal(e.requires, GET_AGENT_VERSION_SINCE);
     assert.equal(e.server, '5.110.0');
     return true;
   });
@@ -2101,7 +2107,7 @@ test("[since.unknown-operation] a 404 UNKNOWN_OPERATION or a 405 METHOD_NOT_ALLO
   for (const [i, answer] of ['404 UNKNOWN_OPERATION', '405 METHOD_NOT_ALLOWED'].entries()) {
     await assert.rejects(c.agents('GHT7YRWXPL').draft.get(), (e: unknown) => {
       assert.ok(e instanceof NotSupportedByServer, `${answer}: ${String(e)}`);
-      assert.deepEqual([e.operation, e.requires, e.server], ['GetAgentVersion', SDK_MODEL, '5.120.0']);
+      assert.deepEqual([e.operation, e.requires, e.server], ['GetAgentVersion', GET_AGENT_VERSION_SINCE, SERVER_VERSION]);
       return true;
     });
     assert.equal((await api()).length, i + 1, `${answer} is not retried`);
@@ -2115,7 +2121,7 @@ test('[headers.request-id] Caitlyn-Request-Id and Caitlyn-Api-Version are on suc
   const v = await client().agents('GHT7YRWXPL').draft.get();
   // A thing has no header members: the request id and the API version are in its response metadata.
   assert.equal(v.$metadata.requestId, (await api()).at(-1).requestId);
-  assert.equal(v.$metadata.apiVersion, '5.120.0');
+  assert.equal(v.$metadata.apiVersion, SERVER_VERSION);
 });
 
 test("[headers.response-metadata] a successful call's response metadata gives its HTTP status and request id", async () => {
@@ -2177,7 +2183,7 @@ test('[telemetry.attributes] the shared span names and attributes, on a failed c
     assert.equal(a.attributes['http.request.method'], 'GET');
     assert.equal(a.attributes['server.address'], '127.0.0.1');
     assert.equal(a.attributes['url.full'], `${BASE}/v3/agents/GHT7YRWXPL/versions/nope`);
-    assert.equal(a.attributes['caitlyn.server.api_version'], '5.120.0');
+    assert.equal(a.attributes['caitlyn.server.api_version'], SERVER_VERSION);
     assert.equal(a.status.code, SpanStatusCode.ERROR);
     assert.ok(a.status.message, 'attempt status message');
   }

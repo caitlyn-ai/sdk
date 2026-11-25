@@ -180,6 +180,33 @@ var sdkModel = func() string {
 	return lock.StampNext
 }()
 
+// getAgentVersionSince is GetAgentVersion's @since, as the SDK reads it: the model's release, or sdkModel where the
+// model says "next".
+var getAgentVersionSince = func() string {
+	b, err := os.ReadFile(filepath.Join("..", "..", "model", "model.json"))
+	if err != nil {
+		panic(err)
+	}
+	var model struct {
+		Shapes map[string]struct {
+			Traits map[string]any `json:"traits"`
+		} `json:"shapes"`
+	}
+	json.Unmarshal(b, &model)
+	if since, ok := model.Shapes["ai.caitlyn.v3#GetAgentVersion"].Traits["ai.caitlyn.traits#since"].(string); ok && since != "next" {
+		return since
+	}
+	return sdkModel
+}()
+
+// serverVersion is the version the mock reports: 5.120.0, or the model's @since("next") stamp when that is later.
+var serverVersion = func() string {
+	if core.CompareVersions(sdkModel, "5.120.0") > 0 {
+		return sdkModel
+	}
+	return "5.120.0"
+}()
+
 // protocol is every case in conformance/cases/protocol.json, by id.
 var protocol = map[string]func(t *testing.T, m mock){
 	// ------------------------------------------------------------------ retries
@@ -1148,7 +1175,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 		before := len(m.api(t))
 		_, err := c.Agent(agent).Draft().Get(context.Background())
 		var ns *caitlyn.NotSupportedByServerError
-		if !errors.As(err, &ns) || ns.Operation != "GetAgentVersion" || ns.Requires != sdkModel || ns.Server != "5.110.0" || len(m.api(t)) != before {
+		if !errors.As(err, &ns) || ns.Operation != "GetAgentVersion" || ns.Requires != getAgentVersionSince || ns.Server != "5.110.0" || len(m.api(t)) != before {
 			t.Fatalf("got %v", err)
 		}
 	},
@@ -1162,7 +1189,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 		for i, answer := range []string{"404 UNKNOWN_OPERATION", "405 METHOD_NOT_ALLOWED"} {
 			_, err := c.Agent(agent).Draft().Get(context.Background())
 			var ns *caitlyn.NotSupportedByServerError
-			if !errors.As(err, &ns) || ns.Operation != "GetAgentVersion" || ns.Requires != sdkModel || ns.Server != "5.120.0" || len(m.api(t)) != i+1 {
+			if !errors.As(err, &ns) || ns.Operation != "GetAgentVersion" || ns.Requires != getAgentVersionSince || ns.Server != serverVersion || len(m.api(t)) != i+1 {
 				t.Fatalf("%s: got %T %v, %d requests", answer, err, err, len(m.api(t)))
 			}
 		}
@@ -1180,12 +1207,12 @@ var protocol = map[string]func(t *testing.T, m mock){
 			t.Fatal(err)
 		}
 		reqs := m.api(t)
-		if me.RequestID == nil || *me.RequestID != reqs[len(reqs)-1].RequestID || me.APIVersion == nil || *me.APIVersion != "5.120.0" {
+		if me.RequestID == nil || *me.RequestID != reqs[len(reqs)-1].RequestID || me.APIVersion == nil || *me.APIVersion != serverVersion {
 			t.Fatalf("request id %v api version %v", me.RequestID, me.APIVersion)
 		}
 		v := draft(t, c)
 		reqs = m.api(t)
-		if md := v.ResponseMetadata(); md.RequestID != reqs[len(reqs)-1].RequestID || md.APIVersion != "5.120.0" {
+		if md := v.ResponseMetadata(); md.RequestID != reqs[len(reqs)-1].RequestID || md.APIVersion != serverVersion {
 			t.Fatalf("thing's metadata %+v", md)
 		}
 	},
@@ -1193,7 +1220,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 		v := draft(t, client(t, m))
 		reqs := m.api(t)
 		md := v.ResponseMetadata()
-		if md.HTTPStatusCode != 200 || md.RequestID != reqs[len(reqs)-1].RequestID || md.APIVersion != "5.120.0" || v.ETag != `"draft-1"` {
+		if md.HTTPStatusCode != 200 || md.RequestID != reqs[len(reqs)-1].RequestID || md.APIVersion != serverVersion || v.ETag != `"draft-1"` {
 			t.Fatalf("metadata %+v", md)
 		}
 		if (&caitlyn.AgentVersion{}).ResponseMetadata() != (caitlyn.ResponseMetadata{}) {
@@ -1286,7 +1313,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 			want := map[string]any{
 				"http.request.method": "GET", "server.address": "127.0.0.1", "url.full": m.base + "/v3/agents/" + agent + "/versions/nope",
 				"http.request.resend_count": int64(i), "http.response.status_code": int64([]int{503, 404}[i]),
-				"caitlyn.request_id": sent[i].RequestID, "caitlyn.server.api_version": "5.120.0",
+				"caitlyn.request_id": sent[i].RequestID, "caitlyn.server.api_version": serverVersion,
 			}
 			for k, v := range want {
 				if a[k] != v {
