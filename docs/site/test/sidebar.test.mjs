@@ -16,8 +16,8 @@ const ast = loadModel();
 const reference = referencePages(ast);
 const { tree } = reference;
 const raw = JSON.parse(fs.readFileSync(path.join(root, 'model/openapi.json'), 'utf8'));
-const { doc } = publishedOpenapi(raw, { ops: reference.ops, tree, sdkSlug: (op) => `sdk/${kebab(op.name)}`, examples: reference.examples });
-const api = apiPages(doc, { ast, ops: reference.ops, sdkPages: new Map(reference.pages.filter((p) => p.operation).map((p) => [p.operation.name, p])), typePages: reference.typePages, tree });
+const { doc } = publishedOpenapi(raw, { ops: [...reference.ops, ...reference.apiOnly], tree, sdkSlug: (op) => `sdk/${kebab(op.name)}`, examples: reference.examples });
+const api = apiPages(doc, { ast, ops: [...reference.ops, ...reference.apiOnly], sdkPages: new Map(reference.pages.filter((p) => p.operation).map((p) => [p.operation.name, p])), typePages: reference.typePages, tree });
 // As scripts/docs-build.mjs builds them: each entry labelled by SIDEBAR_LABELS, else its title
 const label = (name, p) => ({ label: sidebarLabel(name, p.label ?? p.title), link: `/${p.slug}/` });
 const sdkSidebar = sidebarGroups(tree, (e) => label(e.op?.name ?? e.helper.id, reference.pages.find((p) => (e.op ? p.operation?.name === e.op.name : p.helper === e.helper.id))));
@@ -91,7 +91,7 @@ test('group labels are words', () => {
 
 test('every operation page is titled by its job, with the operation\'s name under it', () => {
   for (const p of [...reference.pages.filter((x) => x.operation), ...api.pages]) {
-    const op = reference.ops.find((o) => o.name === p.operation.name);
+    const op = [...reference.ops, ...reference.apiOnly].find((o) => o.name === p.operation.name);
     assert.equal(p.title, op.shape.traits['smithy.api#title'], p.slug);
     assert.equal(p.subtitle, op.name, p.slug);
   }

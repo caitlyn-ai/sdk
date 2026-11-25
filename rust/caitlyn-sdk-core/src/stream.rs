@@ -207,6 +207,9 @@ pub struct Stream<E, F, Er> {
     opened_at: Option<std::time::Duration>,
     /// Events read on the current connection.
     on_connection: u32,
+    /// The current connection began with a snapshot of the thing (an unattended run's watch): a `stream.reset` on it
+    /// does not end the stream (PROTOCOL.md 5.9).
+    snapshotted: bool,
     final_: Option<F>,
     done: bool,
     request_id: Option<String>,
@@ -245,6 +248,7 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
             attempts: 0,
             opened_at: None,
             on_connection: 0,
+            snapshotted: false,
             final_: None,
             done: false,
             request_id,
@@ -270,6 +274,7 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
     fn attach(&mut self, resp: Response) {
         self.opened_at = Some(stream_clock());
         self.on_connection = 0;
+        self.snapshotted = false;
         self.body = Some(Box::pin(resp.inner.bytes_stream()));
         self.buf.clear();
         self.partial = Default::default();
@@ -365,6 +370,9 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
             }
             self.on_connection += 1;
             let name = if name.is_empty() { "message".to_owned() } else { name };
+            if name == "snapshot" {
+                self.snapshotted = true;
+            }
             match (self.spec.decode)(&name, id.as_deref(), &data) {
                 Err(e) => return self.fail(Error::sdk("DECODE_FAILED", "An event could not be decoded", Some(Box::new(e)))),
                 Ok(Decoded::Skip) => continue,
@@ -381,9 +389,11 @@ impl<E, F: Clone, Er> Stream<E, F, Er> {
                     if let Some(f) = self.spec.final_of.and_then(|final_of| final_of(&ev)) {
                         self.final_ = Some(f);
                         self.close();
-                    } else if self.spec.final_of.is_some() && name == "stream.reset" && self.reconnects > 0 {
+                    } else if self.spec.final_of.is_some() && name == "stream.reset" && self.reconnects > 0 && !self.snapshotted {
                         // PROTOCOL.md 5.9: the answer finished while the stream was disconnected, and its final
-                        // event went to the earlier connection. The stream ends at the reset, with no error.
+                        // event went to the earlier connection. The stream ends at the reset, with no error. A watch
+                        // that began this connection with a snapshot (an unattended run's) carries on instead: its
+                        // final event is still to come, after the snapshot, even for a thing that had already ended.
                         self.close();
                     }
                     return Some(Ok(ev));

@@ -50,6 +50,27 @@ const required = (member) => !!member.traits?.[T('required')];
 const pyImports = new Set();
 // The Rust types a program's literals name (nested structures and enums), for its `use` line.
 const rustImports = new Set();
+// Standard-library modules a program's literals need: a timestamp is a datetime (Python) or a time.Time (Go).
+const pyStdImports = new Set();
+const goStdImports = new Set();
+
+/** A timestamp in one language: TypeScript's Date, Python's datetime, Go's time.Time, Rust's chrono DateTime<Utc>. */
+function timestamp(lang, value, optional) {
+  if (lang === 'typescript') return `new Date('${value}')`;
+  if (lang === 'python') {
+    pyStdImports.add('from datetime import datetime');
+    return `datetime.fromisoformat(${JSON.stringify(value)})`;
+  }
+  if (lang === 'go') {
+    goStdImports.add('time');
+    const d = new Date(value);
+    const month = d.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
+    const v = `time.Date(${d.getUTCFullYear()}, time.${month}, ${d.getUTCDate()}, ${d.getUTCHours()}, ${d.getUTCMinutes()}, ${d.getUTCSeconds()}, ${d.getUTCMilliseconds() * 1_000_000}, time.UTC)`;
+    return optional ? `caitlyn.Ptr(${v})` : v;
+  }
+  const v = `${JSON.stringify(value)}.parse::<chrono::DateTime<chrono::Utc>>().expect("a timestamp")`;
+  return optional ? `Some(${v})` : v;
+}
 
 /** A JSON value as a Python literal. */
 const pyJson = (v) =>
@@ -80,7 +101,8 @@ function literal(ast, lang, target, value, { optional = false, nested = false } 
     }
     return lang === 'python' ? pyStr(value) : `'${value}'`;
   }
-  if (type === 'string' || type === 'timestamp') {
+  if (type === 'timestamp') return timestamp(lang, value, optional);
+  if (type === 'string') {
     if (lang === 'go') return optional ? `caitlyn.Ptr(${str(value)})` : str(value);
     if (lang === 'rust') return optional ? `Some(${str(value)}.into())` : `${str(value)}.into()`;
     if (lang === 'python') return pyStr(value);
@@ -207,7 +229,8 @@ function tsLayout(ast, op, fills) {
   }
   const required = rest.filter((n) => members[n].traits?.[T('required')] !== undefined);
   const readers = (n) => ast.shapes[members[n].target]?.members?.kind !== undefined;
-  const positional = !top && !upload?.includes('.') && required.length === 1 && rest.length <= 3 && !readers(required[0]) ? required[0] : undefined;
+  // As the TypeScript generator decides (ScopeEmitter's Plan): one required member, among at most four, goes first.
+  const positional = !top && !upload?.includes('.') && required.length === 1 && rest.length <= 4 && !readers(required[0]) ? required[0] : undefined;
   return { members, top, positional, rest: rest.filter((n) => n !== positional), options };
 }
 
@@ -275,6 +298,7 @@ const FILE_ESTIMATES = new Set(['EstimateIngestion', 'EstimateDocumentVersion'])
 
 function python(ast, op, example) {
   pyImports.clear();
+  pyStdImports.clear();
   const p = inputParts(ast, op, { ...example.input });
   const error = example.error ? local(example.error.shapeId) : null;
   // The call's place in the client: the scopes take the identifiers, the call the rest (scripts/docs-scopes.mjs).
@@ -309,6 +333,7 @@ function python(ast, op, example) {
   if (error) body = `try:\n${indent(body, 4)}\nexcept ${error} as err:\n    print(err.status, err.code, err.detail, err.request_id)`;
   return [
     'import os',
+    ...[...pyStdImports].sort(),
     '',
     `from caitlyn import ${[...imports].sort().join(', ')}`,
     'from caitlyn.auth import Token',
@@ -368,6 +393,7 @@ const describesFile = (ast, member) => {
 };
 
 function go(ast, op, example) {
+  goStdImports.clear();
   const S = ast.shapes;
   const input = example.input ?? {};
   const p = placement(op.name, input);
@@ -390,7 +416,13 @@ function go(ast, op, example) {
   const given = members.filter(([n]) => input[n] !== undefined && own[n]);
   const inputType = local(inputOp.shape.input.target);
   const width = Math.max(0, ...given.map(([n]) => names.go(n).length));
-  const items = given.map(([n, m]) => `${`${names.go(n)}:`.padEnd(width + 1)} ${literal(ast, 'go', m.target, input[n], { optional: !required(m) })}`);
+  // A generated call's attachments take files (codegen's Go ServiceGenerator.attachmentsOf): an upload already sent is
+  // a caitlyn.UploadID there. SendMessage's are the hand-written Send's options, below.
+  const isAttachments = (m) => S[m.target]?.type === 'list' && Object.keys(S[S[m.target].member.target]?.members ?? {}).join() === 'uploadId';
+  const goValue = (n, m) => isAttachments(m) && op.name !== 'SendMessage'
+    ? `[]caitlyn.File{${input[n].map((a) => `caitlyn.UploadID(${str(a.uploadId)})`).join(', ')}}`
+    : literal(ast, 'go', m.target, input[n], { optional: !required(m) });
+  const items = given.map(([n, m]) => `${`${names.go(n)}:`.padEnd(width + 1)} ${goValue(n, m)}`);
   const before = ['ctx', ...p.leading.map((v) => str(v))];
   const pre = [];
   if (topFile && !p.estimate) before.push(`caitlyn.UploadID(${str(input[target])})`);
@@ -440,7 +472,7 @@ function go(ast, op, example) {
     'package main',
     '',
     'import (',
-    ...imports.sort().map((i) => `\t"${i}"`),
+    ...[...new Set([...imports, ...goStdImports])].sort().map((i) => `\t"${i}"`),
     '',
     '\tcaitlyn "github.com/caitlyn-ai/sdk/go"',
     ')',
@@ -532,11 +564,12 @@ function rust(ast, op, example) {
   let body;
   const k = kind(ast, op);
   if (k === 'stream') {
-    imports.add('ConversationEvent');
+    // The stream's own event union: ConversationEvent on a conversation's, UnattendedRunEvent on a run's.
+    const union = local(eventsUnion(ast, op).id);
+    if (hasTextDelta(ast, op)) imports.add(union);
     const loop = hasTextDelta(ast, op)
-      ? 'while let Some(event) = stream.next().await {\n    if let ConversationEvent::TextDelta(delta) = event? {\n        print!("{}", delta.delta);\n    }\n}'
+      ? `while let Some(event) = stream.next().await {\n    if let ${union}::TextDelta(delta) = event? {\n        print!("{}", delta.delta);\n    }\n}`
       : 'while let Some(event) = stream.next().await {\n    println!("{:?}", event?);\n}';
-    if (!hasTextDelta(ast, op)) imports.delete('ConversationEvent');
     body = `let mut stream = ${call}\n    .await?;\n${loop}`;
   } else if (k === 'list') body = `let mut items = ${call}\n    .items();\nwhile let Some(item) = items.next().await {\n    println!("{:#?}", item?);\n}`;
   else body = `let result = ${call}\n    .await?;\nprintln!("{result:#?}");`;
@@ -566,6 +599,7 @@ const RENDER = { typescript, python, go, rust };
 export function snippets(ast, langs = LANGUAGES.map((l) => l.key)) {
   const out = [];
   for (const op of operations(ast)) {
+    if (op.noClientMethod) continue; // no SDK call to show: the HTTP API's reference gives its curl
     (op.shape.traits?.[T('examples')] ?? []).forEach((example, index) => {
       const file = `${snake(op.name.replace(/([a-z0-9])([A-Z])/g, '$1_$2'))}_${index + 1}`;
       const code = Object.fromEntries(langs.map((l) => [l, RENDER[l](ast, op, example)]));

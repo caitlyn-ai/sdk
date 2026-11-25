@@ -25,6 +25,7 @@ export {
   getHttpSigningPlugin,
   HttpBearerAuthSigner,
   isIdentityExpired,
+  NoAuthSigner,
   memoizeIdentityProvider,
 } from './auth.js';
 export { getEndpointPlugin, resolveEndpointConfig, resolveEndpointRequiredConfig } from './endpoints.js';

@@ -87,8 +87,11 @@ final class ModelFacts {
         model.shapes().forEach(sh -> CaitlynTraits.stringMember(sh, ai.caitlyn.codegen.model.ScopeTree.LONG_RUNNING, "watch")
                 .ifPresent(w -> watches.add(ShapeId.from(w))));
         for (ShapeId w : watches) {
+            // Only a watch that reports processing (a knowledge base's): an unattended run's watch reports none.
             model.getShape(w).flatMap(sh -> CaitlynTraits.stringMember(sh, CaitlynTraits.SSE_EVENTS, "events"))
-                    .ifPresent(u -> watchUnions.add(ShapeId.from(u)));
+                    .map(ShapeId::from)
+                    .filter(u -> ai.caitlyn.codegen.model.ProcessingWatch.reportsProcessing(model, model.expectShape(u, software.amazon.smithy.model.shapes.UnionShape.class)))
+                    .ifPresent(watchUnions::add);
         }
         apiVersion = Versions.modelVersion(model, service);
         problemFields.addAll(ProblemDetails.memberNames(model, service));

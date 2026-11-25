@@ -48,6 +48,7 @@ function request(opId, input) {
   const http = op.traits[T('http')];
   const req = { method: http.method, path: http.uri.split('?')[0], query: {}, headers: {} };
   let body;
+  let payload;
   let hasBodyMembers = false;
   for (const [name, def] of Object.entries(members(op.input.target))) {
     const t = def.traits ?? {};
@@ -65,13 +66,16 @@ function request(opId, input) {
       if (v !== undefined) req.headers[header] = String(v);
       else if (t[T('idempotencyToken')] !== undefined) req.headers[header] = '*';
     } else if (t[T('httpPayload')] !== undefined) {
-      throw new Error(`${opId}: @httpPayload inputs are not supported by the example cases yet`);
+      // A JSON payload (a webhook delivery's body) is the whole body. Bytes and text payloads are not modelled yet.
+      if (!['structure', 'document', 'union'].includes(shapes[def.target]?.type)) throw new Error(`${opId}: only JSON @httpPayload inputs are supported by the example cases`);
+      payload = v;
     } else {
       hasBodyMembers = true;
       if (v !== undefined) (body ??= {})[t[T('jsonName')] ?? name] = v;
     }
   }
   if (hasBodyMembers) req.body = body ?? {};
+  if (payload !== undefined) req.body = payload;
   return req;
 }
 
@@ -116,6 +120,9 @@ const cases = [];
 for (const opId of [...operations].sort()) {
   const op = shapes[opId];
   const name = opId.split('#')[1];
+  // An operation the SDKs leave out has no client method to call: @stability("internal"), or @noClientMethod (a webhook
+  // delivery, sent by systems that hold no Caitlyn credential). The generators skip the same operations.
+  if (op.traits['ai.caitlyn.traits#stability'] === 'internal' || op.traits['ai.caitlyn.traits#noClientMethod'] !== undefined) continue;
   const examples = op.traits[T('examples')] ?? [];
   for (const ex of examples) {
     cases.push({

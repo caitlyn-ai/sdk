@@ -72,11 +72,14 @@ type Stream[E any, F any] struct {
 	// onConnection counts the events read on the current connection: on a Fresh watch the first, its snapshot, is
 	// not progress towards STREAM_LOST, whatever its id (PROTOCOL.md 5.6).
 	onConnection int
-	final        *F
-	done         bool
-	err          error
-	requestID    string
-	apiVersion   string
+	// snapshotted: the current connection began with a snapshot of the thing (an unattended run's watch), so a
+	// stream.reset on it does not end the stream (PROTOCOL.md 5.9).
+	snapshotted bool
+	final       *F
+	done        bool
+	err         error
+	requestID   string
+	apiVersion  string
 	// inter adds events of the SDK's own between the server's (Interject); cancel ends the context the stream was
 	// opened with, so that its reader stops.
 	inter  Interjector[E]
@@ -113,6 +116,7 @@ func OpenStream[E any, F any](ctx context.Context, resp *Response, spec StreamSp
 func (s *Stream[E, F]) attach(resp *Response) {
 	s.openedAt = StreamClock()
 	s.onConnection = 0
+	s.snapshotted = false
 	s.resp = resp
 	s.r = bufio.NewReaderSize(resp.Body, 64<<10)
 }
@@ -309,6 +313,9 @@ func (s *Stream[E, F]) next() (E, error) {
 		}
 		first := s.onConnection == 0
 		s.onConnection++
+		if name == "snapshot" {
+			s.snapshotted = true
+		}
 		if id != "" {
 			if _, dup := s.seen[id]; dup {
 				continue
@@ -342,7 +349,9 @@ func (s *Stream[E, F]) next() (E, error) {
 			if f, isFinal := s.spec.Final(ev); isFinal {
 				s.final = f
 				s.Close()
-			} else if name == "stream.reset" && s.reconnects > 0 {
+			} else if name == "stream.reset" && s.reconnects > 0 && !s.snapshotted {
+				// A watch that began this connection with a snapshot (an unattended run's) carries on instead: its
+				// final event is still to come, after the snapshot, even for a thing that had already ended.
 				// PROTOCOL.md 5.9: the answer finished while the stream was disconnected, and its final event went
 				// to the earlier connection. The stream ends at the reset, with no error and no further reconnect.
 				s.Close()

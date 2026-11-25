@@ -133,7 +133,7 @@ final class ScopeEmitter {
             .append("import { CaitlynConnectionError } from \"./connection\";\n")
             .append("import { toError, jobError").append(sync ? ", storage" : "").append(" } from \"./problems\";\n")
             .append("import * as ops from \"./operations\";\n");
-        if (sync) out.append("import type { IngestionBatch as __SyncReportBatch, IngestionBatchItem as __SyncReportItem } from \"../models/models_0\";\n");
+        if (sync) out.append("import type { IngestionBatch as __SyncReportBatch, IngestionBatchItem as __SyncReportItem } from \"../models/models\";\n");
         if (sync) {
             for (String op : FacadeGenerator.SYNC_OPERATIONS) out.append("import { ").append(op).append("Command } from \"../commands/").append(op).append("Command\";\n");
         }
@@ -277,7 +277,10 @@ final class ScopeEmitter {
                 if (isReaders(mm)) readersMember = mm.getMemberName();
             }
             List<MemberShape> required = rest.stream().filter(x -> x.hasTrait(RequiredTrait.class)).toList();
-            if (uploadMember == null && !nestedUpload && required.size() == 1 && rest.size() <= 3 && !required.get(0).getMemberName().equals(readersMember)) {
+            // A lone required member goes first when at most three optional ones sit beside it: `send(message)`. With
+            // more, it stays in the object, as `unattendedRuns.create({message, ...})` does. scripts/docs-snippets.mjs,
+            // scripts/docs-reference.mjs and the TypeScript conformance harness apply the same rule.
+            if (uploadMember == null && !nestedUpload && required.size() == 1 && rest.size() <= 4 && !required.get(0).getMemberName().equals(readersMember)) {
                 positional = required.get(0);
                 rest.remove(positional);
             }
@@ -452,7 +455,10 @@ final class ScopeEmitter {
         Node scope = n;
         while (scope != null && scope.kind != Kind.SCOPE) scope = scope.parent;
         boolean isDelete = m.name.equals("delete") && scope == n;
-        if (scope != null && scope.watch.isPresent() && (lr.filter().isPresent() || isDelete) && scope.watch.get().filter().equals(lr.filter())) {
+        // A call on a thing with a watch of its own (an unattended run's cancel) that returns no job is followed through
+        // the thing: its wait() returns the thing once its work has stopped.
+        boolean followsThing = job == null && scope != null && scope.watch.isPresent() && scope.watch.get().watch().equals(lr.watch());
+        if (scope != null && scope.watch.isPresent() && (lr.filter().isPresent() || isDelete || followsThing) && scope.watch.get().filter().equals(lr.filter())) {
             String specType = specType(scope);
             // A call that cancels the work it follows (@longRunning(cancels: true)): its wait returns the thing once the
             // work has stopped, never CANCELLED for the job it cancelled (wait.cancel-returns).
@@ -670,9 +676,11 @@ final class ScopeEmitter {
                 .append("  watch(options?: CallOptions): ").append(watchType).append(";\n");
             impl.append("    watch: (options?: CallOptions) => ").append(watchCall(n, ids, "options")).append(" as unknown as ").append(watchType).append(",\n");
         }
-        types.append("  /**\n   * Returns it, as its get would, once no job on it is running; with the partial failures of a job that ended\n")
-            .append("   * completed_with_failures. Raises a failed job's error, CANCELLED for a cancelled one, and a 404 when it is gone.\n   */\n")
-            .append("  wait(options?: WaitOptions): Promise<").append(specType).append(">;\n");
+        if (ai.caitlyn.codegen.model.ProcessingWatch.endsOnStatus(model, n)) types.append("  /**\n   * Returns the run, as its get would, once it has ended, whatever its status: succeeded, failed, cancelled,\n")
+            .append("   * interrupted or untracked. A run's failure is data on the run (`failure`), never raised; a 404 when it is gone.\n   */\n");
+        else types.append("  /**\n   * Returns it, as its get would, once no job on it is running; with the partial failures of a job that ended\n")
+            .append("   * completed_with_failures. Raises a failed job's error, CANCELLED for a cancelled one, and a 404 when it is gone.\n   */\n");
+        types.append("  wait(options?: WaitOptions): Promise<").append(specType).append(">;\n");
         impl.append("    wait: async (options?: WaitOptions) => (await waitFor(spec").append(type).append("(c, ").append(ids).append("), options)) as ").append(specType).append(",\n");
         if (get.isPresent() && hasPlannedStatus(get.get().operation)) {
             types.append("  /** Returns it once it is planned or past it (PROTOCOL.md 16); raises its failure when planning failed it. */\n")

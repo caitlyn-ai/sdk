@@ -1,0 +1,63 @@
+package {{PACKAGE}}
+
+import (
+	"context"
+	"errors"
+
+	"{{CORE}}"
+)
+
+// {{LOWER}}WatchFunc opens a {{WORDS}}'s watch ({{THING}}Scope.Watch).
+type {{LOWER}}WatchFunc func(ctx context.Context, in *{{WATCH}}Input, opts ...CallOption) (*{{THING}}EventStream, error)
+
+// {{LOWER}}Busy reports whether a {{WORDS}} is still under way. Every other status is its end, a failure included:
+// a failure is data on the {{WORDS}}, never an error (PROTOCOL.md 16).
+func {{LOWER}}Busy(s {{THING}}Status) bool {
+	return s == {{THING}}StatusPending || s == {{THING}}StatusRunning
+}
+
+// wait{{WATCH}} is wait() for a {{WORDS}}, through its watch: each connection starts with a snapshot of
+// the {{WORDS}}, and its status_changed and ended events carry it. It returns the {{WORDS}} as the watch last showed it once the
+// {{WORDS}} has ended, whatever its status: succeeded, failed, cancelled, interrupted or untracked. kind, id and job are
+// the knowledge base waits' and unused here; gone (a delete's wait) ends on a 404 as success.
+func wait{{WATCH}}(parent context.Context, open {{LOWER}}WatchFunc, _, _, _ string, gone bool, opts []WaitOption) (thing *{{THING}}, err error) {
+	ctx, cancel := core.WaitContext(parent, opts)
+	defer cancel()
+	defer func() {
+		if err != nil && parent.Err() == nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			thing, err = nil, core.NewError("WAIT_TIMEOUT", "The wait's time limit passed before the work was done", context.DeadlineExceeded)
+		}
+	}()
+	s, err := open(ctx, nil)
+	if err != nil {
+		if gone && isNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer s.Close()
+	for ev, err := range s.Events() {
+		if err != nil {
+			if gone && isNotFound(err) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		var seen *{{THING}}
+		switch e := ev.(type) {
+		case *{{THING}}Snapshot:
+			seen = &e.{{THING}}
+		case *{{THING}}StatusChanged:
+			seen = &e.{{THING}}
+		case *{{THING}}Ended:
+			seen = &e.{{THING}}
+		}
+		if seen != nil && !{{LOWER}}Busy(seen.Status) {
+			return seen, nil
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return nil, core.NewError("STREAM_LOST", "The watch ended before the wait was over", nil)
+}

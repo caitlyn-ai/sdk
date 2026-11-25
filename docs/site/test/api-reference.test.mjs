@@ -15,8 +15,8 @@ import { documentProblems } from '../../../scripts/docs-wording.mjs';
 const ast = loadModel();
 const reference = referencePages(ast);
 const raw = JSON.parse(fs.readFileSync(path.join(root, 'model/openapi.json'), 'utf8'));
-const { doc, problems } = publishedOpenapi(raw, { ops: reference.ops, tree: reference.tree, sdkSlug: (op) => `sdk/${kebab(op.name)}`, examples: reference.examples });
-const api = apiPages(doc, { ast, ops: reference.ops, sdkPages: new Map(reference.pages.filter((p) => p.operation).map((p) => [p.operation.name, p])), typePages: reference.typePages, tree: reference.tree });
+const { doc, problems } = publishedOpenapi(raw, { ops: [...reference.ops, ...reference.apiOnly], tree: reference.tree, sdkSlug: (op) => `sdk/${kebab(op.name)}`, examples: reference.examples });
+const api = apiPages(doc, { ast, ops: [...reference.ops, ...reference.apiOnly], sdkPages: new Map(reference.pages.filter((p) => p.operation).map((p) => [p.operation.name, p])), typePages: reference.typePages, tree: reference.tree });
 
 test('every operation in the OpenAPI document is an operation of the SDK reference', () => {
   assert.deepEqual(problems, []);
@@ -52,13 +52,17 @@ test('each curl example sends $CAITLYN_TOKEN to the workspace placeholder, and n
   }
 });
 
-test('each example has the four SDKs beside curl', () => {
-  for (const p of api.pages) for (const ex of p.operation.panel) assert.deepEqual(Object.keys(ex.code).sort(), ['curl', 'go', 'python', 'rust', 'typescript'], `${p.title}: ${ex.title}`);
+test('each example has the four SDKs beside curl; an operation with no SDK method, curl alone', () => {
+  const noSdk = new Set(reference.apiOnly.map((o) => o.name));
+  for (const p of api.pages) {
+    const want = noSdk.has(p.operation.name) ? ['curl'] : ['curl', 'go', 'python', 'rust', 'typescript'];
+    for (const ex of p.operation.panel) assert.deepEqual(Object.keys(ex.code).sort(), want, `${p.title}: ${ex.title}`);
+  }
 });
 
 test('every old Scalar address of an operation names its page', () => {
   for (const { route, method, operation } of apiOperations(doc)) {
-    const op = reference.ops.find((o) => o.name === operation.operationId);
+    const op = [...reference.ops, ...reference.apiOnly].find((o) => o.name === operation.operationId);
     assert.equal(api.anchors[`tag/${tagSlug(namespaceLabel(op.namespace, op))}/${method}${route}`], `/api/${kebab(operation.operationId)}/`);
   }
 });
@@ -69,7 +73,8 @@ test('every status an operation documents has a response to show, on the SDK and
     const documented = Object.keys(operation.responses).map(Number).sort((a, b) => a - b);
     assert.deepEqual(p.operation.responses.map((r) => r.status), documented, p.title);
     for (const r of p.operation.responses) assert.ok(r.response || r.events, `${p.title} ${r.status} has no body`);
-    const sdk = reference.pages.find((s) => s.operation?.name === p.operation.name).operation;
+    const sdk = reference.pages.find((s) => s.operation?.name === p.operation.name)?.operation;
+    if (!sdk) continue; // an operation with no SDK method has no SDK page
     assert.deepEqual(sdk.responses.map((r) => r.status), documented, `${p.title} in the SDK reference`);
     for (const r of sdk.responses.filter((x) => x.status >= 400)) {
       const body = JSON.parse(r.result);
@@ -81,7 +86,7 @@ test('every status an operation documents has a response to show, on the SDK and
 
 test('the live site\'s old addresses for a nested namespace\'s operations (under the parent\'s tag) name their pages', () => {
   for (const { route, method, operation } of apiOperations(doc)) {
-    const ns = reference.ops.find((o) => o.name === operation.operationId).namespace;
+    const ns = [...reference.ops, ...reference.apiOnly].find((o) => o.name === operation.operationId).namespace;
     if (!ns?.includes('.')) continue;
     assert.equal(api.anchors[`tag/${tagSlug(ns.split('.')[0])}/${method}${route}`], `/api/${kebab(operation.operationId)}/`);
   }

@@ -77,7 +77,7 @@ final class ServiceGenerator {
         this.facts = ctx.facts();
         this.core = ctx.settings().coreModule();
         for (OperationShape op : new TreeSet<>(TopDownIndex.of(model).getContainedOperations(service))) {
-            if (CaitlynTraits.stability(op).equals("internal")) {
+            if (CaitlynTraits.omittedFromSdk(op)) {
                 continue;
             }
             ops.put(op.getId(), new OperationInfo(model, service, op));
@@ -275,7 +275,56 @@ final class ServiceGenerator {
             }
         }
         String tag = p.location() == HttpBinding.Location.DOCUMENT ? p.wire() + (m.isRequired() ? "" : omit(target(m))) : "-";
+        if (documented && attachmentsOf(op).filter(a -> a.equals(p)).isPresent()) {
+            // Attachments (PROTOCOL.md 16): files (a Path, an *UploadFile) uploaded first, or an UploadID used as it is.
+            w.l("\t//\n\t// Each is a file (a Path, an *UploadFile), uploaded for this call before it is made, or an UploadID already\n"
+                    + "\t// reserved for it and sent, used as it is; they are named in this order.\n");
+            w.l("\t" + p.field() + " []File `json:\"-\"`\n");
+            return;
+        }
         w.l("\t" + p.field() + " " + ctx.types().member(m, w) + " `json:\"" + tag + "\"`\n");
+    }
+
+    /**
+     * The attachments member of a generated call ({uploadId} references) whose upload purpose its labels make: the
+     * caller's input takes files there (CreateUnattendedRun's, purpose {unattendedRun: {agentId, version}}). A
+     * hand-written call (a conversation's Send) handles its own.
+     */
+    private Optional<OperationInfo.Param> attachmentsOf(OperationInfo op) {
+        if (ctx.settings().handWritten().contains(op.op.getId().getName()) || attachmentPurpose(op, "p").isEmpty()) {
+            return Optional.empty();
+        }
+        return op.fields.stream().filter(p -> p.location() == HttpBinding.Location.DOCUMENT && target(p.member()) instanceof ListShape l
+                && model.expectShape(l.getMember().getTarget()) instanceof StructureShape item && item.getAllMembers().size() == 1
+                && item.getMember("uploadId").isPresent()).findFirst();
+    }
+
+    /**
+     * The UploadPurpose an attachment of this call is reserved with, as Go over the params `v`: a member named as a label
+     * ({ConversationID: …}), or a member made of the labels ({UnattendedRun: &UnattendedRunUploadPurpose{AgentID: …}}).
+     */
+    private Optional<String> attachmentPurpose(OperationInfo op, String v) {
+        Optional<StructureShape> purpose = model.getShape(ShapeId.fromParts(service.getId().getNamespace(), "UploadPurpose")).flatMap(Shape::asStructureShape);
+        if (purpose.isEmpty()) {
+            return Optional.empty();
+        }
+        List<OperationInfo.Param> labels = op.fields.stream().filter(p -> p.location() == HttpBinding.Location.LABEL).toList();
+        for (OperationInfo.Param l : labels) {
+            if (purpose.get().getMember(l.member().getMemberName()).isPresent()) {
+                return Optional.of("&UploadPurpose{" + Names.exported(l.member().getMemberName()) + ": Ptr(" + v + "." + l.field() + ")}");
+            }
+        }
+        Set<String> names = new java.util.HashSet<>(labels.stream().map(p -> p.member().getMemberName()).toList());
+        for (MemberShape pm : purpose.get().getAllMembers().values()) {
+            if (!(model.expectShape(pm.getTarget()) instanceof StructureShape st) || st.getAllMembers().isEmpty() || !names.containsAll(st.getAllMembers().keySet())) {
+                continue;
+            }
+            String inner = st.getAllMembers().keySet().stream()
+                    .map(k -> Names.exported(k) + ": " + v + "." + labels.stream().filter(p -> p.member().getMemberName().equals(k)).findFirst().orElseThrow().field())
+                    .collect(java.util.stream.Collectors.joining(", "));
+            return Optional.of("&UploadPurpose{" + Names.exported(pm.getMemberName()) + ": &" + Names.exported(st.getId().getName()) + "{" + inner + "}}");
+        }
+        return Optional.empty();
     }
 
     /**
@@ -878,6 +927,9 @@ final class ServiceGenerator {
                 if (pp.isEmpty() || !op.fields.contains(pp.get())) {
                     continue; // an estimate takes its job's input, and sends only what it shares with the job
                 }
+                if (attachmentsOf(op).filter(a -> a.equals(pp.get())).isPresent()) {
+                    continue; // uploaded once the scope has filled the labels its purpose names, below
+                }
                 String from = ctx.types().member(ip.member(), w);
                 String to = ctx.types().member(pp.get().member(), w);
                 if (!from.equals(to)) {
@@ -902,6 +954,17 @@ final class ServiceGenerator {
                 throw new CodegenException(op.op.getId() + "." + f.member() + ": a scope fills only string members");
             }
             w.l("\tp." + pp.field() + " = " + (isPointer(pp) ? "Ptr(" + v + ")" : v) + "\n");
+        }
+        // Attachments (PROTOCOL.md 16): each file uploaded first, reserved for what the call is on, in order; an UploadID is
+        // used as it is. The first that fails ends the call, and nothing is sent.
+        Optional<OperationInfo.Param> attach = attachmentsOf(op);
+        if (attach.isPresent() && op == inputOf && hasInput(inputOf)) {
+            OperationInfo.Param a = attach.get();
+            String item = ctx.types().base(model.expectShape(((ListShape) target(a.member())).getMember().getTarget()), w);
+            w.l("\tif in != nil {\n\t\tfor _, f := range in." + a.field() + " {\n"
+                    + "\t\t\tid, err := " + client(n) + ".uploadID(ctx, f, " + attachmentPurpose(op, "p").orElseThrow() + ")\n"
+                    + "\t\t\tif err != nil {\n\t\t\t\treturn " + fail.apply("err") + "\n\t\t\t}\n"
+                    + "\t\t\tp." + a.field() + " = append(p." + a.field() + ", " + item + "{UploadID: id})\n\t\t}\n\t}\n");
         }
         // Each member the estimate shares with nothing else is a description of the job's file.
         if (isEstimate(op)) {
@@ -1216,7 +1279,11 @@ final class ServiceGenerator {
         w.l("func (r *" + st.type() + ") MarshalJSON() ([]byte, error) { return json.Marshal(r.Result) }\n\n");
         String alias = streamAlias(ops.get(st.scope().watch.get().watch()));
         w.l("// Watch opens the watch that follows the work the call started, as " + scopeType + ".Watch does: a snapshot first, then each change.\n");
-        w.l("func (r *" + st.type() + ") Watch(ctx context.Context, opts ...CallOption) (*" + alias + ", error) {\n\treturn r.scope.Watch(ctx, opts...)\n}\n\n");
+        // A watch that takes the caller's input (an unattended run's, with its Last-Event-ID) is opened with none.
+        ShapeId watchId = st.scope().watch.get().watch();
+        boolean ownWatch = methodsOf.get(st.scope()).stream().anyMatch(m -> m.operation.getId().equals(watchId));
+        String in = ownWatch && hasInput(ops.get(watchId)) ? "nil, " : "";
+        w.l("func (r *" + st.type() + ") Watch(ctx context.Context, opts ...CallOption) (*" + alias + ", error) {\n\treturn r.scope.Watch(ctx, " + in + "opts...)\n}\n\n");
         if (st.delete()) {
             w.l("// Wait waits until the thing is gone, and returns nil then; a job that failed or was cancelled ends it with its error.\n");
             w.l("func (r *" + st.type() + ") Wait(ctx context.Context, opts ...WaitOption) error {\n\t_, err := r.scope.wait(ctx, r.job, true, opts)\n\treturn err\n}\n\n");
@@ -1330,6 +1397,10 @@ final class ServiceGenerator {
         claim(members, n, "Wait");
         String waitType = waitType(n);
         String helper = "wait" + watch.name;
+        if (ai.caitlyn.codegen.model.ProcessingWatch.endsOnStatus(model, n)) {
+            statusWait(watch.name);
+            w.l(Names.comment("Wait waits until the run has ended, through Watch, then returns it as Get returns it, whatever its status: succeeded, failed, cancelled, interrupted or untracked. A run's failure is data on the run (Failure), never an error. A run that is gone ends the wait with its *NotFoundError. WithTimeLimit bounds the wait (there is no default); cancelling ctx ends it with ctx's error.", ""));
+        } else
         w.l(Names.comment("Wait waits until no job is running on the " + Names.words(n.parent.kind == Kind.COLLECTION ? n.parent.singular : n.name)
                 .stream().reduce((a, b) -> a + " " + b).orElse("") + ", through Watch, then returns the " + waitWhat(n) + ". A job that "
                 + "ended completed_with_failures returns, with the partial failures on the thing; one that failed returns its error as "
@@ -1535,6 +1606,24 @@ final class ServiceGenerator {
             w.l("// ModelVersion is the Caitlyn release the SDK was generated from (the highest @since in the model), sent as Caitlyn-Sdk-Model.\n");
             w.l("const ModelVersion = " + Names.str(facts.apiVersion) + "\n");
         });
+    }
+
+    /**
+     * The wait helper for a watch whose wait ends on its thing's own status (an unattended run's,
+     * ProcessingWatch.endsOnStatus), from wait_status.go.tmpl, written once per watch: it names the model's types for
+     * that thing, so it is generated with them rather than kept in the hand-written runtime.
+     */
+    private final Set<String> statusWaits = new HashSet<>();
+
+    private void statusWait(String watchName) {
+        if (!statusWaits.add(watchName)) return;
+        GoSettings s = ctx.settings();
+        String thing = watchName.substring("Watch".length());
+        List<String> words = Names.words(thing);
+        String body = resource("wait_status.go.tmpl").replace("{{CORE}}", s.coreModule()).replace("{{PACKAGE}}", s.packageName())
+                .replace("{{WATCH}}", watchName).replace("{{THING}}", thing).replace("{{LOWER}}", Names.lowerFirst(thing))
+                .replace("{{WORDS}}", String.join(" ", words));
+        ctx.fileManifest().writeFile("wait_" + String.join("_", words) + ".go", GoWriter.HEADER + body);
     }
 
     private void staticFiles() {

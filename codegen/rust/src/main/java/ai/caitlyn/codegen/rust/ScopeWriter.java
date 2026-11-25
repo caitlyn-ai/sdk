@@ -181,15 +181,13 @@ final class ScopeWriter {
 
     /**
      * The snapshot member that holds the thing: the watch's filter name (`document`, `folder`, `batch`), never the
-     * resource's name (IngestionBatchResource's thing is `batch`). A scope watched with no filter is the knowledge base
-     * itself, under `knowledgeBase`.
+     * resource's name (IngestionBatchResource's thing is `batch`). A scope watched with no filter is the thing whose
+     * own watch it is, named after its resource: `knowledgeBase`, `unattendedRun`.
      */
     private String thingKey(Node scope) {
         return scope.watch.get().filter().orElseGet(() -> {
-            if (!scope.resource.orElseThrow().getId().getName().equals("KnowledgeBaseResource")) {
-                throw new CodegenException(scope.path() + ": a watch with no filter is only the knowledge base's own");
-            }
-            return "knowledgeBase";
+            String r = scope.resource.orElseThrow().getId().getName().replaceFirst("Resource$", "");
+            return Character.toLowerCase(r.charAt(0)) + r.substring(1);
         });
     }
 
@@ -485,6 +483,11 @@ final class ScopeWriter {
         }
         String wt = waitType(n);
         boolean batch = plans(n);
+        if (ai.caitlyn.codegen.model.ProcessingWatch.endsOnStatus(g.model, n)) {
+            w.l("\n" + Names.doc("Waits until the run has ended, and returns it as `get` would, whatever its status: succeeded, failed, "
+                    + "cancelled, interrupted or untracked (PROTOCOL.md 16). A run's failure is data on the run (`failure`), never an error. "
+                    + "Set a time limit with `.timeout(…)`: past it, the wait fails with [`Error::Timeout`].", "    "));
+        } else
         w.l("\n" + Names.doc("Waits until no job runs on this thing" + (batch ? " (the batch has ended)" : "") + ", and returns it as `get` would "
                 + "(PROTOCOL.md 16). A job that ended `completed_with_failures` returns, with the partial failures on the thing; one that "
                 + "failed is the typed error for its code, and a cancelled one the code `CANCELLED`. Set a time limit with `.timeout(…)`: past it, the wait fails with [`Error::Timeout`]. `.on_progress(|p| …)` is called with "

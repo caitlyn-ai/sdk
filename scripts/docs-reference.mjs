@@ -402,9 +402,9 @@ function sdkCalls(ast, op) {
   // What the call takes besides its scopes: the estimate's own members (never the file's description), less call options.
   const describes = (m) => /#UploadDescription$/.test(ast.shapes[m.target]?.type === 'list' ? ast.shapes[m.target].member.target : m.target);
   const rest = Object.entries(mems).filter(([n, m]) => !p.filled.has(n) && !callOption(n, m) && binding(m).in !== 'header' && n !== jobUpload && !describes(m) && !m.traits?.[C('fromScope')]);
-  // A lone required member is taken first when at most two optional ones sit beside it (TypeScript's layout).
+  // A lone required member is taken first when at most three optional ones sit beside it (TypeScript's layout).
   const required = rest.filter(([, m]) => m.traits?.[T('required')] !== undefined);
-  const first = !takesFile && required.length === 1 && rest.length <= 3 ? required[0][0] : undefined;
+  const first = !takesFile && required.length === 1 && rest.length <= 4 ? required[0][0] : undefined;
   const others = rest.filter(([n]) => n !== first);
   const leading = (spell) => (p.method.leading ?? []).map(spell);
   const argsOf = (spell, more) => [...leading(spell), ...(takesFile ? ['file'] : []), ...(first ? [spell(first)] : []), ...(others.length ? [more] : [])].join(', ');
@@ -814,7 +814,10 @@ function errorPage(ast, code, err, ops) {
  * yet) and `next` (the release they arrive in) default to the snapshot's and the lock's; a test passes its own.
  */
 export function referencePages(ast, { unreleased = unreleasedOperations(), next = nextRelease() } = {}) {
-  const ops = operations(ast);
+  // The SDK reference has a page for each operation with a client method; the HTTP API's has the rest too (apiOnly).
+  const all = operations(ast);
+  const ops = all.filter((o) => !o.noClientMethod);
+  const apiOnly = all.filter((o) => o.noClientMethod);
   const types = typeShapes(ast, ops);
   const typePages = new Set(types);
   const usedBy = new Map();
@@ -863,7 +866,7 @@ export function referencePages(ast, { unreleased = unreleasedOperations(), next 
     if (errors.some((e) => e.codes.includes(code))) throw new Error(`docs-reference: ${code} is a model code; take it out of ROUTING_CODES`);
     pages.push(routingErrorPage(ast, code, text));
   }
-  return { pages, ops, examples, typePages, tree, helpers, unreleased, next };
+  return { pages, ops, apiOnly, examples, typePages, tree, helpers, unreleased, next };
 }
 
 /** A page for a code the server's routing sends (docs/error-codes.mjs ROUTING_CODES): no operation declares it. */

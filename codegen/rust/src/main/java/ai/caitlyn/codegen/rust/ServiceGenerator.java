@@ -64,7 +64,7 @@ final class ServiceGenerator {
         this.service = service;
         this.facts = ctx.facts();
         for (OperationShape op : new TreeSet<>(TopDownIndex.of(model).getContainedOperations(service))) {
-            if (CaitlynTraits.stability(op).equals("internal")) {
+            if (CaitlynTraits.omittedFromSdk(op)) {
                 continue;
             }
             ops.put(op.getId(), new OperationInfo(model, service, op));
@@ -547,10 +547,10 @@ final class ServiceGenerator {
                 continue;
             }
             if (attached(op).map(a -> a.member().getMemberName().equals(member)).orElse(false)) {
-                w.l(Names.doc("Documents the message carries, in this order: each a file (a path, `UploadFile`, or a name with bytes) or "
-                        + "`Attachment::upload_id(…)`. Each file is reserved for this conversation and uploaded before the message is "
-                        + "sent; if one fails, no message is sent and the call raises that file's error. Each upload is used up when the "
-                        + "message is saved, so sending the same files again uploads them again.", "    "));
+                w.l(Names.doc("Documents the call carries, in this order: each a file (a path, `UploadFile`, or a name with bytes) or "
+                        + "`Attachment::upload_id(…)`. Each file is reserved for what the call is on and uploaded before the call is "
+                        + "made; if one fails, nothing is sent and the call raises that file's error. Each upload is used up by the "
+                        + "call, so making it again with the same files uploads them again.", "    "));
                 w.l("    pub fn attachments(mut self, v: impl IntoIterator<Item = impl Into<rt::Attachment>>) -> Self {\n"
                         + "        self.attach = Some(v.into_iter().map(Into::into).collect());\n        self\n    }\n\n");
                 continue;
@@ -613,6 +613,10 @@ final class ServiceGenerator {
         w.l("}\n\n");
         attached(op).ifPresent(at -> {
             String item = ctx.types().base(model.expectShape(((ListShape) target(at.member())).getMember().getTarget()));
+            // Once per reference type: a message's attachments and a run's share AttachmentReference.
+            if (!attachmentFroms.add(item)) {
+                return;
+            }
             pendingTop.append("/// An upload already made, as an attachment: sent as it is.\nimpl From<" + item + "> for rt::Attachment {\n"
                     + "    fn from(r: " + item + ") -> Self {\n        rt::Attachment::Upload(r.upload_id)\n    }\n}\n\n");
         });
@@ -714,10 +718,13 @@ final class ServiceGenerator {
         String req = requestType(op);
         boolean withFile = places.stream().anyMatch(this::takesFile);
         w.l("    /// Sends the request.\n    pub fn send(self) -> rt::BoxFuture<'static, Result<" + out + ", Error>> {\n");
+        boolean attaches = attached(op).isPresent();
         w.l("        let " + req + " {\n            core,\n            mut input,\n            opts,\n            ids,\n" + (withFile ? "            file,\n" : "")
-                + "        } = self;\n        let _ = &ids;\n");
+                + (attaches ? "            attach,\n" : "") + "        } = self;\n        let _ = &ids;\n");
         w.l("        Box::pin(async move {\n");
         w.l(uploadStep(op));
+        // Attachments (PROTOCOL.md 16): each file uploaded first, reserved for what the call is on, in order.
+        w.l(attachStep(op));
         if (withFile) {
             OperationInfo.Param d = describedMember(op).orElseThrow();
             StructureShape ds = model.expectShape(target(d.member()) instanceof ListShape l ? l.getMember().getTarget() : d.member().getTarget(),
@@ -978,7 +985,8 @@ final class ServiceGenerator {
             return Optional.empty();
         }
         StructureShape ps = model.expectShape(purpose.get().member().getTarget(), StructureShape.class);
-        boolean scoped = op.fields.stream().anyMatch(p -> p.location() == HttpBinding.Location.LABEL && ps.getMember(p.member().getMemberName()).isPresent());
+        boolean scoped = op.fields.stream().anyMatch(p -> p.location() == HttpBinding.Location.LABEL && ps.getMember(p.member().getMemberName()).isPresent())
+                || labelledPurpose(op, ps).isPresent();
         if (!scoped) {
             return Optional.empty();
         }
@@ -991,6 +999,16 @@ final class ServiceGenerator {
         return Optional.empty();
     }
 
+    /**
+     * An UploadPurpose member made of the operation's labels, when none of its members is a label itself: CreateUnattendedRun
+     * (labels agentId and version) reserves its attachments with purpose {unattendedRun: {agentId, version}}.
+     */
+    private Optional<MemberShape> labelledPurpose(OperationInfo op, StructureShape ps) {
+        Set<String> labels = new java.util.HashSet<>(op.fields.stream().filter(p -> p.location() == HttpBinding.Location.LABEL).map(p -> p.member().getMemberName()).toList());
+        return ps.getAllMembers().values().stream().filter(pm -> model.expectShape(pm.getTarget()) instanceof StructureShape st && !st.getAllMembers().isEmpty()
+                && labels.containsAll(st.getAllMembers().keySet())).findFirst();
+    }
+
     /** The start of a send with attachments: each file reserved with the label as its purpose and uploaded, in order. */
     private String attachStep(OperationInfo op) {
         Optional<OperationInfo.Param> a = attached(op);
@@ -999,15 +1017,31 @@ final class ServiceGenerator {
         }
         OperationInfo presigned = presigned();
         StructureShape ps = model.expectShape(presigned.param("purpose").orElseThrow().member().getTarget(), StructureShape.class);
-        OperationInfo.Param label = op.fields.stream().filter(p -> p.location() == HttpBinding.Location.LABEL && ps.getMember(p.member().getMemberName()).isPresent())
-                .findFirst().orElseThrow();
-        MemberShape pm = ps.getMember(label.member().getMemberName()).orElseThrow();
+        Optional<OperationInfo.Param> label = op.fields.stream().filter(p -> p.location() == HttpBinding.Location.LABEL && ps.getMember(p.member().getMemberName()).isPresent())
+                .findFirst();
+        String purposeFields;
+        if (label.isPresent()) {
+            MemberShape pm = ps.getMember(label.get().member().getMemberName()).orElseThrow();
+            String value = "input." + label.get().field() + ".clone()";
+            purposeFields = "                                " + Names.snake(pm.getMemberName()) + ": " + (pm.isRequired() ? value : "Some(" + value + ")") + ",\n";
+        } else {
+            // A purpose made of the labels: {unattendedRun: {agentId, version}}.
+            MemberShape pm = labelledPurpose(op, ps).orElseThrow();
+            StructureShape st = model.expectShape(pm.getTarget(), StructureShape.class);
+            StringBuilder inner = new StringBuilder(ctx.types().base(st) + " {\n");
+            for (MemberShape im : st.getAllMembers().values()) {
+                OperationInfo.Param lp = op.fields.stream().filter(p -> p.member().getMemberName().equals(im.getMemberName())).findFirst().orElseThrow();
+                String value = "input." + lp.field() + ".clone()";
+                inner.append("                                    ").append(Names.snake(im.getMemberName())).append(": ").append(im.isRequired() ? value : "Some(" + value + ")").append(",\n");
+            }
+            inner.append("                                    ..Default::default()\n                                }");
+            purposeFields = "                                " + Names.snake(pm.getMemberName()) + ": " + (pm.isRequired() ? inner : "Some(" + inner + ")") + ",\n";
+        }
         String item = ctx.types().base(model.expectShape(((ListShape) target(a.get().member())).getMember().getTarget()));
-        String value = "input." + label.field() + ".clone()";
         return "            let mut input = input;\n            if let Some(attach) = attach {\n                let mut refs = Vec::new();\n"
                 + "                for a in attach {\n                    let upload_id = match a {\n                        rt::Attachment::Upload(id) => id,\n"
                 + "                        rt::Attachment::File(file) => {\n                            let purpose = " + ctx.types().base(ps) + " {\n"
-                + "                                " + Names.snake(pm.getMemberName()) + ": " + (pm.isRequired() ? value : "Some(" + value + ")") + ",\n"
+                + purposeFields
                 + "                                ..Default::default()\n                            };\n"
                 + "                            crate::scope::send_upload(&core, file, Some(purpose), opts.cancellation_only()).await?.id\n"
                 + "                        }\n                    };\n"
@@ -1017,6 +1051,8 @@ final class ServiceGenerator {
 
     /** Items a stream's send writes at the top level: written after the request's impl. */
     private final StringBuilder pendingTop = new StringBuilder();
+    /** The reference types already given `From<…> for rt::Attachment`. */
+    private final Set<String> attachmentFroms = new java.util.HashSet<>();
 
     // ------------------------------------------------------------------ uploads (PROTOCOL.md 10)
 

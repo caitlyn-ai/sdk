@@ -3,7 +3,7 @@
 export * from "./client";
 export * from "./operations";
 export * from "./events";
-export type * from "../models/models_0";
+export type * from "../models/models";
 export type * from "./results";
 export * from "../models/enums";
 export * from "../models/errors";

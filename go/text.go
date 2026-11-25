@@ -3,22 +3,27 @@
 
 package caitlyn
 
-import "iter"
+import (
+	"iter"
 
-// Text yields the text of an answer as it arrives: each text.delta's delta, in order. Other events are skipped; an
-// error ends the iteration with it. The stream's FinalMessage still gives the whole message afterwards, even after a
-// break; close the stream when you are done (defer stream.Close()), or cancel its context.
+	"github.com/caitlyn-ai/sdk/go/core"
+)
+
+// Text yields the text of an answer as it arrives: each text.delta's delta, in order, from a conversation's stream or
+// an unattended run's watch. Other events are skipped; an error ends the iteration with it. The stream's FinalMessage
+// still gives its final event afterwards, even after a break (a conversation's message; a run's watch, the ended run);
+// close the stream when you are done (defer stream.Close()), or cancel its context.
 //
 //	defer stream.Close()
 //	for text, err := range caitlyn.Text(stream) { … }
-func Text(stream *ConversationEventStream) iter.Seq2[string, error] {
+func Text[E any, F any](stream *core.Stream[E, F]) iter.Seq2[string, error] {
 	return func(yield func(string, error) bool) {
 		for event, err := range stream.Events() {
 			if err != nil {
 				yield("", err)
 				return
 			}
-			if d, ok := event.(*TextDelta); ok && !yield(d.Delta, nil) {
+			if d, ok := any(event).(*TextDelta); ok && !yield(d.Delta, nil) {
 				return
 			}
 		}

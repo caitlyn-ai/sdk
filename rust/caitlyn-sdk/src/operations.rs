@@ -12926,11 +12926,10 @@ impl SendMessageRequest {
         self
     }
 
-    /// Documents the message carries, in this order: each a file (a path, `UploadFile`, or a name with
-    /// bytes) or `Attachment::upload_id(…)`. Each file is reserved for this conversation and uploaded
-    /// before the message is sent; if one fails, no message is sent and the call raises that file's error.
-    /// Each upload is used up when the message is saved, so sending the same files again uploads them
-    /// again.
+    /// Documents the call carries, in this order: each a file (a path, `UploadFile`, or a name with bytes)
+    /// or `Attachment::upload_id(…)`. Each file is reserved for what the call is on and uploaded before the
+    /// call is made; if one fails, nothing is sent and the call raises that file's error. Each upload is
+    /// used up by the call, so making it again with the same files uploads them again.
     pub fn attachments(mut self, v: impl IntoIterator<Item = impl Into<rt::Attachment>>) -> Self {
         self.attach = Some(v.into_iter().map(Into::into).collect());
         self

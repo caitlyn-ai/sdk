@@ -162,12 +162,22 @@ final class FacadeGenerator {
         }).findFirst();
     }
 
-    /** The UploadPurpose member an attachment's reservation sets: the one named as one of the operation's labels. */
-    private String purposeFor(OperationShape op) {
+    /**
+     * The `purpose` an attachment's reservation sends, as a TypeScript expression over `input`: the UploadPurpose member
+     * named as one of the operation's labels (`{ conversationId: input.conversationId }`), or else the one whose members
+     * are all labels of the operation (`{ unattendedRun: { agentId: input.agentId, version: input.version } }`).
+     */
+    private String purposeExpr(OperationShape op) {
         StructureShape purpose = model.expectShape(ShapeId.fromParts(service.getId().getNamespace(), "UploadPurpose"), StructureShape.class);
-        return input(op).getAllMembers().values().stream().filter(m -> m.hasTrait(HttpLabelTrait.class))
-            .map(MemberShape::getMemberName).filter(n -> purpose.getMember(n).isPresent()).findFirst()
-            .orElseThrow(() -> new CodegenException(op.getId() + ": attachments, but no UploadPurpose member names one of its labels"));
+        List<String> labels = input(op).getAllMembers().values().stream().filter(m -> m.hasTrait(HttpLabelTrait.class)).map(MemberShape::getMemberName).toList();
+        Optional<String> named = labels.stream().filter(n -> purpose.getMember(n).isPresent()).findFirst();
+        if (named.isPresent()) return "{ " + named.get() + ": input." + named.get() + " }";
+        for (MemberShape pm : purpose.getAllMembers().values()) {
+            if (!(model.expectShape(pm.getTarget()) instanceof StructureShape st) || st.getAllMembers().isEmpty()) continue;
+            if (!labels.containsAll(st.getAllMembers().keySet())) continue;
+            return "{ " + pm.getMemberName() + ": { " + st.getAllMembers().keySet().stream().map(k -> k + ": input." + k).collect(Collectors.joining(", ")) + " } }";
+        }
+        throw new CodegenException(op.getId() + ": attachments, but no UploadPurpose member is named by, or made of, its labels");
     }
 
     /** The member path of an operation's @uploadTarget, if it has one. */
@@ -199,7 +209,7 @@ final class FacadeGenerator {
     String typeImports(Set<String> types) {
         List<String> models = types.stream().filter(t -> !isResultName(t)).toList();
         List<String> named = types.stream().filter(this::isResultName).toList();
-        return (models.isEmpty() ? "" : "import type { " + String.join(", ", models) + " } from \"../models/models_0\";\n")
+        return (models.isEmpty() ? "" : "import type { " + String.join(", ", models) + " } from \"../models/models\";\n")
             + (named.isEmpty() ? "" : "import type { " + String.join(", ", named) + " } from \"./results\";\n");
     }
 
@@ -207,7 +217,7 @@ final class FacadeGenerator {
     private String resultsFile() {
         StringBuilder out = new StringBuilder(HEADER)
             .append("// Each call whose output is not a thing returns a named result: the same name in every SDK and the docs.\n")
-            .append("import type { ").append(String.join(", ", new TreeSet<>(resultAliases.values()))).append(" } from \"../models/models_0\";\n\n");
+            .append("import type { ").append(String.join(", ", new TreeSet<>(resultAliases.values()))).append(" } from \"../models/models\";\n\n");
         for (Map.Entry<String, String> e : resultAliases.entrySet()) {
             out.append("/** What ").append(e.getValue().replaceFirst("Output$", "")).append(" returns. */\n")
                 .append("export type ").append(e.getKey()).append(" = ").append(e.getValue()).append(";\n");
@@ -262,7 +272,7 @@ final class FacadeGenerator {
         // smithy-typescript writes structures to models_0 and enums to enums.
         List<String> structs = imported.stream().filter(id -> !model.expectShape(id).isEnumShape()).map(this::typeName).toList();
         List<String> enums = imported.stream().filter(id -> model.expectShape(id).isEnumShape()).map(this::typeName).toList();
-        if (!structs.isEmpty()) out.append("import type { ").append(String.join(", ", structs)).append(" } from \"../models/models_0\";\n");
+        if (!structs.isEmpty()) out.append("import type { ").append(String.join(", ", structs)).append(" } from \"../models/models\";\n");
         if (!enums.isEmpty()) out.append("import type { ").append(String.join(", ", enums)).append(" } from \"../models/enums\";\n");
         if (!imported.isEmpty()) out.append("\n");
         for (ShapeId u : unions) {
@@ -480,8 +490,7 @@ final class FacadeGenerator {
                 if (fresh) resume = "(_lastEventId, streamSignal) =>\n      client.send(new " + opName + "Command(" + commandInput + "), { abortSignal: streamSignal })";
                 // A watch that starts with a snapshot gives each event processingOf(): the watched thing's processing,
                 // read from the snapshot and the progress events alike (PROTOCOL.md 16, watch.processing).
-                boolean snapshots = union.getAllMembers().values().stream()
-                    .anyMatch(um -> um.getTrait(JsonNameTrait.class).map(JsonNameTrait::getValue).orElse(um.getMemberName()).equals("snapshot"));
+                boolean snapshots = ai.caitlyn.codegen.model.ProcessingWatch.reportsProcessing(model, union);
                 String decorate = "";
                 if (snapshots) {
                     imports.add("import { withProcessing, type KnowledgeBaseWatchAccessor } from \"@caitlyn-ai/sdk-core\";\n");
@@ -500,11 +509,10 @@ final class FacadeGenerator {
                 String fnInputType = inputType;
                 if (attach.isPresent()) {
                     String a = attach.get().getMemberName();
-                    String purposeMember = purposeFor(op);
                     imports.add("import { uploadAttachments, type AttachmentInput } from \"@caitlyn-ai/sdk-core\";\n");
                     fnInputType = "Omit<" + inputType + ", \"" + a + "\"> & { " + a + "?: AttachmentInput[] }";
-                    openExpr = "uploadAttachments(input." + a + ", (file) => sendUpload(client, file, { purpose: { " + purposeMember + ": input." + purposeMember
-                        + " } }, { signal: streamSignal })).then((" + a + ") => client.send(new " + opName + "Command({ ...input, " + a + ", ...rest } as " + inputType + "), { abortSignal: streamSignal }))";
+                    openExpr = "uploadAttachments(input." + a + ", (file) => sendUpload(client, file, { purpose: " + purposeExpr(op)
+                        + " }, { signal: streamSignal })).then((" + a + ") => client.send(new " + opName + "Command({ ...input, " + a + ", ...rest } as " + inputType + "), { abortSignal: streamSignal }))";
                 }
                 body.append("export function ").append(fn).append("(client: CaitlynClient, ").append(positionalParam)
                     .append("input: ").append(fnInputType).append(", ").append(optionsParam)
@@ -557,6 +565,21 @@ final class FacadeGenerator {
                     .append("  return client.send(new ").append(opName).append("Command({ ...(resolved as ").append(inputType).append(")")
                     .append(m.positional() != null ? ", " + m.positional() : "").append(", ...rest }), { abortSignal: signal })").append(unwrap).append(" as Promise<WithRaw<")
                     .append(out).append(" & __MetadataBearer>>;\n}\n\n");
+            } else if (attachmentMember(op).isPresent()) {
+                // Attachments (PROTOCOL.md 16): a list of {uploadId} takes files too, uploaded first, in order, each
+                // reserved for what the call is on; the first that fails raises, and nothing is sent.
+                String a = attachmentMember(op).get().getMemberName();
+                imports.add("import { uploadAttachments, type AttachmentInput } from \"@caitlyn-ai/sdk-core\";\n");
+                String fnInputType = "Omit<" + inputType + ", \"" + a + "\"> & { " + a + "?: AttachmentInput[] }";
+                body.append("export async function ").append(fn).append("(client: CaitlynClient, ").append(positionalParam)
+                    .append("input: ").append(fnInputType).append(", ").append(optionsParam)
+                    .append("): Promise<WithRaw<").append(out).append(" & __MetadataBearer>> {\n")
+                    .append("  const { signal, ...rest } = options;\n")
+                    .append("  const ").append(a).append(" = await uploadAttachments(input.").append(a).append(", (file) => sendUpload(client, file, { purpose: ")
+                    .append(purposeExpr(op)).append(" }, { signal }));\n")
+                    .append("  return client.send(new ").append(opName).append("Command({ ...input, ").append(a)
+                    .append(m.positional() != null ? ", " + m.positional() : "").append(", ...rest } as ").append(in).append("), { abortSignal: signal })")
+                    .append(unwrap).append(" as Promise<WithRaw<").append(out).append(" & __MetadataBearer>>;\n}\n\n");
             } else {
                 body.append("export function ").append(fn).append("(client: CaitlynClient, ").append(positionalParam)
                     .append("input: ").append(inputType).append(", ").append(optionsParam)
@@ -615,7 +638,7 @@ final class FacadeGenerator {
             + "export * from \"./client\";\n"
             + "export * from \"./operations\";\n"
             + "export * from \"./events\";\n"
-            + "export type * from \"../models/models_0\";\n"
+            + "export type * from \"../models/models\";\n"
             + "export type * from \"./results\";\n"
             + "export * from \"../models/enums\";\n"
             + "export * from \"../models/errors\";\n"
@@ -668,7 +691,7 @@ final class FacadeGenerator {
             + "import type { SyncReport } from \"@caitlyn-ai/sdk-core\";\n"
             + "import { CaitlynServiceException, type __ServiceExceptionOptions } from \"../models/CaitlynServiceException\";\n"
             + "import type { ErrorCode } from \"./errorCodes\";\n"
-            + (structures.isEmpty() ? "" : "import type { " + String.join(", ", structures) + " } from \"../models/models_0\";\n")
+            + (structures.isEmpty() ? "" : "import type { " + String.join(", ", structures) + " } from \"../models/models\";\n")
             + "\n/**\n * Every Caitlyn error: the typed classes (NotFoundError, ValidationError…) and the generic error for a status\n"
             + " * the model does not name. Generated from the model's ProblemDetails (PROTOCOL.md 6.3).\n */\n"
             + "export interface CaitlynError extends CaitlynServiceException {\n" + fields + "}\n\n"

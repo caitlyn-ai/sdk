@@ -358,6 +358,8 @@ public final class ScopeTree {
     }
 
     private void place(Node node, ResourceShape r, OperationShape op, List<Identifier> ids, boolean primary) {
+        // An operation the SDKs leave out has no client method (the Set check skips it too).
+        if (CaitlynTraits.omittedFromSdk(op)) return;
         if (op.findTrait(ESTIMATE).isPresent()) {
             if (primary) estimates.add(op);
             return;
@@ -444,11 +446,17 @@ public final class ScopeTree {
      * version, makes a conversation): it returns that thing's scope, from the top-level collection that reopens it
      * ({@code caitlyn.conversations(id)}). The thing is the one resource whose read returns the same body members as the
      * create (ConversationBody, as both outputs share it; compared by member, as generators see mixins flattened).
+     *
+     * <p>A long-running call that starts work which is a thing of its own (ReplayUnattendedRun and a webhook
+     * trigger's delivery each start a new run) returns that thing's scope the same way, so its {@code wait()} follows
+     * the new thing, not the scope it was called on. A call that cancels ({@code cancels: true}) follows the thing it
+     * was called on, as does a delete.
      */
     private void placeCreatesElsewhere() {
         for (Node n : root.walk()) {
             for (Method m : n.methods) {
-                if (!m.name.equals("create") || m.creates.isPresent() || !m.leading.isEmpty()) continue;
+                boolean startsThing = m.longRunning.isPresent() && !m.longRunning.get().cancels() && !m.name.equals("delete");
+                if (!(m.name.equals("create") || startsThing) || m.creates.isPresent() || !m.leading.isEmpty()) continue;
                 java.util.Set<String> created = bodyMembers(m.operation);
                 List<ResourceShape> owners = new ArrayList<>();
                 for (ResourceShape r : model.getResourceShapes()) {
@@ -460,6 +468,8 @@ public final class ScopeTree {
                 Node collection = scopes(r).stream().map(sc -> sc.parent).filter(p -> p != null && p.kind == Kind.COLLECTION && p.scope != null)
                         .findFirst().orElse(null);
                 if (collection == null || collection.identifiers.size() != collection.scope.identifiers.size()) continue;
+                // A call that starts a thing is followed through that thing's own watch: a job's resource has none.
+                if (!m.name.equals("create") && collection.scope.watch.map(w -> !w.watch().equals(m.longRunning.get().watch())).orElse(true)) continue;
                 m.creates = Optional.of(new NewScope(collection, newScopeSource(m.operation, r, collection)));
             }
         }
@@ -590,6 +600,17 @@ public final class ScopeTree {
         return lowerFirst(op.getId().getName());
     }
 
+    /**
+     * The snapshot member that holds what a scope's watch follows: the watch's filter (`document`, `folder`, `batch`),
+     * or, with none, the scope's own resource (`knowledgeBase`, `unattendedRun`).
+     */
+    public static String watchedThing(Node scope) {
+        return scope.watch.orElseThrow().filter().orElseGet(() -> {
+            String r = scope.resource.orElseThrow().getId().getName().replaceFirst("Resource$", "");
+            return Character.toLowerCase(r.charAt(0)) + r.substring(1);
+        });
+    }
+
     private static Optional<LongRunning> longRunning(Shape s) {
         return s.findTrait(LONG_RUNNING).map(t -> {
             ObjectNode n = t.toNode().expectObjectNode();
@@ -618,7 +639,7 @@ public final class ScopeTree {
         static void check(ScopeTree tree, ServiceShape service, Model model) {
             List<String> missing = new ArrayList<>();
             for (OperationShape op : TopDownIndex.of(model).getContainedOperations(service)) {
-                if (CaitlynTraits.stability(op).equals("internal")) continue;
+                if (CaitlynTraits.omittedFromSdk(op)) continue;
                 if (!tree.placed.containsKey(op.getId())) missing.add(op.getId().getName());
             }
             if (!missing.isEmpty()) throw new CodegenException("operations with no client method: " + String.join(", ", missing));
