@@ -178,6 +178,8 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
       // Events on this connection so far: on a watch that starts each connection with a snapshot (spec.fresh), the
       // snapshot, its first, is not progress towards STREAM_LOST, whatever its id (PROTOCOL.md 5.6).
       let onConnection = 0;
+      // This connection began with a snapshot of the thing (an unattended run's watch): see stream.reset below.
+      let snapshotted = false;
       try {
         for await (const msg of parseSse(body)) {
           // WebKit can keep delivering a body after its fetch was aborted: cancelling ends the stream here regardless.
@@ -189,6 +191,7 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
             this.lastEventId = msg.id;
             if (!(this.spec.fresh && first)) this.attempts = 0; // only a new event counts as progress (PROTOCOL.md 5.6)
           }
+          if (msg.event === 'snapshot') snapshotted = true;
           if (!this.spec.known.has(msg.event)) continue;
           let data: Record<string, any>;
           try {
@@ -210,8 +213,10 @@ export class SseStream<E extends { type: string }, F = never> implements AsyncIt
             return;
           }
           // PROTOCOL.md 5.9: a resumed stream with a final event that gets stream.reset ends there, with no error:
-          // the answer finished while it was disconnected, and its final event went to the earlier connection.
-          if (msg.event === 'stream.reset' && this.spec.final && this.reconnects > 0) {
+          // the answer finished while it was disconnected, and its final event went to the earlier connection. A watch
+          // that began this connection with a snapshot (an unattended run's) carries on: its final event is still to
+          // come, after the snapshot, even for a thing that had already ended.
+          if (msg.event === 'stream.reset' && this.spec.final && this.reconnects > 0 && !snapshotted) {
             ended = true;
             return;
           }

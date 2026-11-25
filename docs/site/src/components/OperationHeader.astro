@@ -26,6 +26,8 @@ const api = operation.kind === 'api';
       </div>
     )
   }
+  {/* An operation with no SDK method (a webhook delivery) has no SDK call, and no SDK reference page to link to */}
+  {Object.keys(operation.calls).length > 0 && (
   <div class="caitlyn-operation-strip-row">
     <dt class="caitlyn-kicker">SDK</dt>
     <dd>
@@ -41,6 +43,7 @@ const api = operation.kind === 'api';
       }
     </dd>
   </div>
+  )}
   {
     !api && (
       <div class="caitlyn-operation-strip-row">
@@ -53,9 +56,11 @@ const api = operation.kind === 'api';
       </div>
     )
   }
+  {operation.other.link && (
   <div class="caitlyn-operation-strip-row caitlyn-operation-strip-api">
     <dd><a href={operation.other.link}>{operation.other.label}</a></dd>
   </div>
+  )}
 </dl>
 
 <script>

@@ -172,3 +172,13 @@ const telemetry = fs.readFileSync(new URL('packages/sdk-core/src/telemetry.ts', 
 if (!telemetry.includes(`getTracer('@caitlyn-ai/sdk', '${corePkg.version}')`))
   throw new Error(`postgen-ts: typescript/packages/sdk-core/src/telemetry.ts names a tracer version other than ${corePkg.version}`);
 console.log(`postgen-ts: the User-Agent and tracer version is ${corePkg.version}`);
+
+// smithy-typescript splits the model's structures across models_0.ts, models_1.ts, … once one file grows past its
+// limit. The facade (src/sdk) imports them all from one place, models/models.ts, written here from the files there are.
+{
+  const files = fs.readdirSync(new URL('models/', dir)).filter((f) => /^models_\d+\.ts$/.test(f)).sort((a, b) => Number(a.match(/\d+/)[0]) - Number(b.match(/\d+/)[0]));
+  if (!files.includes('models_0.ts')) throw new Error('postgen-ts: no models/models_0.ts');
+  const body = files.map((f) => `export type * from "./${f.replace(/\.ts$/, '')}";\n`).join('');
+  fs.writeFileSync(new URL('models/models.ts', dir), `// Written by scripts/postgen-ts.mjs: every structure smithy-typescript generated, from each of its models files.\n${body}`);
+  console.log(`postgen-ts: models/models.ts re-exports ${files.length} models file(s)`);
+}

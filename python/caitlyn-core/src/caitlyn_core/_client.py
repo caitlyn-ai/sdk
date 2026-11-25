@@ -652,6 +652,7 @@ class _StreamState[E: CaitlynEvent, F]:
         self.attempts = 0
         """Reconnects since the last event: at most max_reconnects in a row (PROTOCOL.md 5.6)."""
         self.ended_by_reset = False
+        self.snapshotted = False
         self.request_id: str | None = None
         self.opened_at: float | None = None
         """When the current connection's response arrived, on stream_clock; None between connections."""
@@ -659,6 +660,7 @@ class _StreamState[E: CaitlynEvent, F]:
 
     def connected(self) -> None:
         self.opened_at = stream_clock()
+        self.snapshotted = False
 
     def disconnected(self) -> None:
         """A connection that stayed open a minute or more starts the count again, like a new event: the server ends
@@ -691,6 +693,8 @@ class _StreamState[E: CaitlynEvent, F]:
         return self.resume.operation, params
 
     def accept(self, message: SseMessage) -> E | None:
+        if message.event == "snapshot":
+            self.snapshotted = True  # this connection began with a snapshot of the thing: see stream.reset below
         if message.own_id and message.id is not None:
             if message.id in self.seen:
                 return None
@@ -711,9 +715,11 @@ class _StreamState[E: CaitlynEvent, F]:
         event.event_id = message.id if message.own_id else None
         if self.resume is not None and self.resume.watched is not None:
             event._bind_watch(self.resume.watched)  # pyright: ignore[reportPrivateUsage]
-        if message.event == "stream.reset" and self.decoder.has_final and self.reconnects > 0:
+        if message.event == "stream.reset" and self.decoder.has_final and self.reconnects > 0 and not self.snapshotted:
             # PROTOCOL.md 5.9: the answer finished while the stream was disconnected, so its final event went to
-            # the earlier connection. The stream ends at the reset, with no error and no further reconnect.
+            # the earlier connection. The stream ends at the reset, with no error and no further reconnect. A watch
+            # that began this connection with a snapshot (an unattended run's) carries on: its final event is still
+            # to come, after the snapshot, even for a thing that had already ended.
             self.ended_by_reset = True
         if self.decoder.has_final and self.decoder.error_event is not None and isinstance(event, self.decoder.error_event):
             # PROTOCOL.md 5.5: a failure event ends only a stream with a final event. On a watch it is delivered.

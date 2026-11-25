@@ -37,10 +37,12 @@ BUSY_STATUSES: dict[str | None, frozenset[str]] = {
     "document": frozenset({"pending", "processing", "deleting"}),
     "batch": frozenset({"planning", "running"}),
     "folder": frozenset(),
+    "unattendedRun": frozenset({"pending", "running"}),
 }
 """Each resource's working statuses, by the watch's filter (None: the knowledge base), from the model's enums
 (PROTOCOL.md 16): the thing is busy in one of these even when no job is listed (a knowledge base being created has
-none). A folder has no status of its own: it is busy only while a job on it runs."""
+none). A folder has no status of its own: it is busy only while a job on it runs. An unattended run is busy while
+pending or running; every other status is its end, a failure included (failure is data on the run, never raised)."""
 
 
 class WaitTimeoutError(TimeoutError):
@@ -162,13 +164,18 @@ def event_processing(event: CaitlynEvent, key: str | None = None) -> Any:
 @dataclass(frozen=True, slots=True)
 class Watched:
     """What a scope follows: the watch operation, its input with the scope's identifiers, and the filter member it
-    filled (``document``, ``folder`` or ``batch``; ``None`` for the whole knowledge base) with its value."""
+    filled (``document``, ``folder`` or ``batch``; ``None`` for the whole knowledge base) with its value. A watch of
+    a thing of its own, with no filter (an unattended run's), names the snapshot member that holds it in ``thing``."""
 
     spec: OperationSpec
     params: Mapping[str, object]
-    decoder: EventDecoder[Any, None]
+    decoder: EventDecoder[Any, Any]
     filter: str | None = None
     key: str | None = None
+    thing: str | None = None
+    last_event_id: str | None = None
+    """The watch's Last-Event-ID parameter, when it takes one (an unattended run's): a reconnect carries on from the last
+    event, after the new connection's snapshot. Without one (a knowledge base's), each reconnect starts afresh."""
 
 
 @dataclass(slots=True)
@@ -224,10 +231,11 @@ class WaitTracker:
     def _feed(self, event: CaitlynEvent) -> WaitDone | None:
         raw = cast(Mapping[str, Any], event.raw)
         kind = self.watched.filter
+        thing = self.watched.thing
         match event.type:
             case "snapshot":
                 self.jobs = {str(j.get("id")): j for j in cast(list[Mapping[str, Any]], raw.get("jobs") or [])}
-                self.entity = cast(Mapping[str, Any] | None, raw.get(_ENTITY.get(kind, "knowledgeBase")))
+                self.entity = cast(Mapping[str, Any] | None, raw.get(thing or _ENTITY.get(kind, "knowledgeBase")))
                 if self.entity is None and kind is not None:
                     return self.gone()
             case "job.progress" | "job.finished":
@@ -245,7 +253,9 @@ class WaitTracker:
                 folder = cast(Mapping[str, Any], raw.get("folder") or {})
                 if self._same(folder.get("path")):
                     self.entity = folder
-            case "knowledge_base.updated" if kind is None:
+            case "unattended_run.status_changed" | "unattended_run.ended" if thing == "unattendedRun":
+                self.entity = cast(Mapping[str, Any], raw.get("unattendedRun") or self.entity)
+            case "knowledge_base.updated" if kind is None and thing is None:
                 self.entity = cast(Mapping[str, Any], raw.get("knowledgeBase") or self.entity)
             case _:
                 pass
@@ -254,7 +264,7 @@ class WaitTracker:
     def gone(self) -> WaitDone:
         if self.gone_ok:
             return WaitDone(None, gone=True)
-        raise error_for_code(self.codes, "NOT_FOUND", f"the {self.watched.filter or 'knowledge base'} is gone")
+        raise error_for_code(self.codes, "NOT_FOUND", f"the {self.watched.filter or self.watched.thing or 'knowledge base'} is gone")
 
     def _status(self) -> str:
         return str((self.entity or {}).get("status") or "")
@@ -281,7 +291,7 @@ class WaitTracker:
                 continue  # the delete stopped it: a delete's wait ends on the gone rule, never on CANCELLED
             if job is not None and status in ("failed", "cancelled"):
                 return self._job_outcome(job)
-        if self._status() in BUSY_STATUSES.get(self.watched.filter, frozenset()):
+        if self._status() in BUSY_STATUSES.get(self.watched.filter or self.watched.thing, frozenset()):
             return None
         if self.watched.filter == "batch":
             status = self._status()
@@ -331,7 +341,7 @@ class Follow[T]:
         from ._client import Resume
 
         w = self.watched
-        resume = Resume(w.spec, w.params, watched=(w.filter, str(w.key)) if w.key is not None else None)
+        resume = Resume(w.spec, w.params, w.last_event_id, watched=(w.filter, str(w.key)) if w.key is not None else None)
         if w.filter == "batch" and self.get is not None:
             # A batch's watch reads the batch again once its deadline has passed (PROTOCOL.md 16).
             from ._deadline import DeadlineEventStream
@@ -409,7 +419,7 @@ class AsyncFollow[T]:
         from ._client import Resume
 
         w = self.watched
-        resume = Resume(w.spec, w.params, watched=(w.filter, str(w.key)) if w.key is not None else None)
+        resume = Resume(w.spec, w.params, w.last_event_id, watched=(w.filter, str(w.key)) if w.key is not None else None)
         if w.filter == "batch" and self.get is not None:
             # A batch's watch reads the batch again once its deadline has passed (PROTOCOL.md 16).
             from ._deadline import AsyncDeadlineEventStream

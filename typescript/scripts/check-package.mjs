@@ -66,7 +66,8 @@ export const finish = (p) => auth.handleCallback(p);
 export const run = () => getAgentVersion(client, { agentId: 'A', version: 'draft' });`,
   },
   'client + streaming chat': {
-    budget: 45_100, // 0.10.1: a message's attachments are sent with the storage stall timer (files.ts)
+    budget: 45_200, // 0.10.1: a message's attachments are sent with the storage stall timer (files.ts); the stream runtime's resume from a
+    // watch's own Last-Event-ID (45 109)
     code: `import { createCaitlynClient, sendMessage } from '@caitlyn-ai/sdk';
 const client = createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'session' } });
 export const ask = async (conversationId, message, onText) => { for await (const e of sendMessage(client, { conversationId, message })) if (e.type === 'text.delta') onText(e.delta); };`,

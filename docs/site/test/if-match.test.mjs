@@ -13,8 +13,8 @@ import { apiPages, publishedOpenapi } from '../../../scripts/docs-api.mjs';
 const ast = loadModel();
 const reference = referencePages(ast);
 const raw = JSON.parse(fs.readFileSync(path.join(root, 'model/openapi.json'), 'utf8'));
-const { doc } = publishedOpenapi(raw, { ops: reference.ops, tree: reference.tree, sdkSlug: (op) => `sdk/${kebab(op.name)}`, examples: reference.examples });
-const api = apiPages(doc, { ast, ops: reference.ops, sdkPages: new Map(reference.pages.filter((p) => p.operation).map((p) => [p.operation.name, p])), typePages: reference.typePages, tree: reference.tree });
+const { doc } = publishedOpenapi(raw, { ops: [...reference.ops, ...reference.apiOnly], tree: reference.tree, sdkSlug: (op) => `sdk/${kebab(op.name)}`, examples: reference.examples });
+const api = apiPages(doc, { ast, ops: [...reference.ops, ...reference.apiOnly], sdkPages: new Map(reference.pages.filter((p) => p.operation).map((p) => [p.operation.name, p])), typePages: reference.typePages, tree: reference.tree });
 const optional = new Set(ifMatchOptional(ast));
 
 /** Every operation that takes If-Match, with what its two pages render: required or optional, and whether 428 is listed */

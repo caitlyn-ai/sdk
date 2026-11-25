@@ -11,8 +11,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { T, allErrors, eventsUnion, kebab, local, nextRelease, notYetNote, publicDoc, root, unreleasedOperations, words } from './docs-model.mjs';
+import { sinceVersion } from './docs-metadata.mjs';
 import { LANGUAGES } from './docs-snippets.mjs';
-import { groupLabel, headingId, limitParts, members, memberTree, paramRow, statusRow, typeSlug, withoutRepeats } from './docs-reference.mjs';
+import { groupLabel, headingId, limitParts, members, memberTree, paramRow, problemDetails, statusRow, typeSlug, withoutRepeats } from './docs-reference.mjs';
 
 export const API_STATUS_TEXT = {
   200: 'OK', 201: 'Created', 202: 'Accepted', 204: 'No content', 400: 'Bad request', 401: 'Unauthenticated', 403: 'Forbidden',
@@ -260,9 +261,10 @@ export function walkTree(tree, visit, depth = 0, parents = []) {
  * Draft, Versions, …), so no group repeats its parent's name; an empty group is left out. Building blocks stay
  * collapsed.
  */
-export function sidebarGroups(tree, linkFor) {
+export function sidebarGroups(tree, linkFor, extra = new Map()) {
   const build = (n) => {
-    const own = n.entries.map(linkFor).filter(Boolean);
+    // extra: links by group key for pages that are no entry of the tree (an operation with no SDK method), after its own
+    const own = [...n.entries.map(linkFor).filter(Boolean), ...(extra.get(n.key) ?? [])];
     const inner = n.children.map(build).filter(Boolean);
     const items = [...own, ...inner];
     if (!items.length) return null;
@@ -322,7 +324,12 @@ export function publishedOpenapi(raw, { ops, tree, sdkSlug, examples, base = '/'
       continue;
     }
     operation.summary = operationTitle(op);
-    operation.tags = [tagOf.get(tree.groupOf.get(op.name))];
+    operation.tags = [tagOf.get(groupFor(tree, op, ops))];
+    if (op.noClientMethod) {
+      // No SDK method: the reason says who makes the call instead.
+      operation.description = [`No SDK method: ${op.noClientMethod}`, operation.description].filter(Boolean).join('\n\n');
+      continue;
+    }
     const example = examples.find((e) => e.op.id === op.id);
     if (example) operation['x-codeSamples'] = LANGUAGES.map((l) => ({ lang: l.key, label: l.label, source: example.code[l.key].trimEnd() }));
     operation.description = [`Using an SDK? See [\`${tree.callOf.get(op.name)}()\`](${base}${sdkSlug(op)}/) in the SDK reference.`, operation.description].filter(Boolean).join('\n\n');
@@ -1023,6 +1030,32 @@ function httpResponse(op, ex, successStatus) {
  * ctx: { ast, ops, sdkPages (by operation name), typePages (the type ids with a page), tree (namespaceTree), unreleased
  * and next (as scripts/docs-reference.mjs referencePages gives them; the snapshot's and the lock's by default) }
  */
+/**
+ * What an operation with no client method has in place of its SDK page: the page's metadata, and for each error status
+ * it documents the problem details every error carries, with the status's first code (marked as an illustration), as
+ * the SDK reference gives an operation that has a page.
+ */
+function noSdkPage(ast, op, errors) {
+  const service = Object.values(ast.shapes).find((x) => x.type === 'service');
+  const own = new Set([...(op.shape.errors ?? []), ...(service.errors ?? [])].map((e) => e.target));
+  const responses = errors.filter((e) => own.has(e.id) && e.codes.length).map((e) => ({ status: e.status, result: JSON.stringify(problemDetails(e.codes[0], e.status), null, 2), events: null, sample: true, code: e.codes[0] }));
+  return {
+    metadata: { pageType: 'reference', sinceVersion: sinceVersion(op.since), resources: [], integrations: [], operations: [op.name] },
+    operation: { stability: op.stability, calls: {}, panel: [], responses },
+  };
+}
+
+/**
+ * The client tree's group an operation sits in. One with no client method (@noClientMethod, a webhook delivery) has
+ * no place of its own: it sits with its resource's other operations (a trigger's delivery, with the trigger's).
+ */
+export function groupFor(tree, op, ops) {
+  const own = tree.groupOf.get(op.name);
+  if (own !== undefined || !op.noClientMethod) return own;
+  const sibling = ops.find((o) => o !== op && !o.noClientMethod && o.resource === op.resource && tree.groupOf.has(o.name));
+  return sibling ? tree.groupOf.get(sibling.name) : undefined;
+}
+
 export function apiPages(doc, { ast, ops, sdkPages, typePages, tree, unreleased = unreleasedOperations(), next = nextRelease() }) {
   const A = adapter(doc, ast, typePages);
   const opByName = new Map(ops.map((o) => [o.name, o]));
@@ -1031,15 +1064,16 @@ export function apiPages(doc, { ast, ops, sdkPages, typePages, tree, unreleased 
   const anchors = {};
   for (const { route, method, operation } of apiOperations(doc)) {
     const op = opByName.get(operation.operationId);
-    const sdk = sdkPages.get(op.name);
+    // An operation with no client method has no SDK page: its page stands on the model alone.
+    const sdk = sdkPages.get(op.name) ?? noSdkPage(ast, op, errors);
     const slug = `api/${kebab(op.name)}`;
     // The live site's addresses for the operation (its tag then was its model namespace's last segment, and a nested
     // namespace's operations were under their parent's tag before that) go to its page
     anchors[`tag/${tagSlug(namespaceLabel(op.namespace, op))}/${method}${route}`] = `/${slug}/`;
     if (op.namespace?.includes('.')) anchors[`tag/${tagSlug(namespaceLabel(op.namespace.split('.')[0]))}/${method}${route}`] ??= `/${slug}/`;
     const live = !unreleased.has(op.name);
-    const description = operation.description.replace(/^Using an SDK\?.*\n\n/, '');
-    const sdkLink = `[\`${tree.callOf.get(op.name)}()\`](/${sdk.slug}/)`;
+    const description = operation.description.replace(/^Using an SDK\?.*\n\n/, '').replace(/^No SDK method: .*\n\n/, '');
+    const sdkLink = op.noClientMethod ? `None: ${op.noClientMethod}` : `[\`${tree.callOf.get(op.name)}()\`](/${sdk.slug}/)`;
     const md = [];
     const site = [];
     const both = (...lines) => {
@@ -1050,8 +1084,8 @@ export function apiPages(doc, { ast, ops, sdkPages, typePages, tree, unreleased 
     // A batch's, a document's and a folder's progress is on the knowledge base's watch, filtered to it
     const follows = { 'knowledgeBases.ingestion.batches': ['batch', 'batch', 'identifier'], 'knowledgeBases.documents': ['document', 'document', 'identifier'], 'knowledgeBases.folders': ['folder', 'folder', 'path'] }[tree.groupOf.get(op.name)];
     if (follows && op.name !== 'WatchKnowledgeBase') both(`**Follow progress:** [Watch a knowledge base](/api/watch-knowledge-base/) with \`${follows[1]}\` set to the ${follows[0]}'s ${follows[2]} sends a snapshot of the ${follows[0]}, then each change.`, '');
-    if (!live) both(notYetNote(next), '');
-    md.push('| | |', '| --- | --- |', `| HTTP | \`${method} /api${route}\` |`, `| Server | \`https://{workspace}/api\`, where \`workspace\` is your workspace's hostname |`, `| SDK | ${sdkLink} in the SDK reference |`, '');
+    if (!live) both(op.noClientMethod ? notYetNote(next).replace('The SDKs have this operation, but workspaces', 'Workspaces') : notYetNote(next), '');
+    md.push('| | |', '| --- | --- |', `| HTTP | \`${method} /api${route}\` |`, `| Server | \`https://{workspace}/api\`, where \`workspace\` is your workspace's hostname |`, `| SDK | ${op.noClientMethod ? sdkLink : `${sdkLink} in the SDK reference`} |`, '');
 
     // Request
     const params = operation.parameters ?? [];
@@ -1185,13 +1219,13 @@ export function apiPages(doc, { ast, ops, sdkPages, typePages, tree, unreleased 
         kind: 'api',
         name: op.name,
         stability: sdk.operation.stability,
-        method: tree.callOf.get(op.name),
+        method: tree.callOf.get(op.name) ?? '', // none for an operation with no SDK method
         calls: sdk.operation.calls,
         http: { method, path: `/api${route}` },
         panel,
         responses,
       },
-      group: tree.groupOf.get(op.name),
+      group: groupFor(tree, op, ops),
       label: operationTitle(op),
       route,
       method,

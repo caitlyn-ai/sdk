@@ -272,6 +272,9 @@ export function operations(ast) {
         stability: t[C('stability')] ?? 'beta',
         since: t[C('since')],
         doc: (t[T('documentation')] ?? '').trim(),
+        // @noClientMethod(reason): a public operation the SDKs give no method (a webhook delivery, sent by a system
+        // that holds no Caitlyn credential). It is in the HTTP API's reference only, with this reason.
+        noClientMethod: t[C('noClientMethod')]?.reason ?? null,
       };
     })
     .map((o) => {

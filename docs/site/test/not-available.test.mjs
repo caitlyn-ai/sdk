@@ -13,8 +13,8 @@ import { apiPages, publishedOpenapi } from '../../../scripts/docs-api.mjs';
 const ast = loadModel();
 const reference = referencePages(ast);
 const raw = JSON.parse(fs.readFileSync(path.join(root, 'model/openapi.json'), 'utf8'));
-const { doc } = publishedOpenapi(raw, { ops: reference.ops, tree: reference.tree, sdkSlug: (op) => `sdk/${kebab(op.name)}`, examples: reference.examples });
-const api = apiPages(doc, { ast, ops: reference.ops, sdkPages: new Map(reference.pages.filter((p) => p.operation).map((p) => [p.operation.name, p])), typePages: reference.typePages, tree: reference.tree });
+const { doc } = publishedOpenapi(raw, { ops: [...reference.ops, ...reference.apiOnly], tree: reference.tree, sdkSlug: (op) => `sdk/${kebab(op.name)}`, examples: reference.examples });
+const api = apiPages(doc, { ast, ops: [...reference.ops, ...reference.apiOnly], sdkPages: new Map(reference.pages.filter((p) => p.operation).map((p) => [p.operation.name, p])), typePages: reference.typePages, tree: reference.tree });
 const stampNext = JSON.parse(fs.readFileSync(path.join(root, 'model/model.lock.json'), 'utf8')).stampNext;
 
 test('the callout and the Stability row name the lock\'s stampNext, on every page of an operation no release serves', () => {
@@ -60,8 +60,8 @@ test('a released operation has no callout, and shows the release it arrived in',
   const other = pages.pages.find((p) => p.operation?.name === 'GetDocument');
   assert.match(other.body, /^> \*\*Not available yet\.\*\* The SDKs have this operation, but workspaces do not serve it yet\.$/m);
   assert.doesNotMatch(other.body, /arrives in/);
-  const { doc: d } = publishedOpenapi(raw, { ops: pages.ops, tree: pages.tree, sdkSlug: (op) => `sdk/${kebab(op.name)}`, examples: pages.examples });
-  const apis = apiPages(d, { ast: released, ops: pages.ops, sdkPages: new Map(pages.pages.filter((p) => p.operation).map((p) => [p.operation.name, p])), typePages: pages.typePages, tree: pages.tree, unreleased, next });
+  const { doc: d } = publishedOpenapi(raw, { ops: [...pages.ops, ...pages.apiOnly], tree: pages.tree, sdkSlug: (op) => `sdk/${kebab(op.name)}`, examples: pages.examples });
+  const apis = apiPages(d, { ast: released, ops: [...pages.ops, ...pages.apiOnly], sdkPages: new Map(pages.pages.filter((p) => p.operation).map((p) => [p.operation.name, p])), typePages: pages.typePages, tree: pages.tree, unreleased, next });
   for (const id of Object.keys(snapshot)) assert.doesNotMatch(apis.pages.find((p) => p.operation.name === id.split('#')[1]).body, /Not available yet/, id);
 });
 

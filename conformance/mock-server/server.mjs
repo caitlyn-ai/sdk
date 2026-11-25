@@ -203,6 +203,13 @@ const DEFAULT_FAULTS = {
   // Items, by path (or id), that end `cancelled` instead of indexed: their document was deleted while they were being
   // ingested. { "/hr/a.pdf": true }
   cancelItems: {},
+  // Unattended runs. How a new run ends: { status: 'succeeded' } (default), or { status: 'failed', failure: {code,
+  // detail, phase} }, { status: 'interrupted' }. `endedAtCreate: true` makes the run final before anyone watches it
+  // (unattended.wait-ended-before-watch). A run moves on only as its watch sends its events, so a get() shows the run
+  // as far as a watch has seen it.
+  unattendedRun: { status: 'succeeded' },
+  // CreateUnattendedRun's refusals, served once each: [{status: 403, code: 'RUN_AS_REQUIRED'}].
+  unattendedStartErrors: [],
 };
 
 // The error catalogue (the model's errors.smithy): one shape per status.
@@ -243,6 +250,9 @@ function reset() {
     // A conversation's own record (GetConversation, ListConversations), by id: {id, agentId, version, title, status,
     // createdAt}; its answers' events stay in `conversations`.
     conversationRecords: new Map(),
+    // Unattended runs by id: {run, events, sent, request}. `events` is the run's whole stream (ids `<runId>:<n>`),
+    // `sent` how many of them a watch has sent: the run's status follows it.
+    unattendedRuns: new Map(),
     // Each knowledge base's own record (name, status, access, folders, fields), by id; its documents are in
     // `knowledgeBases`. See "Knowledge bases, folders, access and fields" below.
     kbs: new Map([['KB4T7YQ2WL', kbRecord('KB4T7YQ2WL', 'HR policies')]]),
@@ -796,6 +806,19 @@ const routes = [
   ['GET', /^\/v3\/agents\/([^/]+)\/versions\/([^/]+)\/compare$/, compareAgentVersions],
   ['POST', /^\/v3\/agents\/([^/]+)\/versions\/([^/]+)\/conversations$/, createConversation],
   ['GET', /^\/v3\/agents\/([^/]+)\/conversations$/, listConversations],
+  ['POST', /^\/v3\/agents\/([^/]+)\/versions\/([^/]+)\/unattended-runs$/, createUnattendedRun],
+  ['GET', /^\/v3\/unattended-runs$/, listUnattendedRuns],
+  ['GET', /^\/v3\/unattended-runs\/([^/]+)$/, getUnattendedRun],
+  ['PATCH', /^\/v3\/unattended-runs\/([^/]+)$/, updateUnattendedRun],
+  ['DELETE', /^\/v3\/unattended-runs\/([^/]+)$/, deleteUnattendedRun],
+  ['POST', /^\/v3\/unattended-runs\/([^/]+)\/cancel$/, cancelUnattendedRun],
+  ['POST', /^\/v3\/unattended-runs\/([^/]+)\/replay$/, replayUnattendedRun],
+  ['GET', /^\/v3\/unattended-runs\/([^/]+)\/stream$/, watchUnattendedRun],
+  ['GET', /^\/v3\/unattended-runs\/([^/]+)\/messages$/, listUnattendedRunMessages],
+  ['GET', /^\/v3\/unattended-runs\/([^/]+)\/artefacts$/, listUnattendedRunArtefacts],
+  ['GET', /^\/v3\/unattended-runs\/([^/]+)\/artefacts\/([^/]+)\/download$/, getUnattendedRunArtefactDownload],
+  ['GET', /^\/v3\/unattended-runs\/([^/]+)\/attachments$/, listUnattendedRunAttachments],
+  ['GET', /^\/v3\/unattended-runs\/([^/]+)\/policy-reviews$/, listUnattendedRunPolicyReviews],
   ['GET', /^\/v3\/agents\/([^/]+)\/history$/, listLiveHistory],
   ['GET', /^\/v3\/agents\/([^/]+)\/history\/([^/]+)$/, getLiveHistoryEntry],
 ];
@@ -3346,6 +3369,326 @@ async function listMessages(req, res, rid, [conversationId]) {
   const id = decodeURIComponent(conversationId);
   if (!state.conversationRecords.has(id) && !state.conversations.has(id)) return problem(res, rid, 404, 'NOT_FOUND', `No conversation ${id}`);
   sendJson(res, rid, 200, { items: state.messages?.get(id) ?? [] });
+}
+
+// ---------------------------------------------------------------------------
+// Unattended runs
+// ---------------------------------------------------------------------------
+//
+// A run is created `pending` and moves on only as a watch sends its events: `unattended_run.status_changed`
+// (running), the answer (the conversation stream's events, without `message.failed`: a failed run is told by its
+// end, not raised), then `unattended_run.ended` with the run in its final status. Every connection starts with a
+// `snapshot` of the run as far as it has gone, with no id, then the events after Last-Event-ID (all of them without
+// one). The stream ends after `unattended_run.ended`.
+
+const RUN_FINAL = new Set(['succeeded', 'failed', 'cancelled', 'interrupted', 'untracked']);
+
+/** The run's whole stream, from `running` to its end as faults.unattendedRun says. */
+function unattendedRunEvents(run) {
+  const outcome = faults.unattendedRun ?? { status: 'succeeded' };
+  const failStream = faults.failStream;
+  faults.failStream = false;
+  const answer = chatEvents().filter((e) => !e.comment);
+  faults.failStream = failStream;
+  const raw = [['unattended_run.status_changed', { unattendedRun: { ...run, status: 'running' } }]];
+  for (const e of answer) {
+    if (outcome.status !== 'succeeded' && e.type === 'message.completed') continue;
+    raw.push([e.type, e.data]);
+  }
+  const message = answer.find((e) => e.type === 'message.completed')?.data.message;
+  raw.push(['unattended_run.ended', { unattendedRun: endedRun(run, outcome, message) }]);
+  return raw.map(([type, data], i) => ({ id: `${run.id}:${i + 1}`, type, data }));
+}
+
+function endedRun(run, outcome, message) {
+  const ended = { ...run, status: outcome.status, endedAt: nowIso() };
+  if (outcome.status === 'succeeded' && message) ended.result = message;
+  if (outcome.failure) ended.failure = outcome.failure;
+  return ended;
+}
+
+/** The run as far as its watch has gone: the last run an event carried, or the run as created. */
+function runNow(r) {
+  let run = r.run;
+  for (let i = r.sent - 1; i >= 0; i--) {
+    if (r.events[i].data.unattendedRun) {
+      run = r.events[i].data.unattendedRun;
+      break;
+    }
+  }
+  return { ...run, ...(r.title !== undefined ? { title: r.title } : {}), etag: runEtag(r, r.sent) };
+}
+
+/** The run's etag once its watch has sent `sent` events: it moves with every change a caller can see, a rename too. */
+const runEtag = (r, sent) => `"${r.run.id}-${sent}-${r.renames ?? 0}"`;
+
+/** An event as the watch sends it: a run it carries has its etag, as every read of the run does. */
+const runEventData = (r, e, at) =>
+  e.data.unattendedRun ? { unattendedRun: { ...e.data.unattendedRun, ...(r.title !== undefined ? { title: r.title } : {}), etag: runEtag(r, at) } } : e.data;
+
+function runOr404(res, rid, id) {
+  const r = state.unattendedRuns.get(decodeURIComponent(id));
+  if (!r) problem(res, rid, 404, 'NOT_FOUND', `No unattended run ${decodeURIComponent(id)}`);
+  return r;
+}
+
+/** A new run of `agentId` at `version`, recorded with its request; final at once with faults.unattendedRun.endedAtCreate. */
+function newUnattendedRun(agentId, version, input, attachments, replayOf) {
+  const id = `run-${crypto.randomUUID().slice(0, 8)}`;
+  // As the model's UnattendedRun: the agent and the version asked for, the named version it resolved to, who
+  // started it, and the message it started with.
+  const run = {
+    id,
+    agent: { id: agentId, version },
+    agentVersion: version === 'live' || version === 'draft' ? 'v12' : version,
+    startedBy: { type: 'person', id: 'mock-caller' },
+    prompt: input.message,
+    ...(input.title ? { title: input.title } : {}),
+    status: 'pending',
+    ...(replayOf ? { replayedFrom: replayOf } : {}),
+    startedAt: nowIso(),
+  };
+  const r = { run, request: input, attachments: attachments ?? [], sent: 0, events: [] };
+  r.events = unattendedRunEvents(run);
+  if (faults.unattendedRun?.endedAtCreate) r.sent = r.events.length;
+  state.unattendedRuns.set(id, r);
+  return r;
+}
+
+// CreateUnattendedRun: under the version that answers (`live`, `draft` or a name), 202 with the run. One
+// Idempotency-Key gives one run; the same key with a different request is 422 IDEMPOTENCY_KEY_REUSED.
+async function createUnattendedRun(req, res, rid, [agentId, version], url, body) {
+  if (statusFault('CreateUnattendedRun', res, rid)) return;
+  const a = agentOr404(res, rid, agentId);
+  if (!a) return;
+  version = decodeURIComponent(version);
+  if (version === 'live' ? !a.live : version !== 'draft' && !a.named.has(version)) return problem(res, rid, 404, 'NOT_FOUND', `Agent ${a.agent.id} has no version ${version}.`);
+  const refusal = faults.unattendedStartErrors?.shift();
+  if (refusal) return problem(res, rid, refusal.status, refusal.code, refusal.detail ?? `Refused: ${refusal.code}`);
+  const input = parseJson(body) ?? {};
+  if (typeof input.message !== 'string' || !input.message) {
+    return problem(res, rid, 400, 'VALIDATION_FAILED', 'message is required', { fieldErrors: [{ pointer: '/message', code: 'VALIDATION_FAILED', detail: 'Required' }] });
+  }
+  const key = req.headers['idempotency-key'];
+  const fingerprint = JSON.stringify({ agentId: a.agent.id, version, input });
+  if (key) {
+    const seen = state.idempotency.get(`CreateUnattendedRun:${key}`);
+    if (seen && seen.fingerprint !== fingerprint) return problem(res, rid, 422, 'IDEMPOTENCY_KEY_REUSED', `Idempotency-Key ${key} was used with a different request.`);
+  }
+  let attachments;
+  if (input.attachments !== undefined) {
+    const refs = input.attachments;
+    if (!Array.isArray(refs) || refs.length < 1 || refs.length > 10 || refs.some((r) => typeof r?.uploadId !== 'string')) {
+      return problem(res, rid, 400, 'VALIDATION_FAILED', 'attachments holds 1 to 10 {uploadId}', { fieldErrors: [{ pointer: '/attachments', code: 'VALIDATION_FAILED' }] });
+    }
+    // A replayed create finds its uploads already used by the first: they are not checked again.
+    if (!(key && state.idempotency.has(`CreateUnattendedRun:${key}`))) {
+      const ups = [];
+      for (const [i, r] of refs.entries()) {
+        const taken = consumeUpload(r.uploadId);
+        if (taken.problem) return problem(res, rid, taken.status, ...taken.problem);
+        // Reserved with purpose {unattendedRun: {agentId, version}} for this agent and version.
+        const purpose = taken.up.input.purpose?.unattendedRun;
+        if (purpose?.agentId !== a.agent.id || purpose?.version !== version) {
+          return problem(res, rid, 400, 'VALIDATION_FAILED', `Upload ${r.uploadId} was not reserved with purpose {unattendedRun: {agentId: "${a.agent.id}", version: "${version}"}}.`, { fieldErrors: [{ pointer: `/attachments/${i}/uploadId`, code: 'VALIDATION_FAILED' }] });
+        }
+        ups.push(taken.up);
+      }
+      for (const up of ups) up.status = 'consumed';
+      attachments = ups.map((up) => ({ name: up.input.fileName, contentType: up.input.contentType, byteSize: Number(up.input.byteSize) }));
+    }
+  }
+  const result = idempotent(key, 'CreateUnattendedRun', () => {
+    const r = newUnattendedRun(a.agent.id, version, input, attachments);
+    return { status: 202, body: runNow(r), fingerprint };
+  });
+  const run = runNow(state.unattendedRuns.get(result.body.id));
+  sendJson(res, rid, result.status, run, { Location: `/api/v3/unattended-runs/${run.id}`, ...(result.replayed ? { 'Idempotent-Replayed': 'true' } : {}) });
+}
+
+// ListUnattendedRuns: newest first, across agents; agentId, status, triggerId, earliestStartedAt (inclusive) and
+// latestStartedAt (exclusive) filter it.
+async function listUnattendedRuns(req, res, rid, _m, url) {
+  if (statusFault('ListUnattendedRuns', res, rid)) return;
+  const q = url.searchParams;
+  for (const k of q.keys()) {
+    if (!['agentId', 'status', 'triggerId', 'earliestStartedAt', 'latestStartedAt', 'limit', 'cursor'].includes(k)) return problem(res, rid, 400, 'UNKNOWN_FILTER', `Unknown query parameter ${k}`, { fieldErrors: [{ parameter: k, code: 'UNKNOWN_FILTER' }] });
+  }
+  let items = [...state.unattendedRuns.values()].map(runNow).reverse();
+  if (q.has('agentId')) items = items.filter((r) => r.agent.id === q.get('agentId'));
+  if (q.has('status')) items = items.filter((r) => r.status === q.get('status'));
+  if (q.has('triggerId')) items = items.filter((r) => r.startedBy.type === 'trigger' && r.startedBy.id === q.get('triggerId'));
+  if (q.has('earliestStartedAt')) items = items.filter((r) => Date.parse(r.startedAt) >= Date.parse(q.get('earliestStartedAt')));
+  if (q.has('latestStartedAt')) items = items.filter((r) => Date.parse(r.startedAt) < Date.parse(q.get('latestStartedAt')));
+  const limit = Number(q.get('limit') ?? 50);
+  const start = q.has('cursor') ? JSON.parse(Buffer.from(q.get('cursor'), 'base64url').toString()).offset : 0;
+  const next = start + limit < items.length ? Buffer.from(JSON.stringify({ offset: start + limit })).toString('base64url') : undefined;
+  sendJson(res, rid, 200, { items: items.slice(start, start + limit), ...(next ? { nextCursor: next } : {}) });
+}
+
+async function getUnattendedRun(req, res, rid, [id]) {
+  if (statusFault('GetUnattendedRun', res, rid)) return;
+  const r = runOr404(res, rid, id);
+  if (r) sendJson(res, rid, 200, runNow(r));
+}
+
+// UpdateUnattendedRun: the title only.
+async function updateUnattendedRun(req, res, rid, [id], url, body) {
+  if (statusFault('UpdateUnattendedRun', res, rid)) return;
+  const r = runOr404(res, rid, id);
+  if (!r) return;
+  const input = parseJson(body) ?? {};
+  const unknown = Object.keys(input).find((k) => k !== 'title');
+  if (unknown) return problem(res, rid, 400, 'VALIDATION_FAILED', `Only title can be changed, not ${unknown}.`, { fieldErrors: [{ pointer: `/${unknown}`, code: 'VALIDATION_FAILED' }] });
+  if (typeof input.title !== 'string') return problem(res, rid, 400, 'VALIDATION_FAILED', 'title is required', { fieldErrors: [{ pointer: '/title', code: 'VALIDATION_FAILED' }] });
+  r.title = input.title;
+  r.renames = (r.renames ?? 0) + 1;
+  sendJson(res, rid, 200, runNow(r));
+}
+
+// DeleteUnattendedRun: 204; 409 CONFLICT while the run is pending or running (cancel it first).
+async function deleteUnattendedRun(req, res, rid, [id]) {
+  if (statusFault('DeleteUnattendedRun', res, rid)) return;
+  const r = runOr404(res, rid, id);
+  if (!r) return;
+  if (!RUN_FINAL.has(runNow(r).status)) return problem(res, rid, 409, 'CONFLICT', `Unattended run ${r.run.id} is still running. Cancel it first.`);
+  state.unattendedRuns.delete(r.run.id);
+  res.writeHead(204, baseHeaders(rid));
+  res.end();
+}
+
+// CancelUnattendedRun: 202 with the run. The run stops at its next step: what its watch has not sent yet is
+// replaced by its end, `cancelled`. A run already final is answered as it stands.
+async function cancelUnattendedRun(req, res, rid, [id]) {
+  if (statusFault('CancelUnattendedRun', res, rid)) return;
+  const r = runOr404(res, rid, id);
+  if (!r) return;
+  const now = runNow(r);
+  if (!RUN_FINAL.has(now.status)) {
+    r.events = r.events.slice(0, r.sent);
+    r.events.push({ id: `${r.run.id}:${r.sent + 1}`, type: 'unattended_run.ended', data: { unattendedRun: { ...now, status: 'cancelled', endedAt: nowIso() } } });
+    r.cancelled = true;
+    log.push({ event: 'unattended-run-cancelled', runId: r.run.id, afterEvents: r.sent, at: Date.now() });
+  }
+  sendJson(res, rid, 202, runNow(r));
+}
+
+// ReplayUnattendedRun: a new run with the same message, context and attachments, at `version` or, without one,
+// the original run's version. 202 with the new run.
+async function replayUnattendedRun(req, res, rid, [id], url, body) {
+  if (statusFault('ReplayUnattendedRun', res, rid)) return;
+  const r = runOr404(res, rid, id);
+  if (!r) return;
+  const input = parseJson(body) ?? {};
+  const key = req.headers['idempotency-key'];
+  const result = idempotent(key, `ReplayUnattendedRun:${r.run.id}`, () => {
+    const next = newUnattendedRun(r.run.agent.id, input.version ?? r.run.agent.version, r.request, r.attachments, r.run.id);
+    return { status: 202, body: runNow(next) };
+  });
+  sendJson(res, rid, result.status, runNow(state.unattendedRuns.get(result.body.id)), {
+    Location: `/api/v3/unattended-runs/${result.body.id}`,
+    ...(result.replayed ? { 'Idempotent-Replayed': 'true' } : {}),
+  });
+}
+
+// WatchUnattendedRun: a snapshot, then the events after Last-Event-ID, each moving the run on; it ends after
+// `unattended_run.ended`. faults.dropAfterEvents (once) drops the connection, as a load balancer would. A cancel
+// while the watch is open takes effect at its next event.
+async function watchUnattendedRun(req, res, rid, [id]) {
+  if (statusFault('WatchUnattendedRun', res, rid)) return;
+  const r = runOr404(res, rid, id);
+  if (!r) return;
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', ...baseHeaders(rid) });
+  let closed = false;
+  res.on('close', () => {
+    if (!res.writableFinished) {
+      closed = true;
+      log.push({ event: 'client-disconnected', subject: `run:${r.run.id}`, at: Date.now() });
+    }
+  });
+  res.write('retry: 2000\n\n');
+  const last = req.headers['last-event-id'];
+  let at = last ? r.events.findIndex((e) => e.id === last) + 1 : 0;
+  res.write(`event: snapshot\ndata: ${JSON.stringify({ unattendedRun: runNow(r) })}\n\n`);
+  // faults.resetOnResume (once): a reconnect's cursor cannot be carried on from, as when the answer can no longer be
+  // replayed. After the snapshot comes stream.reset, then only the run's end: the answer's other events are not sent.
+  if (last && faults.resetOnResume) {
+    faults.resetOnResume = false;
+    const cursor = `${r.run.id}:reset`;
+    res.write(`id: ${cursor}\nevent: stream.reset\ndata: ${JSON.stringify({ cursor })}\n\n`);
+    log.push({ event: 'server-reset-stream', subject: `run:${r.run.id}`, at: Date.now() });
+    at = r.events.findIndex((e) => e.type === 'unattended_run.ended');
+  }
+  let sent = 0;
+  while (!closed && at < r.events.length) {
+    if (faults.streamDelayMs) await sleep(faults.streamDelayMs);
+    if (closed) return;
+    // A cancel may have cut the events short: carry on from what is there now.
+    if (at >= r.events.length) break;
+    const e = r.events[at++];
+    // The run ends when its end is first sent, not when the mock wrote its script.
+    if (at > r.sent && e.type === 'unattended_run.ended') e.data.unattendedRun.endedAt = nowIso();
+    r.sent = Math.max(r.sent, at);
+    res.write(`id: ${e.id}\nevent: ${e.type}\ndata: ${JSON.stringify(runEventData(r, e, at))}\n\n`);
+    sent++;
+    if (faults.dropAfterEvents != null && sent >= faults.dropAfterEvents && e.type !== 'unattended_run.ended') {
+      faults.dropAfterEvents = null;
+      log.push({ event: 'server-dropped-stream', subject: `run:${r.run.id}`, afterEventId: e.id, at: Date.now() });
+      await sleep(20);
+      res.socket?.destroy();
+      return;
+    }
+    if (faults.holdAfterEvents != null && sent === faults.holdAfterEvents) {
+      log.push({ event: 'server-holding-stream', subject: `run:${r.run.id}`, afterEventId: e.id, at: Date.now() });
+      const until = Date.now() + 10_000;
+      // Until a cancel arrives (unattended.cancel), or 10 s.
+      while (!closed && Date.now() < until && !r.cancelled) await sleep(10);
+    }
+  }
+  if (!closed) res.end();
+}
+
+// ListUnattendedRunMessages: the message the run started with, then its result once it has one.
+async function listUnattendedRunMessages(req, res, rid, [id]) {
+  if (statusFault('ListUnattendedRunMessages', res, rid)) return;
+  const r = runOr404(res, rid, id);
+  if (!r) return;
+  const now = runNow(r);
+  const items = [{ id: `${r.run.id}-m1`, role: 'user', text: r.request.message, createdAt: r.run.startedAt, ...(r.attachments.length ? { attachments: r.attachments } : {}) }];
+  if (now.result) items.push(now.result);
+  sendJson(res, rid, 200, { items });
+}
+
+// ListUnattendedRunArtefacts: one report for a run that succeeded, none otherwise.
+const runArtefacts = (r) =>
+  runNow(r).status === 'succeeded' ? [{ id: 'art-1', fileName: 'review.docx', contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', byteSize: 18_432, createdAt: runNow(r).endedAt }] : [];
+
+async function listUnattendedRunArtefacts(req, res, rid, [id]) {
+  if (statusFault('ListUnattendedRunArtefacts', res, rid)) return;
+  const r = runOr404(res, rid, id);
+  if (r) sendJson(res, rid, 200, { items: runArtefacts(r) });
+}
+
+// GetUnattendedRunArtefactDownload: {url, expiresAt} as JSON, as GetDocumentDownload answers.
+async function getUnattendedRunArtefactDownload(req, res, rid, [id, artefactId], url) {
+  if (statusFault('GetUnattendedRunArtefactDownload', res, rid)) return;
+  const r = runOr404(res, rid, id);
+  if (!r) return;
+  const a = runArtefacts(r).find((x) => x.id === decodeURIComponent(artefactId));
+  if (!a) return problem(res, rid, 404, 'NOT_FOUND', `No artefact ${decodeURIComponent(artefactId)}`);
+  sendJson(res, rid, 200, { url: `${url.origin}/__s3/artefacts/${r.run.id}/${a.id}`, expiresAt: new Date(Date.now() + 300_000).toISOString() });
+}
+
+async function listUnattendedRunAttachments(req, res, rid, [id]) {
+  if (statusFault('ListUnattendedRunAttachments', res, rid)) return;
+  const r = runOr404(res, rid, id);
+  if (r) sendJson(res, rid, 200, { items: r.attachments });
+}
+
+async function listUnattendedRunPolicyReviews(req, res, rid, [id]) {
+  if (statusFault('ListUnattendedRunPolicyReviews', res, rid)) return;
+  const r = runOr404(res, rid, id);
+  if (r) sendJson(res, rid, 200, { items: [] });
 }
 
 async function getCaller(req, res, rid) {

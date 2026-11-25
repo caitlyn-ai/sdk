@@ -43,6 +43,17 @@ public final class CaitlynTraits {
         return node(shape, STABILITY).flatMap(Node::asStringNode).map(s -> s.getValue()).orElse("ga");
     }
 
+    private static final ShapeId NO_CLIENT_METHOD = ShapeId.from("ai.caitlyn.traits#noClientMethod");
+
+    /**
+     * Whether the SDKs leave the operation out: {@code @stability("internal")} (for Caitlyn itself), or
+     * {@code @noClientMethod(reason)}, a public operation that is called by systems holding no Caitlyn credential (a webhook
+     * delivery) and documented in the API reference instead of being given a client method.
+     */
+    public static boolean omittedFromSdk(Shape shape) {
+        return stability(shape).equals("internal") || shape.hasTrait(NO_CLIENT_METHOD);
+    }
+
     public static Optional<ObjectNode> object(Shape shape, ShapeId trait) {
         return node(shape, trait).flatMap(Node::asObjectNode);
     }

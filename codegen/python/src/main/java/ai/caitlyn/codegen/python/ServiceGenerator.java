@@ -80,7 +80,7 @@ final class ServiceGenerator {
 
     void run() {
         for (OperationShape op : new TreeSet<>(TopDownIndex.of(model).getContainedOperations(service))) {
-            if (CaitlynTraits.stability(op).equals("internal")) {
+            if (CaitlynTraits.omittedFromSdk(op)) {
                 continue; // never generated into the public SDKs
             }
             OperationInfo info = new OperationInfo(model, service, op, settings);
@@ -788,10 +788,56 @@ final class ServiceGenerator {
     }
 
     /**
-     * A list of upload references ({uploadId}) on a call whose scope the presigned upload's purpose can name (SendMessage's
-     * attachments, purpose {conversationId}): the member of the purpose to fill. Empty for any other member.
+     * A list of upload references ({uploadId}) on a call whose scope the presigned upload's purpose can name: the purpose,
+     * as a Python dict over the scope's identifiers. SendMessage's attachments give {"conversationId": …}, a member of
+     * the purpose the scope fills; CreateUnattendedRun's give {"unattendedRun": {"agentId": …, "version": …}}, a member
+     * made of members the scope fills. Empty for any other member.
      */
     private Optional<String> attachmentsPurpose(ScopeTree.Method m, OperationInfo.Param p) {
+        return attachmentsPurposeMember(m, p).map(f -> "{" + Names.pyString(f) + ": " + idExpr(m, f) + "}").or(() -> {
+            if (attachmentsList(p).isEmpty()) {
+                return Optional.empty();
+            }
+            StructureShape ps = model.expectShape(upload.get().presigned.param("purpose").orElseThrow().member().getTarget(), StructureShape.class);
+            java.util.Set<String> filled = new java.util.HashSet<>(m.fills.stream().map(ScopeTree.Fill::member).toList());
+            for (MemberShape pm : ps.getAllMembers().values()) {
+                if (!(model.expectShape(pm.getTarget()) instanceof StructureShape st) || st.getAllMembers().isEmpty()) {
+                    continue;
+                }
+                if (!filled.containsAll(st.getAllMembers().keySet())) {
+                    continue;
+                }
+                String inner = st.getAllMembers().keySet().stream().map(k -> Names.pyString(k) + ": " + idExpr(m, k)).collect(java.util.stream.Collectors.joining(", "));
+                return Optional.of("{" + Names.pyString(pm.getMemberName()) + ": {" + inner + "}}");
+            }
+            return Optional.empty();
+        });
+    }
+
+    /** The scope's identifier that fills an input member, as Python reads it. */
+    private static String idExpr(ScopeTree.Method m, String member) {
+        String ident = m.fills.stream().filter(f -> f.member().equals(member)).findFirst().map(ScopeTree.Fill::identifier).orElse(member);
+        return "self._ids[" + Names.pyString(ident) + "]";
+    }
+
+    /** The member is a list of upload references ({uploadId}) and there is a presigned upload with a purpose. */
+    private Optional<OperationInfo.Param> attachmentsList(OperationInfo.Param p) {
+        if (upload.isEmpty() || upload.get().presigned.param("purpose").isEmpty()) {
+            return Optional.empty();
+        }
+        Shape t = model.expectShape(p.member().getTarget());
+        if (!t.isListShape()) {
+            return Optional.empty();
+        }
+        Shape item = model.expectShape(((ListShape) t).getMember().getTarget());
+        if (!item.isStructureShape() || item.asStructureShape().get().getMember("uploadId").isEmpty() || item.getAllMembers().size() != 1) {
+            return Optional.empty();
+        }
+        return Optional.of(p);
+    }
+
+    /** The member of the purpose a scope fills directly (SendMessage: conversationId). */
+    private Optional<String> attachmentsPurposeMember(ScopeTree.Method m, OperationInfo.Param p) {
         if (upload.isEmpty()) {
             return Optional.empty();
         }
@@ -875,8 +921,7 @@ final class ServiceGenerator {
                 w.importFrom(CORE, "UploadId");
                 w.importFrom(CORE, async ? "attachment_refs_async" : "attachment_refs");
                 String purposeType = typeOf(model.expectShape(upload.get().presigned.param("purpose").orElseThrow().member().getTarget(), StructureShape.class), w);
-                String ident = m.fills.stream().filter(f -> f.member().equals(attachFor.get())).findFirst().map(f -> f.identifier()).orElse(attachFor.get());
-                String purpose = purposeType + ".model_validate({" + Names.pyString(attachFor.get()) + ": self._ids[" + Names.pyString(ident) + "]})";
+                String purpose = purposeType + ".model_validate(" + attachFor.get() + ")";
                 String send = cls(uploadsNode(), async) + "(self._core, {}).send(f, purpose=" + purpose + ")";
                 type = "Sequence[FileInput | UploadId | " + type.replaceFirst("^Sequence\\[(.*)\\]$", "$1") + "]";
                 setup.add(p.name() + "_refs = " + (async ? "await attachment_refs_async(" : "attachment_refs(") + p.name() + ", lambda f: " + send
@@ -1119,7 +1164,7 @@ final class ServiceGenerator {
         UnionShape union = model.expectShape(ShapeId.from(watch.sse.orElseThrow().expectStringMember("events").getValue()), UnionShape.class);
         Optional<MemberShape> snapshot = union.getAllMembers().values().stream()
                 .filter(mm -> SseEvents.wireName(mm).equals("snapshot")).findFirst();
-        String member = lr.filter().orElse("knowledgeBase");
+        String member = ScopeTree.watchedThing(scope);
         return snapshot.flatMap(sm -> model.expectShape(sm.getTarget(), StructureShape.class).getMember(member))
                 .map(mm -> model.expectShape(mm.getTarget(), StructureShape.class));
     }
@@ -1158,8 +1203,15 @@ final class ServiceGenerator {
             entries.add(Names.pyString(fp.name()) + ": ids[" + Names.pyString(last) + "]");
             key = "str(ids[" + Names.pyString(last) + "])";
         }
-        w.write("watched = Watched(_operations.$L, {$L}, _operations.$L_EVENTS, $L, $L)", watch.constant, String.join(", ", entries), watch.constant,
-                lr.filter().map(Names::pyString).orElse("None"), key);
+        // A watch of a thing of its own other than the knowledge base (an unattended run's) names its snapshot member.
+        String thing = ScopeTree.watchedThing(n);
+        String thingArg = lr.filter().isEmpty() && !thing.equals("knowledgeBase") ? ", thing=" + Names.pyString(thing) : "";
+        // A watch that takes Last-Event-ID resumes from the last event (an unattended run's); one without starts afresh.
+        thingArg += watch.params.stream().filter(p -> p.binding().getLocation() == HttpBinding.Location.HEADER
+                && p.binding().getLocationName().equalsIgnoreCase("Last-Event-ID")).findFirst()
+                .map(p -> ", last_event_id=" + Names.pyString(p.name())).orElse("");
+        w.write("watched = Watched(_operations.$L, {$L}, _operations.$L_EVENTS, $L, $L$L)", watch.constant, String.join(", ", entries), watch.constant,
+                lr.filter().map(Names::pyString).orElse("None"), key, thingArg);
         if (method(n, "get").isPresent()) {
             w.write("return $L(core, watched, _operations.CODE_ERRORS, $L(core, ids).get)", follow, cls(n, async));
         } else if (!type.equals("None")) {
@@ -1203,6 +1255,11 @@ final class ServiceGenerator {
         w.write("");
         writeDef(w, async, "wait", List.of("*", "timeout: float | None = None", progressParam(n, w)), type);
         w.indent();
+        if (ai.caitlyn.codegen.model.ProcessingWatch.endsOnStatus(model, n)) {
+            w.write("$D", "Waits until the run has ended, and returns it as `get()` does, whatever its status: succeeded, failed,\n"
+                    + "cancelled, interrupted or untracked. A run's failure is data on the run (`failure`), never raised. If it is gone,\n"
+                    + "raises the 404. `timeout` (seconds, no limit by default) raises `TimeoutError`." + (async ? " Cancelling the task stops the wait." : ""));
+        } else
         w.write("$D", "Waits until no job runs on it, and returns it" + (method(n, "get").isPresent() ? " as `get()` does" : "")
                 + ". A job that ends with some failures still\nreturns them on it; a job that failed raises its error as the typed error for its code, and one that was\n"
                 + "cancelled raises `CANCELLED`. If it is gone, raises the 404. `timeout` (seconds, no limit by default) raises\n`TimeoutError`."

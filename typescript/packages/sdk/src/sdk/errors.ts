@@ -2,7 +2,7 @@
 import type { SyncReport } from "@caitlyn-ai/sdk-core";
 import { CaitlynServiceException, type __ServiceExceptionOptions } from "../models/CaitlynServiceException";
 import type { ErrorCode } from "./errorCodes";
-import type { FieldError } from "../models/models_0";
+import type { FieldError } from "../models/models";
 
 /**
  * Every Caitlyn error: the typed classes (NotFoundError, ValidationError…) and the generic error for a status

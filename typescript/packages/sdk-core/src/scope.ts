@@ -143,8 +143,8 @@ export class WorkPromise<T, W = T, E = Json> implements Promise<T> {
   }
 }
 
-/** The kinds of thing a knowledge base's watch reports on, as its snapshot names them. */
-export type WatchedKind = 'knowledgeBase' | 'document' | 'folder' | 'batch';
+/** The kinds of thing a watch reports on, as its snapshot names them: a knowledge base's, or an unattended run's. */
+export type WatchedKind = 'knowledgeBase' | 'document' | 'folder' | 'batch' | 'unattendedRun';
 
 export interface WaitSpec<T> {
   /** Opens the watch (the scope's own, with its filter), cancelled by `signal`. */
@@ -335,6 +335,10 @@ export async function waitFor<T>(spec: WaitSpec<T>, options: WaitOptions = {}): 
           thing = event.folder;
         } else if (spec.kind === 'folder' && type === 'folder.deleted' && event.path === spec.id) {
           gone = true;
+        } else if (spec.kind === 'unattendedRun' && (type === 'unattended_run.status_changed' || type === 'unattended_run.ended')) {
+          // A run's status says it all: pending and running are busy, and every other status is its end, a failure
+          // included (failure is data on the run, never raised).
+          thing = event.unattendedRun;
         } else if (spec.kind === 'knowledgeBase' && type === 'knowledge_base.updated') {
           thing = event.knowledgeBase;
         } else if (spec.kind === 'batch' && spec.get) {

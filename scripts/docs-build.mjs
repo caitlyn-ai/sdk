@@ -114,7 +114,7 @@ pages.push({
 // /api/openapi.json, and an overview and a page per operation built from it. Its text passes the same public-wording
 // check as the pages.
 const { doc: openapi, problems: openapiProblems } = publishedOpenapi(JSON.parse(fs.readFileSync(path.join(root, 'model/openapi.json'), 'utf8')), {
-  ops: reference.ops,
+  ops: [...reference.ops, ...reference.apiOnly],
   tree,
   sdkSlug: (op) => `sdk/${kebab(op.name)}`,
   examples: reference.examples,
@@ -123,7 +123,7 @@ for (const problem of openapiProblems) fail('model/openapi.json', problem);
 for (const problem of documentProblems(openapi)) fail('the published OpenAPI document', problem);
 const api = apiPages(openapi, {
   ast,
-  ops: reference.ops,
+  ops: [...reference.ops, ...reference.apiOnly],
   sdkPages: new Map(reference.pages.filter((p) => p.operation).map((p) => [p.operation.name, p])),
   typePages: reference.typePages,
   tree,
@@ -145,8 +145,10 @@ for (const p of api.pages) pages.push({ ...p, source: 'the OpenAPI document', ki
 // What each SDK call returns and raises, in each language, for the response panes of both references' operation pages
 // (src/components/OperationPanel.astro); the HTTP view keeps the HTTP response alone
 const returned = sdkReturns({ ast, ops: reference.ops, tree, typePages: reference.typePages, sdkSlug: (op) => `sdk/${kebab(op.name)}` });
+const noSdkMethod = new Set(reference.apiOnly.map((o) => o.name));
 for (const p of pages) {
   if (!p.operation) continue;
+  if (noSdkMethod.has(p.operation.name)) continue; // the HTTP API's page alone: no SDK call returns anything
   const r = returned[p.operation.name];
   for (const lang of ['typescript', 'python', 'go', 'rust']) if (!r?.returns[lang]) fail(`${p.slug} (generated)`, `no ${lang} return type for ${p.operation.name}: scripts/docs-api.mjs sdkReturns could not read it from the SDK`);
   p.operation = { ...p.operation, returns: r?.returns ?? {}, errorClasses: r?.errorClasses ?? {} };
@@ -475,7 +477,8 @@ for (const p of pages) {
     // An operation page's header strip (src/components/OperationHeader.astro): each SDK's call, the HTTP call and the
     // same operation in the HTTP API's reference
     // the same operation in the other reference: the API reference's page from the SDK reference, and back
-    ...(p.operation ? [`operation: ${yaml({ ...p.operation, other: p.kind === 'api' ? { label: 'In the SDK reference', link: `/sdk/${kebab(p.operation.name)}/` } : { label: 'In the API reference', link: `/api/${kebab(p.operation.name)}/` } })}`] : []),
+    // An operation with no SDK method has no page in the SDK reference to link to (its header shows no SDK call either).
+    ...(p.operation ? [`operation: ${yaml({ ...p.operation, other: p.kind === 'api' ? (noSdkMethod.has(p.operation.name) ? { label: '', link: '' } : { label: 'In the SDK reference', link: `/sdk/${kebab(p.operation.name)}/` }) : { label: 'In the API reference', link: `/api/${kebab(p.operation.name)}/` } })}`] : []),
     // The API reference's overview: its Server block (src/components/PageTitle.astro), and Scalar's old anchors
     // (#tag/documents/GET/v3/...), each sent on to its operation's page
     ...(p.server ? ['server: true'] : []),
@@ -551,7 +554,12 @@ const apiTopic = {
   items: [
     link(bySlug.get('api'), 'Overview'),
     // The same groups; the SDK helpers have no HTTP operation, so they are left out
-    ...sidebarGroups(tree, (e) => { const p = e.op && pages.find((q) => q.kind === 'api' && q.operation?.name === e.op.name); return p ? opLink(p, sidebarLabel(e.op.name, p.label ?? p.title)) : null; }),
+    ...sidebarGroups(
+      tree,
+      (e) => { const p = e.op && pages.find((q) => q.kind === 'api' && q.operation?.name === e.op.name); return p ? opLink(p, sidebarLabel(e.op.name, p.label ?? p.title)) : null; },
+      // An operation with no SDK method is no entry of the client tree: its page goes in its resource's group
+      pages.filter((q) => q.kind === 'api' && noSdkMethod.has(q.operation?.name)).reduce((m, q) => m.set(q.group, [...(m.get(q.group) ?? []), opLink(q, sidebarLabel(q.operation.name, q.label ?? q.title))]), new Map()),
+    ),
     // The types and error codes are the SDK reference's pages: shortcuts to them
     ...referenceGroups.filter((g) => g.label === 'Types' || g.label === 'Error codes'),
   ],

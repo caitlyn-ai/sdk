@@ -14,6 +14,16 @@ export class HttpBearerAuthSigner {
   }
 }
 
+/**
+ * The signer of an operation that takes no sign-in (`@optionalAuth`, a webhook trigger's delivery): the request goes
+ * as it is. smithy-typescript names it in the client's auth schemes whenever the model has such an operation.
+ */
+export class NoAuthSigner {
+  async sign(httpRequest: HttpRequest): Promise<HttpRequest> {
+    return httpRequest;
+  }
+}
+
 export function getHttpSigningPlugin(_config: unknown): Pluggable<any, any> {
   return {
     applyToStack(stack) {
