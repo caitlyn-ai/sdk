@@ -34,7 +34,17 @@ import http from 'node:http';
 import path from 'node:path';
 import { authFaults, authorised, handleAuth, refusalDelayMs, resetAuth } from './auth.mjs';
 
-const API_VERSION_DEFAULT = '5.120.0';
+// The version the mock reports: 5.120.0, or the model's @since("next") stamp when that is later. A model built from an
+// app branch (scripts/model-pull.sh --prerelease, as model:main pulls one) stamps "next" as that branch's app version,
+// and the SDKs refuse an operation a server too old for it would not have; the mock answers as that branch's server.
+const later = (a, b) => {
+  const [x, y] = [a, b].map((v) => v.split('.').map(Number));
+  const i = x.findIndex((n, k) => n !== y[k]);
+  return i >= 0 && y[i] > x[i] ? b : a;
+};
+// MOCK_MODEL_LOCK names another lock file (scripts/mock-version.test.mjs).
+const stampNext = JSON.parse(fs.readFileSync(process.env.MOCK_MODEL_LOCK ?? path.join(import.meta.dirname, '../../model/model.lock.json'), 'utf8')).stampNext;
+const API_VERSION_DEFAULT = stampNext ? later('5.120.0', stampNext) : '5.120.0';
 const EXAMPLES = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '../cases/examples.json'), 'utf8')).cases;
 
 const DEFAULT_FAULTS = {

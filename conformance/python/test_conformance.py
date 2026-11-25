@@ -75,6 +75,11 @@ from opentelemetry.trace import StatusCode
 SDK_VERSION: str = (ROOT / "VERSION").read_text().strip()
 """The version in VERSION, which every SDK sends in its user agent."""
 SDK_MODEL: str = json.loads((ROOT / "model" / "model.lock.json").read_text())["stampNext"]
+# The version the mock reports: 5.120.0, or the model's @since("next") stamp when that is later.
+SERVER_VERSION: str = max("5.120.0", SDK_MODEL or "0", key=lambda v: tuple(int(n) for n in v.split(".")))
+# GetAgentVersion's @since, as the SDK reads it: the model's release, or SDK_MODEL where the model says "next".
+_GAV_SINCE = json.loads((ROOT / "model" / "model.json").read_text())["shapes"]["ai.caitlyn.v3#GetAgentVersion"].get("traits", {}).get("ai.caitlyn.traits#since")
+GET_AGENT_VERSION_SINCE: str = SDK_MODEL if _GAV_SINCE in (None, "next") else _GAV_SINCE
 EXAMPLES: list[dict[str, Any]] = json.loads((ROOT / "conformance" / "cases" / "examples.json").read_text())["cases"]
 T = TypeVar("T")
 
@@ -1047,7 +1052,7 @@ async def test_since(mock: Mock, case_id: str) -> None:
     before = len(mock.api())
     with pytest.raises(NotSupportedByServer) as info:
         await c.agents("GHT7YRWXPL").draft.get()
-    assert (info.value.requires, info.value.server) == (SDK_MODEL, "5.110.0")
+    assert (info.value.requires, info.value.server) == (GET_AGENT_VERSION_SINCE, "5.110.0")
     assert len(mock.api()) == before
 
 
@@ -1060,7 +1065,7 @@ async def test_since_unknown_operation(mock: Mock, case_id: str) -> None:
     for i, answer in enumerate(["404 UNKNOWN_OPERATION", "405 METHOD_NOT_ALLOWED"]):
         with pytest.raises(NotSupportedByServer) as info:
             await c.agents("GHT7YRWXPL").draft.get()
-        assert (info.value.operation, info.value.requires, info.value.server) == ("GetAgentVersion", SDK_MODEL, "5.120.0"), answer
+        assert (info.value.operation, info.value.requires, info.value.server) == ("GetAgentVersion", GET_AGENT_VERSION_SINCE, SERVER_VERSION), answer
         assert len(mock.api()) == i + 1, f"{answer} is not retried"
     err = await expect_error(c.agents("GHT7YRWXPL").draft.get())
     assert (err.status, err.code) == (404, "NOT_FOUND")
@@ -1071,7 +1076,7 @@ async def test_request_id(mock: Mock, case_id: str) -> None:
     v = await client(mock).agents("GHT7YRWXPL").draft.get()
     assert v.response_metadata is not None
     assert v.response_metadata.request_id == mock.api()[-1]["requestId"]
-    assert v.response_metadata.api_version == "5.120.0"
+    assert v.response_metadata.api_version == SERVER_VERSION
 
 
 @case("headers.response-metadata")
@@ -1126,7 +1131,7 @@ async def test_telemetry_attributes(mock: Mock, tmp_path: Path, case_id: str) ->
         a = attrs(s)
         assert (a["http.request.method"], a["server.address"]) == ("GET", "127.0.0.1")
         assert a["url.full"] == f"{mock.base}/v3/agents/GHT7YRWXPL/versions/nope"
-        assert a["caitlyn.server.api_version"] == "5.120.0"
+        assert a["caitlyn.server.api_version"] == SERVER_VERSION
         assert s.status.status_code == StatusCode.ERROR and s.status.description
     assert [attrs(s)["error.type"] for s in attempts] == ["ServiceUnavailableError", "NotFoundError"]
     assert [attrs(s)["caitlyn.error.code"] for s in attempts] == ["SERVICE_UNAVAILABLE", "NOT_FOUND"]

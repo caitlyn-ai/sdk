@@ -235,6 +235,25 @@ fn sdk_model() -> String {
         .to_owned()
 }
 
+/// GetAgentVersion's @since, as the SDK reads it: the model's release, or sdk_model() where the model says "next".
+fn get_agent_version_since() -> String {
+    match read_json("model/model.json")["shapes"]["ai.caitlyn.v3#GetAgentVersion"]["traits"]["ai.caitlyn.traits#since"].as_str() {
+        Some(since) if since != "next" => since.to_owned(),
+        _ => sdk_model(),
+    }
+}
+
+/// The version the mock reports: 5.120.0, or the model's @since("next") stamp when that is later.
+fn server_version() -> String {
+    let parse = |v: &str| v.split('.').map(|n| n.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>();
+    let next = sdk_model();
+    if !next.is_empty() && parse(&next) > parse("5.120.0") {
+        next
+    } else {
+        "5.120.0".to_owned()
+    }
+}
+
 fn temp_file(name: &str, data: &[u8]) -> PathBuf {
     let dir = root().join("build/rust-conformance-tmp");
     std::fs::create_dir_all(&dir).expect("tmp dir");
@@ -1831,7 +1850,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 return Err(format!("got {:?}", r.err()));
             };
             ensure!(
-                e.operation == "GetAgentVersion" && e.requires == sdk_model() && e.server == "5.110.0" && after == before,
+                e.operation == "GetAgentVersion" && e.requires == get_agent_version_since() && e.server == "5.110.0" && after == before,
                 "got {e:?}, {after} requests"
             );
             Ok(())
@@ -1851,7 +1870,10 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 };
                 let n = m.api().await.len();
                 ensure!(
-                    e.operation == "GetAgentVersion" && e.requires == sdk_model() && e.server == "5.120.0" && n == i + 1,
+                    e.operation == "GetAgentVersion"
+                        && e.requires == get_agent_version_since()
+                        && e.server == server_version()
+                        && n == i + 1,
                     "{answer}: got {e:?}, {n} requests"
                 );
             }
@@ -1875,7 +1897,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let reqs = m.api().await;
             ensure!(
                 est.request_id.as_deref() == Some(str_at(reqs.last().unwrap(), "requestId"))
-                    && est.api_version.as_deref() == Some("5.120.0"),
+                    && est.api_version.as_deref() == Some(server_version().as_str()),
                 "request id {:?} api version {:?}",
                 est.request_id,
                 est.api_version
@@ -1884,7 +1906,8 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let reqs = m.api().await;
             let md = v.response_metadata().ok_or("no response metadata on the thing")?;
             ensure!(
-                md.request_id.as_deref() == Some(str_at(reqs.last().unwrap(), "requestId")) && md.api_version.as_deref() == Some("5.120.0"),
+                md.request_id.as_deref() == Some(str_at(reqs.last().unwrap(), "requestId"))
+                    && md.api_version.as_deref() == Some(server_version().as_str()),
                 "thing's metadata {md:?}"
             );
             Ok(())
@@ -1979,7 +2002,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                     ("http.request.resend_count", i.to_string()),
                     ("http.response.status_code", ["503", "404"][i].to_owned()),
                     ("caitlyn.request_id", str_at(&sent[i], "requestId").to_owned()),
-                    ("caitlyn.server.api_version", "5.120.0".to_owned()),
+                    ("caitlyn.server.api_version", server_version()),
                     ("otel.status_code", "ERROR".to_owned()),
                     ("error.type", ["ServiceUnavailableError", "NotFoundError"][i].to_owned()),
                     ("caitlyn.error.code", ["SERVICE_UNAVAILABLE", "NOT_FOUND"][i].to_owned()),

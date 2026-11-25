@@ -10,7 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../typescript"
 npm ci --no-audit --no-fund --silent
 # prepare-model's dev mode, which the app's local loop (scripts/dev-sdk.sh) uses
-node --test ../scripts/prepare-model.test.mjs
+node --test ../scripts/prepare-model.test.mjs ../scripts/mock-version.test.mjs
 node ../scripts/prepare-model.mjs > /dev/null
 node ../scripts/docs-snippets.mjs typescript
 npx tsc -p tsconfig.json
