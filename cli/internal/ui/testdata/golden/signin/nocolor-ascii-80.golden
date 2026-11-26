@@ -1,0 +1,11 @@
+-- stdout --
+-- stderr --
+[1mSigning in to your-company.caitlyn.ai[m
+
+  Your browser is open at the sign-in page. Check that it names "Caitlyn CLI"
+  and your-company.caitlyn.ai, then approve.
+
+  Not opened? https://your-company.caitlyn.ai/api/oauth/authorize
+
++ [1mSigned in as Aroha Ngata[m (aroha.ngata@example.govt.nz)
+  profile default - tokens in the macOS Keychain - scopes api:admin

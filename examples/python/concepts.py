@@ -18,7 +18,7 @@ from caitlyn import (
 )
 from caitlyn.auth import Token
 
-caitlyn = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token(os.environ["CAITLYN_TOKEN"]))
+caitlyn = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token(os.environ["CAITLYN_TOKEN"]))
 agent_id = "GHT7YRWXPL"
 conversation_id = "0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47"
 
@@ -83,7 +83,7 @@ def errors_if_match() -> None:
 def retries() -> Caitlyn:
     # #region retries
     patient = Caitlyn(
-        workspace="your-company.getcaitlyn.ai",
+        workspace="your-company.caitlyn.ai",
         auth=Token(os.environ["CAITLYN_TOKEN"]),
         max_attempts=5,  # the first attempt included; default 3
         max_retry_delay=120,  # seconds: the longest Retry-After to wait for; default 60
@@ -95,7 +95,7 @@ def retries() -> Caitlyn:
 def retry_budget() -> Caitlyn:
     # #region retry-budget
     batch = Caitlyn(
-        workspace="your-company.getcaitlyn.ai",
+        workspace="your-company.caitlyn.ai",
         auth=Token(os.environ["CAITLYN_TOKEN"]),
         retry_budget=2000,  # retry tokens shared by every call on this client; default 500, and 0 turns retries off
     )
@@ -187,7 +187,7 @@ def pagination_cursor(cursor: str | None) -> None:
 def telemetry() -> Caitlyn:
     # #region telemetry
     traced = Caitlyn(
-        workspace="your-company.getcaitlyn.ai",
+        workspace="your-company.caitlyn.ai",
         auth=Token(os.environ["CAITLYN_TOKEN"]),
         tracer_provider=trace.get_tracer_provider(),  # default: the global provider
     )

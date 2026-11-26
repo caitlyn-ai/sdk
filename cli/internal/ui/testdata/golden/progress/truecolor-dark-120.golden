@@ -1,0 +1,8 @@
+-- stdout --
+-- stderr --
+[32m✓[m Hashed 214 files                                         [38;2;168;176;173m0.8 s[m
+[32m✓[m Planned: 3 new, 7 changed, 1 moved, 5 to remove, 198 unchanged
+[K  Uploading  [38;2;255;187;38m██████████████[m[38;2;46;51;49m░░░░░░░░░░[m  [38;2;168;176;173m6 of 10 · 11.2 of 18.4 MB · about 20 s left[m[K[32m✓[m Uploaded 10 files (18.4 MB)                               [38;2;168;176;173m24 s[m
+[32m✓[m Processed 10 documents                                [38;2;168;176;173m1 m 52 s[m
+[32m✓[m HR policies is in step with ./handbook
+  [38;2;168;176;173m3 created · 7 new versions · 1 moved · 5 removed · 198 unchanged[m

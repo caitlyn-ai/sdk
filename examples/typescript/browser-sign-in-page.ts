@@ -7,7 +7,7 @@ import { Caitlyn, CaitlynAuthError } from '@caitlyn-ai/sdk';
 // No client secret: a public client. Tokens stay in this page's memory (the default when there is no token
 // store), so a reload signs in again.
 const caitlyn = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: {
     mode: 'oauth',
     clientId: 'your-public-client-id', // an identifier, not a secret

@@ -34,26 +34,26 @@ is and never renewed. Use it for your own scripts and for trying the API; never 
 <!-- example: examples/typescript/sign-in-modes.ts#token -->
 ```ts tab="TypeScript"
 const script = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! }, // a personal access token, cait-pat-…
 });
 ```
 <!-- example: examples/python/sign_in_modes.py#token -->
 ```python tab="Python"
 script = Caitlyn(
-    workspace="your-company.getcaitlyn.ai",
+    workspace="your-company.caitlyn.ai",
     auth=Token(os.environ["CAITLYN_TOKEN"]),  # a personal access token, cait-pat-…
 )
 ```
 <!-- example: examples/go/signin/signin.go#token -->
 ```go tab="Go"
-script, err := caitlyn.NewClient("your-company.getcaitlyn.ai",
+script, err := caitlyn.NewClient("your-company.caitlyn.ai",
 	caitlyn.Token(os.Getenv("CAITLYN_TOKEN"))) // a personal access token, cait-pat-…
 ```
 <!-- example: examples/rust/src/sign_in_modes.rs#token -->
 ```rust tab="Rust"
 let script = Client::new(
-    "your-company.getcaitlyn.ai",
+    "your-company.caitlyn.ai",
     Auth::token(std::env::var("CAITLYN_TOKEN")?),
 )?;
 ```
@@ -67,7 +67,7 @@ store, never in code.
 <!-- example: examples/typescript/sign-in-modes.ts#client-credentials -->
 ```ts tab="TypeScript"
 const service = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: {
     mode: 'clientCredentials',
     clientId: process.env.CAITLYN_CLIENT_ID!,
@@ -79,7 +79,7 @@ const service = new Caitlyn({
 <!-- example: examples/python/sign_in_modes.py#client-credentials -->
 ```python tab="Python"
 service = Caitlyn(
-    workspace="your-company.getcaitlyn.ai",
+    workspace="your-company.caitlyn.ai",
     auth=ClientCredentials(
         client_id=os.environ["CAITLYN_CLIENT_ID"],
         client_secret=os.environ["CAITLYN_CLIENT_SECRET"],
@@ -89,7 +89,7 @@ service = Caitlyn(
 ```
 <!-- example: examples/go/signin/signin.go#client-credentials -->
 ```go tab="Go"
-service, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.ClientCredentials{
+service, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.ClientCredentials{
 	ClientID:     os.Getenv("CAITLYN_CLIENT_ID"),
 	ClientSecret: os.Getenv("CAITLYN_CLIENT_SECRET"),
 	Scopes:       []string{"api:read"},
@@ -98,7 +98,7 @@ service, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.ClientCr
 <!-- example: examples/rust/src/sign_in_modes.rs#client-credentials -->
 ```rust tab="Rust"
 let service = Client::new(
-    "your-company.getcaitlyn.ai",
+    "your-company.caitlyn.ai",
     Auth::client_credentials(
         std::env::var("CAITLYN_CLIENT_ID")?,
         std::env::var("CAITLYN_CLIENT_SECRET")?,
@@ -116,7 +116,7 @@ sends them back to your redirect URI.
 <!-- example: examples/typescript/sign-in-modes.ts#oauth -->
 ```ts tab="TypeScript"
 const asPerson = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: {
     mode: 'oauth',
     clientId: process.env.CAITLYN_CLIENT_ID!,
@@ -133,7 +133,7 @@ const { url, state, codeVerifier } = await asPerson.auth.authorizationUrl();
 <!-- example: examples/python/sign_in_modes.py#oauth -->
 ```python tab="Python"
 as_person = Caitlyn(
-    workspace="your-company.getcaitlyn.ai",
+    workspace="your-company.caitlyn.ai",
     auth=OAuth(
         client_id=os.environ["CAITLYN_CLIENT_ID"],
         client_secret=os.environ.get("CAITLYN_CLIENT_SECRET"),  # a confidential client on a server
@@ -148,7 +148,7 @@ start = as_person.auth.authorization_url()
 ```
 <!-- example: examples/go/signin/signin.go#oauth -->
 ```go tab="Go"
-asPerson, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.OAuth{
+asPerson, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.OAuth{
 	ClientID:     os.Getenv("CAITLYN_CLIENT_ID"),
 	ClientSecret: os.Getenv("CAITLYN_CLIENT_SECRET"), // a confidential client on a server
 	RedirectURI:  "https://app.example.com/caitlyn/callback",
@@ -165,7 +165,7 @@ start, err := asPerson.Auth().AuthorizationURL(ctx, caitlyn.AuthorizationOptions
 <!-- example: examples/rust/src/sign_in_modes.rs#oauth -->
 ```rust tab="Rust"
 let as_person = Client::new(
-    "your-company.getcaitlyn.ai",
+    "your-company.caitlyn.ai",
     Auth::oauth(std::env::var("CAITLYN_CLIENT_ID")?)
         .client_secret(std::env::var("CAITLYN_CLIENT_SECRET")?) // a confidential client on a server
         .redirect_uri("https://app.example.com/caitlyn/callback")
@@ -308,26 +308,26 @@ The SDKs sign that one request themselves, so no AWS SDK is needed.
 <!-- example: examples/typescript/sign-in-modes.ts#aws-iam -->
 ```ts tab="TypeScript"
 const worker = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: { mode: 'awsIam', region: 'ap-southeast-2' }, // the workload's own AWS credentials
 });
 ```
 <!-- example: examples/python/sign_in_modes.py#aws-iam -->
 ```python tab="Python"
 worker = Caitlyn(
-    workspace="your-company.getcaitlyn.ai",
+    workspace="your-company.caitlyn.ai",
     auth=AwsIam(region="ap-southeast-2"),  # the workload's own AWS credentials
 )
 ```
 <!-- example: examples/go/signin/signin.go#aws-iam -->
 ```go tab="Go"
-worker, err := caitlyn.NewClient("your-company.getcaitlyn.ai",
+worker, err := caitlyn.NewClient("your-company.caitlyn.ai",
 	caitlyn.AWSIAM{Region: "ap-southeast-2"}) // the workload's own AWS credentials
 ```
 <!-- example: examples/rust/src/sign_in_modes.rs#aws-iam -->
 ```rust tab="Rust"
 let worker = Client::new(
-    "your-company.getcaitlyn.ai",
+    "your-company.caitlyn.ai",
     Auth::aws_iam().region("ap-southeast-2"),
 )?;
 ```
@@ -353,33 +353,33 @@ expires.
 publish:
   id_tokens:
     CAITLYN_ID_TOKEN:
-      aud: https://your-company.getcaitlyn.ai/api
+      aud: https://your-company.caitlyn.ai/api
 ```
 
 <!-- example: examples/typescript/sign-in-modes.ts#workload-identity -->
 ```ts tab="TypeScript"
 const ciJob = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: { mode: 'workloadIdentity', token: () => process.env.CAITLYN_ID_TOKEN! }, // GitLab CI id_tokens
 });
 ```
 <!-- example: examples/python/sign_in_modes.py#workload-identity -->
 ```python tab="Python"
 ci_job = Caitlyn(
-    workspace="your-company.getcaitlyn.ai",
+    workspace="your-company.caitlyn.ai",
     auth=WorkloadIdentity(token=lambda: os.environ["CAITLYN_ID_TOKEN"]),  # GitLab CI id_tokens
 )
 ```
 <!-- example: examples/go/signin/signin.go#workload-identity -->
 ```go tab="Go"
-ciJob, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.WorkloadIdentity{
+ciJob, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.WorkloadIdentity{
 	Token: func(context.Context) (string, error) { return os.Getenv("CAITLYN_ID_TOKEN"), nil }, // GitLab CI id_tokens
 })
 ```
 <!-- example: examples/rust/src/sign_in_modes.rs#workload-identity -->
 ```rust tab="Rust"
 let ci_job = Client::new(
-    "your-company.getcaitlyn.ai",
+    "your-company.caitlyn.ai",
     WorkloadIdentity::from_env("CAITLYN_ID_TOKEN"),
 )?;
 ```
@@ -392,27 +392,27 @@ It is for the Caitlyn app's own pages; an integration uses one of the other mode
 <!-- example: examples/typescript/sign-in-modes.ts#session -->
 ```ts tab="TypeScript"
 const appPage = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
-  auth: { mode: 'session', cookie: sessionCookie, origin: 'https://your-company.getcaitlyn.ai' },
+  workspace: 'your-company.caitlyn.ai',
+  auth: { mode: 'session', cookie: sessionCookie, origin: 'https://your-company.caitlyn.ai' },
 });
 ```
 <!-- example: examples/python/sign_in_modes.py#session -->
 ```python tab="Python"
 app_page = Caitlyn(
-    workspace="your-company.getcaitlyn.ai",
-    auth=Session(cookie=session_cookie, origin="https://your-company.getcaitlyn.ai"),
+    workspace="your-company.caitlyn.ai",
+    auth=Session(cookie=session_cookie, origin="https://your-company.caitlyn.ai"),
 )
 ```
 <!-- example: examples/go/signin/signin.go#session -->
 ```go tab="Go"
-appPage, err := caitlyn.NewClient("your-company.getcaitlyn.ai",
-	caitlyn.Session{Cookie: sessionCookie, Origin: "https://your-company.getcaitlyn.ai"})
+appPage, err := caitlyn.NewClient("your-company.caitlyn.ai",
+	caitlyn.Session{Cookie: sessionCookie, Origin: "https://your-company.caitlyn.ai"})
 ```
 <!-- example: examples/rust/src/sign_in_modes.rs#session -->
 ```rust tab="Rust"
 let app_page = Client::new(
-    "your-company.getcaitlyn.ai",
-    Auth::session(session_cookie).origin("https://your-company.getcaitlyn.ai"),
+    "your-company.caitlyn.ai",
+    Auth::session(session_cookie).origin("https://your-company.caitlyn.ai"),
 )?;
 ```
 

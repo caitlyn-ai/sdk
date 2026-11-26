@@ -5,7 +5,7 @@ use caitlyn_sdk::{Auth, Client};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new(
-        "your-company.getcaitlyn.ai",
+        "your-company.caitlyn.ai",
         Auth::token(std::env::var("CAITLYN_TOKEN")?),
     )?;
 

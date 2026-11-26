@@ -8,7 +8,7 @@ import { Caitlyn, type WorkspaceEvent } from '@caitlyn-ai/sdk';
 export function createClient() {
   // #region client
   const caitlyn = new Caitlyn({
-    workspace: 'your-company.getcaitlyn.ai',
+    workspace: 'your-company.caitlyn.ai',
     auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! },
   });
   // #endregion

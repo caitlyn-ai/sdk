@@ -1,0 +1,9 @@
+-- stdout --
+NAME                        ID          LIVE  DRAFT         UPDATED
+-------------------------------------------------------------------------
+[1mHR assistant[m                GHT7YRWXPL  v12   changed       2 hours ago
+[1mSupplier contract reviewer[m  REVIEWER01  v7    same as live  3 days ago
+[1mLeave form helper[m           AGYFAMYTND  none  new           5 minutes ago
+
+3 agents
+-- stderr --

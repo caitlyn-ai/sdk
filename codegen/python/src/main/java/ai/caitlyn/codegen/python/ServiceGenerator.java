@@ -1749,7 +1749,7 @@ final class ServiceGenerator {
                 + (async ? "Asynchronous client. Use as `async with AsyncCaitlyn(...) as caitlyn:`, or call `aclose()`."
                          : "Synchronous client. Use as `with Caitlyn(...) as caitlyn:`, or call `close()`.")
                 + "\n\nArgs:\n"
-                + "    workspace: your workspace host, for example `your-company.getcaitlyn.ai`.\n"
+                + "    workspace: your workspace host, for example `your-company.caitlyn.ai`.\n"
                 + "    auth: how to sign in (`caitlyn.auth`), for example `Token(os.environ[\"CAITLYN_TOKEN\"])` or\n"
                 + "        `ClientCredentials(client_id, client_secret)`.\n"
                 + "    endpoint: overrides the URL built from `workspace` (a proxy, a local app). Tokens are still for `workspace`.\n"
@@ -1910,7 +1910,7 @@ final class ServiceGenerator {
         ctx.writerDelegator().useFileWriter(settings.packageName() + "/__init__.py", settings.packageName(), w -> {
             w.write("$D\n", "The " + title + " Python SDK.\n\n"
                     + "```python\nfrom caitlyn import Caitlyn\nfrom caitlyn.auth import Token\n\n"
-                    + "caitlyn = Caitlyn(workspace=\"your-company.getcaitlyn.ai\", auth=Token(os.environ[\"CAITLYN_TOKEN\"]))\n```");
+                    + "caitlyn = Caitlyn(workspace=\"your-company.caitlyn.ai\", auth=Token(os.environ[\"CAITLYN_TOKEN\"]))\n```");
             for (String n : List.of("AsyncCaitlyn", "Caitlyn")) {
                 w.importFrom(module("_client"), n);
                 names.add(n);
@@ -2038,7 +2038,7 @@ final class ServiceGenerator {
                 from %3$s import Caitlyn
                 from %3$s.auth import Token
 
-                caitlyn = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token(os.environ["CAITLYN_TOKEN"]))
+                caitlyn = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token(os.environ["CAITLYN_TOKEN"]))
 
                 # Add a file to a knowledge base: the SDK hashes and uploads it, creates the document, then waits until it is searchable
                 kb = caitlyn.knowledge_bases("KB4T7YQ2WL")

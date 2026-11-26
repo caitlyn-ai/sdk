@@ -20,7 +20,7 @@ from caitlyn.auth import Token
 
 
 def client() -> Caitlyn:
-    return Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token(os.environ["CAITLYN_TOKEN"]))
+    return Caitlyn(workspace="your-company.caitlyn.ai", auth=Token(os.environ["CAITLYN_TOKEN"]))
 
 
 def get_caller(caitlyn: Caitlyn) -> Caller:

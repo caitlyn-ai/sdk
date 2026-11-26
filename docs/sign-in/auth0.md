@@ -51,7 +51,7 @@ Then skip to **Verify It Works**. The rest of this guide is for when your IT tea
 Before you begin, ensure you have:
 
 - **Auth0 admin access**: an account that can create applications and Actions in your tenant.
-- **Your Caitlyn domain**: the URL we have provisioned for you (e.g. `https://your-company.getcaitlyn.ai`). We provide this. Contact us if you don't have it yet.
+- **Your Caitlyn domain**: the URL we have provisioned for you (e.g. `https://your-company.caitlyn.ai`). We provide this. Contact us if you don't have it yet.
 - **If you are adding the sign-in method yourself**: a Caitlyn account that can open **Settings → Sign-in Methods** and add a method. We send you an email invite with a suitable role.
 
 ## Step 1: Create the Application
@@ -65,7 +65,7 @@ There are two ways to create it. Importing is quicker and creates no client secr
 Caitlyn publishes a description of itself for each Auth0 sign-in method, at an address like this:
 
 ```text
-https://your-company.getcaitlyn.ai/api/oauth/client-metadata/auth0__<id>
+https://your-company.caitlyn.ai/api/oauth/client-metadata/auth0__<id>
 ```
 
 1. In the [Auth0 dashboard](https://manage.auth0.com), go to **Applications → Applications**, then click **Create Application**.

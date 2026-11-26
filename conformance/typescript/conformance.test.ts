@@ -135,7 +135,7 @@ const faults = (f: unknown) => fetch(`${BASE}/__mock/faults`, { method: 'POST', 
 const requests = async (): Promise<any[]> => (await fetch(`${BASE}/__mock/requests`)).json();
 const api = async (): Promise<any[]> => (await requests()).filter((r) => r.path?.startsWith('/v3/'));
 const client = (extra: Record<string, unknown> = {}) =>
-  new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 'pat_test' }, endpoint: BASE, ...extra } as never);
+  new Caitlyn({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'token', token: 'pat_test' }, endpoint: BASE, ...extra } as never);
 
 type Err = CaitlynError & CaitlynErrorFields;
 
@@ -2215,9 +2215,9 @@ test('[telemetry.attributes] the shared span names and attributes, on a failed c
 });
 
 test('[endpoint.workspace] a workspace hostname resolves to https://<workspace>/api', async () => {
-  const c = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 'pat_test' } });
+  const c = new Caitlyn({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'token', token: 'pat_test' } });
   const endpoint = await (c.client.config as unknown as { endpoint: () => Promise<{ protocol: string; hostname: string; path: string }> }).endpoint();
-  assert.equal(`${endpoint.protocol}//${endpoint.hostname}${endpoint.path}`, 'https://your-company.getcaitlyn.ai/api');
+  assert.equal(`${endpoint.protocol}//${endpoint.hostname}${endpoint.path}`, 'https://your-company.caitlyn.ai/api');
 });
 
 // ---------------------------------------------------------------- sign-in (PROTOCOL.md section 12)
@@ -2225,11 +2225,11 @@ test('[endpoint.workspace] a workspace hostname resolves to https://<workspace>/
 // on the mock's `require` fault, so every /v3/ request needs a credential the mock issued or accepts.
 
 // The audience comes from the workspace, never from the endpoint override these tests use.
-const RESOURCE = 'https://your-company.getcaitlyn.ai/api';
+const RESOURCE = 'https://your-company.caitlyn.ai/api';
 const signInRequired = () => faults({ auth: { require: true } });
 const authCounts = async (): Promise<Record<string, number>> => (await (await fetch(`${BASE}/__mock/auth`)).json()).counts;
 const tokenRequests = async () => (await requests()).filter((r) => r.path === '/oauth/token').map((r) => new URLSearchParams(r.body));
-const signedIn = (auth: AuthOptions, workspace = 'your-company.getcaitlyn.ai') => new Caitlyn({ workspace, endpoint: BASE, auth, telemetry: { enabled: false } });
+const signedIn = (auth: AuthOptions, workspace = 'your-company.caitlyn.ai') => new Caitlyn({ workspace, endpoint: BASE, auth, telemetry: { enabled: false } });
 const read = (c: Caitlyn) => c.agents('GHT7YRWXPL').draft.get();
 const ccAuth = (extra: Partial<Extract<AuthOptions, { mode: 'clientCredentials' }>> = {}): AuthOptions => ({ mode: 'clientCredentials', clientId: MOCK_CLIENT.id, clientSecret: MOCK_CLIENT.secret, ...extra });
 
@@ -2266,20 +2266,20 @@ async function oauthSignIn(c: Caitlyn): Promise<URL> {
 
 test('[endpoint.workspace-url] a workspace URL is its hostname; a path, query, fragment, user or other scheme is refused', async () => {
   const make = (workspace: string) => new Caitlyn({ workspace, auth: { mode: 'token', token: 'pat_test' } });
-  for (const w of ['https://your-company.getcaitlyn.ai', 'https://your-company.getcaitlyn.ai/', 'your-company.getcaitlyn.ai/', 'HTTPS://Your-Company.GetCaitlyn.ai']) {
+  for (const w of ['https://your-company.caitlyn.ai', 'https://your-company.caitlyn.ai/', 'your-company.caitlyn.ai/', 'HTTPS://Your-Company.Caitlyn.ai']) {
     const c = make(w);
-    assert.equal(c.auth.workspace, 'your-company.getcaitlyn.ai', w);
-    assert.equal(c.auth.tokenEndpoint, 'https://your-company.getcaitlyn.ai/api/oauth/token', w);
+    assert.equal(c.auth.workspace, 'your-company.caitlyn.ai', w);
+    assert.equal(c.auth.tokenEndpoint, 'https://your-company.caitlyn.ai/api/oauth/token', w);
   }
-  for (const w of ['https://your-company.getcaitlyn.ai/api', 'https://your-company.getcaitlyn.ai/?x=1', 'https://your-company.getcaitlyn.ai#top', 'http://your-company.getcaitlyn.ai', 'ftp://your-company.getcaitlyn.ai', 'me@your-company.getcaitlyn.ai', '']) {
-    assert.throws(() => make(w), (e: Error) => e instanceof TypeError && e.message.includes('your-company.getcaitlyn.ai or https://your-company.getcaitlyn.ai'), JSON.stringify(w));
+  for (const w of ['https://your-company.caitlyn.ai/api', 'https://your-company.caitlyn.ai/?x=1', 'https://your-company.caitlyn.ai#top', 'http://your-company.caitlyn.ai', 'ftp://your-company.caitlyn.ai', 'me@your-company.caitlyn.ai', '']) {
+    assert.throws(() => make(w), (e: Error) => e instanceof TypeError && e.message.includes('your-company.caitlyn.ai or https://your-company.caitlyn.ai'), JSON.stringify(w));
   }
 });
 
 test('[auth.workspace] the workspace sets the endpoint and the token audience; endpoint overrides only where requests go', async () => {
   await signInRequired();
   // A workspace given as a URL is reduced to its hostname.
-  await read(signedIn(ccAuth(), 'https://your-company.getcaitlyn.ai/'));
+  await read(signedIn(ccAuth(), 'https://your-company.caitlyn.ai/'));
   const [form] = await tokenRequests();
   assert.ok(form, 'the token request went to the overriding endpoint');
   assert.equal(form.get('resource'), RESOURCE);
@@ -2474,14 +2474,14 @@ test('[auth.oauth-not-signed-in] a call before sign-in fails with sign_in_requir
 // audience, one token request for concurrent calls, renewal before expiry, one sign-in retry on a 401) with the
 // mode a browser uses: oauth with PKCE and no client secret.
 if (BROWSER_BUILD) {
-  const browserApp = (store = memoryStore(), workspace = 'your-company.getcaitlyn.ai') =>
+  const browserApp = (store = memoryStore(), workspace = 'your-company.caitlyn.ai') =>
     signedIn({ mode: 'oauth', clientId: MOCK_OAUTH_CLIENT.id, redirectUri: 'https://app.example.com/callback', scopes: ['chat:write'], tokenStore: store }, workspace);
 
   nodeTest('[browser.oauth-sign-in] PKCE with no client secret, bound to the workspace, then calls with the saved token', async () => {
     await signInRequired();
     const store = memoryStore();
     // A workspace given as a URL is reduced to its hostname.
-    const c = browserApp(store, 'https://your-company.getcaitlyn.ai/');
+    const c = browserApp(store, 'https://your-company.caitlyn.ai/');
     const u = await oauthSignIn(c);
     assert.equal(u.searchParams.get('code_challenge_method'), 'S256');
     assert.equal(u.searchParams.get('resource'), RESOURCE);
@@ -2595,7 +2595,7 @@ test('[auth.workload-identity] a CI identity token is exchanged once; a token fo
   await read(signedIn({ mode: 'workloadIdentity', token: async () => (asked++, mockOidcToken(RESOURCE)) }));
   assert.equal(asked, 1);
   assert.match((await api())[0].headers.authorization, /^Bearer cai_x_oidc_/);
-  const err = await authError(read(signedIn({ mode: 'workloadIdentity', token: () => mockOidcToken('https://other.getcaitlyn.ai/api') })));
+  const err = await authError(read(signedIn({ mode: 'workloadIdentity', token: () => mockOidcToken('https://other.caitlyn.ai/api') })));
   assert.equal(err.code, 'invalid_grant');
 });
 

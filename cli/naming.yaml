@@ -1,0 +1,590 @@
+# The Caitlyn CLI's naming overlay (the CLI design, section 11.2).
+#
+# The command tree, flags, help and HTTP bindings come from the model through commands.json. This file holds the
+# choices that are the CLI's alone and do not belong in the model: short aliases, the flag each scope identifier
+# becomes, table columns, next steps for error codes, impact-class overrides and the scope catalogue's plain
+# descriptions. internal/spec's overlay test fails the build when an entry names a command, operation, member, shape
+# or error code the model does not have.
+
+# Short forms for nouns. An alias never changes meaning and never shadows a generated noun.
+aliases:
+  knowledge-bases: [kb]
+  unattended-runs: [runs]
+
+# What each scope identifier is called on the command line. `flag` is the flag an ancestor identifier becomes,
+# `aliases` its short forms, `arg` the positional's name in help, and `default` the configuration key whose value is
+# used when the flag is left out (the project file's `agent = "GHT7YRWXPL"`).
+identifiers:
+  agentId: {flag: agent, arg: agent, default: agent}
+  knowledgeBaseId: {flag: knowledge-base, aliases: [kb], arg: kb, default: knowledge_base}
+  documentId: {flag: document, arg: document}
+  conversationId: {flag: conversation, arg: conversation}
+  ingestionBatchId: {flag: batch, arg: batch}
+  itemId: {flag: item, arg: item}
+  folderPath: {flag: folder, arg: folder}
+  fieldKey: {flag: field, arg: field}
+  historyEntryId: {flag: entry, arg: entry}
+  operationId: {flag: operation, arg: operation}
+  uploadId: {flag: upload, arg: upload}
+  version: {flag: version, arg: version, default: version}
+
+# Table columns per thing: member paths (dotted into nested members). The first column is the lead value.
+columns:
+  Agent: [name, id, liveVersion, updatedAt]
+  AgentVersion: [name, source, basedOn, matchesLive, createdAt]
+  HistoryEntry: [changedAt, kind, version, previousVersion, changedBy.displayName]
+  KnowledgeBase: [name, id, status, documentCounts.processing, documentCounts.failed, updatedAt]
+  Document: [name, id, folder, status, version, updatedAt]
+  DocumentVersion: [number, status, current, createdAt]
+  Folder: [path, documentCount, folderCount, updatedAt]
+  Field: [key, name, type, scope]
+  Conversation: [id, title, agentId, version, status, updatedAt]
+  Message: [createdAt, role, text]
+  IngestionBatch: [id, status, itemCount, percent, createdAt]
+  IngestionBatchItem: [id, action, path, status, outcome]
+  Operation: [id, kind, status, percent, createdAt]
+
+# Next steps per error code: what to run to fix it. {command} is the command that failed, {list} the list command
+# that finds valid identifiers, {get} the command that reads the thing again. Each becomes a `try:` line and an
+# entry in the error's hint.next.
+next:
+  PRECONDITION_FAILED:
+    - {run: "{get} --query etag", why: "read the current ETag"}
+    - {run: "{command} --if-match <etag>", why: "re-apply your change with it"}
+  PRECONDITION_REQUIRED:
+    - {run: "{get} --query etag", why: "read the current ETag"}
+    - {run: "{command} --if-match <etag>", why: "retry with it"}
+  NOT_FOUND:
+    - {run: "{list}", why: "find a valid identifier"}
+  ALREADY_EXISTS:
+    - {run: "{list}", why: "see what already exists"}
+  IDEMPOTENCY_KEY_REUSED:
+    - {run: "{command} --idempotency-key <new key>", why: "a key is for one request; use a new one for a different request"}
+  IDEMPOTENCY_KEY_IN_USE:
+    - {run: "{command} --idempotency-key <new key>", why: "a key is for one request; use a new one for a different request"}
+  AUTH_API_SCOPE_DENIED:
+    - {run: "caitlyn auth login --scopes {scope}", why: "sign in again with the scope this command needs"}
+  NOT_AVAILABLE_TO_CREDENTIALS:
+    - {run: "caitlyn docs {command}", why: "this can only be done in the Caitlyn app while signed in"}
+  INGESTION_BATCH_UNRESOLVED:
+    - {run: "caitlyn kb ingestion batches items list --kb <kb> --batch <batch> --resolution unresolved", why: "see the items that need a decision"}
+  DOCUMENT_INGESTION_IN_PROGRESS:
+    - {run: "caitlyn kb documents wait <document> --kb <kb>", why: "wait for the current processing to end"}
+  VERSION_IN_USE:
+    - {run: "caitlyn agents live get <agent>", why: "see which version is live"}
+
+# Impact classes the HTTP method and verb don't give (the CLI design, 18.5). read, write, user-facing, destructive.
+impact:
+  PublishAgentVersion: user-facing
+  PutAccess: user-facing
+  ResetDraftVersion: destructive
+  UpdateKnowledgeBase: user-facing
+  EnableLayoutAwareSearch: user-facing
+
+# The highest-impact commands also take --confirm <id> in agent mode and CI (18.5).
+confirm:
+  DeleteAgent: agentId
+  DeleteKnowledgeBase: knowledgeBaseId
+  PublishAgentVersion: agentId
+
+# Plain descriptions of the scope families, for the agent-scope pick list at sign-in (18.5).
+scopes:
+  agents: "agents: see agents and their versions; with write, edit drafts and save and publish versions"
+  chat: "chat: talk to agents and read conversations"
+  knowledge-bases: "knowledge bases: read documents; with write, add, change and remove them"
+  analytics: "analytics: read usage and feedback"
+  config: "configuration: workspace configuration"
+  connectors: "connectors: MCP servers and connectors"
+  files: "files: uploads and downloads"
+  policy-sets: "policies: read policies; with write, edit them"
+  settings: "settings: workspace settings"
+  users: "users: people in the workspace"
+  roles: "roles: roles and access"
+
+# Each command group's help: what the group is for, when you'd reach for it, and how its commands fit together.
+# `short` replaces the generic "Work with <noun>"; `long` is the paragraph `caitlyn help <group>` and the group's
+# docs page open with; `examples` are command lines. A key is the group's command path; the describe tests fail on a
+# key that names no group.
+groups:
+  agents:
+    short: Create agents and change what they answer with, from their draft to the version people talk to
+    long: |
+      An agent answers people's questions from the knowledge bases it is given. Each agent has a draft, which is what
+      you change, named versions saved from it, and live, the version people talk to. Change the draft
+      (agents draft), save it as a version and compare it with live (agents versions), then publish it; publishing an
+      earlier version again rolls back, and agents history records every change to live.
+
+      To keep agents as files in a repository, use export, diff and apply instead: they read and write the same
+      drafts.
+    recipe: "Recipe: https://build.caitlyn.ai/cli/recipes/change-an-agent-safely/"
+    examples:
+      - caitlyn agents list
+      - caitlyn agents draft get GHT7YRWXPL
+      - caitlyn agents versions publish GHT7YRWXPL@v13 --expected-live v12
+  agents draft:
+    long: |
+      The draft is the agent's working copy: every change goes here first, and nobody talking to the agent sees it
+      until it is published. Read it, change members with update, replace it whole, or edit it in your editor; send
+      the ETag you read with --if-match so you never overwrite someone else's change. When it's ready, save it as a
+      named version (save) or publish it straight away (publish). reset throws the draft's changes away.
+    recipe: "Recipe: https://build.caitlyn.ai/cli/recipes/change-an-agent-safely/"
+    examples:
+      - caitlyn agents draft get GHT7YRWXPL
+      - caitlyn agents draft update GHT7YRWXPL --set guidance.instructions="Quote the clause you relied on."
+      - caitlyn agents draft save GHT7YRWXPL --name november-candidate
+  agents live:
+    long: |
+      Live is the version people talk to. Read it, compare it with another version, or start a conversation with it.
+      Live only changes when a version is published (agents versions publish, or agents draft publish), and agents
+      history records each change.
+    examples:
+      - caitlyn agents live get GHT7YRWXPL
+      - caitlyn agents live compare GHT7YRWXPL --with-version november-candidate
+  agents versions:
+    short: An agent's saved versions, and publishing one as live
+    long: |
+      Versions are named, unchangeable snapshots of an agent's draft. Compare two before publishing, publish one to
+      make it live, or publish an earlier one again to roll back. --expected-live names the version you expect to
+      replace, so two people publishing at once can't silently overwrite each other.
+    recipe: "Recipe: https://build.caitlyn.ai/cli/recipes/change-an-agent-safely/"
+    examples:
+      - caitlyn agents versions list --agent GHT7YRWXPL
+      - caitlyn agents versions compare GHT7YRWXPL@v13 --with-version november-candidate
+      - caitlyn agents versions publish GHT7YRWXPL@november-candidate --expected-live v13
+  agents history:
+    short: Every change to an agent's live version, newest first
+    long: |
+      The live history records each publish and rollback: which version went live, which it replaced, who did it and
+      their note. Read it to see what people were talking to at a given time, or before rolling back.
+    examples:
+      - caitlyn agents history list --agent GHT7YRWXPL
+  agents options:
+    short: What an agent can be configured with in your workspace
+    long: |
+      The models, guardrails, memory stores, tools and voices your workspace offers, with the identifiers an agent's
+      configuration uses for them. Read these before setting those members of a draft.
+    examples:
+      - caitlyn agents options models
+      - caitlyn agents options tools
+  agents conversations:
+    short: An agent's conversations
+    long: |
+      The conversations people have had with an agent, newest first. To read or continue one, use conversations get
+      and conversations send; to start one, chat.
+  agents draft conversations:
+    short: Try out an agent's draft
+    long: |
+      Starts a conversation with the agent's draft, so you can test a change before anyone else sees it. chat
+      AGENT@draft does the same, interactively.
+  agents live conversations:
+    short: Start a conversation with an agent's live version
+    long: |
+      Starts a conversation with what people talk to now. chat AGENT does the same, interactively.
+  agents versions conversations:
+    short: Start a conversation with a saved version
+    long: |
+      Starts a conversation with a named version, to try it before publishing it. chat AGENT@version does the same,
+      interactively.
+  conversations:
+    short: Read, continue and watch conversations
+    long: |
+      A conversation is a series of messages with one agent version. Read it, send another message, or watch its
+      events as they happen. To ask an agent something from your terminal, chat is simpler: it starts or continues a
+      conversation and streams the answer with its sources.
+    recipe: "Recipe: https://build.caitlyn.ai/cli/recipes/ask-an-agent/"
+    examples:
+      - caitlyn conversations get 3f2a9c1e-7b4d-4e8a-9c2f-1a6b5d8e0f3c
+  conversations messages:
+    short: A conversation's messages
+    long: |
+      Lists a conversation's messages, oldest first, with their citations.
+  knowledge-bases:
+    short: Knowledge bases and their documents, folders, fields and access
+    long: |
+      A knowledge base holds the documents agents answer from. Add documents one at a time (documents create), or
+      keep a whole folder in step with one on disk (sync), which only uploads what changed. Documents are processed
+      before they can be searched: wait, and each document's status, say when that has finished. Folders organise
+      documents and carry who may read them (access); fields hold structured details about each document.
+    recipe: "Recipes: https://build.caitlyn.ai/cli/recipes/look-after-a-knowledge-base/ and https://build.caitlyn.ai/cli/recipes/keep-a-folder-in-step/"
+    examples:
+      - caitlyn kb list
+      - caitlyn kb documents list --kb KB4T7YQ2WL
+      - caitlyn kb sync KB4T7YQ2WL ./handbook --folder /handbook/
+  knowledge-bases documents:
+    short: Add, replace, read and remove the documents in a knowledge base
+    long: |
+      Each document is a file in a folder of a knowledge base, with versions, a processing status and access of its
+      own. create uploads a file and replace uploads a new version; both return before processing ends, so add --wait,
+      or run documents wait, when the next step needs the document searchable. For many files, kb sync is faster and
+      safer than creating them one by one.
+    recipe: "Recipe: https://build.caitlyn.ai/cli/recipes/look-after-a-knowledge-base/"
+    examples:
+      - caitlyn kb documents create ./leave-policy.pdf --kb KB4T7YQ2WL --folder /policies/ --wait
+      - caitlyn kb documents get doc-0003 --kb KB4T7YQ2WL
+  knowledge-bases documents versions:
+    short: A document's earlier files
+    long: |
+      Each replace keeps the document's earlier file as a version. List them, read one, or delete one you no longer
+      need.
+  knowledge-bases documents access:
+    short: Who may read one document
+    long: |
+      A document inherits who may read it from its folder, unless it is given readers of its own. get shows where its
+      access comes from; set gives it its own, or makes it inherit again.
+  knowledge-bases folders:
+    short: The folders that organise a knowledge base and carry its access
+    long: |
+      Folders organise documents and decide who may read them: a document inherits its folder's access. Create, rename
+      or move folders; deleting one deletes what is in it.
+  knowledge-bases folders access:
+    short: Who may read a folder and everything in it
+    long: |
+      A folder's readers apply to every document and folder in it that doesn't have readers of its own.
+  knowledge-bases access:
+    short: Who may read a knowledge base
+    long: |
+      The readers of the whole knowledge base: its top-level folder's access, which everything inherits unless given
+      its own.
+  knowledge-bases fields:
+    short: Structured details about each document, such as its owner or review date
+    long: |
+      Fields are named details every document in a knowledge base can carry, such as a policy owner or a review date.
+      Define them here; fill-in fills them in from each document's content.
+  knowledge-bases ingestion:
+    short: The batches that bring files into a knowledge base
+    long: |
+      Ingestion is how files become searchable documents. kb sync and documents create use it for you; these commands
+      are for seeing and settling a batch yourself, such as one a sync left waiting for a decision.
+  knowledge-bases ingestion batches:
+    short: Ingestion batches, and the decisions they wait for
+    long: |
+      A batch is a set of files planned, uploaded and processed together. A batch whose plan has conflicts (a file
+      whose path another document already has, for example) waits until each conflicting item is resolved; items list
+      --resolution unresolved shows them.
+    recipe: "Recipe: https://build.caitlyn.ai/cli/recipes/keep-a-folder-in-step/"
+  knowledge-bases ingestion batches items:
+    short: The files in an ingestion batch, and resolving their conflicts
+    long: |
+      Each item is one file in a batch, with what the plan would do with it and, after it runs, the outcome. resolve
+      settles an item the plan couldn't decide on its own.
+  knowledge-bases layout-aware-search:
+    short: Search that reads a document's layout, not only its text
+    long: |
+      Layout-aware search reads tables, headings and page layout as well as text, at a higher processing cost. Enabling
+      it reprocesses the knowledge base's documents.
+  auth:
+    long: |
+      Sign in once per workspace with auth login: your browser opens the workspace's sign-in page, and the tokens are
+      kept in your operating system's keychain under a profile. auth status says who you are signed in as and how;
+      switch changes which profile is used by default. In CI, sign in with environment variables or the pipeline's
+      own identity instead of a profile.
+    examples:
+      - caitlyn auth login --workspace your-company.caitlyn.ai
+      - caitlyn auth status
+  config:
+    long: |
+      Settings come from, highest first: flags, CAITLYN_ environment variables, the project file .caitlyn.toml, your
+      user file ~/.caitlyn/config (the selected profile, then its top level), and the built-in defaults. get shows a
+      setting's effective value and where it came from; set and unset change your user file, a profile, or the project
+      file; path lists the files read.
+    examples:
+      - caitlyn config get output --show-origin
+      - caitlyn config set knowledge_base KB4T7YQ2WL --project
+      - caitlyn config list
+  events:
+    short: Follow what happens in your workspace as it happens
+    long: |
+      Workspace events report changes as they happen: documents processed, conversations started, versions published.
+      tail follows them from a terminal or a script, filters by type, keeps a checkpoint so a restart resumes where it
+      left off, and can stop at the first event that matches.
+    examples:
+      - caitlyn events tail --type document.processed
+  mcp:
+    short: Add Caitlyn to Claude Code, Cursor or VS Code as an MCP server, so you can use your workspace's agents and knowledge bases from that tool's chat
+    long: |
+      Your workspace has an MCP server, at https://<workspace>/api/mcp. mcp add gives an AI client (Claude Code, Cursor
+      or VS Code) the configuration that connects it there; the client then signs you in itself, and its chat can ask
+      your agents and search your knowledge bases. The CLI only writes the configuration: it never hands the client
+      its own token.
+    examples:
+      - caitlyn mcp add claude-code
+      - caitlyn mcp add vscode --write
+  telemetry:
+    short: Turn usage data for Caitlyn on or off, and see what it would send
+    long: |
+      Usage data for Caitlyn: the CLI can send Caitlyn anonymous usage data, which commands and flags run (never their
+      values), how long they take and how they end. It is opt-in, in every release, beta included, and off in CI: on
+      turns it on, off turns it off again and deletes anything queued, and status shows whether it is on and why.
+
+      These commands are only about usage data for Caitlyn. Your own traces (OpenTelemetry to your own collector) are
+      separate: OTEL_EXPORTER_OTLP_ENDPOINT turns them on.
+
+      What is sent: https://build.caitlyn.ai/cli/telemetry/
+    examples:
+      - caitlyn telemetry status
+      - caitlyn telemetry off
+
+# The hand-written commands' help, as groups' is above: `short` replaces the one line, `about` is a paragraph put
+# before the command's own description (what it's for, when you'd use it, how it fits with its neighbours), `long`
+# replaces the description, and `examples` are command lines, each after an optional `# title`.
+commands:
+  diff:
+    short: Compare a folder of agent files with the workspace, to see what apply would change
+    long: |
+      The first step before changing agents from files: diff reads the folder export wrote (caitlyn.yaml and one
+      file per agent), compares each file with the agent's current draft, and shows what apply would change, member
+      by member. Nothing is changed. In a merge request, run it with --fail-on changes, --report markdown=plan.md to
+      post the plan, or --report junit=plan.xml for the test report; then apply writes the drafts once the change is
+      merged.
+
+      It also shows an agent whose draft matches its file but whose live version doesn't: a draft written but not
+      yet published, which apply --publish would publish.
+    recipe: "Recipe: https://build.caitlyn.ai/cli/recipes/change-an-agent-safely/"
+    examples:
+      - '# Plan the folder export wrote'
+      - caitlyn diff -f caitlyn/
+      - '# In CI: fail when anything would change, and keep the plan as Markdown'
+      - caitlyn diff -f caitlyn/ --fail-on changes --report markdown=plan.md
+  apply:
+    about: |
+      The step after diff: apply writes the agents' drafts from the folder of files export made, after you've
+      reviewed the plan. Use it from your terminal, or from CI once a change to the files is merged; --publish then
+      makes the drafts live in the same step.
+    examples:
+      - caitlyn apply -f caitlyn/ --yes
+      - '# Publish the drafts it wrote, naming each agent it publishes'
+      - caitlyn apply -f caitlyn/ --yes --publish --name november-release --confirm GHT7YRWXPL
+  export:
+    about: |
+      Configuration as code starts here: export writes the agents you name to files you can keep in a repository,
+      review in merge requests, and bring back with diff and apply.
+    examples:
+      - caitlyn export --agent GHT7YRWXPL --dir caitlyn
+      - '# The draft rather than live'
+      - caitlyn export --agent GHT7YRWXPL --dir caitlyn --version draft
+  agents draft diff:
+    about: |
+      For one agent, without a folder: compare a draft file you're editing (from agents draft get -o yaml) with the
+      agent's draft before you replace it. For a folder of agents, use caitlyn diff.
+    examples:
+      - caitlyn agents draft get GHT7YRWXPL -o yaml > draft.yaml
+      - caitlyn agents draft diff GHT7YRWXPL -f draft.yaml
+  agents draft edit:
+    short: Edit an agent's draft in your editor, and save it when you close the editor
+    long: |
+      Opens the agent's draft in your editor ($VISUAL, $EDITOR, or `editor` in configuration) as YAML. When you save
+      and close it, the CLI shows what changed and replaces the draft, sending the ETag it read, so a draft someone
+      changed meanwhile is refused (exit 7) rather than overwritten. Nothing is published: save or publish the draft
+      when it's ready. For changing one member from a script, use agents draft update --set instead.
+    recipe: "Recipe: https://build.caitlyn.ai/cli/recipes/change-an-agent-safely/"
+    examples:
+      - caitlyn agents draft edit GHT7YRWXPL
+  chat:
+    short: Talk to an agent from your terminal, or ask it one question and get its cited answer
+    about: |
+      The quickest way to try an agent. On a terminal with no message, chat opens a conversation you type into:
+      each answer streams in with its sources, /attach <file> sends a file with the next message, /new starts a new
+      conversation and /quit (or Ctrl-D) ends it. Give a message to ask one question and exit, which is what scripts
+      and CI use, or - to read it from stdin. AGENT@draft talks to the draft, so you can try a change before
+      publishing it.
+    recipe: "Recipe: https://build.caitlyn.ai/cli/recipes/ask-an-agent/"
+    examples:
+      - '# A conversation, on a terminal'
+      - caitlyn chat GHT7YRWXPL
+      - '# One question to the draft, and its cited answer'
+      - caitlyn chat GHT7YRWXPL@draft "Can I carry leave over to next year?"
+      - '# From a script: every event as JSON Lines'
+      - caitlyn chat GHT7YRWXPL "Who approves leave?" --output jsonl
+  knowledge-bases sync:
+    about: |
+      The way to keep a knowledge base matching a folder you own, such as a handbook in a repository: run it again
+      whenever the folder changes and only what changed is uploaded. For one file, kb documents create is simpler.
+    recipe: "Recipe: https://build.caitlyn.ai/cli/recipes/keep-a-folder-in-step/"
+    examples:
+      - caitlyn kb sync KB4T7YQ2WL ./handbook --folder /handbook/
+      - '# See the plan and its cost, and upload nothing'
+      - caitlyn kb sync KB4T7YQ2WL ./handbook --folder /handbook/ --estimate
+  api:
+    about: |
+      For what no other command covers yet: an operation newer than this CLI, or a raw request while you work out
+      what an integration should send. Prefer the named commands, which check their input and say what they change.
+    examples:
+      - caitlyn api GetKnowledgeBase --kb KB4T7YQ2WL
+      - caitlyn api GET /v3/knowledge-bases/KB4T7YQ2WL/documents --field limit=2
+  mcp add:
+    short: Add Caitlyn as an MCP server to Claude Code, Cursor or VS Code
+    examples:
+      - '# Print the configuration for Claude Code'
+      - caitlyn mcp add claude-code
+      - '# Write it into this project''s .vscode/mcp.json'
+      - caitlyn mcp add vscode --write
+  events tail:
+    about: |
+      For scripts that react to the workspace (reprocess a document when it fails, notify a channel when a version is
+      published) and for watching what happens while you work.
+    examples:
+      - caitlyn events tail --type conversation.created
+      - '# Wait for one event, then exit'
+      - caitlyn events tail --type document.processed --until-match '.data.documentId == "doc-0003"' --timeout 5m
+  commands:
+    short: List every command as data, with its flags, impact and exit codes, for scripts and AI agents
+    examples:
+      - caitlyn commands
+      - caitlyn commands --json --jq '.commands[] | select(.impact == "destructive") | .name'
+  help:
+    examples:
+      - caitlyn help agents draft save
+      - caitlyn help agents draft save --format json --jq .inputSchema.required
+  docs:
+    examples:
+      - caitlyn docs kb sync
+      - caitlyn docs agents draft save --print
+  me:
+    short: Show who you're signed in as, and with which credential
+    long: |
+      Prints who the current profile's credential acts for: the person or API client, the credential's kind and
+      scopes, and the organisation. Use it to check a sign-in works, or that a CI job is acting as the client you
+      expect. auth status says the same with how the credential is kept and when it expires.
+    examples:
+      - caitlyn me
+  auth status:
+    examples:
+      - caitlyn auth status
+  auth switch:
+    examples:
+      - caitlyn auth switch staging
+  auth token:
+    examples:
+      - 'curl -H "Authorization: Bearer $(caitlyn auth token)" https://your-company.caitlyn.ai/api/v3/agents'
+  config get:
+    short: Show a setting's value, and where it comes from
+    long: |
+      Prints the value the CLI uses for a setting, after every layer: flags, CAITLYN_ variables, the project file,
+      your profile and user file, and the default. --show-origin adds which of those set it, for when a value isn't
+      what you expect.
+    examples:
+      - caitlyn config get output --show-origin
+  config list:
+    short: List every setting, its value and where it comes from
+    long: |
+      Every setting the CLI knows, with its effective value, where it came from, and what it does: the quickest way to
+      see why the CLI behaves as it does in this folder.
+    examples:
+      - caitlyn config list
+  config path:
+    short: List the configuration files the CLI reads, in order, and whether each exists
+    long: |
+      The user file (~/.caitlyn/config) and the project file (.caitlyn.toml, found by walking up from this folder),
+      in the order they apply. Use it when a setting comes from a file you didn't expect.
+    examples:
+      - caitlyn config path
+  config profiles:
+    short: List the profiles in your user file, and which is the default
+    long: |
+      Each profile is a workspace and its settings. --profile or CAITLYN_PROFILE chooses one for a command; auth switch
+      changes the default.
+    examples:
+      - caitlyn config profiles
+  config set:
+    long: |
+      Writes a setting to your user file's top level, to a profile with --profile, or to the project file with
+      --project, keeping the file's comments and layout. A project file can only hold settings that can't change where
+      your credentials go or what they may do: set --project refuses the rest.
+    examples:
+      - caitlyn config set output json
+      - caitlyn config set agent_scopes read-only --profile default
+      - caitlyn config set knowledge_base KB4T7YQ2WL --project
+  config unset:
+    long: |
+      Removes a setting from your user file, a profile (--profile) or the project file (--project), so the next layer
+      down applies again.
+    examples:
+      - caitlyn config unset output
+  config edit:
+    short: Edit your configuration file in your editor, and check it when you save
+    long: |
+      Opens your user file (or the project file with --project) in your editor, and when you close it checks that the
+      file loads: an unknown setting or a value of the wrong type is reported, with its line, and you can edit again.
+    examples:
+      - caitlyn config edit
+      - caitlyn config edit --project
+  telemetry on:
+    long: |
+      Turns usage data for Caitlyn on for this machine: it is off until you do. CAITLYN_TELEMETRY=0 and
+      DO_NOT_TRACK still turn it off, and it stays off in CI unless CAITLYN_TELEMETRY=1.
+    examples:
+      - caitlyn telemetry on
+  telemetry off:
+    long: |
+      Turns usage data for Caitlyn off for this machine and deletes anything queued and not yet sent. Your own traces
+      are unaffected.
+    examples:
+      - caitlyn telemetry off
+  telemetry reset:
+    long: |
+      Makes a new anonymous install ID for usage data for Caitlyn, so later events can't be linked to earlier ones,
+      and deletes anything queued.
+    examples:
+      - caitlyn telemetry reset
+  telemetry flush:
+    long: |
+      Sends any queued events now. The CLI does this in the background after commands; you'd only run it to check that
+      the endpoint is reachable.
+    examples:
+      - caitlyn telemetry flush
+  telemetry status:
+    examples:
+      - caitlyn telemetry status
+      - '# Exactly what would be sent'
+      - caitlyn telemetry status --pending
+  update:
+    examples:
+      - caitlyn update --check
+      - caitlyn update
+      - caitlyn update --rollback
+  version:
+    short: Show the CLI's version, and what it detected about where it runs
+    long: |
+      Prints the CLI's version, the SDK and model it was built from, the platform, whether it detected CI or an AI
+      agent and why, the workspace's release as last seen, and the release signing keys it trusts. Include it when you
+      report a problem. --json prints the same as data.
+    examples:
+      - caitlyn version
+      - caitlyn version --json
+  knowledge-bases wait:
+    about: |
+      Use it after a change that starts processing (layout-aware search enabled, many documents reprocessed) when the
+      next step needs the knowledge base searchable again, such as a CI job that tests an agent's answers.
+    examples:
+      - caitlyn knowledge-bases wait KB4T7YQ2WL --timeout 30m
+  knowledge-bases documents wait:
+    about: |
+      Use it after documents create or replace when the next step needs the document searchable, such as asking an
+      agent about it; create --wait does the same in one step.
+    examples:
+      - caitlyn knowledge-bases documents wait doc-0003 --kb KB4T7YQ2WL --timeout 10m
+  knowledge-bases folders wait:
+    about: |
+      Use it after a folder's documents change (a move, new access) when the next step needs every document in it
+      processed.
+    examples:
+      - caitlyn knowledge-bases folders wait /policies/ --kb KB4T7YQ2WL
+  knowledge-bases ingestion batches wait:
+    about: |
+      Use it to follow a batch you started yourself, or one kb sync left running when it was interrupted, until it ends.
+    examples:
+      - caitlyn knowledge-bases ingestion batches wait 3f2a9c1e-7b4d-4e8a-9c2f-1a6b5d8e0f3c --kb KB4T7YQ2WL
+  agents draft get:
+    short: Read an agent's draft, with its full configuration and its ETag
+    long: |
+      Reads the draft, the version you change, with its full configuration and the ETag to send with --if-match when
+      you change it, so someone else's change in between is refused rather than overwritten. The draft is readable
+      only by the people and groups on the agent's version access grant; anyone else gets 404. To read what people
+      talk to, use agents live get; a saved version, agents versions get AGENT@name.
+  agents live get:
+    short: Read an agent's live version, what people talk to
+    long: |
+      Reads the version the agent's live pointer names, the one people talk to, with its full configuration;
+      liveVersion says which saved version that is. It is readable by everyone with access to the agent, and is 404
+      before the agent's first publish. To read the draft, use agents draft get; any saved version, agents versions
+      get AGENT@name.

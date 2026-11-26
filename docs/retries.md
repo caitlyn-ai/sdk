@@ -48,7 +48,7 @@ and a repeat that arrives while the first is still running gets
 <!-- example: examples/typescript/concepts.ts#retries -->
 ```ts tab="TypeScript"
 const patient = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! },
   maxAttempts: 5, // the first attempt included; default 3
   maxRetryDelayMs: 120_000, // the longest Retry-After to wait for; default 60 seconds
@@ -57,7 +57,7 @@ const patient = new Caitlyn({
 <!-- example: examples/python/concepts.py#retries -->
 ```python tab="Python"
 patient = Caitlyn(
-    workspace="your-company.getcaitlyn.ai",
+    workspace="your-company.caitlyn.ai",
     auth=Token(os.environ["CAITLYN_TOKEN"]),
     max_attempts=5,  # the first attempt included; default 3
     max_retry_delay=120,  # seconds: the longest Retry-After to wait for; default 60
@@ -65,7 +65,7 @@ patient = Caitlyn(
 ```
 <!-- example: examples/go/concepts/concepts.go#retries -->
 ```go tab="Go"
-patient, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token(os.Getenv("CAITLYN_TOKEN")),
+patient, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.Token(os.Getenv("CAITLYN_TOKEN")),
 	caitlyn.WithMaxAttempts(5),               // the first attempt included; default 3
 	caitlyn.WithMaxRetryDelay(2*time.Minute), // the longest Retry-After to wait for; default 60 s
 )
@@ -73,7 +73,7 @@ patient, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token(os
 <!-- example: examples/rust/src/concepts.rs#retries -->
 ```rust tab="Rust"
 let patient = Client::builder(
-    "your-company.getcaitlyn.ai",
+    "your-company.caitlyn.ai",
     Auth::token(std::env::var("CAITLYN_TOKEN")?),
 )
 .max_attempts(5) // the first attempt included; default 3
@@ -102,7 +102,7 @@ want a bigger budget; a budget of 0 turns retries off.
 <!-- example: examples/typescript/concepts.ts#retry-budget -->
 ```ts tab="TypeScript"
 const batch = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! },
   retryBudget: 2_000, // retry tokens shared by every call on this client; default 500, and 0 turns retries off
 });
@@ -110,21 +110,21 @@ const batch = new Caitlyn({
 <!-- example: examples/python/concepts.py#retry-budget -->
 ```python tab="Python"
 batch = Caitlyn(
-    workspace="your-company.getcaitlyn.ai",
+    workspace="your-company.caitlyn.ai",
     auth=Token(os.environ["CAITLYN_TOKEN"]),
     retry_budget=2000,  # retry tokens shared by every call on this client; default 500, and 0 turns retries off
 )
 ```
 <!-- example: examples/go/concepts/concepts.go#retry-budget -->
 ```go tab="Go"
-batch, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token(os.Getenv("CAITLYN_TOKEN")),
+batch, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.Token(os.Getenv("CAITLYN_TOKEN")),
 	caitlyn.WithRetryBudget(2000), // retry tokens shared by every call on this client; default 500, and 0 turns retries off
 )
 ```
 <!-- example: examples/rust/src/concepts.rs#retry-budget -->
 ```rust tab="Rust"
 let batch = Client::builder(
-    "your-company.getcaitlyn.ai",
+    "your-company.caitlyn.ai",
     Auth::token(std::env::var("CAITLYN_TOKEN")?),
 )
 .retry_budget(2000) // retry tokens shared by every call on this client; default 500, and 0 turns retries off

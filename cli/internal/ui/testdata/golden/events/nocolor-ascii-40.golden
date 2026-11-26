@@ -1,0 +1,10 @@
+-- stdout --
+14:02:11  [1m*[m started     3f9c2e7b...5c60  REVIEWER01@live (v7)  Aroha Ngata
+14:08:23  + succeeded   3f9c2e7b...5c60  6 m 12 s
+14:11:40  [1m*[m started     7a21c9d0...11ef  REVIEWER01@live (v7)  an API client
+14:12:02  x failed      7a21c9d0...11ef  ATTACHMENT_UNREADABLE
+14:30:05  ! reset       some events were missed; read runs again: caitlyn unattended-runs list --agent REVIEWER01
+-- stderr --
+Listening for unattended_run.status_changed on REVIEWER01 - Ctrl-C to stop
+
+(reconnected)

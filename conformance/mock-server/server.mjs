@@ -7,7 +7,7 @@
 // Fault injection and inspection live under /__mock/:
 //   POST /__mock/reset              clear state, faults, the request log and any primed example
 //   POST /__mock/faults             merge a fault configuration (see DEFAULT_FAULTS)
-//   GET  /__mock/requests           the request log (method, path, selected headers, body)
+//   GET  /__mock/requests           the request log (method, path, selected headers, body, and the status once answered)
 //   POST /__mock/drop               cut the stream that dropOnSignal is holding (see DEFAULT_FAULTS)
 //   POST /__mock/example            prime the next request with an example case from
 //                                   conformance/cases/examples.json: {"id": "<case id>"}
@@ -486,7 +486,9 @@ const sha256b64 = (buf) => crypto.createHash('sha256').update(buf).digest('base6
 /** URL-safe base64 with no padding: the form of a SHA-256 in an object key (PROTOCOL.md 14). */
 const urlSafe = (b64) => b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const nowIso = () => new Date().toISOString();
+// MOCK_NOW fixes the clock things the mock makes are stamped with, so a transcript of them doesn't change from day to
+// day (scripts/cli-examples.mjs sets it)
+const nowIso = () => process.env.MOCK_NOW ?? new Date().toISOString();
 
 function idempotent(key, op, compute) {
   if (!key) return compute();
@@ -3895,6 +3897,10 @@ const server = http.createServer(async (req, res) => {
       requestId: rid,
     };
     for (const h of LOGGED_HEADERS) if (req.headers[h] != null) entry.headers[h] = req.headers[h];
+    // The status it was answered with, once it has been (the CLI's agent evaluation grades on it)
+    res.on('finish', () => {
+      entry.status = res.statusCode;
+    });
     log.push(entry);
     if (await handleAuth(req, res, url, body)) return;
     if (url.pathname.startsWith('/v3/') && !authorised(req)) {

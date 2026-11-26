@@ -176,7 +176,7 @@ func (c *Client) Tracer() trace.Tracer { return c.tracer }
 // Auth is the client's sign-in: its mode, its token, and the OAuth mode's sign-in steps.
 func (c *Client) Auth() *AuthSession { return c.auth }
 
-// NewClient returns a runtime client for workspace (for example "your-company.getcaitlyn.ai").
+// NewClient returns a runtime client for workspace (for example "your-company.caitlyn.ai").
 func NewClient(sdk SDKInfo, workspace string, auth Auth, opts ...Option) (*Client, error) {
 	s := settings{maxAttempts: 3, maxRetryDelay: 60 * time.Second, retryBudget: DefaultRetryBudget, requestTimeout: DefaultRequestTimeout, storageStallTimeout: DefaultStorageStallTimeout}
 	for _, o := range opts {

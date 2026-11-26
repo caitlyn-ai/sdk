@@ -1,6 +1,6 @@
-// The reader's workspace hostname, one setting for the whole site. The Server block (src/components/ServerBlock.astro)
+// The reader's workspace hostname, one setting for the whole site. The Workspace box (src/components/ServerBlock.astro)
 // on the SDK reference's operation pages and the API reference is where it is typed; every code block on the site, the
-// guides included, then shows it in place of your-company.getcaitlyn.ai, and so does what its copy button copies.
+// guides included, then shows it in place of your-company.caitlyn.ai, and so does what its copy button copies.
 // Kept in localStorage, so it lasts across pages and visits in this browser and is never sent anywhere. A value that is
 // not a hostname is marked invalid and changes nothing; an empty field goes back to the placeholder.
 import { WORKSPACE_PLACEHOLDER } from './workspace-placeholder';

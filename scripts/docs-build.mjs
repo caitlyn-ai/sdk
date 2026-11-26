@@ -21,6 +21,8 @@ import { SDK_TYPES, addIngestionIntro, apiOverview, apiPages, entryTips, publish
 import { documentProblems, lineProblems } from './docs-wording.mjs';
 import { LIVE_URL, isLive, lastModified, robotsTxt, sitemapXml } from './docs-sitemap.mjs';
 import { atomFeed, changelogPage, mergeReleases, parseChangelog, readApiReleases } from './docs-changelog.mjs';
+import { CLI_SECTIONS, TREE_FILE, cliExamples, cliPages, cliProblems, commandProblems, commandsByOperation, errorSection, llmsFiles, loadCli, swallowedPlaceholders, uncapturedOutput, unrunConsoleBlocks } from './docs-cli.mjs';
+import { ERROR_CODES } from '../docs/error-codes.mjs';
 
 // Where the site is served: https://build.caitlyn.ai, at the root; a merge request's preview is the same build at the
 // root of its own host (docs:preview). pages.json, llms.txt, the sitemap and the moved pages name these addresses.
@@ -32,6 +34,9 @@ const content = path.join(project, 'src/content/docs');
 const generated = path.join(project, 'src/generated');
 
 const ast = loadModel();
+// The CLI's description of itself (docs/cli/tree.json) and its command manifest: the CLI section's command reference,
+// and the CLI tab and "In the CLI" sections elsewhere (scripts/docs-cli.mjs)
+const cli = loadCli();
 let invalid = 0;
 const fail = (where, problem) => {
   console.error(`${where}: ${problem}`);
@@ -80,13 +85,28 @@ const pages = [];
 for (const p of readPages()) {
   for (const problem of p.problems) fail(p.file, problem);
   const section = SECTIONS.find((s) => p.slug.startsWith(`${s.dir}/`));
-  pages.push({ slug: p.slug, title: p.title, metadata: p.metadata, body: handWrittenBody(fillIfMatchOptional(fillNotAvailable(p.markdown, { operations: p.metadata?.operations ?? [] }), ifMatchOptional(ast))), source: p.file, kind: p.slug.startsWith('guides/') ? 'guides' : section ? section.dir : 'pages' });
+  const isCli = p.slug === 'cli' || p.slug.startsWith('cli/');
+  if (isCli && p.metadata && p.metadata.pageType !== 'cli') fail(p.file, `pageType is "${p.metadata.pageType}", not cli`);
+  pages.push({ slug: p.slug, title: p.title, metadata: p.metadata, body: handWrittenBody(fillIfMatchOptional(fillNotAvailable(p.markdown, { operations: p.metadata?.operations ?? [] }), ifMatchOptional(ast))), source: p.file, kind: p.slug.startsWith('guides/') ? 'guides' : isCli ? 'cli' : section ? section.dir : 'pages' });
 }
-const reference = referencePages(ast);
+const reference = referencePages(ast, { cli: { examples: cliExamples(cli.tree), commands: commandsByOperation(cli.tree) } });
 for (const p of reference.pages) {
   for (const problem of metadataProblems(p.metadata)) fail(`${p.slug} (generated)`, problem);
+  // An error code's page says what the CLI does with it: its exit code and the CLI's hint (scripts/docs-cli.mjs)
+  if (p.group === 'errors') {
+    const inCli = errorSection(p.title, cli.tree);
+    if (inCli) p.body = p.body.replace(/^## Check for it$/m, `${inCli}\n## Check for it`);
+  }
   pages.push({ ...p, source: 'the model', kind: p.group === 'errors' ? 'errors' : p.group === 'types' ? 'types' : 'reference' });
 }
+// The CLI's command reference, exit codes and errors index (scripts/docs-cli.mjs), with the hand-written pages in
+// docs/cli/
+const cliGenerated = cliPages(cli, { errorCodes: ERROR_CODES });
+for (const p of cliGenerated) {
+  for (const problem of metadataProblems(p.metadata)) fail(`${p.slug} (generated)`, problem);
+  pages.push(p);
+}
+for (const problem of cliProblems(cli, cliGenerated, { errorCodes: ERROR_CODES })) fail(TREE_FILE, problem);
 // The groups the sidebars, the overviews and the OpenAPI document's tags share: the client tree (scripts/docs-api.mjs)
 const tree = reference.tree;
 
@@ -267,14 +287,33 @@ for (const p of pages) {
   let fence = false;
   for (const line of p.body.split('\n')) {
     if (/^\s*```/.test(line)) fence = !fence;
-    for (const problem of lineProblems(line, { prose: !(fence || /^<!-- example:/.test(line)) })) fail(where, problem);
+    for (const problem of lineProblems(line, { prose: !(fence || /^<!-- (example|output):/.test(line)) })) fail(where, problem);
   }
+}
+// The JSON Schema files the CLI's command pages link to: each generated command's input and output, at
+// /cli/schemas/<command>.<input|output>.json
+const cliSchemaFiles = new Map();
+for (const [name, schemas] of Object.entries(cli.snapshot.schemas ?? {})) {
+  for (const [which, schema] of Object.entries(schemas)) cliSchemaFiles.set(`/cli/schemas/${name.replace(/ /g, '-')}.${which}.json`, schema);
+}
+// Every `caitlyn …` on any page names a real command with real flags (scripts/docs-cli.mjs), and a hand-written page's
+// console session comes from an example that runs (examples/cli/)
+for (const [where, problem] of commandProblems(pages, cli.tree)) fail(where, problem);
+for (const p of pages) if (p.kind === 'cli' && p.source !== TREE_FILE) for (const problem of unrunConsoleBlocks(p)) fail(p.source, problem);
+for (const p of pages) if (p.source !== TREE_FILE) for (const problem of uncapturedOutput(p)) fail(p.source, problem);
+// A placeholder such as <workspace> in prose is read as an HTML tag and vanishes from the page (https:///api/mcp):
+// outside code it must be escaped (\<workspace>), as the CLI's help text is (cli/internal/commands/describe)
+for (const p of pages) {
+  const where = p.source === 'the model' || p.source === 'the OpenAPI document' || p.source === TREE_FILE ? `${p.slug} (generated)` : p.source;
+  for (const problem of swallowedPlaceholders(p.body)) fail(where, problem);
 }
 // Every site-relative link must name a page (with its trailing slash), an anchor on it, or a published file.
 for (const p of pages) {
   for (const m of p.body.matchAll(/\]\((\/[^)\s]*)\)/g)) {
     const [target, anchor] = m[1].split('#');
-    if (target === '/llms.txt' || target === '/llms-full.txt' || target === '/api/openapi.json' || target === CHANGELOG_FEED) continue;
+    if (target === '/llms.txt' || target === '/llms-full.txt' || target === '/cli/llms.txt' || target === '/cli/llms-full.txt' || target === '/api/openapi.json' || target === CHANGELOG_FEED) continue;
+    // A command's input and output schemas, which the build publishes beside the CLI's pages (below)
+    if (/^\/cli\/schemas\/[\w.-]+\.json$/.test(target) && cliSchemaFiles.has(target)) continue;
     // A file the site publishes as it is, such as a screenshot in docs/site/public/images/
     if (!target.endsWith('/') && fs.existsSync(path.join(project, 'public', target))) continue;
     const slug = target.replace(/^\/|\/$/g, '');
@@ -328,6 +367,7 @@ const sectionLabel = (page) => {
   if (page.kind === 'api') return 'API reference';
   if (page.kind === 'types') return 'Type';
   if (page.kind === 'errors') return 'Error code';
+  if (page.kind === 'cli') return page.group === 'reference' ? 'CLI reference' : 'CLI';
   if (page.kind === 'pages') return START_LABELS[page.slug] ?? 'Start here';
   const first = page.slug.split('/')[0];
   return first.charAt(0).toUpperCase() + first.slice(1).replace(/-/g, ' ');
@@ -351,7 +391,7 @@ const ICONS = {
   'sign-in': 'padlock',
   tools: 'setting',
 };
-const KIND_ICONS = { guides: 'open-book', reference: 'puzzle', api: 'puzzle', types: 'document', errors: 'warning' };
+const KIND_ICONS = { guides: 'open-book', reference: 'puzzle', api: 'puzzle', types: 'document', errors: 'warning', cli: 'seti:shell' };
 const cardIcon = (page) => ICONS[page.slug] ?? ICONS[page.slug.split('/')[0]] ?? KIND_ICONS[page.kind] ?? 'information';
 
 // "What's next" on each page: the site's own map (docs/site/src/whats-next.json), resolved to titles and
@@ -479,7 +519,7 @@ for (const p of pages) {
     // the same operation in the other reference: the API reference's page from the SDK reference, and back
     // An operation with no SDK method has no page in the SDK reference to link to (its header shows no SDK call either).
     ...(p.operation ? [`operation: ${yaml({ ...p.operation, other: p.kind === 'api' ? (noSdkMethod.has(p.operation.name) ? { label: '', link: '' } : { label: 'In the SDK reference', link: `/sdk/${kebab(p.operation.name)}/` }) : { label: 'In the API reference', link: `/api/${kebab(p.operation.name)}/` } })}`] : []),
-    // The API reference's overview: its Server block (src/components/PageTitle.astro), and Scalar's old anchors
+    // The API reference's overview: its Workspace box (src/components/PageTitle.astro), and Scalar's old anchors
     // (#tag/documents/GET/v3/...), each sent on to its operation's page
     ...(p.server ? ['server: true'] : []),
     ...(p.apiAnchors ? [`apiAnchors: ${yaml(p.apiAnchors)}`] : []),
@@ -545,6 +585,12 @@ const sidebar = [
 ];
 // The HTTP API's reference: its overview, its operations by the SDK reference's groups, then shortcuts to the types and
 // the error codes, which are the SDK reference's pages. The published OpenAPI document is beside the pages.
+// The CLI's JSON Schema files (generated, like the OpenAPI document: docs/site/public/cli/ is ignored by git)
+fs.rmSync(path.join(project, 'public/cli'), { recursive: true, force: true });
+for (const [file, schema] of cliSchemaFiles) {
+  fs.mkdirSync(path.dirname(path.join(project, 'public', file)), { recursive: true });
+  fs.writeFileSync(path.join(project, 'public', file), JSON.stringify(schema, null, 2) + '\n');
+}
 fs.mkdirSync(path.join(project, 'public/api'), { recursive: true });
 fs.writeFileSync(path.join(project, 'public/api/openapi.json'), JSON.stringify(openapi, null, 2) + '\n');
 const apiTopic = {
@@ -565,6 +611,39 @@ const apiTopic = {
   ],
 };
 sidebar.push(apiTopic);
+// The CLI (21.1): its start page, the hand-written pages by group (scripts/docs-cli.mjs CLI_SECTIONS), the command
+// reference nested as the command tree is, with the hidden groups (the low-level building blocks, completion) last and
+// collapsed, and the reference tables
+{
+  const cliHand = pages.filter((p) => p.kind === 'cli' && p.source !== TREE_FILE && p.slug !== 'cli');
+  const generatedTables = pages.filter((p) => p.kind === 'cli' && p.source === TREE_FILE && !p.cliPath && p.slug !== 'cli/reference');
+  const listed = new Set(CLI_SECTIONS.flatMap((s) => s.pages));
+  const groups = CLI_SECTIONS.map((s) => {
+    const own = [...cliHand, ...generatedTables].filter((p) => s.pages.includes(p.slug) || (s.prefix && p.slug.startsWith(s.prefix)));
+    const ordered = [...own.filter((p) => s.pages.includes(p.slug)).sort((a, b) => s.pages.indexOf(a.slug) - s.pages.indexOf(b.slug)), ...own.filter((p) => !s.pages.includes(p.slug))];
+    // A page in no group goes in the first
+    if (s === CLI_SECTIONS[0]) ordered.push(...cliHand.filter((p) => !listed.has(p.slug) && !CLI_SECTIONS.some((x) => x.prefix && p.slug.startsWith(x.prefix))));
+    return { label: s.label, items: ordered.map((p) => link(p)) };
+  }).filter((g) => g.items.length);
+  const refPages = pages.filter((p) => p.kind === 'cli' && p.cliPath);
+  const children = (prefix) => refPages.filter((p) => p.cliPath.length === prefix.length + 1 && p.cliPath.slice(0, -1).join(' ') === prefix.join(' '));
+  const entry = (p, depth) => {
+    const kids = children(p.cliPath);
+    const label = p.cliPath.join(' ');
+    if (!kids.length) return codeLink(refLink(p, label));
+    return { label, collapsed: true, items: [codeLink(refLink(p, label)), ...kids.map((k) => entry(k, depth + 1))] };
+  };
+  const top = children([]);
+  const reference = {
+    label: 'Command reference',
+    items: [link(bySlug.get('cli/reference'), 'All commands'), ...top.filter((p) => !p.hidden).map((p) => entry(p, 0)), ...top.filter((p) => p.hidden).map((p) => entry(p, 0))],
+  };
+  const tablesAt = groups.findIndex((g) => g.label === 'Reference tables');
+  groups.splice(tablesAt < 0 ? groups.length : tablesAt, 0, reference);
+  const start = bySlug.get('cli');
+  if (!start) fail('docs/cli/index.md', 'the CLI section has no start page');
+  else sidebar.push({ label: 'CLI', link: '/cli/', icon: 'seti:shell', items: [link(start, 'Overview'), ...groups] });
+}
 // No two entries side by side share a label, in any topic's sidebar (docs/site/test/sidebar.test.mjs checks the
 // reference sidebars before the build)
 (function distinct(items, where) {
@@ -588,7 +667,7 @@ const iconUrl = (id) => {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}">${icon.body}</svg>`;
   return `url("data:image/svg+xml,${encodeURIComponent(svg).replace(/'/g, '%27')}")`;
 };
-const TOPIC_ICONS = { 'Get started': 'rocket-launch-outline-rounded', Guides: 'menu-book-outline-rounded', 'How the API works': 'extension-outline-rounded', 'SDK reference': 'code-outline-rounded', 'API reference': 'api-outline-rounded' };
+const TOPIC_ICONS = { 'Get started': 'rocket-launch-outline-rounded', Guides: 'menu-book-outline-rounded', 'How the API works': 'extension-outline-rounded', 'SDK reference': 'code-outline-rounded', 'API reference': 'api-outline-rounded', CLI: 'terminal-rounded' };
 const GROUP_ICONS = {
   Conversations: 'chat-bubble-outline-rounded', Documents: 'description-outline-rounded', Uploads: 'upload-outline-rounded',
   Agents: 'smart-toy-outline-rounded', Versions: 'stacks-outline-rounded', 'Live history': 'history-rounded', Callers: 'badge-outline-rounded',
@@ -598,6 +677,8 @@ const GROUP_ICONS = {
   'Building blocks': 'construction-rounded',
   Types: 'data-object-outline-rounded', 'Error codes': 'warning-outline-rounded', 'Sign-in and identity': 'key-outline-rounded', Embed: 'web-outline-rounded',
   'Tools and connectors': 'power-outline-rounded',
+  'Using the CLI': 'terminal-rounded', Recipes: 'receipt-long-outline-rounded', Automation: 'smart-toy-outline-rounded',
+  'Command reference': 'account-tree-outline-rounded', 'Reference tables': 'table-rows-outline-rounded',
 };
 // Every code block's language and every tab group's label has an icon: Simple Icons' monochrome logo where the language
 // or framework has one, a Material Symbols icon where it does not (text, HTTP). The build fails on one with no icon,
@@ -614,7 +695,7 @@ const CODE_ICONS = {
 const TAB_ICONS = {
   typescript: 'simple-icons:typescript', python: 'simple-icons:python', go: 'simple-icons:go', rust: 'simple-icons:rust',
   html: 'simple-icons:html5', react: 'simple-icons:react', 'next-js': 'simple-icons:nextdotjs', javascript: 'simple-icons:javascript',
-  curl: 'simple-icons:gnubash', shell: 'simple-icons:gnubash',
+  curl: 'simple-icons:gnubash', shell: 'simple-icons:gnubash', cli: 'material-symbols:terminal-rounded',
 };
 const LANGUAGE_ICONS = { typescript: 'typescript', python: 'python', go: 'go', rust: 'rust' };
 const tabKey = (label) => label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -654,7 +735,7 @@ for (const [lang, icon] of Object.entries(CODE_ICONS)) {
 for (const [key, icon] of Object.entries(TAB_ICONS)) iconRules.push(masked(`.lang-tab[data-lang='${key}']::before`, icon));
 // The code panel's language menu shows its chosen language's logo (src/scripts/lang-tabs.ts sets data-value; before it
 // runs, the site's language on <html data-lang>, TypeScript until one is chosen)
-const PICKER_ICONS = { ...Object.fromEntries(Object.entries(LANGUAGE_ICONS).map(([k, v]) => [k, `simple-icons:${v}`])), curl: 'simple-icons:gnubash' };
+const PICKER_ICONS = { ...Object.fromEntries(Object.entries(LANGUAGE_ICONS).map(([k, v]) => [k, `simple-icons:${v}`])), curl: 'simple-icons:gnubash', cli: 'material-symbols:terminal-rounded' };
 for (const [lang, icon] of Object.entries(PICKER_ICONS)) {
   iconRules.push(masked(`caitlyn-language-select[data-value='${lang}'] .caitlyn-lang-picker-icon, :root[data-lang='${lang}'] caitlyn-language-select:not([data-value]) .caitlyn-lang-picker-icon`, icon));
 }
@@ -709,10 +790,11 @@ for (const p of pages) {
     const chips = (built.match(/class="caitlyn-chip[" ][^>]*data-chip=|data-chip="[^"]*"[^>]*class="caitlyn-chip/g) ?? []).length;
     if (codes !== chips) fail(`${p.slug} (generated)`, `${codes - chips} of its header chips are not copy buttons`);
   }
-  // Every tab strip has each language once, and a panel per tab (docs/site/src/plugins/remark-lang-tabs.mjs)
+  // Every tab strip has each language (or output) once, and a panel per tab (docs/site/src/plugins/remark-lang-tabs.mjs)
   if (fs.existsSync(html)) {
     for (const [group] of fs.readFileSync(html, 'utf8').matchAll(/<div class="lang-tabs"[\s\S]*?(?=<div class="lang-tabs"|$)/g)) {
-      const tabs = [...group.matchAll(/<button[^>]*class="lang-tab"[^>]*>|<button[^>]*data-lang="[^"]+"[^>]*class="lang-tab"[^>]*>/g)].map((m) => /data-lang="([^"]+)"/.exec(m[0])[1]);
+      // language tabs carry data-lang, output tabs data-output (the same markup otherwise)
+      const tabs = [...group.matchAll(/<button[^>]*class="lang-tab"[^>]*>/g)].map((m) => /data-(?:lang|output|install)="([^"]+)"/.exec(m[0])?.[1] ?? '(none)');
       const panels = (group.match(/class="lang-panel"/g) ?? []).length;
       if (new Set(tabs).size !== tabs.length) fail(p.slug || 'index', `a tab strip has a language twice: ${tabs.join(', ')}`);
       if (panels !== tabs.length) fail(p.slug || 'index', `a tab group has ${panels} panels for ${tabs.length} tabs`);
@@ -769,6 +851,11 @@ const llms = [
   ...section('SDK reference', kind('reference')),
   ...section('HTTP API reference', kind('api')),
   ...section('Types', kind('types')),
+  '## CLI',
+  '',
+  `- [The CLI's own index](${PROD_URL}/cli/llms.txt): every CLI page, the command reference included, each with a line on what it covers`,
+  ...kind('cli').filter((e) => e.page.source !== TREE_FILE || e.page.slug === 'cli/reference').map((e) => `- [${e.title}](${mdUrl(e)}): ${description(e.page.body)}`),
+  '',
   '## Optional',
   '',
   ...kind('errors').map((e) => `- [${e.title}](${mdUrl(e)}): ${description(e.page.body)}`),
@@ -778,7 +865,19 @@ const llms = [
 fs.writeFileSync(path.join(site, 'llms.txt'), llms.join('\n'));
 // The Changelog's Atom feed, at the address the page and every page's head name (docs/site/astro.config.mjs)
 fs.writeFileSync(path.join(site, CHANGELOG_FEED), atomFeed(releases, pages, { base: PROD_URL, feed: CHANGELOG_FEED, errorCodes, codeOperations }));
-const ordered = [...startPages, ...kind('guides'), ...SECTIONS.flatMap((s) => kind(s.dir)), ...kind('reference'), ...kind('api'), ...kind('types'), ...kind('errors')];
+const ordered = [...startPages, ...kind('guides'), ...SECTIONS.flatMap((s) => kind(s.dir)), ...kind('reference'), ...kind('api'), ...kind('types'), ...kind('errors'), ...kind('cli')];
+// The CLI's own llms.txt and llms-full.txt (20.2), each within its size budget
+{
+  const cliOrder = (list) => {
+    const rank = (e) => (e.page.slug === 'cli' ? -1 : CLI_SECTIONS.findIndex((s) => s.pages.includes(e.page.slug) || (s.prefix && e.page.slug.startsWith(s.prefix))));
+    return [...list].sort((a, b) => rank(a) - rank(b));
+  };
+  const files = llmsFiles(kind('cli'), { base: PROD_URL, describe: (p) => description(p.body), order: cliOrder });
+  for (const problem of files.problems) fail('the CLI llms files', problem);
+  fs.mkdirSync(path.join(site, 'cli'), { recursive: true });
+  fs.writeFileSync(path.join(site, 'cli/llms.txt'), files.index);
+  fs.writeFileSync(path.join(site, 'cli/llms-full.txt'), files.full);
+}
 fs.writeFileSync(
   path.join(site, 'llms-full.txt'),
   ordered.map((e) => `<!-- ${PROD_URL}/${e.page.slug ? `${e.page.slug}/` : ''} -->\n${e.markdown.replace(/^---\n[\s\S]*?\n---\n\n?/, '')}`).join('\n'),
@@ -824,5 +923,5 @@ if (invalid) {
   process.exit(1);
 }
 
-const counts = ['pages', 'guides', ...SECTIONS.map((s) => s.dir), 'reference', 'api', 'types', 'errors'].map((k) => `${entries.filter((e) => e.page.kind === k).length} ${k === 'pages' ? 'start pages' : k}`);
-console.log(`docs-build: ${entries.length} pages (${counts.join(', ')}) in build/docs/site, each with its Markdown copy; llms.txt; ${live ? `the live build: sitemap.xml (${dated.size === dates.size ? 'every source dated by git' : `${dated.size} of ${dates.size} sources dated by git, the rest by the build`})` : 'a preview build: no sitemap, every page noindex'}; release ${release}`);
+const counts = ['pages', 'guides', ...SECTIONS.map((s) => s.dir), 'reference', 'api', 'types', 'errors', 'cli'].map((k) => `${entries.filter((e) => e.page.kind === k).length} ${k === 'pages' ? 'start pages' : k}`);
+console.log(`docs-build: ${entries.length} pages (${counts.join(', ')}) in build/docs/site, each with its Markdown copy; llms.txt and /cli/llms.txt; ${live ? `the live build: sitemap.xml (${dated.size === dates.size ? 'every source dated by git' : `${dated.size} of ${dates.size} sources dated by git, the rest by the build`})` : 'a preview build: no sitemap, every page noindex'}; release ${release}`);

@@ -29,22 +29,22 @@ export async function finishSignIn(code: string, state: string, expectedState: s
 
 // A registered machine integration (ApiClient)
 export const service = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: { mode: 'clientCredentials', clientId: process.env.CAITLYN_CLIENT_ID!, clientSecret: process.env.CAITLYN_CLIENT_SECRET!, scopes: ['chat:write'] },
 });
 
 // A workload in AWS: its role credentials get an AWS-signed token from STS GetWebIdentityToken (regional
 // endpoint), exchanged once for a Caitlyn bearer token
-export const worker = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'awsIam', region: 'ap-southeast-2' } });
+export const worker = new Caitlyn({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'awsIam', region: 'ap-southeast-2' } });
 
 // A CI job or other OIDC workload: its own identity token (GitLab CI id_tokens), exchanged the same way
-export const ci = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'workloadIdentity', token: () => process.env.CAITLYN_ID_TOKEN! } });
+export const ci = new Caitlyn({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'workloadIdentity', token: () => process.env.CAITLYN_ID_TOKEN! } });
 
 // The Caitlyn app's own pages, with its session cookie
 export const appPage = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
-  auth: { mode: 'session', cookie: mintedCookie, origin: 'https://your-company.getcaitlyn.ai' },
+  workspace: 'your-company.caitlyn.ai',
+  auth: { mode: 'session', cookie: mintedCookie, origin: 'https://your-company.caitlyn.ai' },
 });
 
 // A script using a personal access token
-export const script = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! } });
+export const script = new Caitlyn({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! } });

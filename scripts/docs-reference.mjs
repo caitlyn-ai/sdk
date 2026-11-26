@@ -460,7 +460,7 @@ function httpRequest(ast, op, input) {
   }
   if (t[C('sseEvents')]) headers.unshift('Accept: text/event-stream');
   const hasBody = Object.values(mems).some((m) => binding(m).in === 'body');
-  const lines = [`${http.method} /api${uri}${query.length ? `?${query.join('&')}` : ''} HTTP/1.1`, 'Host: your-company.getcaitlyn.ai', 'Authorization: Bearer <token>', ...headers];
+  const lines = [`${http.method} /api${uri}${query.length ? `?${query.join('&')}` : ''} HTTP/1.1`, 'Host: your-company.caitlyn.ai', 'Authorization: Bearer <token>', ...headers];
   if (hasBody) lines.push('Content-Type: application/json', '', JSON.stringify(body, null, 2));
   return lines.join('\n');
 }
@@ -500,6 +500,12 @@ function httpResponse(ast, op, example) {
   const body = wireBody(ast, op, out);
   if (eventsUnion(ast, op)) return `HTTP/1.1 200\nContent-Type: text/event-stream\n${headers.join('\n')}`.trim();
   return `HTTP/1.1 ${status}\n${headers.length ? `${headers.join('\n')}\n` : ''}Content-Type: application/json\n\n${JSON.stringify(body, null, 2)}`;
+}
+
+/** An example's command line from the CLI's description of itself ({ examples, commands }, scripts/docs-cli.mjs), or
+ * null when the CLI has no command for the operation */
+function cliLineFor(cli, opName, title) {
+  return cli?.examples.get(opName)?.find((e) => e.title === title)?.line ?? null;
 }
 
 function operationPage(ast, op, typePages, examples, opsUsingError) {
@@ -639,6 +645,9 @@ function operationPage(ast, op, typePages, examples, opsUsingError) {
       out.push(`### ${s.example.title}`, '');
       if (s.example.documentation) out.push(s.example.documentation, '');
       for (const l of LANGUAGES) out.push(`\`\`\`${l.fence} tab="${l.label}"`, s.code[l.key].trimEnd(), '```');
+      // The same example on the command line, when the CLI has a command for it (scripts/docs-cli.mjs cliExamples)
+      const cliLine = cliLineFor(opsUsingError.cli, op.name, s.example.title);
+      if (cliLine) out.push('```sh tab="CLI"', cliLine, '```');
       out.push('');
       out.push('The HTTP exchange:', '');
       out.push('```http', httpRequest(ast, op, s.example.input), '```', '');
@@ -687,7 +696,7 @@ function operationPage(ast, op, typePages, examples, opsUsingError) {
   const events = eventsUnion(ast, op);
   const panel = exs.map((ex) => ({
     title: ex.example.title,
-    code: Object.fromEntries(Object.entries(ex.code).map(([k, v]) => [k, v.trimEnd()])),
+    code: { ...Object.fromEntries(Object.entries(ex.code).map(([k, v]) => [k, v.trimEnd()])), ...(cliLineFor(opsUsingError.cli, op.name, ex.example.title) ? { cli: cliLineFor(opsUsingError.cli, op.name, ex.example.title) } : {}) },
     // What the SDK hands back: the result's JSON (the response body), or the error's problem details
     ...responseBody(ast, op, ex.example),
     // A stream's examples in the model carry no event bodies, so the sequence is built from the event types and
@@ -708,9 +717,12 @@ function operationPage(ast, op, typePages, examples, opsUsingError) {
     if (!code) return { status, result: null, events: null, sample: true };
     return { status, result: JSON.stringify(problemDetails(code, status), null, 2), events: null, sample: true, code };
   });
+  // The same operation on the command line: its command and that command's reference (21.3)
+  const cliCommand = opsUsingError.cli?.commands.get(op.name)?.[0];
   const operation = {
     name: op.name,
     stability,
+    ...(cliCommand ? { cli: { command: `caitlyn ${cliCommand.name}`, link: cliCommand.docs } } : {}),
     responses,
     method: opsUsingError.tree.callOf.get(op.name),
     calls: Object.fromEntries(Object.entries(calls).map(([lang, call]) => [lang.toLowerCase(), call])),
@@ -813,7 +825,7 @@ function errorPage(ast, code, err, ops) {
  * Every generated page: { slug, title, metadata, body, group, label }. `unreleased` (the operations no release serves
  * yet) and `next` (the release they arrive in) default to the snapshot's and the lock's; a test passes its own.
  */
-export function referencePages(ast, { unreleased = unreleasedOperations(), next = nextRelease() } = {}) {
+export function referencePages(ast, { unreleased = unreleasedOperations(), next = nextRelease(), cli = null } = {}) {
   // The SDK reference has a page for each operation with a client method; the HTTP API's has the rest too (apiOnly).
   const all = operations(ast);
   const ops = all.filter((o) => !o.noClientMethod);
@@ -853,7 +865,7 @@ export function referencePages(ast, { unreleased = unreleasedOperations(), next 
   const helpers = loadHelpers();
   const tree = namespaceTree(ops, { ast, helpers });
   const pages = [];
-  for (const op of ops) pages.push(operationPage(ast, op, typePages, examples, { errorsOf, tree, unreleased, next }));
+  for (const op of ops) pages.push(operationPage(ast, op, typePages, examples, { errorsOf, tree, unreleased, next, cli }));
   for (const h of helpers) pages.push(helperPage(h, ops, tree));
   for (const id of types) pages.push(typePage(ast, id, typePages, usedBy));
   for (const err of errors) {
@@ -985,7 +997,7 @@ function helperPage(h, ops, tree) {
 
 /**
  * The SDK reference's overview at /sdk/: installing each SDK and creating a client (both from Getting started, as its
- * readers already know them), the server and workspace (the page's Server block), the sign-in modes (Authentication's
+ * readers already know them), the server and workspace (the page's Workspace box), the sign-in modes (Authentication's
  * table), every group of the client with its operations and helpers by their call, the waiters, and how errors and retries behave. The site's
  * page lists the operations as rows; the Markdown copy as a list. `pages` are the SDK reference's operation pages.
  * ctx: { install, firstCall, modes } (Markdown taken from the hand-written pages), tree (scripts/docs-api.mjs
@@ -1007,7 +1019,7 @@ export function sdkOverview(ast, ops, pages, { install, firstCall, modes, tree }
     '',
     '## Server and workspace',
     '',
-    "The client sends every request to its workspace's own hostname, `https://{workspace}/api`. Give your workspace in the Server block and every example on this site uses it. [The workspace](/getting-started/#the-workspace) explains what it decides.",
+    "The client sends every request to its workspace's own hostname, `https://{workspace}/api`. Give your workspace in the Workspace box and every example on this site uses it. [The workspace](/getting-started/#the-workspace) explains what it decides.",
     '',
     '## Sign-in modes',
     '',

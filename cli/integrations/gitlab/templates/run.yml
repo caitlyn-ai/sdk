@@ -1,0 +1,67 @@
+# Caitlyn CLI: start an unattended run and wait for its result (the CLI design, 15.9), such as a nightly check that
+# a reviewer agent still finds what it should. Each policy rule reviewed is a JUnit test case.
+spec:
+  inputs:
+    workspace:
+      description: The Caitlyn workspace, such as your-company.caitlyn.ai
+    agent:
+      description: The agent and version, such as REVIEWER01@live
+    prompt:
+      description: What to ask
+    attach:
+      description: A file to attach (optional)
+      default: ''
+    timeout:
+      description: How long to wait; a CLI timeout still writes its report, a job killed by the runner can't
+      default: 20m
+    fail_on:
+      description: failed, non_compliant, partly_compliant, or never
+      default: failed,non_compliant
+    stage:
+      default: test
+    cli_version:
+      default: latest
+    cosign_image:
+      description: An image with cosign and a shell, to check the CLI image's signature (pinned by digest)
+      default: cgr.dev/chainguard/cosign:latest-dev@sha256:bc725b1ce4fdd6266c66407d0d34cf59a03ded765089956cd985411d790f9b55
+    release_key:
+      description: Caitlyn's release key, which signs every CLI image
+      default: https://build.caitlyn.ai/releases/cli/cosign.pub
+    job_name:
+      default: caitlyn-run
+---
+# The CLI image this job runs, checked against Caitlyn's release key in .pre, before any later stage: a failed check
+# stops the pipeline. Pin cli_version with its digest (0.12.0@sha256:...) and the image checked is the image run.
+$[[ inputs.job_name ]]-verify-image:
+  stage: .pre
+  image:
+    name: $[[ inputs.cosign_image ]]
+    entrypoint: ['']
+  script:
+    - cosign verify --key '$[[ inputs.release_key ]]' 'ghcr.io/caitlyn-ai/caitlyn:$[[ inputs.cli_version ]]' > /dev/null
+    - echo "ghcr.io/caitlyn-ai/caitlyn:$[[ inputs.cli_version ]] is signed with Caitlyn's release key"
+
+$[[ inputs.job_name ]]:
+  image: ghcr.io/caitlyn-ai/caitlyn:$[[ inputs.cli_version ]]
+  stage: $[[ inputs.stage ]]
+  variables:
+    CAITLYN_WORKSPACE: $[[ inputs.workspace ]]
+    CAITLYN_AUTH: workload-identity
+    CAITLYN_PROMPT: $[[ inputs.prompt ]]
+    CAITLYN_ATTACH: $[[ inputs.attach ]]
+  id_tokens:
+    CAITLYN_ID_TOKEN:
+      aud: https://$[[ inputs.workspace ]]/api
+  script:
+    - |
+      set -- unattended-runs start '$[[ inputs.agent ]]' --prompt "$CAITLYN_PROMPT" --wait --timeout '$[[ inputs.timeout ]]' \
+        --fail-on '$[[ inputs.fail_on ]]' --report junit=caitlyn-run.xml --summary-file caitlyn-run.md --outputs-file caitlyn.env \
+        --idempotency-key "$CI_PIPELINE_ID-$CI_JOB_NAME"
+      if [ -n "$CAITLYN_ATTACH" ]; then set -- "$@" --attach "$CAITLYN_ATTACH"; fi
+      caitlyn "$@"
+  artifacts:
+    when: always
+    paths: [caitlyn-run.md]
+    reports:
+      junit: caitlyn-run.xml
+      dotenv: caitlyn.env

@@ -1,0 +1,7 @@
+{
+  "version": "0.12.5",
+  "channel": "stable",
+  "platforms": [
+    {"os": "linux", "arch": "amd64", "url": "caitlyn_0.12.5_linux_amd64.tar.gz", "size": 1, "sha256": "00"}
+  ]
+}

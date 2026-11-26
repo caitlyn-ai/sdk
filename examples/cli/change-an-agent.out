@@ -1,0 +1,236 @@
+Answer from the HR policies, and quote the clause you relied on.
+## save table
+✓ Done: save the draft as a version (november-candidate).
+## compare table
+~ guidance.instructions
+    - Answer from the HR policies.
+    + Answer from the HR policies, and quote the clause you relied on.
+
+1 change
+## compare json
+{
+  "changes": [
+    {
+      "path": "guidance",
+      "before": {
+        "identity": "You are the HR assistant.",
+        "instructions": "Answer from the HR policies."
+      },
+      "after": {
+        "identity": "You are the HR assistant.",
+        "instructions": "Answer from the HR policies, and quote the clause you relied on."
+      }
+    }
+  ]
+}
+## publish table
+✓ Done: publish a version.
+## roll-back table
+✓ Done: publish a version.
+## history table
+CHANGED AT     KIND      VERSION             PREVIOUS VERSION    CHANGED BY
+────────────────────────────────────────────────────────────────────────────
+2 minutes ago  rollback  v13                 november-candidate  Mock caller
+2 minutes ago  publish   november-candidate  v13                 Mock caller
+1 day ago      publish   v13                 v12                 Mock caller
+
+3 history entries
+## history json
+{
+  "items": [
+    {
+      "id": "lh-0003",
+      "agentId": "GHT7YRWXPL",
+      "version": "v13",
+      "previousVersion": "november-candidate",
+      "kind": "rollback",
+      "changedAt": "2026-11-06T08:58:00.000Z",
+      "changedBy": {
+        "displayName": "Mock caller"
+      },
+      "note": "Back to v13"
+    },
+    {
+      "id": "lh-0002",
+      "agentId": "GHT7YRWXPL",
+      "version": "november-candidate",
+      "previousVersion": "v13",
+      "kind": "publish",
+      "changedAt": "2026-11-06T08:58:00.000Z",
+      "changedBy": {
+        "displayName": "Mock caller"
+      },
+      "note": "Reviewed by HR"
+    },
+    {
+      "id": "lh-0002",
+      "agentId": "GHT7YRWXPL",
+      "version": "v13",
+      "previousVersion": "v12",
+      "kind": "publish",
+      "changedAt": "2026-11-05T00:00:00.000Z",
+      "changedBy": {
+        "displayName": "Mock caller"
+      }
+    }
+  ]
+}
+## save json
+{
+  "agentId": "GHT7YRWXPL",
+  "name": "november-candidate",
+  "source": "save",
+  "matchesLive": false,
+  "createdAt": "2026-11-06T08:58:00.000Z",
+  "createdBy": {
+    "displayName": "Mock caller"
+  },
+  "note": "Quotes the policy clause it relied on.",
+  "configuration": {
+    "guidance": {
+      "identity": "You are the HR assistant.",
+      "instructions": "Answer from the HR policies, and quote the clause you relied on."
+    },
+    "models": {
+      "answer": {
+        "model": "claude-sonnet-5-5"
+      }
+    },
+    "knowledgeBases": [
+      {
+        "knowledgeBaseId": "KB4T7YQ2WL",
+        "numberOfResults": 6,
+        "minimumScore": 0.3
+      }
+    ],
+    "attachments": {
+      "enabled": true,
+      "maxFiles": 5
+    },
+    "contentSafety": {
+      "guardrail": "default"
+    },
+    "deniedDocuments": false
+  },
+  "etag": "\"version-GHT7YRWXPL-november-candidate-1\""
+}
+## publish json
+{
+  "live": {
+    "version": "november-candidate",
+    "publishedAt": "2026-11-06T08:58:00.000Z",
+    "publishedBy": {
+      "displayName": "Mock caller"
+    }
+  },
+  "version": {
+    "agentId": "GHT7YRWXPL",
+    "name": "november-candidate",
+    "source": "save",
+    "matchesLive": true,
+    "createdAt": "2026-11-06T08:58:00.000Z",
+    "createdBy": {
+      "displayName": "Mock caller"
+    },
+    "note": "Quotes the policy clause it relied on.",
+    "configuration": {
+      "guidance": {
+        "identity": "You are the HR assistant.",
+        "instructions": "Answer from the HR policies, and quote the clause you relied on."
+      },
+      "models": {
+        "answer": {
+          "model": "claude-sonnet-5-5"
+        }
+      },
+      "knowledgeBases": [
+        {
+          "knowledgeBaseId": "KB4T7YQ2WL",
+          "numberOfResults": 6,
+          "minimumScore": 0.3
+        }
+      ],
+      "attachments": {
+        "enabled": true,
+        "maxFiles": 5
+      },
+      "contentSafety": {
+        "guardrail": "default"
+      },
+      "deniedDocuments": false
+    },
+    "etag": "\"version-GHT7YRWXPL-november-candidate-1\""
+  },
+  "historyEntry": {
+    "id": "lh-0002",
+    "agentId": "GHT7YRWXPL",
+    "version": "november-candidate",
+    "previousVersion": "v13",
+    "kind": "publish",
+    "changedAt": "2026-11-06T08:58:00.000Z",
+    "changedBy": {
+      "displayName": "Mock caller"
+    },
+    "note": "Reviewed by HR"
+  }
+}
+## roll-back json
+{
+  "live": {
+    "version": "v13",
+    "publishedAt": "2026-11-06T08:58:00.000Z",
+    "publishedBy": {
+      "displayName": "Mock caller"
+    }
+  },
+  "version": {
+    "agentId": "GHT7YRWXPL",
+    "name": "v13",
+    "source": "publish",
+    "matchesLive": true,
+    "createdAt": "2026-11-05T00:00:00.000Z",
+    "createdBy": {
+      "displayName": "Mock caller"
+    },
+    "configuration": {
+      "guidance": {
+        "identity": "You are the HR assistant.",
+        "instructions": "Answer from the HR policies."
+      },
+      "models": {
+        "answer": {
+          "model": "claude-sonnet-5-5"
+        }
+      },
+      "knowledgeBases": [
+        {
+          "knowledgeBaseId": "KB4T7YQ2WL",
+          "numberOfResults": 6,
+          "minimumScore": 0.3
+        }
+      ],
+      "attachments": {
+        "enabled": true,
+        "maxFiles": 5
+      },
+      "contentSafety": {
+        "guardrail": "default"
+      },
+      "deniedDocuments": false
+    },
+    "etag": "\"version-GHT7YRWXPL-v13-1\""
+  },
+  "historyEntry": {
+    "id": "lh-0003",
+    "agentId": "GHT7YRWXPL",
+    "version": "v13",
+    "previousVersion": "november-candidate",
+    "kind": "rollback",
+    "changedAt": "2026-11-06T08:58:00.000Z",
+    "changedBy": {
+      "displayName": "Mock caller"
+    },
+    "note": "Back to v13"
+  }
+}
+[exit 0]

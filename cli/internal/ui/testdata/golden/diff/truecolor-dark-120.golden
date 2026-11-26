@@ -1,0 +1,14 @@
+-- stdout --
+[1mPlan for your-company.caitlyn.ai (profile default)[m
+
+[33m~ agent[m HR assistant  [38;2;168;176;173mGHT7YRWXPL[m  [38;2;168;176;173mdraft[m
+    [33m~ guidance.instructions[m
+        Answer leave and pay questions. Quote the policy clause you relied [31mon.[m [32mon,[m [32mand[m [32mits[m [32mnumber.[m
+    [32m+ knowledgeBases[KB9M2QXR4T][m  maxQueries 2
+    [33m~ model[m  [38;2;168;176;173mstandard[m [38;2;168;176;173m→[m advanced
+    [31m- starters[2][m  [38;2;168;176;173mHow do I book leave?[m
+[32m+ policy[m Leave and pay  [38;2;168;176;173mleave-and-pay[m
+  [38;2;168;176;173m1 knowledge base set-up unchanged[m
+
+[1m2 changes, 1 addition. Drafts only; live doesn't change.[m
+-- stderr --

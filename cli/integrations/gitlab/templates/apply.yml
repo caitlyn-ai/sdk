@@ -1,0 +1,73 @@
+# Caitlyn CLI: apply configuration on the default branch (the CLI design, 15.7). Plans again and applies, one apply
+# at a time per workspace. A re-run is safe: unchanged files change nothing, and each draft is written If-Match the
+# draft it planned against. publish: true also publishes the drafts as live, confirming exactly the agents whose
+# live isn't their file in this job's own plan (--confirm), so a retry publishes what a failed run left unpublished,
+# and an agent the plan didn't name is never published. Otherwise publishing stays a
+# separate, deliberate step.
+spec:
+  inputs:
+    workspace:
+      description: The Caitlyn workspace, such as your-company.caitlyn.ai
+    path:
+      default: caitlyn/
+    stage:
+      default: deploy
+    cli_version:
+      default: latest
+    publish:
+      description: Publish the applied drafts as live
+      type: boolean
+      default: false
+    resource_group:
+      description: One apply at a time per workspace
+      default: caitlyn-production
+    cosign_image:
+      description: An image with cosign and a shell, to check the CLI image's signature (pinned by digest)
+      default: cgr.dev/chainguard/cosign:latest-dev@sha256:bc725b1ce4fdd6266c66407d0d34cf59a03ded765089956cd985411d790f9b55
+    release_key:
+      description: Caitlyn's release key, which signs every CLI image
+      default: https://build.caitlyn.ai/releases/cli/cosign.pub
+    job_name:
+      default: caitlyn-apply
+---
+# The CLI image this job runs, checked against Caitlyn's release key in .pre, before any later stage: a failed check
+# stops the pipeline. Pin cli_version with its digest (0.12.0@sha256:...) and the image checked is the image run.
+$[[ inputs.job_name ]]-verify-image:
+  stage: .pre
+  image:
+    name: $[[ inputs.cosign_image ]]
+    entrypoint: ['']
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes: ['$[[ inputs.path ]]**/*']
+  script:
+    - cosign verify --key '$[[ inputs.release_key ]]' 'ghcr.io/caitlyn-ai/caitlyn:$[[ inputs.cli_version ]]' > /dev/null
+    - echo "ghcr.io/caitlyn-ai/caitlyn:$[[ inputs.cli_version ]] is signed with Caitlyn's release key"
+
+$[[ inputs.job_name ]]:
+  image: ghcr.io/caitlyn-ai/caitlyn:$[[ inputs.cli_version ]]
+  stage: $[[ inputs.stage ]]
+  resource_group: $[[ inputs.resource_group ]]
+  variables:
+    CAITLYN_WORKSPACE: $[[ inputs.workspace ]]
+    CAITLYN_AUTH: workload-identity
+    CAITLYN_PUBLISH: '$[[ inputs.publish ]]'
+  id_tokens:
+    CAITLYN_ID_TOKEN:
+      aud: https://$[[ inputs.workspace ]]/api
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes: ['$[[ inputs.path ]]**/*']
+  script:
+    - |
+      set -- apply -f '$[[ inputs.path ]]' --yes --summary-file caitlyn-summary.md --outputs-file caitlyn.env
+      if [ "$CAITLYN_PUBLISH" = "true" ]; then
+        agents="$(caitlyn diff -f '$[[ inputs.path ]]' --fail-on never --ci-format off -o json --jq '[.agents[] | select(.publishable) | .agent] | join(",")')"
+        if [ -n "$agents" ]; then set -- "$@" --publish --name "release-$CI_PIPELINE_IID" --confirm "$agents"; fi
+      fi
+      caitlyn "$@"
+  artifacts:
+    when: always
+    paths: [caitlyn-summary.md]
+    reports:
+      dotenv: caitlyn.env

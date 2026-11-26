@@ -1,0 +1,9 @@
+-- stdout --
+[90mNAME[m      [90mID[m          [90mLIVE[m  [90mDRAFT[m     [90mUPDATED[m
+[90m────────────────────────────────────────[m
+[1mHR assi…[m  GHT7YRWXPL  v12   [33mchanged[m   2 hours…
+[1mSupplie…[m  REVIEWER01  v7    same as…  3 days …
+[1mLeave f…[m  AGYFAMYTND  [90mnone[m  new       5 minut…
+
+[90m3 agents[m
+-- stderr --

@@ -6,15 +6,23 @@
 //
 // Which language a group opens on, first match wins:
 //   1. the one holding the target of a `:~:text=` link (a citation from Ask Caitlyn quotes the code it means);
-//   2. `?lang=<key>` in the URL (typescript, python, go, rust, curl);
+//   2. `?lang=<key>` in the URL (typescript, python, go, rust, curl, cli);
 //   3. the reader's last choice on this site (localStorage);
 //   4. the first tab.
 // Browsers scroll to a `:~:text=` target themselves, but not into a panel that is hidden, and some browsers do
 // not support text fragments at all. In both cases this script finds the text, scrolls to it and highlights it.
+//
+// Output tabs (a CLI command's table, JSON or YAML: `tab-output=` blocks) and install tabs (how to install the CLI:
+// `tab-install=` blocks) are separate choices, each picked the same way: the `:~:text=` target's panel, then
+// `?output=<key>` or `?install=<key>`, then the reader's last choice of that kind (each stored apart from the language
+// and from each other, so choosing one never changes another), then Table for output, and the reader's operating
+// system for install.
 
 import { setPicker } from './language-select';
 
 const STORE = 'caitlyn-docs-lang';
+const OUTPUT_STORE = 'caitlyn-docs-output';
+const INSTALL_STORE = 'caitlyn-docs-install';
 const HIGHLIGHT = 'caitlyn-fragment';
 
 interface TextDirective {
@@ -24,21 +32,24 @@ interface TextDirective {
   suffix?: string;
 }
 
-function storedLang(): string | null {
+function stored(name: string): string | null {
   try {
-    return localStorage.getItem(STORE);
+    return localStorage.getItem(name);
   } catch {
     return null;
   }
 }
 
-function storeLang(key: string): void {
+function store(name: string, key: string): void {
   try {
-    localStorage.setItem(STORE, key);
+    localStorage.setItem(name, key);
   } catch {
     // private windows and blocked storage: the choice lasts for this page only
   }
 }
+
+const storedLang = () => stored(STORE);
+const storeLang = (key: string) => store(STORE, key);
 
 /** The `:~:text=` directives of the URL the page was opened with (browsers remove them from location.hash). */
 function textDirectives(): TextDirective[] {
@@ -138,21 +149,60 @@ function locate(index: { text: string; at: (i: number) => [Text, number] }, d: T
   return null;
 }
 
-function activate(group: Element, key: string): boolean {
+/** Shows the tab and panel whose `data-<attr>` is key: lang for language tabs, output and install for those. */
+function activate(group: Element, key: string, attr: 'lang' | 'output' | 'install' = 'lang'): boolean {
   const tabs = [...group.querySelectorAll<HTMLButtonElement>(':scope > .lang-tab-list > .lang-tab')];
-  if (!tabs.some((t) => t.dataset.lang === key)) return false;
+  if (!tabs.some((t) => t.dataset[attr] === key)) return false;
   for (const tab of tabs) {
-    const on = tab.dataset.lang === key;
+    const on = tab.dataset[attr] === key;
     tab.setAttribute('aria-selected', String(on));
     tab.tabIndex = on ? 0 : -1;
   }
-  for (const panel of group.querySelectorAll<HTMLElement>(':scope > .lang-panel')) panel.hidden = panel.dataset.lang !== key;
+  for (const panel of group.querySelectorAll<HTMLElement>(':scope > .lang-panel')) panel.hidden = panel.dataset[attr] !== key;
   return true;
 }
 
+/** A choice with tabs of its own (output, install), never the language's: `attr` names its data attribute, `name` its
+ * stored key, `param` its URL parameter, and `fallback` the tab when nothing else says which. `pinnedTo` is a group's
+ * panel holding a `:~:text=` target. */
+function setUpChoice(attr: 'output' | 'install', name: string, param: string, fallback: () => string, pinnedTo: (group: Element) => string | undefined): void {
+  const groups = [...document.querySelectorAll(`[data-${attr}-tabs]`)];
+  if (!groups.length) return;
+  const preferred = new URLSearchParams(location.search).get(param) ?? stored(name) ?? fallback();
+  for (const group of groups) {
+    const first = group.querySelector<HTMLElement>(':scope > .lang-panel')?.dataset[attr] ?? '';
+    if (!activate(group, pinnedTo(group) ?? preferred, attr)) activate(group, first, attr);
+    group.classList.add('lang-tabs-ready');
+    for (const tab of group.querySelectorAll<HTMLButtonElement>(':scope > .lang-tab-list > .lang-tab')) {
+      tab.addEventListener('click', () => {
+        const chosen = tab.dataset[attr]!;
+        store(name, chosen);
+        const before = tab.getBoundingClientRect().top;
+        for (const g of groups) activate(g, chosen, attr);
+        window.scrollBy(0, tab.getBoundingClientRect().top - before);
+      });
+      tab.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+        const tabs = [...group.querySelectorAll<HTMLButtonElement>(':scope > .lang-tab-list > .lang-tab')];
+        const next = tabs[(tabs.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]!;
+        next.click();
+        next.focus();
+      });
+    }
+  }
+}
+
+/** The install tab for the reader's operating system, when they have chosen none: Windows, else macOS and Linux. */
+function installForThisSystem(): string {
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const platform = nav.userAgentData?.platform || navigator.platform || navigator.userAgent;
+  return /win/i.test(platform) ? 'windows' : 'macos-and-linux';
+}
+
 // curl is the API reference's: chosen there, it is the site's language, and wherever curl is not offered (the SDK
-// reference, a guide's tabs) TypeScript shows in its place (src/styles/components.css)
-const LANGUAGES = ['typescript', 'python', 'go', 'rust', 'curl'];
+// reference, a guide's tabs) TypeScript shows in its place (src/styles/components.css). cli, the CLI's command line, is
+// offered on the references' operation pages wherever the CLI has a command for the example, with the same fallback.
+const LANGUAGES = ['typescript', 'python', 'go', 'rust', 'curl', 'cli'];
 
 /** Makes a language the site's: on the page root, in every language menu (which shows TypeScript when it has no
  * curl), and remembered. */
@@ -180,11 +230,17 @@ function setUp(): void {
     for (const g of groups) activate(g, key);
   });
   const pinned = new Map<Element, string>();
+  const pinnedOutput = new Map<Element, string>();
+  const pinnedInstall = new Map<Element, string>();
   for (const range of targets) {
     const panel = (range.startContainer.parentElement ?? null)?.closest<HTMLElement>('.lang-panel');
     const group = panel?.parentElement;
     if (panel?.dataset.lang && group && !pinned.has(group)) pinned.set(group, panel.dataset.lang);
+    if (panel?.dataset.output && group && !pinnedOutput.has(group)) pinnedOutput.set(group, panel.dataset.output);
+    if (panel?.dataset.install && group && !pinnedInstall.has(group)) pinnedInstall.set(group, panel.dataset.install);
   }
+  setUpChoice('output', OUTPUT_STORE, 'output', () => 'table', (g) => pinnedOutput.get(g));
+  setUpChoice('install', INSTALL_STORE, 'install', installForThisSystem, (g) => pinnedInstall.get(g));
 
   for (const group of groups) {
     const first = group.querySelector<HTMLElement>(':scope > .lang-panel')?.dataset.lang ?? '';
@@ -213,7 +269,7 @@ function setUp(): void {
   // The browser's own text fragment handling cannot reach a target that was in a hidden panel when the page
   // loaded, and some browsers have none: scroll to the first target and highlight every one.
   const native = 'fragmentDirective' in document;
-  if (targets.length && (!native || pinned.size)) {
+  if (targets.length && (!native || pinned.size || pinnedOutput.size || pinnedInstall.size)) {
     const ranges = targets;
     const css = (globalThis as { CSS?: { highlights?: Map<string, unknown> } }).CSS;
     const HighlightCtor = (globalThis as { Highlight?: new (...r: Range[]) => unknown }).Highlight;

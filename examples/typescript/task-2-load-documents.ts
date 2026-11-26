@@ -1,7 +1,7 @@
 // Task 2: load documents into a knowledge base: one file, a new version of it, then a whole folder kept in step.
 import { Caitlyn, UploadFile } from '@caitlyn-ai/sdk';
 
-const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! } });
+const caitlyn = new Caitlyn({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! } });
 
 export async function load(knowledgeBaseId: string): Promise<void> {
   const kb = caitlyn.knowledgeBases(knowledgeBaseId);

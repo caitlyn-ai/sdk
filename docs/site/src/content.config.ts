@@ -21,7 +21,7 @@ export const collections = {
         subtitle: z.string().optional(),
         whatsNext: z.array(z.object({ link: z.string(), title: z.string(), description: z.string(), section: z.string(), icon: z.string() })).optional(),
         whatsNextNotes: z.array(z.string()).optional(),
-        // The API reference's overview: its Server block, and the old addresses of its operations (#tag/...) to send on
+        // The API reference's overview: its Workspace box, and the old addresses of its operations (#tag/...) to send on
         server: z.boolean().optional(),
         apiAnchors: z.record(z.string(), z.string()).optional(),
         // An operation's header strip (src/components/OperationHeader.astro), in the SDK reference or the API reference

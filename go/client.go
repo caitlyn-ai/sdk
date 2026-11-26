@@ -22,10 +22,10 @@ type Client struct {
 	core *core.Client
 }
 
-// NewClient returns a client for workspace (for example "your-company.getcaitlyn.ai"), authenticated
-// by auth (for example caitlyn.Token("cait-pat-…") or caitlyn.ClientCredentials{…}). The workspace
-// sets the endpoint and the token audience, https://<workspace>/api. Options set the endpoint, the
-// HTTP client, retries and telemetry; nothing is read from the environment, except by caitlyn.AWSIAM
+// NewClient returns a client for workspace (for example "your-company.caitlyn.ai"), authenticated by
+// auth (for example caitlyn.Token("cait-pat-…") or caitlyn.ClientCredentials{…}). The workspace sets
+// the endpoint and the token audience, https://<workspace>/api. Options set the endpoint, the HTTP
+// client, retries and telemetry; nothing is read from the environment, except by caitlyn.AWSIAM
 // sign-in.
 func NewClient(workspace string, auth Auth, opts ...Option) (*Client, error) {
 	cc, err := core.NewClient(core.SDKInfo{Version: core.ModuleVersion(ModulePath, SDKVersion), ModelVersion: ModelVersion}, workspace, auth, opts...)

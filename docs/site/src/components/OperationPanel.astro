@@ -63,7 +63,10 @@ const LANGS = [
   { key: 'python', lang: 'python' },
   { key: 'go', lang: 'go' },
   { key: 'rust', lang: 'rust' },
+  // The CLI's command line for the example, where the CLI has a command for it (scripts/docs-cli.mjs)
+  { key: 'cli', lang: 'sh' },
 ];
+const hasCli = panel.some((ex) => ex.code.cli);
 const STATUS: Record<number, string> = { 200: 'OK', 201: 'Created', 202: 'Accepted', 204: 'No content', 400: 'Bad request', 401: 'Unauthenticated', 403: 'Forbidden', 404: 'Not found', 409: 'Conflict', 412: 'Precondition failed', 413: 'Payload too large', 422: 'Unprocessable content', 428: 'Precondition required', 429: 'Too many requests', 500: 'Internal error', 503: 'Unavailable' };
 ---
 
@@ -85,7 +88,7 @@ const STATUS: Record<number, string> = { 200: 'OK', 201: 'Created', 202: 'Accept
   }
   <div class="caitlyn-op-code">
     <div class="caitlyn-op-code-head">
-      <LanguageSelect curl={api} />
+      <LanguageSelect curl={api} cli={hasCli} />
     </div>
     {
       panel.map((ex, i) => (
@@ -135,6 +138,7 @@ const STATUS: Record<number, string> = { 200: 'OK', 201: 'Created', 202: 'Accept
               <span class="caitlyn-op-returns">
                 {SDK_LANGS.map((l) => sdkLine(r, l) && <span data-lang-only={l} set:html={` · ${sdkLine(r, l)}`} />)}
                 {api && <span data-lang-only="curl" />}
+                {hasCli && <span data-lang-only="cli" />}
               </span>
               {r.sample && r.code && <span class="caitlyn-op-panel-note"> · an illustration: the error shape, with the code {r.code}</span>}
             </p>

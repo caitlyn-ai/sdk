@@ -13,7 +13,7 @@ import os
 from caitlyn import Caitlyn
 from caitlyn.auth import Token
 
-caitlyn = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token(os.environ["CAITLYN_TOKEN"]))
+caitlyn = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token(os.environ["CAITLYN_TOKEN"]))
 
 # Add a file to a knowledge base: the SDK hashes and uploads it, creates the document, then waits until it is searchable
 kb = caitlyn.knowledge_bases("KB4T7YQ2WL")

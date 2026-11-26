@@ -1,0 +1,27 @@
+{
+  "comment": "The Caitlyn character emblem (the CLI design, 19.3), from the Caitlyn Design System's asset store (the approved source; the app repository's Caitlyn Face_*.svg are the originals, with the same shapes and colours). A changed source fails the build until this file is updated deliberately; `go generate ./assets` then rasterises the PNGs and records their hashes.",
+  "source": {
+    "store": "https://claude.ai/artifact/4QNxFzdzwcQSfMQ1yQUhrB",
+    "group": "Logos",
+    "version": 57
+  },
+  "pixels": 240,
+  "files": [
+    {
+      "path": "caitlyn-face-white.svg",
+      "blob": "689ae5d0c7f6856b4f5165a7b238122c",
+      "from": "caitlyn-face-white.svg",
+      "sha256": "58f7ab8ccf539bba88442fcb55a5fe9488c1349608e4a1e60000d94694bc0e08",
+      "png": "emblem-white.png",
+      "pngSha256": "8e1e85a661cf802187ab54880767c50e57426a8494bd35ac0bd02ba7c74e23f0"
+    },
+    {
+      "path": "caitlyn-face-black.svg",
+      "blob": "585e5173ea795934aa3de3efbabce906",
+      "from": "caitlyn-face-black.svg",
+      "sha256": "bf84426b904b994707a511f9c411c36f7615921b4107b8fed3fd0f44cbb092b8",
+      "png": "emblem-black.png",
+      "pngSha256": "dffa4ec7b518f49b3cd5da95e87ab142da61595ec31dc2b248ee1ab82913a2f5"
+    }
+  ]
+}

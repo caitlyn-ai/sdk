@@ -3,7 +3,7 @@
 import { Caitlyn } from '@caitlyn-ai/sdk';
 
 const caitlyn = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! },
 });
 

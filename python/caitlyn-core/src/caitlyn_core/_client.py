@@ -124,7 +124,7 @@ class ClientConfig:
         # Endpoints, retries and timeouts come from these options only: no environment, no AWS configuration.
         if endpoint is None:
             if workspace is None:
-                raise ValueError("Pass workspace= (for example 'your-company.getcaitlyn.ai') or endpoint=")
+                raise ValueError("Pass workspace= (for example 'your-company.caitlyn.ai') or endpoint=")
             endpoint = workspace_endpoint(workspace)
         # The audience comes from the workspace; with only an endpoint, from the endpoint's host.
         host = workspace_host(workspace) if workspace is not None else httpx.URL(endpoint).host

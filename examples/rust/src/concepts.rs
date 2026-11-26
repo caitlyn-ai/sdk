@@ -86,7 +86,7 @@ pub async fn errors_if_match(client: &Client) -> Result<(), Error> {
 pub fn retries() -> Result<Client, Box<dyn std::error::Error>> {
     // #region retries
     let patient = Client::builder(
-        "your-company.getcaitlyn.ai",
+        "your-company.caitlyn.ai",
         Auth::token(std::env::var("CAITLYN_TOKEN")?),
     )
     .max_attempts(5) // the first attempt included; default 3
@@ -100,7 +100,7 @@ pub fn retries() -> Result<Client, Box<dyn std::error::Error>> {
 pub fn retry_budget() -> Result<Client, Box<dyn std::error::Error>> {
     // #region retry-budget
     let batch = Client::builder(
-        "your-company.getcaitlyn.ai",
+        "your-company.caitlyn.ai",
         Auth::token(std::env::var("CAITLYN_TOKEN")?),
     )
     .retry_budget(2000) // retry tokens shared by every call on this client; default 500, and 0 turns retries off

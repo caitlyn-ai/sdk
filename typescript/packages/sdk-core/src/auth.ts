@@ -97,10 +97,10 @@ const randomString = (n = 32) => b64url(crypto.getRandomValues(new Uint8Array(n)
 /** The audience of a workspace's tokens: its resource URL, https://<workspace>/api. */
 export const workspaceAudience = (workspace: string) => `https://${workspaceHost(workspace)}/api`;
 
-const WORKSPACE_FORM = 'your-company.getcaitlyn.ai or https://your-company.getcaitlyn.ai';
+const WORKSPACE_FORM = 'your-company.caitlyn.ai or https://your-company.caitlyn.ai';
 
 /**
- * A workspace given as a hostname (`your-company.getcaitlyn.ai`) or as its URL (`https://your-company.getcaitlyn.ai`,
+ * A workspace given as a hostname (`your-company.caitlyn.ai`) or as its URL (`https://your-company.caitlyn.ai`,
  * with or without a trailing slash), as its bare hostname in lower case. Anything else (another scheme, a path, a
  * query string, a fragment, user information, an empty value) throws a TypeError naming the expected form
  * (PROTOCOL.md 12.1).

@@ -37,7 +37,7 @@ Caitlyn attaches up to five headers to every request it makes to your server:
 | `X-Caitlyn-User-Email` | The user's email address                                         | `jo.smith@agency.govt.nz`              |
 | `X-Caitlyn-User-Name`  | The user's display name, built from their given and family names | `Jo Smith`                             |
 | `X-Caitlyn-Session-Id` | The chat session the call belongs to                             | `sess-8f21c0`                          |
-| `X-Caitlyn-Domain`     | The environment domain the call came from                        | `your-company.getcaitlyn.ai`                 |
+| `X-Caitlyn-Domain`     | The environment domain the call came from                        | `your-company.caitlyn.ai`                 |
 
 The first four identify the signed-in user; `X-Caitlyn-Domain` identifies the environment. See [Which environment the call came from](#which-environment-the-call-came-from) for the domain header, which arrives even when there is no signed-in user.
 

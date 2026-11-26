@@ -1,0 +1,288 @@
+## agents table
+NAME          ID          LIVE VERSION  UPDATED AT
+──────────────────────────────────────────────────
+HR assistant  GHT7YRWXPL  none          none
+
+1 agent
+## agents json
+{
+  "items": [
+    {
+      "id": "GHT7YRWXPL",
+      "name": "HR assistant",
+      "createdAt": "2026-11-03T22:14:05.120Z",
+      "etag": "\"agent-1\""
+    }
+  ]
+}
+## agents yaml
+items:
+  - id: GHT7YRWXPL
+    name: HR assistant
+    createdAt: "2026-11-03T22:14:05.120Z"
+    etag: '"agent-1"'
+## detail table
+draft
+
+  agent id           GHT7YRWXPL
+  matches live       false
+  created at         2 days ago
+  etag               "draft-1"
+
+  configuration
+  guidance           2 members
+  models             1 member
+  knowledge bases    1 item
+  attachments        2 members
+  content safety     1 member
+  denied documents   false
+## detail json
+{
+  "agentId": "GHT7YRWXPL",
+  "name": "draft",
+  "matchesLive": false,
+  "createdAt": "2026-11-03T22:14:05.120Z",
+  "configuration": {
+    "guidance": {
+      "identity": "You are the HR assistant.",
+      "instructions": "Answer from the HR policies."
+    },
+    "models": {
+      "answer": {
+        "model": "claude-sonnet-5-5"
+      }
+    },
+    "knowledgeBases": [
+      {
+        "knowledgeBaseId": "KB4T7YQ2WL",
+        "numberOfResults": 6,
+        "minimumScore": 0.3
+      }
+    ],
+    "attachments": {
+      "enabled": true,
+      "maxFiles": 5
+    },
+    "contentSafety": {
+      "guardrail": "default"
+    },
+    "deniedDocuments": false
+  },
+  "etag": "\"draft-1\""
+}
+## detail yaml
+agentId: GHT7YRWXPL
+name: draft
+matchesLive: false
+createdAt: "2026-11-03T22:14:05.120Z"
+configuration:
+  guidance:
+    identity: You are the HR assistant.
+    instructions: Answer from the HR policies.
+  models:
+    answer:
+      model: claude-sonnet-5-5
+  knowledgeBases:
+    - knowledgeBaseId: KB4T7YQ2WL
+      numberOfResults: 6
+      minimumScore: 0.3
+  attachments:
+    enabled: true
+    maxFiles: 5
+  contentSafety:
+    guardrail: default
+  deniedDocuments: false
+etag: '"draft-1"'
+## documents table
+NAME          ID        FOLDER      STATUS             VERSION  UPDATED AT
+──────────────────────────────────────────────────────────────────────────
+policy-1.pdf  doc-0001  /policies/  ✓ indexed          1        4 days ago
+policy-2.pdf  doc-0002  /policies/  ✓ indexed          1        4 days ago
+policy-3.pdf  doc-0003  /policies/  partially_indexed  1        4 days ago
+
+3 documents
+More: --all, or --cursor eyJvZmZzZXQiOjN9
+## documents json
+{
+  "items": [
+    {
+      "id": "doc-0001",
+      "knowledgeBaseId": "KB4T7YQ2WL",
+      "name": "policy-1.pdf",
+      "folder": "/policies/",
+      "status": "indexed",
+      "contentType": "application/pdf",
+      "byteSize": 1000,
+      "sha256": "xj69y+AMBrfZMUMFa+K7N9ftx3xQdsHdOxyZMfNt24o=",
+      "version": 1,
+      "versionCount": 1,
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "updatedAt": "2026-11-02T00:00:00.000Z",
+      "etag": "\"doc-0001-1\""
+    },
+    {
+      "id": "doc-0002",
+      "knowledgeBaseId": "KB4T7YQ2WL",
+      "name": "policy-2.pdf",
+      "folder": "/policies/",
+      "status": "indexed",
+      "contentType": "application/pdf",
+      "byteSize": 2000,
+      "sha256": "eJei0h2Xh+kI+Iy9qNchAQI9qYZoWeyIJ9gEZxiMFD4=",
+      "version": 1,
+      "versionCount": 1,
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "updatedAt": "2026-11-02T00:00:00.000Z",
+      "etag": "\"doc-0002-1\""
+    },
+    {
+      "id": "doc-0003",
+      "knowledgeBaseId": "KB4T7YQ2WL",
+      "name": "policy-3.pdf",
+      "folder": "/policies/",
+      "status": "partially_indexed",
+      "contentType": "application/pdf",
+      "byteSize": 3000,
+      "sha256": "zFuki9CQp/jQr0lNR3ncAZ7Is7IwJMg2cYM7XmcRPzo=",
+      "version": 1,
+      "versionCount": 1,
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "updatedAt": "2026-11-02T00:00:00.000Z",
+      "partialFailures": [
+        {
+          "code": "PICTURE_DESCRIPTION_FAILED",
+          "detail": "page 4"
+        }
+      ],
+      "etag": "\"doc-0003-1\""
+    }
+  ],
+  "nextCursor": "eyJvZmZzZXQiOjN9"
+}
+## documents jsonl
+{"id":"doc-0001","knowledgeBaseId":"KB4T7YQ2WL","name":"policy-1.pdf","folder":"/policies/","status":"indexed","contentType":"application/pdf","byteSize":1000,"sha256":"xj69y+AMBrfZMUMFa+K7N9ftx3xQdsHdOxyZMfNt24o=","version":1,"versionCount":1,"createdAt":"2026-11-01T00:00:00.000Z","updatedAt":"2026-11-02T00:00:00.000Z","etag":"\"doc-0001-1\""}
+{"id":"doc-0002","knowledgeBaseId":"KB4T7YQ2WL","name":"policy-2.pdf","folder":"/policies/","status":"indexed","contentType":"application/pdf","byteSize":2000,"sha256":"eJei0h2Xh+kI+Iy9qNchAQI9qYZoWeyIJ9gEZxiMFD4=","version":1,"versionCount":1,"createdAt":"2026-11-01T00:00:00.000Z","updatedAt":"2026-11-02T00:00:00.000Z","etag":"\"doc-0002-1\""}
+{"id":"doc-0003","knowledgeBaseId":"KB4T7YQ2WL","name":"policy-3.pdf","folder":"/policies/","status":"partially_indexed","contentType":"application/pdf","byteSize":3000,"sha256":"zFuki9CQp/jQr0lNR3ncAZ7Is7IwJMg2cYM7XmcRPzo=","version":1,"versionCount":1,"createdAt":"2026-11-01T00:00:00.000Z","updatedAt":"2026-11-02T00:00:00.000Z","partialFailures":[{"code":"PICTURE_DESCRIPTION_FAILED","detail":"page 4"}],"etag":"\"doc-0003-1\""}
+More: --all, or --cursor eyJvZmZzZXQiOjN9
+## documents yaml
+items:
+  - id: doc-0001
+    knowledgeBaseId: KB4T7YQ2WL
+    name: policy-1.pdf
+    folder: /policies/
+    status: indexed
+    contentType: application/pdf
+    byteSize: 1000
+    sha256: xj69y+AMBrfZMUMFa+K7N9ftx3xQdsHdOxyZMfNt24o=
+    version: 1
+    versionCount: 1
+    createdAt: "2026-11-01T00:00:00.000Z"
+    updatedAt: "2026-11-02T00:00:00.000Z"
+    etag: '"doc-0001-1"'
+  - id: doc-0002
+    knowledgeBaseId: KB4T7YQ2WL
+    name: policy-2.pdf
+    folder: /policies/
+    status: indexed
+    contentType: application/pdf
+    byteSize: 2000
+    sha256: eJei0h2Xh+kI+Iy9qNchAQI9qYZoWeyIJ9gEZxiMFD4=
+    version: 1
+    versionCount: 1
+    createdAt: "2026-11-01T00:00:00.000Z"
+    updatedAt: "2026-11-02T00:00:00.000Z"
+    etag: '"doc-0002-1"'
+  - id: doc-0003
+    knowledgeBaseId: KB4T7YQ2WL
+    name: policy-3.pdf
+    folder: /policies/
+    status: partially_indexed
+    contentType: application/pdf
+    byteSize: 3000
+    sha256: zFuki9CQp/jQr0lNR3ncAZ7Is7IwJMg2cYM7XmcRPzo=
+    version: 1
+    versionCount: 1
+    createdAt: "2026-11-01T00:00:00.000Z"
+    updatedAt: "2026-11-02T00:00:00.000Z"
+    partialFailures:
+      - code: PICTURE_DESCRIPTION_FAILED
+        detail: page 4
+    etag: '"doc-0003-1"'
+nextCursor: eyJvZmZzZXQiOjN9
+## documents text
+NAME          ID        FOLDER      STATUS             VERSION  UPDATED AT
+──────────────────────────────────────────────────────────────────────────
+policy-1.pdf  doc-0001  /policies/  ✓ indexed          1        4 days ago
+policy-2.pdf  doc-0002  /policies/  ✓ indexed          1        4 days ago
+policy-3.pdf  doc-0003  /policies/  partially_indexed  1        4 days ago
+
+3 documents
+More: --all, or --cursor eyJvZmZzZXQiOjN9
+## document table
+policy-3.pdf  doc-0003
+
+  knowledge base id   KB4T7YQ2WL
+  folder              /policies/
+  status              partially_indexed
+  content type        application/pdf
+  byte size           3000
+  sha256              zFuki9CQp/jQr0lNR3ncAZ7Is7IwJMg2cYM7XmcRPzo=
+  version             1
+  version count       1
+  created at          5 days ago
+  updated at          4 days ago
+  partial failures    1 item
+  inherited from      /
+  etag                "doc-0003-1"
+
+  readers
+  kind                inherit
+## document json
+{
+  "id": "doc-0003",
+  "knowledgeBaseId": "KB4T7YQ2WL",
+  "name": "policy-3.pdf",
+  "folder": "/policies/",
+  "status": "partially_indexed",
+  "contentType": "application/pdf",
+  "byteSize": 3000,
+  "sha256": "zFuki9CQp/jQr0lNR3ncAZ7Is7IwJMg2cYM7XmcRPzo=",
+  "version": 1,
+  "versionCount": 1,
+  "createdAt": "2026-11-01T00:00:00.000Z",
+  "updatedAt": "2026-11-02T00:00:00.000Z",
+  "partialFailures": [
+    {
+      "code": "PICTURE_DESCRIPTION_FAILED",
+      "detail": "page 4"
+    }
+  ],
+  "readers": {
+    "kind": "inherit"
+  },
+  "inheritedFrom": "/",
+  "etag": "\"doc-0003-1\""
+}
+## document yaml
+id: doc-0003
+knowledgeBaseId: KB4T7YQ2WL
+name: policy-3.pdf
+folder: /policies/
+status: partially_indexed
+contentType: application/pdf
+byteSize: 3000
+sha256: zFuki9CQp/jQr0lNR3ncAZ7Is7IwJMg2cYM7XmcRPzo=
+version: 1
+versionCount: 1
+createdAt: "2026-11-01T00:00:00.000Z"
+updatedAt: "2026-11-02T00:00:00.000Z"
+partialFailures:
+  - code: PICTURE_DESCRIPTION_FAILED
+    detail: page 4
+readers:
+  kind: inherit
+inheritedFrom: /
+etag: '"doc-0003-1"'
+## filter json
+{"name":"policy-3.pdf","status":"partially_indexed"}
+[exit 0]

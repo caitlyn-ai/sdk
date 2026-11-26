@@ -1,0 +1,75 @@
+# Caitlyn CLI: keep a folder in step with a knowledge base (the CLI design, task 2). Never prompts: a plan with
+# unresolved conflicts exits 3 and leaves the plan as an artifact. Each item is a JUnit test case.
+spec:
+  inputs:
+    workspace:
+      description: The Caitlyn workspace, such as your-company.caitlyn.ai
+    knowledge_base:
+      description: The knowledge base's ID
+    path:
+      description: The local folder to sync
+    folder:
+      description: The knowledge-base folder it maps to
+      default: /
+    remove_missing:
+      description: Remove documents that are no longer in the folder
+      type: boolean
+      default: false
+    fail_on:
+      description: failed, skipped, unresolved, partial, or never
+      default: failed
+    stage:
+      default: deploy
+    cli_version:
+      default: latest
+    cosign_image:
+      description: An image with cosign and a shell, to check the CLI image's signature (pinned by digest)
+      default: cgr.dev/chainguard/cosign:latest-dev@sha256:bc725b1ce4fdd6266c66407d0d34cf59a03ded765089956cd985411d790f9b55
+    release_key:
+      description: Caitlyn's release key, which signs every CLI image
+      default: https://build.caitlyn.ai/releases/cli/cosign.pub
+    job_name:
+      default: caitlyn-sync
+---
+# The CLI image this job runs, checked against Caitlyn's release key in .pre, before any later stage: a failed check
+# stops the pipeline. Pin cli_version with its digest (0.12.0@sha256:...) and the image checked is the image run.
+$[[ inputs.job_name ]]-verify-image:
+  stage: .pre
+  image:
+    name: $[[ inputs.cosign_image ]]
+    entrypoint: ['']
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes: ['$[[ inputs.path ]]/**/*']
+  script:
+    - cosign verify --key '$[[ inputs.release_key ]]' 'ghcr.io/caitlyn-ai/caitlyn:$[[ inputs.cli_version ]]' > /dev/null
+    - echo "ghcr.io/caitlyn-ai/caitlyn:$[[ inputs.cli_version ]] is signed with Caitlyn's release key"
+
+$[[ inputs.job_name ]]:
+  image: ghcr.io/caitlyn-ai/caitlyn:$[[ inputs.cli_version ]]
+  stage: $[[ inputs.stage ]]
+  resource_group: caitlyn-sync-$[[ inputs.knowledge_base ]]
+  variables:
+    CAITLYN_WORKSPACE: $[[ inputs.workspace ]]
+    CAITLYN_AUTH: workload-identity
+    CAITLYN_REMOVE_MISSING: '$[[ inputs.remove_missing ]]'
+  id_tokens:
+    CAITLYN_ID_TOKEN:
+      aud: https://$[[ inputs.workspace ]]/api
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes: ['$[[ inputs.path ]]/**/*']
+  script:
+    - |
+      set -- kb sync '$[[ inputs.knowledge_base ]]' '$[[ inputs.path ]]' --folder '$[[ inputs.folder ]]' --yes \
+        --fail-on '$[[ inputs.fail_on ]]' --report junit=caitlyn-sync.xml --report json=caitlyn-sync.json \
+        --summary-file caitlyn-summary.md --outputs-file caitlyn.env
+      # Removing documents is destructive: --confirm names the knowledge base, as kb delete's does
+      if [ "$CAITLYN_REMOVE_MISSING" = "true" ]; then set -- "$@" --remove-missing --confirm '$[[ inputs.knowledge_base ]]'; fi
+      caitlyn "$@"
+  artifacts:
+    when: always
+    paths: [caitlyn-summary.md, caitlyn-sync.json]
+    reports:
+      junit: caitlyn-sync.xml
+      dotenv: caitlyn.env

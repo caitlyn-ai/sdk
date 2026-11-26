@@ -1423,7 +1423,7 @@ fn running(j: &Job) -> bool {
                 + "`client.knowledge_bases().list()` lists them, and everything about one hangs off its scope. Making a scope sends "
                 + "nothing; a call is sent when its request is awaited.\n\n"
                 + "```no_run\n# async fn run() -> Result<(), caitlyn_sdk::Error> {\nuse caitlyn_sdk::{Auth, Client};\n\n"
-                + "let client = Client::new(\"your-company.getcaitlyn.ai\", Auth::token(\"cait-pat-…\"))?;\n"
+                + "let client = Client::new(\"your-company.caitlyn.ai\", Auth::token(\"cait-pat-…\"))?;\n"
                 + "let kb = client.knowledge_base(\"kb_123\");\n"
                 + "let document = kb.documents().create(\"./leave-policy.pdf\").folder(\"/hr/\").wait().await?;\n"
                 + "println!(\"{} {}\", document.id, document.status);\n"

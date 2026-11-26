@@ -1,0 +1,9 @@
+-- stdout --
+[90mNAME[m                        [90mID[m          [90mLIVE[m  [90mDRAFT[m         [90mUPDATED[m
+[90m─────────────────────────────────────────────────────────────────────────[m
+[1mHR assistant[m                GHT7YRWXPL  v12   [33mchanged[m       2 hours ago
+[1mSupplier contract reviewer[m  REVIEWER01  v7    same as live  3 days ago
+[1mLeave form helper[m           AGYFAMYTND  [90mnone[m  new           5 minutes ago
+
+[90m3 agents[m
+-- stderr --

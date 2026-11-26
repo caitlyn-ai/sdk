@@ -109,11 +109,11 @@ export default defineConfig({
       tableOfContents: { minHeadingLevel: 2, maxHeadingLevel: 3 },
       head: [
         // The site's code language (src/scripts/lang-tabs.ts) on <html> before the page paints: ?lang=, then the
-        // reader's last choice, then TypeScript; curl is the API reference's
+        // reader's last choice, then TypeScript; curl is the API reference's, cli the CLI's
         {
           tag: 'script',
           content:
-            "(()=>{const L=['typescript','python','go','rust','curl'];let k=new URLSearchParams(location.search).get('lang');if(!L.includes(k)){try{k=localStorage.getItem('caitlyn-docs-lang')}catch{}}document.documentElement.dataset.lang=L.includes(k)?k:L[0]})()",
+            "(()=>{const L=['typescript','python','go','rust','curl','cli'];let k=new URLSearchParams(location.search).get('lang');if(!L.includes(k)){try{k=localStorage.getItem('caitlyn-docs-lang')}catch{}}document.documentElement.dataset.lang=L.includes(k)?k:L[0]})()",
         },
         // Only the live build is indexed; a merge request's preview, or any build not marked live, carries noindex on
         // every page (scripts/docs-sitemap.mjs)

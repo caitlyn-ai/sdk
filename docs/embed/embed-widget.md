@@ -29,7 +29,7 @@ Add the embed snippet to your site HTML, anywhere before the closing `</body>` t
   data-agent-id="{AGENT_ID}"
   data-agent-alias-id="{AGENT_ALIAS_ID}"
   data-chat-height="auto"></div>
-<script src="https://your-company.getcaitlyn.ai/scripts/caitlyn-chat.js" defer></script>
+<script src="https://your-company.caitlyn.ai/scripts/caitlyn-chat.js" defer></script>
 ```
 ```jsx tab="React"
 import {useEffect} from 'react';
@@ -37,7 +37,7 @@ import {useEffect} from 'react';
 export const CaitlynEmbed = ({agentId, agentAliasId}) => {
   useEffect(() => {
     const script = document.createElement('script');
-    script.src = 'https://your-company.getcaitlyn.ai/scripts/caitlyn-chat.js';
+    script.src = 'https://your-company.caitlyn.ai/scripts/caitlyn-chat.js';
     script.defer = true;
     document.body.appendChild(script);
     return () => script.remove();
@@ -53,7 +53,7 @@ export default function CaitlynEmbed({agentId, agentAliasId}) {
   return (
     <>
       <div id="caitlyn-chat" data-agent-id={agentId} data-agent-alias-id={agentAliasId} data-chat-height="auto" />
-      <Script src="https://your-company.getcaitlyn.ai/scripts/caitlyn-chat.js" strategy="afterInteractive" />
+      <Script src="https://your-company.caitlyn.ai/scripts/caitlyn-chat.js" strategy="afterInteractive" />
     </>
   );
 }
@@ -169,12 +169,12 @@ If your site enforces a Content Security Policy — and it should — Caitlyn lo
 
 ```text
 Content-Security-Policy:
-  script-src  'self' https://your-company.getcaitlyn.ai;
-  connect-src 'self' https://your-company.getcaitlyn.ai;
-  img-src     'self' data: https://your-company.getcaitlyn.ai;
+  script-src  'self' https://your-company.caitlyn.ai;
+  connect-src 'self' https://your-company.caitlyn.ai;
+  img-src     'self' data: https://your-company.caitlyn.ai;
   style-src   'self' 'unsafe-inline';
-  font-src    'self' https://your-company.getcaitlyn.ai;
-  frame-src   'self' https://your-company.getcaitlyn.ai;
+  font-src    'self' https://your-company.caitlyn.ai;
+  frame-src   'self' https://your-company.caitlyn.ai;
 ```
 
 > **Warning**: The widget injects a small scoped `<style>` block for its loading animation, so `'unsafe-inline'` must remain in `style-src`.
@@ -189,7 +189,7 @@ Paste this tag into every page that should show the chat, just before `</body>`.
 
 ```html
 <script
-  src="https://your-company.getcaitlyn.ai/widget.js"
+  src="https://your-company.caitlyn.ai/widget.js"
   data-agent-id="{AGENT_ID}"
   data-alias-id="{AGENT_ALIAS_ID}"
   async></script>
@@ -218,13 +218,13 @@ Ask your Caitlyn administrator to add each website, including staging and test s
 
 ### Content Security Policy
 
-If your site sends a `Content-Security-Policy` header, add these sources to it. Replace `your-company.getcaitlyn.ai` with your Caitlyn domain, and `{S3_BUCKET_ORIGINS}` with the storage addresses your Caitlyn administrator gives you, where your agent's documents and answer images are kept.
+If your site sends a `Content-Security-Policy` header, add these sources to it. Replace `your-company.caitlyn.ai` with your Caitlyn domain, and `{S3_BUCKET_ORIGINS}` with the storage addresses your Caitlyn administrator gives you, where your agent's documents and answer images are kept.
 
 ```text
 Content-Security-Policy:
-  script-src  https://your-company.getcaitlyn.ai 'wasm-unsafe-eval';
-  connect-src https://your-company.getcaitlyn.ai {S3_BUCKET_ORIGINS} https://cdn.jsdelivr.net/npm/@embedpdf/;
-  img-src     https://your-company.getcaitlyn.ai {S3_BUCKET_ORIGINS} blob:;
+  script-src  https://your-company.caitlyn.ai 'wasm-unsafe-eval';
+  connect-src https://your-company.caitlyn.ai {S3_BUCKET_ORIGINS} https://cdn.jsdelivr.net/npm/@embedpdf/;
+  img-src     https://your-company.caitlyn.ai {S3_BUCKET_ORIGINS} blob:;
   media-src   {S3_BUCKET_ORIGINS};
   style-src   'unsafe-inline';
   worker-src  blob:;

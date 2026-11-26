@@ -23,7 +23,7 @@ setters, and `.send().await` (or `.await`) sends it.
 ```rust
 use caitlyn_sdk::{Auth, Client, Readers, SyncInput};
 
-let client = Client::new("your-company.getcaitlyn.ai", Auth::token("cait-pat-…"))?;
+let client = Client::new("your-company.caitlyn.ai", Auth::token("cait-pat-…"))?;
 let kb = client.knowledge_base("KB4T7YQ2WL");
 
 // A call that starts work returns what the call returned, with wait(), which follows that work to its end.

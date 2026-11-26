@@ -1,0 +1,24 @@
+{
+  "about": "The Ask Caitlyn question set for the CLI (the CLI design, 20.4): questions people ask about the CLI, put nightly to the ask.caitlyn.ai docs agent. Every `caitlyn …` in an answer must parse against the CLI's command tree (an invented command or flag fails the question), and at least 90% of answers must be correct and cite a CLI page. `expect` lists what a correct answer says (every `includes`, and one of each `includesAny`), and `cites` the page it should cite.",
+  "threshold": 0.9,
+  "questions": [
+    { "id": "how-sync-gitlab", "type": "task", "question": "How do I keep a folder in sync with a Caitlyn knowledge base from GitLab CI?", "expect": { "includes": ["kb sync"], "includesAny": [["workload", "CI variable", "CAITLYN_"]] }, "cites": "/cli/" },
+    { "id": "how-publish", "type": "task", "question": "How do I publish a saved version of an agent from the command line?", "expect": { "includes": ["agents versions publish"] }, "cites": "/cli/" },
+    { "id": "how-roll-back", "type": "task", "question": "How do I roll an agent back to its previous version with the CLI?", "expect": { "includes": ["publish"], "includesAny": [["earlier version", "previous version", "again"]] }, "cites": "/cli/" },
+    { "id": "how-edit-draft", "type": "task", "question": "How do I change an agent's draft instructions with the caitlyn CLI without overwriting someone else's change?", "expect": { "includes": ["--if-match"], "includesAny": [["agents draft update", "agents draft edit"]] }, "cites": "/cli/" },
+    { "id": "how-list-docs", "type": "task", "question": "How do I list every document in a knowledge base with the CLI?", "expect": { "includes": ["kb documents list"], "includesAny": [["--all"]] }, "cites": "/cli/reference/" },
+    { "id": "exit-3-sync", "type": "error", "question": "What does exit code 3 from caitlyn kb sync mean, and what do I do?", "expect": { "includesAny": [["unresolved", "needs a decision", "conflict"], ["--report", "plan", "resolution"]] }, "cites": "/cli/exit-codes/" },
+    { "id": "exit-7", "type": "error", "question": "My caitlyn command exited with code 7. What happened?", "expect": { "includesAny": [["conflict", "stale", "ETag", "changed"]] }, "cites": "/cli/exit-codes/" },
+    { "id": "precondition-failed", "type": "error", "question": "The CLI says PRECONDITION_FAILED when I update the draft. How do I fix it?", "expect": { "includesAny": [["--query etag", "read it again", "current ETag"]] }, "cites": "/errors/PRECONDITION_FAILED/" },
+    { "id": "exit-2", "type": "error", "question": "What does exit code 2 mean in the Caitlyn CLI?", "expect": { "includesAny": [["usage", "flag", "argument"]], "includes": ["nothing"] }, "cites": "/cli/exit-codes/" },
+    { "id": "desktop-mcp", "type": "choice", "question": "Should I use the Caitlyn CLI or the MCP server from Claude Desktop?", "expect": { "includes": ["MCP"] }, "cites": "/how-to-integrate/#choose-the-cli-an-sdk-or-the-mcp-server" },
+    { "id": "service-sdk", "type": "choice", "question": "I'm writing a TypeScript service that streams Caitlyn answers. Should I shell out to the caitlyn CLI?", "expect": { "includes": ["SDK"] }, "cites": "/how-to-integrate/#choose-the-cli-an-sdk-or-the-mcp-server" },
+    { "id": "agent-safety", "type": "choice", "question": "Is it safe to let Claude Code run the caitlyn CLI against our workspace?", "expect": { "includesAny": [["--yes", "read only", "read-only", "agent scopes", "dry-run"]] }, "cites": "/cli/ai-agents/" },
+    { "id": "json-all-pages", "type": "flags", "question": "How do I get JSON output for every page of a list with the CLI?", "expect": { "includes": ["--all"], "includesAny": [["jsonl", "--output json", "-o json"]] }, "cites": "/cli/" },
+    { "id": "dry-run-curl", "type": "flags", "question": "Can the CLI show me the HTTP request it would send, as curl?", "expect": { "includes": ["--dry-run"] }, "cites": "/cli/" },
+    { "id": "machine-readable-help", "type": "flags", "question": "How can a script list every caitlyn command and its flags as JSON?", "expect": { "includes": ["caitlyn commands"] }, "cites": "/cli/" },
+    { "id": "telemetry-off", "type": "flags", "question": "How do I stop the Caitlyn CLI sending usage data to Caitlyn?", "expect": { "includesAny": [["telemetry off", "CAITLYN_TELEMETRY=0", "DO_NOT_TRACK"]] }, "cites": "/cli/telemetry/" },
+    { "id": "own-traces", "type": "flags", "question": "How do I send traces of the Caitlyn CLI's API calls to my own OpenTelemetry collector?", "expect": { "includes": ["OTEL_EXPORTER_OTLP_ENDPOINT"] }, "cites": "/cli/telemetry/#your-own-traces" },
+    { "id": "traces-not-usage", "type": "choice", "question": "If I export the Caitlyn CLI's traces to my own collector, does Caitlyn receive them?", "expect": { "includesAny": [["No", "never", "only to"]] }, "cites": "/cli/telemetry/#your-own-traces" }
+  ]
+}

@@ -58,12 +58,12 @@ const ENTRIES = {
   'client + one operation': {
     budget: 41_000,
     code: `import { createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk';
-export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
+export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
   },
   'client + one operation + oauth sign-in': {
     budget: 41_100,
     code: `import { createAuth, createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk';
-const options = { workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'oauth', clientId: 'app', redirectUri: location.origin + '/callback' } };
+const options = { workspace: 'your-company.caitlyn.ai', auth: { mode: 'oauth', clientId: 'app', redirectUri: location.origin + '/callback' } };
 const auth = createAuth(options);
 const client = createCaitlynClient(options, auth);
 export const signIn = () => auth.authorizationUrl();
@@ -74,13 +74,13 @@ export const run = () => getAgentVersion(client, { agentId: 'A', version: 'draft
     budget: 46_200, // 0.10.1: a message's attachments are sent with the storage stall timer (files.ts); the stream runtime's resume from a
     // watch's own Last-Event-ID (45 109)
     code: `import { createCaitlynClient, sendMessage } from '@caitlyn-ai/sdk';
-const client = createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'session' } });
+const client = createCaitlynClient({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'session' } });
 export const ask = async (conversationId, message, onText) => { for await (const e of sendMessage(client, { conversationId, message })) if (e.type === 'text.delta') onText(e.delta); };`,
   },
   'Caitlyn class (every operation)': {
     budget: 59_200, // grows with every operation the model gains, and with the stream runtime: raise it with the change that needs it
     code: `import { Caitlyn } from '@caitlyn-ai/sdk';
-export const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 't' } });`,
+export const caitlyn = new Caitlyn({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'token', token: 't' } });`,
   },
   // A web worker bundled by webpack gets the edge build from '@caitlyn-ai/sdk' (the `worker` condition comes first),
   // and the browser build when it imports '@caitlyn-ai/sdk/browser'.
@@ -89,13 +89,13 @@ export const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', au
     budget: 44_200,
     platform: 'node',
     code: `import { createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk';
-export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
+export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
   },
   'client + one operation, @caitlyn-ai/sdk/browser in a web worker': {
     budget: 41_000,
     conditions: ['worker'],
     code: `import { createCaitlynClient, getAgentVersion } from '@caitlyn-ai/sdk/browser';
-export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
+export const run = (token) => getAgentVersion(createCaitlynClient({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'token', token } }), { agentId: 'A', version: 'draft' });`,
   },
 };
 
@@ -111,13 +111,13 @@ run('npm', ['install', '--no-audit', '--no-fund', '--silent', ...tarballs, `type
 
 // 1. Runtime imports
 fs.writeFileSync(path.join(work, 'esm.mjs'), `import { Caitlyn, NotFoundError, CaitlynError } from '@caitlyn-ai/sdk';
-const c = new Caitlyn({ workspace: 'example.getcaitlyn.ai', auth: { mode: 'token', token: 't' } });
+const c = new Caitlyn({ workspace: 'example.caitlyn.ai', auth: { mode: 'token', token: 't' } });
 if (typeof c.knowledgeBases('KB').documents.list !== 'function' || typeof c.knowledgeBases('KB').documents('D').wait !== 'function' || !(new NotFoundError({ $metadata: {}, message: 'x' }) instanceof CaitlynError)) process.exit(1);
 if (new NotFoundError({ $metadata: {}, message: 'x' }).constructor.name !== 'NotFoundError') { console.error('esm: NotFoundError is named', new NotFoundError({ $metadata: {}, message: 'x' }).constructor.name); process.exit(1); }
 console.log('esm ok');`);
 fs.writeFileSync(path.join(work, 'cjs.cjs'), `const { Caitlyn, createCaitlynClient, ConflictError } = require('@caitlyn-ai/sdk');
 if (new ConflictError({ $metadata: {}, message: 'x' }).constructor.name !== 'ConflictError') process.exit(1);
-const c = new Caitlyn({ workspace: 'example.getcaitlyn.ai', auth: { mode: 'clientCredentials', clientId: 'a', clientSecret: 'b' } });
+const c = new Caitlyn({ workspace: 'example.caitlyn.ai', auth: { mode: 'clientCredentials', clientId: 'a', clientSecret: 'b' } });
 if (typeof c.auth.token !== 'function' || typeof createCaitlynClient !== 'function') process.exit(1);
 console.log('cjs ok');`);
 process.stdout.write(run('node', ['esm.mjs']) + run('node', ['cjs.cjs']));

@@ -1,0 +1,8 @@
+-- stdout --
+-- stderr --
++ Hashed 214 files                                         0.8 s
++ Planned: 3 new, 7 changed, 1 moved, 5 to remove, 198 unchanged
+[K  Uploading  ############--------  6 of 10 - 11.2 of 18.4 MB - about 20 s left[K+ Uploaded 10 files (18.4 MB)                               24 s
++ Processed 10 documents                                1 m 52 s
++ HR policies is in step with ./handbook
+  3 created · 7 new versions · 1 moved · 5 removed · 198 unchanged

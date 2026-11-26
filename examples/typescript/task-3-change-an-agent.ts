@@ -1,7 +1,7 @@
 // Task 3: change an agent safely: edit its draft with the ETag you read, then publish it.
 import { Caitlyn, PreconditionFailedError, ValidationError } from '@caitlyn-ai/sdk';
 
-const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! } });
+const caitlyn = new Caitlyn({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! } });
 
 export async function addClauseNumbers(agentId: string): Promise<void> {
   const agent = caitlyn.agents(agentId);

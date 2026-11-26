@@ -538,7 +538,7 @@ final class ScopeWriter {
                 + "`client.knowledge_base(id).documents().create(file)`, `client.agent(id).draft().publish()`.", ""));
         w.l("#[derive(Clone, Debug)]\npub struct Client {\n    pub(crate) core: rt::Client,\n}\n\n");
         w.l("impl Client {\n");
-        w.l(Names.doc("A client for `workspace` (for example `your-company.getcaitlyn.ai`), signed in with `auth` (for example "
+        w.l(Names.doc("A client for `workspace` (for example `your-company.caitlyn.ai`), signed in with `auth` (for example "
                 + "`Auth::token(\"cait-pat-…\")`). Nothing is read from the environment.", "    "));
         w.l("    pub fn new(workspace: impl Into<String>, auth: impl Into<rt::Auth>) -> Result<Self, Error> {\n        Self::builder(workspace, auth).build()\n    }\n\n");
         w.l("    /// A builder, to set the endpoint, the HTTP client, retries, the app ID or telemetry.\n");

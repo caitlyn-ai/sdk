@@ -14,14 +14,14 @@ session_cookie = "caitlyn_session=…"
 
 # #region token
 script = Caitlyn(
-    workspace="your-company.getcaitlyn.ai",
+    workspace="your-company.caitlyn.ai",
     auth=Token(os.environ["CAITLYN_TOKEN"]),  # a personal access token, cait-pat-…
 )
 # #endregion
 
 # #region client-credentials
 service = Caitlyn(
-    workspace="your-company.getcaitlyn.ai",
+    workspace="your-company.caitlyn.ai",
     auth=ClientCredentials(
         client_id=os.environ["CAITLYN_CLIENT_ID"],
         client_secret=os.environ["CAITLYN_CLIENT_SECRET"],
@@ -32,7 +32,7 @@ service = Caitlyn(
 
 # #region oauth
 as_person = Caitlyn(
-    workspace="your-company.getcaitlyn.ai",
+    workspace="your-company.caitlyn.ai",
     auth=OAuth(
         client_id=os.environ["CAITLYN_CLIENT_ID"],
         client_secret=os.environ.get("CAITLYN_CLIENT_SECRET"),  # a confidential client on a server
@@ -74,21 +74,21 @@ def callback(code: str, returned_state: str) -> None:
 
 # #region aws-iam
 worker = Caitlyn(
-    workspace="your-company.getcaitlyn.ai",
+    workspace="your-company.caitlyn.ai",
     auth=AwsIam(region="ap-southeast-2"),  # the workload's own AWS credentials
 )
 # #endregion
 
 # #region workload-identity
 ci_job = Caitlyn(
-    workspace="your-company.getcaitlyn.ai",
+    workspace="your-company.caitlyn.ai",
     auth=WorkloadIdentity(token=lambda: os.environ["CAITLYN_ID_TOKEN"]),  # GitLab CI id_tokens
 )
 # #endregion
 
 # #region session
 app_page = Caitlyn(
-    workspace="your-company.getcaitlyn.ai",
-    auth=Session(cookie=session_cookie, origin="https://your-company.getcaitlyn.ai"),
+    workspace="your-company.caitlyn.ai",
+    auth=Session(cookie=session_cookie, origin="https://your-company.caitlyn.ai"),
 )
 # #endregion

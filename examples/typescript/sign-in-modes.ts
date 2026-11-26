@@ -8,14 +8,14 @@ declare const sessionCookie: string;
 
 // #region token
 const script = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! }, // a personal access token, cait-pat-…
 });
 // #endregion
 
 // #region client-credentials
 const service = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: {
     mode: 'clientCredentials',
     clientId: process.env.CAITLYN_CLIENT_ID!,
@@ -27,7 +27,7 @@ const service = new Caitlyn({
 
 // #region oauth
 const asPerson = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: {
     mode: 'oauth',
     clientId: process.env.CAITLYN_CLIENT_ID!,
@@ -65,22 +65,22 @@ await asPerson.auth.signOut();
 
 // #region aws-iam
 const worker = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: { mode: 'awsIam', region: 'ap-southeast-2' }, // the workload's own AWS credentials
 });
 // #endregion
 
 // #region workload-identity
 const ciJob = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: { mode: 'workloadIdentity', token: () => process.env.CAITLYN_ID_TOKEN! }, // GitLab CI id_tokens
 });
 // #endregion
 
 // #region session
 const appPage = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
-  auth: { mode: 'session', cookie: sessionCookie, origin: 'https://your-company.getcaitlyn.ai' },
+  workspace: 'your-company.caitlyn.ai',
+  auth: { mode: 'session', cookie: sessionCookie, origin: 'https://your-company.caitlyn.ai' },
 });
 // #endregion
 

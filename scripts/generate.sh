@@ -5,7 +5,8 @@
 #   1. build/model/model.json from model/model.json (scripts/prepare-model.mjs);
 #   2. compile the generators and publish them to codegen/build/repo;
 #   3. `smithy build` in codegen/, which runs the four generators (codegen/smithy-build.json);
-#   4. copy the output into typescript/packages/sdk, python/caitlyn, go/ and rust/caitlyn-sdk, and tidy it;
+#   4. copy the output into typescript/packages/sdk, python/caitlyn, go/ and rust/caitlyn-sdk, and tidy it, and the
+#      CLI's command manifest into cli/internal/spec/commands.json (scripts/cli-manifest.mjs);
 #   5. conformance/cases/examples.json from the model's @examples (scripts/gen-example-cases.mjs);
 #   6. a check that every file naming the SDK version names the one in VERSION (scripts/version.mjs).
 # Generated code is committed: a model change shows up as a reviewable diff.
@@ -54,6 +55,9 @@ echo "Rust: rust/caitlyn-sdk"
 rm -rf rust/caitlyn-sdk
 cp -R "$out/rust/caitlyn-rust-client-codegen" rust/caitlyn-sdk
 rustfmt --edition 2021 --config-path rust/rustfmt.toml rust/caitlyn-sdk/src/lib.rs
+
+echo "CLI: cli/internal/spec/commands.json"
+node scripts/cli-manifest.mjs "$out/cli/caitlyn-cli-codegen/commands.json" cli/internal/spec/commands.json
 
 node scripts/check-error-codes.mjs
 node scripts/version.mjs check

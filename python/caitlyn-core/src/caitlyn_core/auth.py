@@ -60,14 +60,14 @@ REFRESH_EARLY_SECONDS = 60.0
 REQUEST_ID_HEADER = "Caitlyn-Request-Id"
 
 
-_WORKSPACE_FORM = "your-company.getcaitlyn.ai or https://your-company.getcaitlyn.ai"
+_WORKSPACE_FORM = "your-company.caitlyn.ai or https://your-company.caitlyn.ai"
 _SCHEME = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.-]*)://")
 _HOST = re.compile(r"^[a-zA-Z0-9.-]+(:\d+)?$")
 
 
 def workspace_host(workspace: str) -> str:
-    """A workspace given as a hostname (``your-company.getcaitlyn.ai``) or as its URL
-    (``https://your-company.getcaitlyn.ai``, with or without a trailing slash), as its bare hostname in lower case.
+    """A workspace given as a hostname (``your-company.caitlyn.ai``) or as its URL
+    (``https://your-company.caitlyn.ai``, with or without a trailing slash), as its bare hostname in lower case.
     Anything else (another scheme, a path, a query string, a fragment, user information, an empty value) raises
     ``ValueError`` naming the expected form (PROTOCOL.md 12.1)."""
     given = str(workspace).strip()

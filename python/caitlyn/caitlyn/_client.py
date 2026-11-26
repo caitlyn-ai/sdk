@@ -11079,7 +11079,7 @@ class Caitlyn:
     Synchronous client. Use as `with Caitlyn(...) as caitlyn:`, or call `close()`.
 
     Args:
-        workspace: your workspace host, for example `your-company.getcaitlyn.ai`.
+        workspace: your workspace host, for example `your-company.caitlyn.ai`.
         auth: how to sign in (`caitlyn.auth`), for example `Token(os.environ["CAITLYN_TOKEN"])` or
             `ClientCredentials(client_id, client_secret)`.
         endpoint: overrides the URL built from `workspace` (a proxy, a local app). Tokens are still for `workspace`.
@@ -11206,7 +11206,7 @@ class AsyncCaitlyn:
     Asynchronous client. Use as `async with AsyncCaitlyn(...) as caitlyn:`, or call `aclose()`.
 
     Args:
-        workspace: your workspace host, for example `your-company.getcaitlyn.ai`.
+        workspace: your workspace host, for example `your-company.caitlyn.ai`.
         auth: how to sign in (`caitlyn.auth`), for example `Token(os.environ["CAITLYN_TOKEN"])` or
             `ClientCredentials(client_id, client_secret)`.
         endpoint: overrides the URL built from `workspace` (a proxy, a local app). Tokens are still for `workspace`.

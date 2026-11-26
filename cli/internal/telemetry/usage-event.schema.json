@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Usage data for Caitlyn: the Caitlyn CLI's usage batch",
+  "description": "What the CLI sends when usage data for Caitlyn is on: a batch of events, one per command run, each with exactly these fields. A test keeps this file equal to the CLI's event and to the docs' example.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "events"
+  ],
+  "properties": {
+    "events": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    }
+  },
+  "$defs": {
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_id",
+        "time",
+        "install_id",
+        "command",
+        "flags",
+        "exit_code",
+        "duration_ms",
+        "version",
+        "channel",
+        "os",
+        "arch",
+        "ci",
+        "agent",
+        "tty"
+      ],
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "time": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:00:00Z$"
+        },
+        "install_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "command": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+( [a-z0-9-]+)*$",
+          "maxLength": 128
+        },
+        "flags": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "pattern": "^(--[a-z0-9-]+|unknown)$"
+          }
+        },
+        "exit_code": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "multipleOf": 10
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "channel": {
+          "enum": [
+            "stable",
+            "beta",
+            "unknown"
+          ]
+        },
+        "os": {
+          "type": "string",
+          "pattern": "^[a-z0-9]{1,16}$"
+        },
+        "arch": {
+          "type": "string",
+          "pattern": "^[a-z0-9]{1,16}$"
+        },
+        "ci": {
+          "type": "boolean"
+        },
+        "ci_provider": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]{1,32}$"
+        },
+        "agent": {
+          "type": "boolean"
+        },
+        "agent_name": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]{1,32}$"
+        },
+        "tty": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

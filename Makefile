@@ -2,7 +2,7 @@
 # JDK or Go on developer machines. CI runs the same scripts in the same image. `make help` lists the targets.
 RUN := scripts/docker.sh
 
-.PHONY: help generate check-generated model-snapshot-check examples-live typescript python go rust conformance check docs docs-kb-dry-run model-check shell clean
+.PHONY: help generate check-generated model-snapshot-check examples-live typescript python go rust cli cli-snapshot conformance check docs docs-kb-dry-run cli-examples cli-agent-eval model-check shell clean
 
 help: ## List the targets
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -27,6 +27,12 @@ python: ## Python: install, pyright --strict, generator tests, conformance
 go: ## Go: build, vet, staticcheck, conformance (also with the race detector)
 	@$(RUN) scripts/test-go.sh
 
+cli: ## The CLI: build, vet, staticcheck, and the tests with the race detector
+	@$(RUN) sh -c 'cd cli && go build ./... && go vet ./... && staticcheck ./... && CGO_ENABLED=1 go test -race -count=1 ./...'
+
+cli-snapshot: ## The CLI's GoReleaser snapshot: every archive and package into cli/dist, nothing signed or published
+	@$(RUN) sh -c 'cd cli && goreleaser release --snapshot --clean --skip=docker,sign,sbom'
+
 rust: ## Rust: rustfmt, clippy, unit and doc tests, conformance
 	@$(RUN) scripts/test-rust.sh
 
@@ -47,6 +53,12 @@ docs: ## Build the developer docs site into build/docs (docs/README.md)
 
 docs-kb-dry-run: docs ## Show what the knowledge-base publisher would send, without sending anything
 	@$(RUN) node scripts/docs-kb-publish.mjs --dry-run
+
+cli-examples: ## Run the CLI's examples (examples/cli/) against the mock server and compare them with their transcripts
+	@$(RUN) scripts/cli-examples.sh
+
+cli-agent-eval: ## The CLI's agent evaluation, offline: its scripted agent plays every task's reference solution (cli/agent-eval/eval.mjs)
+	@$(RUN) cli/agent-eval/run.sh --agent scripted
 
 model-check: ## Is model/model.json the latest published model? (needs GITLAB_TOKEN)
 	@scripts/model-check.sh

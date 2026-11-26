@@ -9,7 +9,7 @@ import { Caitlyn, CaitlynError, NotFoundError, ValidationError } from '@caitlyn-
 /** A client whose every call is answered with this status, headers and body. */
 const answering = (statusCode: number, body: string, headers: Record<string, string> = {}) =>
   new Caitlyn({
-    workspace: 'your-company.getcaitlyn.ai',
+    workspace: 'your-company.caitlyn.ai',
     auth: { mode: 'token', token: 'cait-pat-test' },
     maxAttempts: 1,
     requestHandler: { handle: async (_: HttpRequest) => ({ response: new HttpResponse({ statusCode, headers, body: new TextEncoder().encode(body) }) }) },

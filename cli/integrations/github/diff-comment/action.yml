@@ -1,0 +1,50 @@
+# caitlyn-ai/diff-comment: posts a Markdown plan (caitlyn diff --report markdown=plan.md) to the pull request, and
+# updates that same comment on later pushes instead of adding another (the CLI design, 15.8). The CLI never posts
+# on its own: this uses the workflow's token, which needs permissions pull-requests write.
+name: Caitlyn plan comment
+description: Post or update the Caitlyn plan as a pull-request comment
+author: Caitlyn
+branding:
+  icon: message-square
+  color: purple
+inputs:
+  file:
+    description: The Markdown file to post
+    default: plan.md
+  token:
+    description: A token that may comment on pull requests
+    default: ${{ github.token }}
+  marker:
+    description: Identifies the comment to update; change it to keep several plans apart
+    default: caitlyn-diff
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        FILE: ${{ inputs.file }}
+        MARKER: ${{ inputs.marker }}
+        PR: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+      run: |
+        set -euo pipefail
+        if [ -z "$PR" ]; then
+          echo "::notice title=Caitlyn plan comment::Not a pull request, so nothing was posted."
+          exit 0
+        fi
+        if [ ! -f "$FILE" ]; then
+          echo "::warning title=Caitlyn plan comment::$FILE wasn't written, so nothing was posted."
+          exit 0
+        fi
+        tag="<!-- $MARKER -->"
+        body="$( (printf '%s\n' "$tag"; head -c 65000 "$FILE") | jq -Rs '{body: .}')"
+        # Only this token's own comment is updated: anyone can post a comment that starts with the marker. The
+        # workflow's token can't read /user, and comments as github-actions[bot].
+        me="$(gh api user --jq .login 2> /dev/null || echo 'github-actions[bot]')"
+        id="$(gh api --paginate "repos/$REPO/issues/$PR/comments" --jq ".[] | select(.user.login == \"$me\" and (.body | startswith(\"$tag\"))) | .id" | head -n 1)"
+        if [ -n "$id" ]; then
+          gh api -X PATCH "repos/$REPO/issues/comments/$id" --input - <<< "$body" > /dev/null
+        else
+          gh api -X POST "repos/$REPO/issues/$PR/comments" --input - <<< "$body" > /dev/null
+        fi

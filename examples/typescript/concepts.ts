@@ -3,7 +3,7 @@
 import { trace } from '@opentelemetry/api';
 import { Caitlyn, CaitlynConnectionError, CaitlynError, ErrorCode, NotFoundError, PreconditionFailedError, ValidationError } from '@caitlyn-ai/sdk';
 
-const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! } });
+const caitlyn = new Caitlyn({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! } });
 const agentId = 'GHT7YRWXPL';
 const conversationId = '0193a6f2-7c4e-7b1a-9d2e-3f5a8c1b0e47';
 
@@ -74,7 +74,7 @@ export async function errorsIfMatch(): Promise<void> {
 export function retries(): Caitlyn {
   // #region retries
   const patient = new Caitlyn({
-    workspace: 'your-company.getcaitlyn.ai',
+    workspace: 'your-company.caitlyn.ai',
     auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! },
     maxAttempts: 5, // the first attempt included; default 3
     maxRetryDelayMs: 120_000, // the longest Retry-After to wait for; default 60 seconds
@@ -86,7 +86,7 @@ export function retries(): Caitlyn {
 export function retryBudget(): Caitlyn {
   // #region retry-budget
   const batch = new Caitlyn({
-    workspace: 'your-company.getcaitlyn.ai',
+    workspace: 'your-company.caitlyn.ai',
     auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! },
     retryBudget: 2_000, // retry tokens shared by every call on this client; default 500, and 0 turns retries off
   });
@@ -186,7 +186,7 @@ export async function paginationCursor(cursor: string | undefined): Promise<void
 export function telemetry(): Caitlyn {
   // #region telemetry
   const traced = new Caitlyn({
-    workspace: 'your-company.getcaitlyn.ai',
+    workspace: 'your-company.caitlyn.ai',
     auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! },
     telemetry: { tracerProvider: trace.getTracerProvider() }, // default: the global provider; enabled: false turns spans off
   });

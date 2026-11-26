@@ -85,7 +85,7 @@ T = TypeVar("T")
 
 
 def client(mock: Mock, **kw: Any) -> AsyncCaitlyn:
-    return AsyncCaitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base, **kw)
+    return AsyncCaitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base, **kw)
 
 
 async def collect(it: AsyncIterable[T]) -> list[T]:
@@ -306,7 +306,7 @@ async def test_send_break_then_final(mock: Mock, case_id: str) -> None:
     # Spaced events, so the answer is still arriving when the caller breaks out.
     mock.faults(streamDelayMs=40)
     c = client(mock)
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     answer = "Staff receive 20 days of annual leave."
 
     def requests_for(conversation_id: str) -> list[dict[str, Any]]:
@@ -932,7 +932,7 @@ def refused_endpoint() -> str:
 async def test_connection_error(mock: Mock, case_id: str) -> None:
     mock.faults(status={"GetAgentVersion": [{"close": True}]})
     closed = await expect_error(client(mock, max_attempts=1).agents("GHT7YRWXPL").draft.get())
-    refused_client = AsyncCaitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=refused_endpoint(), max_attempts=1)
+    refused_client = AsyncCaitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=refused_endpoint(), max_attempts=1)
     refused = await expect_error(refused_client.agents("GHT7YRWXPL").draft.get())
     for err in (closed, refused):
         assert isinstance(err, CaitlynConnectionError), repr(err)
@@ -1179,30 +1179,30 @@ async def test_telemetry(mock: Mock, case_id: str) -> None:
 
 @case("endpoint.workspace-url")
 async def test_endpoint_workspace_url(mock: Mock, case_id: str) -> None:
-    for w in ["https://your-company.getcaitlyn.ai", "https://your-company.getcaitlyn.ai/", "your-company.getcaitlyn.ai/", "HTTPS://Your-Company.GetCaitlyn.ai"]:
+    for w in ["https://your-company.caitlyn.ai", "https://your-company.caitlyn.ai/", "your-company.caitlyn.ai/", "HTTPS://Your-Company.Caitlyn.ai"]:
         c = AsyncCaitlyn(workspace=w, auth=Token("pat_test"))
-        assert c.auth.workspace == "your-company.getcaitlyn.ai", w
-        assert c.auth.token_endpoint == "https://your-company.getcaitlyn.ai/api/oauth/token", w
+        assert c.auth.workspace == "your-company.caitlyn.ai", w
+        assert c.auth.token_endpoint == "https://your-company.caitlyn.ai/api/oauth/token", w
         await c.aclose()
     refused = [
-        "https://your-company.getcaitlyn.ai/api",
-        "https://your-company.getcaitlyn.ai/?x=1",
-        "https://your-company.getcaitlyn.ai#top",
-        "http://your-company.getcaitlyn.ai",
-        "ftp://your-company.getcaitlyn.ai",
-        "me@your-company.getcaitlyn.ai",
+        "https://your-company.caitlyn.ai/api",
+        "https://your-company.caitlyn.ai/?x=1",
+        "https://your-company.caitlyn.ai#top",
+        "http://your-company.caitlyn.ai",
+        "ftp://your-company.caitlyn.ai",
+        "me@your-company.caitlyn.ai",
         "",
     ]
     for w in refused:
-        with pytest.raises(ValueError, match="your-company.getcaitlyn.ai or https://your-company.getcaitlyn.ai"):
+        with pytest.raises(ValueError, match="your-company.caitlyn.ai or https://your-company.caitlyn.ai"):
             AsyncCaitlyn(workspace=w, auth=Token("pat_test"))
 
 
 @case("endpoint.workspace")
 async def test_endpoint(mock: Mock, case_id: str) -> None:
-    assert workspace_endpoint("your-company.getcaitlyn.ai") == "https://your-company.getcaitlyn.ai/api"
-    c = AsyncCaitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"))
-    assert c._core.config.endpoint == "https://your-company.getcaitlyn.ai/api"  # pyright: ignore[reportPrivateUsage]
+    assert workspace_endpoint("your-company.caitlyn.ai") == "https://your-company.caitlyn.ai/api"
+    c = AsyncCaitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"))
+    assert c._core.config.endpoint == "https://your-company.caitlyn.ai/api"  # pyright: ignore[reportPrivateUsage]
     await c.aclose()
 
 
@@ -1214,7 +1214,7 @@ async def test_own_http_client_uses_the_endpoint(mock: Mock) -> None:
             assert v.name == "draft"
     sync_own = httpx.Client()
     with sync_own:
-        c = caitlyn.Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base, http_client=sync_own)
+        c = caitlyn.Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base, http_client=sync_own)
         assert c.agents("GHT7YRWXPL").draft.get().name == "draft"
     assert [r["path"] for r in mock.api()] == ["/v3/agents/GHT7YRWXPL/versions/draft"] * 3
 
@@ -1231,11 +1231,11 @@ MOCK_AWS_REGION = "ap-southeast-2"
 MOCK_PAT = "pat_test"
 MOCK_SESSION_COOKIE = "caitlyn_session=mock-session"
 # The audience comes from the workspace, never from the endpoint override these tests use.
-RESOURCE = "https://your-company.getcaitlyn.ai/api"
+RESOURCE = "https://your-company.caitlyn.ai/api"
 REDIRECT = "https://app.example.com/callback"
 
 
-def signed_in(mock: Mock, auth: Auth, workspace: str = "your-company.getcaitlyn.ai") -> AsyncCaitlyn:
+def signed_in(mock: Mock, auth: Auth, workspace: str = "your-company.caitlyn.ai") -> AsyncCaitlyn:
     return AsyncCaitlyn(workspace=workspace, endpoint=mock.base, auth=auth)
 
 
@@ -1321,7 +1321,7 @@ def environment(**values: str | None) -> Iterator[None]:
 async def test_auth_workspace(mock: Mock, case_id: str) -> None:
     sign_in_required(mock)
     # A workspace given as a URL is reduced to its hostname.
-    await read(signed_in(mock, cc_auth(), "https://your-company.getcaitlyn.ai/"))
+    await read(signed_in(mock, cc_auth(), "https://your-company.caitlyn.ai/"))
     [form] = mock.token_requests()  # sent to the overriding endpoint
     assert form["resource"] == RESOURCE
     assert len(mock.api()) == 1
@@ -1602,7 +1602,7 @@ async def test_auth_workload_identity(mock: Mock, case_id: str) -> None:
     await read(signed_in(mock, WorkloadIdentity(ci_token)))
     assert asked == 1
     assert mock.api()[0]["headers"]["authorization"].startswith("Bearer cai_x_oidc_")
-    err = await auth_error(read(signed_in(mock, WorkloadIdentity(lambda: mock_oidc_token("https://other.getcaitlyn.ai/api")))))
+    err = await auth_error(read(signed_in(mock, WorkloadIdentity(lambda: mock_oidc_token("https://other.caitlyn.ai/api")))))
     assert err.code == "invalid_grant"
 
 
@@ -1811,7 +1811,7 @@ def test_sync_sign_in_one_token_across_threads(mock: Mock) -> None:
     from caitlyn import Caitlyn
 
     sign_in_required(mock)
-    c = Caitlyn(workspace="your-company.getcaitlyn.ai", endpoint=mock.base, auth=cc_auth())
+    c = Caitlyn(workspace="your-company.caitlyn.ai", endpoint=mock.base, auth=cc_auth())
     def call(_: int) -> AgentVersion:
         return c.agents("GHT7YRWXPL").draft.get()
 
@@ -1829,7 +1829,7 @@ def test_sync_oauth_sign_in_refresh_and_sign_out(mock: Mock) -> None:
 
     sign_in_required(mock)
     store = MemoryStore()
-    c = Caitlyn(workspace="your-company.getcaitlyn.ai", endpoint=mock.base, auth=OAuth(MOCK_OAUTH_CLIENT[0], redirect_uri=REDIRECT, token_store=store))
+    c = Caitlyn(workspace="your-company.caitlyn.ai", endpoint=mock.base, auth=OAuth(MOCK_OAUTH_CLIENT[0], redirect_uri=REDIRECT, token_store=store))
     start = c.auth.authorization_url(state="kept")
     assert start.state == "kept"
     redirect = httpx.URL(httpx.get(start.url).headers["location"])
@@ -1850,7 +1850,7 @@ def test_sync_client_refuses_async_callbacks(mock: Mock) -> None:
     async def ci_token() -> str:
         return mock_oidc_token(RESOURCE)
 
-    c = Caitlyn(workspace="your-company.getcaitlyn.ai", endpoint=mock.base, auth=WorkloadIdentity(ci_token))
+    c = Caitlyn(workspace="your-company.caitlyn.ai", endpoint=mock.base, auth=WorkloadIdentity(ci_token))
     with pytest.raises(TypeError, match="AsyncCaitlyn"):
         c.agents("GHT7YRWXPL").draft.get()
 
@@ -1895,7 +1895,7 @@ def query_of(r: dict[str, Any]) -> dict[str, str]:
 
 @case("scope.sends-nothing")
 async def test_scope_sends_nothing(mock: Mock, case_id: str) -> None:
-    for c in (client(mock), Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)):
+    for c in (client(mock), Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)):
         kb = c.knowledge_bases(KB)
         made: list[object] = [
             kb, kb.documents("doc-0001"), kb.documents("doc-0001").versions("3"), kb.documents("doc-0001").access, kb.folders("/hr/"),
@@ -2056,7 +2056,7 @@ async def test_access_public(mock: Mock, case_id: str) -> None:
 
 @case("access.set-no-if-match")
 async def test_access_set_no_if_match(mock: Mock, case_id: str) -> None:
-    for c in (client(mock), Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)):
+    for c in (client(mock), Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)):
         mock.reset()
         out = c.knowledge_bases(KB).folders("/hr/investigations/").access.set(readers={"roles": ["hr-team"]})
         if inspect.isawaitable(out):
@@ -2141,7 +2141,7 @@ async def test_result_thing_etag(mock: Mock, case_id: str) -> None:
         filled = await client(mock, http_client=own).knowledge_bases(KB).documents("doc-0001").get()
     assert filled.etag == '"from-the-header"'
     with httpx.Client(transport=httpx.MockTransport(answer)) as own_sync:
-        sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base, http_client=own_sync)
+        sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base, http_client=own_sync)
         assert sync.knowledge_bases(KB).documents("doc-0001").get().etag == '"from-the-header"'
 
 
@@ -2191,7 +2191,7 @@ async def test_estimate_caller_hints(mock: Mock, case_id: str) -> None:
     assert [d.get("hints") for d in documents] == [{"pages": 2}, None]
     assert all("hints" not in i for i in bodies.of("CreateIngestionBatch")[-1]["items"])
     # The synchronous client the same.
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base, interceptors=[bodies])
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base, interceptors=[bodies])
     sync.knowledge_bases(KB).documents.create.estimate(UploadFile.from_bytes(b"x", name="x.pdf", hints={"pages": 1}))
     assert bodies.of("EstimateIngestion")[-1]["documents"][0]["hints"] == {"pages": 1}
 
@@ -2255,7 +2255,7 @@ async def test_wait_done(mock: Mock, case_id: str) -> None:
     # The synchronous client's wait.
     mock.reset()
     mock.faults(busyDocuments={"doc-0003": True})
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     done = await asyncio.to_thread(sync.knowledge_bases(KB).documents("doc-0003").wait, timeout=10)
     assert str(done.status) == "indexed"
 
@@ -2316,7 +2316,7 @@ async def test_wait_delete_processing(mock: Mock, tmp_path: Path, case_id: str) 
         await made.get()
     assert made.id not in [d.id async for d in kb.documents.list(folder="/hr/")], "it does not come back"
     # The same on the synchronous client.
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     sync_kb = sync.knowledge_bases(KB)
     sync_made = await asyncio.to_thread(lambda: sync_kb.documents.create(f, folder="/pay/"))
     assert await asyncio.to_thread(lambda: sync_made.delete().wait(timeout=10)) is None
@@ -2344,7 +2344,7 @@ async def test_wait_started_work(mock: Mock, tmp_path: Path, case_id: str) -> No
             break
     assert (await filled.wait(timeout=10)).id == KB
     # The synchronous client returns at once, so .wait() chains.
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     chained = await asyncio.to_thread(lambda: sync.knowledge_bases(KB).documents.create(f, folder="/pay/").wait(timeout=10))
     assert str(chained.status) == "indexed" and chained.folder == "/pay/"
     created = await asyncio.to_thread(lambda: sync.knowledge_bases.create(name="Pay policies").wait(timeout=10))
@@ -2379,7 +2379,7 @@ async def test_wait_busy_status(mock: Mock, case_id: str) -> None:
 async def test_watch_event_types(mock: Mock, case_id: str) -> None:
     from caitlyn.models import Document
 
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base).knowledge_bases(KB)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base).knowledge_bases(KB)
     kb = client(mock).knowledge_bases(KB)
     # A snapshot entry and a change event (document.updated) carry the model's types: datetimes, not strings.
     for run in ("async", "sync"):
@@ -2413,7 +2413,7 @@ async def test_watch_event_types(mock: Mock, case_id: str) -> None:
 @case("watch.break-closes")
 async def test_watch_break_closes(mock: Mock, case_id: str) -> None:
     kb = client(mock).knowledge_bases(KB)
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base).knowledge_bases(KB)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base).knowledge_bases(KB)
 
     async def closed_within_a_second(before: int, requests_before: int, how: str) -> None:
         deadline = time.monotonic() + 1
@@ -2462,7 +2462,7 @@ async def test_wait_timeout(mock: Mock, case_id: str) -> None:
     # The synchronous client: the same error, and the watch closed too.
     mock.reset()
     mock.faults(busyDocuments={"doc-0002": True}, jobSteps=100_000, watchTickMs=50)
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     with pytest.raises(WaitTimeoutError) as sync_timed_out:
         await asyncio.to_thread(sync.knowledge_bases(KB).documents("doc-0002").wait, timeout=0.5)
     assert sync_timed_out.value.code == "WAIT_TIMEOUT"
@@ -2524,7 +2524,7 @@ async def test_wait_deadline_reread(mock: Mock, tmp_path: Path, case_id: str) ->
     # The synchronous client's wait, whose watch is read on a thread of its own.
     mock.reset()
     mock.faults(deadlinePassed="uploads")
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     made = sync.knowledge_bases(KB).ingestion.batches.create(start="manual", items=[batch_item("/hr/annual-leave.pdf", data)])
     made.planned(timeout=10)
     started = made.start()
@@ -2592,7 +2592,7 @@ async def test_wait_progress(mock: Mock, case_id: str) -> None:
     mock.reset()
     mock.faults(busyDocuments={"doc-0002": True}, jobSteps=2)
     sync_seen: list[Any] = []
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     await asyncio.to_thread(lambda: sync.knowledge_bases(KB).documents("doc-0002").wait(timeout=10, on_progress=sync_seen.append))
     assert sync_seen and sync_seen[0].stage is not None
     mock.reset()
@@ -2672,7 +2672,7 @@ async def test_wait_planned(mock: Mock, case_id: str) -> None:
 @case("start.if-match-optional")
 async def test_start_if_match_optional(mock: Mock, case_id: str) -> None:
     kb = client(mock).knowledge_bases(KB)
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base).knowledge_bases(KB)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base).knowledge_bases(KB)
 
     async def planned_batch(path: str) -> tuple[str, str]:
         item = IngestionItemInput(path=path, sha256=sha_b64(path.encode()), byte_size=len(path), content_type="text/markdown")
@@ -2710,7 +2710,7 @@ async def test_wait_snapshot_entry(mock: Mock, tmp_path: Path, case_id: str) -> 
 
     report = await client(mock).knowledge_bases(KB).ingestion.sync(folder_of(tmp_path, {"a.md": b"# A\n"}), folder="/hr/")
     batch_id = report.batch.id
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     # Each is done already, so the first connection's snapshot ends the wait, with the entry under the scope's filter
     # name, as the thing's type.
     akb, skb = client(mock).knowledge_bases(KB), sync.knowledge_bases(KB)
@@ -2739,7 +2739,7 @@ async def test_scope_download(mock: Mock, case_id: str) -> None:
     # GetDocumentDownload answers 200 {url, expiresAt}: the address comes back, and nothing is sent to it.
     content = await client(mock).knowledge_bases(KB).documents("doc-0001").download()
     assert content.url and content.expires_at is not None
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     assert sync.knowledge_bases(KB).documents("doc-0001").download().url == content.url
     paths = [str(r.get("path")) for r in mock.requests() if r.get("method")]
     assert paths == [f"/v3/knowledge-bases/{KB}/documents/doc-0001/download"] * 2, "no request to the address"
@@ -2755,7 +2755,7 @@ async def test_core_content_redirect(mock: Mock, case_id: str) -> None:
     async with httpx.AsyncClient(follow_redirects=True) as following:
         again = await client(mock, http_client=following).core.documents.content(KB, "doc-0001")
     with httpx.Client(follow_redirects=True) as following_sync:
-        sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base, http_client=following_sync)
+        sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base, http_client=following_sync)
         sync_raw = sync.core.documents.content(KB, "doc-0001")
     assert again.location == sync_raw.location == raw.location
     assert [str(r.get("path")) for r in mock.requests() if r.get("method")] == [content_path] * 3, "the address is never requested"
@@ -2771,7 +2771,7 @@ async def test_send_text(mock: Mock, case_id: str) -> None:
                 deltas.append(event.delta)
     text = [t async for t in (await c.conversations("c-1").send("How many days?")).text()]
     assert text == deltas and text, "only the answer's text deltas, in order"
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     assert list(sync.conversations("c-1").send("How many days?").text()) == deltas
 
 
@@ -2809,7 +2809,7 @@ async def test_send_attachments(mock: Mock, tmp_path: Path, case_id: str) -> Non
     assert err.code == "UPLOAD_PUT_FAILED" and sends(mock, "c-2") == []
     # The synchronous client.
     mock.reset()
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     with sync.conversations("c-3").send("Read this", attachments=[str(leave)]) as s:
         s.final_message()
     assert len(uploads_for(mock, "c-3")) == 1 and len(sends(mock, "c-3")[0]["attachments"]) == 1
@@ -2822,7 +2822,7 @@ async def test_send_eager(mock: Mock, case_id: str) -> None:
     sent = [r for r in mock.api() if r["method"] == "POST" and r["path"] == "/v3/conversations/c-5/messages"]
     assert len(sent) == 1, "the message is sent when send is called, before its stream is read"
     await stream.aclose()
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     dropped = sync.conversations("c-6").send("hi")
     assert len([r for r in mock.api() if r["path"] == "/v3/conversations/c-6/messages"]) == 1
     dropped.close()
@@ -2857,7 +2857,7 @@ async def test_file_sources(mock: Mock, tmp_path: Path, case_id: str) -> None:
         assert {k: b[k] for k in want} == want
     assert all(p["bodySha256"] == sha_b64(data) for p in puts(mock))
     # The synchronous client hashes the same way, and refuses an async stream.
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     sync.core.uploads.send(UploadFile.from_stream(chunks(), name="leave.md"))
     assert {k: reservations(mock)[-1][k] for k in want} == want
     with pytest.raises(TypeError, match="async"):
@@ -3208,7 +3208,7 @@ async def test_sync_confirm(mock: Mock, tmp_path: Path, case_id: str) -> None:
     assert str(batch.status) == "cancelled"
     # The same on the synchronous client: CaitlynError, not KeyboardInterrupt.
     mock.reset()
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     with pytest.raises(CaitlynError) as sync_declined:
         await asyncio.to_thread(sync.knowledge_bases(KB).ingestion.sync, root, folder="/hr/", confirm=lambda plan: False)
     assert sync_declined.value.code == "CANCELLED" and sync_declined.value.report is not None
@@ -3308,7 +3308,7 @@ async def test_sync_cancel(mock: Mock, tmp_path: Path, case_id: str) -> None:
     # The synchronous client, Ctrl-C: the uploads in flight are dropped at once too; SyncInterrupted carries the report.
     mock.reset()
     mock.faults(holdUploadsAfter=0)
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     error = await interrupted(lambda: sync.knowledge_bases(KB).ingestion.sync(root, folder="/policies/", cancel_ingestion=True), mock)
     assert isinstance(error, SyncInterrupted) and error.report is not None and len(error.report.items) == 13, repr(error)
     [cancel] = calls(mock, "/cancel")
@@ -3322,7 +3322,7 @@ FINAL_ITEMS = {"indexed", "skipped", "moved", "updated", "removed", "cancelled",
 async def test_sync_on_item_once(mock: Mock, tmp_path: Path, case_id: str) -> None:
     # policy-1.pdf is unchanged (skipped at Start), a.md and c.md are ingested over a few reads, b.md's upload always fails.
     root = folder_of(tmp_path, {"policy-1.pdf": b"doc1", "a.md": b"a", "b.md": b"b", "c.md": b"c"})
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     for use_sync in (False, True):
         mock.reset()
         mock.faults(failUploads={"/policies/b.md": True}, ingestReads=3)
@@ -3366,7 +3366,7 @@ async def test_sync_cancel_report(mock: Mock, tmp_path: Path, case_id: str) -> N
     # the calling thread as Ctrl-C raises it, once the uploads have started.
     mock.reset()
     mock.faults(uploadDelayMs=1000)
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     stopped = await interrupted(lambda: sync.knowledge_bases(KB).ingestion.sync(root, folder="/policies/"), mock)
     assert isinstance(stopped, SyncInterrupted) and stopped.report is not None, repr(stopped.__cause__)
     assert len(stopped.report.items) == 13
@@ -3390,7 +3390,7 @@ def assert_report_shape(report: Any, items: int) -> None:
 @case("sync.report-shape")
 async def test_sync_report_shape(mock: Mock, tmp_path: Path, case_id: str) -> None:
     root = folder_of(tmp_path, {"a.md": b"a", "b.md": b"b"})
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     # A finished sync, on both clients.
     assert_report_shape(await client(mock).knowledge_bases(KB).ingestion.sync(root, folder="/hr/"), 2)
     mock.reset()
@@ -3475,7 +3475,7 @@ async def test_sync_upload_failed(mock: Mock, tmp_path: Path) -> None:
 async def test_sync_cancelled_item(mock: Mock, tmp_path: Path, case_id: str) -> None:
     # The mock's cancelItems: /hr/a.pdf ends cancelled while it is being ingested (its document was deleted).
     root = folder_of(tmp_path, {"a.pdf": b"%PDF-1.7 a", "b.md": b"b"})
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     for use_sync in (False, True):
         mock.reset()
         mock.faults(cancelItems={"/hr/a.pdf": True})
@@ -3582,7 +3582,7 @@ async def test_batch_estimate_priced_items(mock: Mock, case_id: str) -> None:
 async def test_sync_estimate_unresolved(mock: Mock, tmp_path: Path, case_id: str) -> None:
     # a.md is a conflict the policy leaves unresolved; b.md is new (add); policy-2.pdf is unchanged (skip).
     root = folder_of(tmp_path, {"a.md": b"a", "b.md": b"b", "policy-2.pdf": b"doc2"})
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     for use_sync in (False, True):
         mock.reset()
         mock.faults(planConflicts={"/policies/a.md": "duplicate_path"})
@@ -3628,7 +3628,7 @@ async def test_batch_estimate_from_items(mock: Mock, case_id: str) -> None:
                                  {"name": "rates.pdf", "contentType": "application/pdf", "byteSize": 10}]
     assert type(estimate).__name__ == "EstimateIngestionResult" and estimate.documents == 2
     # The synchronous client's.
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     assert (await asyncio.to_thread(sync.knowledge_bases(KB).ingestion.batches(batch.id).upload.estimate)).documents == 2
 
 
@@ -3670,7 +3670,7 @@ async def test_batch_estimate_draft(mock: Mock, case_id: str) -> None:
     made = await kb.ingestion.batches.create(start="manual", items=[batch_item("/hr/a.md", b"a")], await_more_items=True)
     assert str((await made.get()).status) == "draft"
     for estimate in (kb.ingestion.batches(made.id).upload.estimate(),
-                     asyncio.to_thread(Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+                     asyncio.to_thread(Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
                                        .knowledge_bases(KB).ingestion.batches(made.id).upload.estimate)):
         before = len(mock.api())
         err = await expect_error(estimate)
@@ -3726,7 +3726,7 @@ async def test_batch_upload_not_started(mock: Mock, case_id: str) -> None:
     contents = {"/hr/a.md": b"a"}
     planned = await built_batch(c, contents, start=False)
     made = await c.knowledge_bases(KB).ingestion.batches.create(start="manual", items=[batch_item("/hr/b.md", b"b")], await_more_items=True)
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base).knowledge_bases(KB).ingestion
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base).knowledge_bases(KB).ingestion
     for upload in (planned.upload(by_path(contents)), c.knowledge_bases(KB).ingestion.batches(made.id).upload(by_path({"/hr/b.md": b"b"})),
                    asyncio.to_thread(sync.batches(planned.id).upload, by_path(contents))):
         before = len(mock.api())
@@ -3960,7 +3960,7 @@ async def test_batch_upload_result(mock: Mock, case_id: str) -> None:
     done = await started.wait(timeout=10)
     assert type(done) is IngestionBatch and str(done.status) == "succeeded"
     # The synchronous client's: the same, and its wait.
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     other = await built_batch(client(mock), {"/hr/c.md": b"c"})
 
     def run() -> tuple[Any, Any]:
@@ -3992,7 +3992,7 @@ async def test_batch_upload_cancel(mock: Mock, case_id: str) -> None:
     mock.reset()
     batch = await built_batch(client(mock), contents)
     mock.faults(uploadDelayMs=1000)
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     error = await interrupted(lambda: sync.knowledge_bases(KB).ingestion.batches(batch.id).upload(by_path(contents)), mock)
     assert isinstance(error, KeyboardInterrupt), repr(error)
     assert calls(mock, "/cancel") == [], "the batch is not cancelled"
@@ -4006,7 +4006,7 @@ async def test_form_upload_through_a_callers_client(mock: Mock) -> None:
     contents = {"/hr/a.md": b"a" * 200_000, "/hr/b.md": b"b"}
     batch = await built_batch(client(mock), contents)
     own = httpx.Client()
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base, http_client=own)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base, http_client=own)
     out = await asyncio.to_thread(sync.knowledge_bases(KB).ingestion.batches(batch.id).upload, by_path(contents))
     assert all(str(i.status) == "ingesting" for i in out.items), "storage took both: the bytes match their checksums"
     for p in forms(mock):
@@ -4050,7 +4050,7 @@ def if_match_operations() -> dict[str, bool]:
 async def test_if_match_optional_set(mock: Mock, case_id: str) -> None:
     operations_ = if_match_operations()
     assert any(operations_.values()) and not all(operations_.values()), "the model has both kinds"
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     # The signatures, on both clients: optional (None by default) on exactly the model's set, a required keyword elsewhere.
     for operation, optional in operations_.items():
         for c in (client(mock), sync):
@@ -4105,7 +4105,7 @@ async def test_long_running_handles(mock: Mock) -> None:
 async def test_wait_cancel_returns(mock: Mock, case_id: str) -> None:
     from caitlyn.models import Document, IngestionBatch
 
-    sync = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
+    sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     # batch.cancel().wait() returns the cancelled batch, on both clients.
     for run in ("async", "sync"):
         made = await client(mock).knowledge_bases(KB).ingestion.batches.create(start="manual", items=[batch_item(f"/hr/{run}.md", run.encode())])

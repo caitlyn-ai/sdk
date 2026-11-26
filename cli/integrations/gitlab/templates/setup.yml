@@ -1,0 +1,44 @@
+# Caitlyn CLI: set-up. Adds a hidden job, .caitlyn, that the other templates (and your own jobs) extend: the CLI's
+# image, and secret-free sign-in with a GitLab ID token (the CLI design, 15.3). It also adds caitlyn-verify-image, in
+# the .pre stage, which checks the image's signature with Caitlyn's release key before any later stage runs: a
+# failed check stops the pipeline. (A job with `needs: []` doesn't wait for .pre; give it `needs:
+# [caitlyn-verify-image]`.)
+#
+#   include:
+#     - component: $CI_SERVER_FQDN/caitlyn-ai/ci-components/setup@1.0.0
+#       inputs:
+#         workspace: your-company.caitlyn.ai
+#   my-job:
+#     extends: .caitlyn
+#     script: [caitlyn agents list]
+spec:
+  inputs:
+    workspace:
+      description: The Caitlyn workspace, such as your-company.caitlyn.ai
+    cli_version:
+      description: The CLI's image tag. Pin a version (0.12.0) or a minor line (0.12) rather than latest
+      default: latest
+    cosign_image:
+      description: An image with cosign and a shell, to check the CLI image's signature (pinned by digest)
+      default: cgr.dev/chainguard/cosign:latest-dev@sha256:bc725b1ce4fdd6266c66407d0d34cf59a03ded765089956cd985411d790f9b55
+    release_key:
+      description: Caitlyn's release key, which signs every CLI image
+      default: https://build.caitlyn.ai/releases/cli/cosign.pub
+---
+.caitlyn:
+  image: ghcr.io/caitlyn-ai/caitlyn:$[[ inputs.cli_version ]]
+  variables:
+    CAITLYN_WORKSPACE: $[[ inputs.workspace ]]
+    CAITLYN_AUTH: workload-identity
+  id_tokens:
+    CAITLYN_ID_TOKEN:
+      aud: https://$[[ inputs.workspace ]]/api
+
+caitlyn-verify-image:
+  stage: .pre
+  image:
+    name: $[[ inputs.cosign_image ]]
+    entrypoint: ['']
+  script:
+    - cosign verify --key '$[[ inputs.release_key ]]' 'ghcr.io/caitlyn-ai/caitlyn:$[[ inputs.cli_version ]]' > /dev/null
+    - echo "ghcr.io/caitlyn-ai/caitlyn:$[[ inputs.cli_version ]] is signed with Caitlyn's release key"

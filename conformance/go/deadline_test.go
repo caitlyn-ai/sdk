@@ -94,7 +94,7 @@ func readOncePerDeadline(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	c, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token("pat_test"), caitlyn.WithEndpoint(srv.URL))
+	c, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.Token("pat_test"), caitlyn.WithEndpoint(srv.URL))
 	if err != nil {
 		t.Fatal(err)
 	}

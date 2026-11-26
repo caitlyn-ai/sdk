@@ -16,7 +16,7 @@ func encryptedTokenStoreFor(userID string) caitlyn.TokenStore { panic("your own 
 // Clients creates one client per mode.
 func Clients(ctx context.Context, userID, sessionCookie string) error {
 	// #region token
-	script, err := caitlyn.NewClient("your-company.getcaitlyn.ai",
+	script, err := caitlyn.NewClient("your-company.caitlyn.ai",
 		caitlyn.Token(os.Getenv("CAITLYN_TOKEN"))) // a personal access token, cait-pat-…
 	// #endregion
 	if err != nil {
@@ -25,7 +25,7 @@ func Clients(ctx context.Context, userID, sessionCookie string) error {
 	_ = script
 
 	// #region client-credentials
-	service, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.ClientCredentials{
+	service, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.ClientCredentials{
 		ClientID:     os.Getenv("CAITLYN_CLIENT_ID"),
 		ClientSecret: os.Getenv("CAITLYN_CLIENT_SECRET"),
 		Scopes:       []string{"api:read"},
@@ -37,7 +37,7 @@ func Clients(ctx context.Context, userID, sessionCookie string) error {
 	_ = service
 
 	// #region oauth
-	asPerson, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.OAuth{
+	asPerson, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.OAuth{
 		ClientID:     os.Getenv("CAITLYN_CLIENT_ID"),
 		ClientSecret: os.Getenv("CAITLYN_CLIENT_SECRET"), // a confidential client on a server
 		RedirectURI:  "https://app.example.com/caitlyn/callback",
@@ -85,7 +85,7 @@ func Clients(ctx context.Context, userID, sessionCookie string) error {
 	// #endregion
 
 	// #region aws-iam
-	worker, err := caitlyn.NewClient("your-company.getcaitlyn.ai",
+	worker, err := caitlyn.NewClient("your-company.caitlyn.ai",
 		caitlyn.AWSIAM{Region: "ap-southeast-2"}) // the workload's own AWS credentials
 	// #endregion
 	if err != nil {
@@ -94,7 +94,7 @@ func Clients(ctx context.Context, userID, sessionCookie string) error {
 	_ = worker
 
 	// #region workload-identity
-	ciJob, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.WorkloadIdentity{
+	ciJob, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.WorkloadIdentity{
 		Token: func(context.Context) (string, error) { return os.Getenv("CAITLYN_ID_TOKEN"), nil }, // GitLab CI id_tokens
 	})
 	// #endregion
@@ -104,8 +104,8 @@ func Clients(ctx context.Context, userID, sessionCookie string) error {
 	_ = ciJob
 
 	// #region session
-	appPage, err := caitlyn.NewClient("your-company.getcaitlyn.ai",
-		caitlyn.Session{Cookie: sessionCookie, Origin: "https://your-company.getcaitlyn.ai"})
+	appPage, err := caitlyn.NewClient("your-company.caitlyn.ai",
+		caitlyn.Session{Cookie: sessionCookie, Origin: "https://your-company.caitlyn.ai"})
 	// #endregion
 	if err != nil {
 		return err
