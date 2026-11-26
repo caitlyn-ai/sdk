@@ -783,6 +783,8 @@ cli:release:
   stage: release
   needs: []
   script:
+    # The minisign key the binaries are built with must be set and well formed, before anything is built or signed
+    - cli/scripts/minisign-key-check.sh
     - printf '%s' "$GITLAB_OIDC_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE"
     # The key KMS signs with must be the one the binaries are built with, before anything is built or signed
     - cosign public-key --key "$CLI_COSIGN_KEY" > /tmp/cosign.pub
