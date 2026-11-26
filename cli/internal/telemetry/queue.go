@@ -22,6 +22,10 @@ import (
 )
 
 // The queue's limits (9.1).
+// PostTimeout is the flush's whole budget, for all its requests: 3 seconds. A variable only so the tests that wait it
+// out can shorten it.
+var PostTimeout = 3 * time.Second
+
 const (
 	// MaxQueueBytes caps the queue: the oldest events go first.
 	MaxQueueBytes = 256 * 1024
@@ -30,8 +34,6 @@ const (
 	// FlushCount and FlushAge start a background flush: 20 events, or the oldest a day old.
 	FlushCount = 20
 	FlushAge   = 24 * time.Hour
-	// PostTimeout is the flush's whole budget, for all its requests.
-	PostTimeout = 3 * time.Second
 	// MaxBatchEvents and MaxBatchBytes cap one request, as the intake does (usage-event.schema.json's maxItems): a
 	// bigger queue goes in several requests.
 	MaxBatchEvents = 100

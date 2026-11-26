@@ -195,6 +195,10 @@ const DEFAULT_FAULTS = {
   // it ends cancelled (a stopped version fails with failure.code cancelled), and the call answers 202 with the
   // document as it then stands (wait.cancel-returns).
   cancellableProcessing: false,
+  // Jobs on these documents start running and stay running, whatever watches look meanwhile, until something ends
+  // them (CancelDocumentProcessing). A case that cancels a running job then knows it is still running when the cancel
+  // lands, even while a watch it has left stays connected (a browser slow to close an aborted stream). { "<documentId>": true }
+  holdJobs: {},
   // A document that reads `processing` with no job listed on it, for this many looks of a watch, then `indexed`
   // (PROTOCOL.md 16: a busy status is busy even with no job). { "<documentId>": 3 }
   busyWithoutJob: {},
@@ -2890,6 +2894,8 @@ function stepJob(job) {
     job.status = 'running';
     job.startedAt = now;
     job.percent = 0;
+  } else if (job.target?.type === 'document' && faults.holdJobs?.[job.target.id]) {
+    // Held running (holdJobs): a look reports it as it is.
   } else if (job.stepsLeft > 0) {
     job.stepsLeft--;
     job.percent = Math.min(99, (job.percent ?? 0) + Math.ceil(100 / ((faults.jobSteps ?? 2) + 1)));

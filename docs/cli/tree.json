@@ -43,6 +43,13 @@
         "description": "Print the request and send nothing; --dry-run=curl prints it as curl"
       },
       {
+        "name": "error-format",
+        "type": "human|json",
+        "env": "CAITLYN_ERROR_FORMAT",
+        "global": true,
+        "description": "human or json: how errors are printed on stderr (default: human for a person at a terminal, JSON for scripts, CI and AI agents)"
+      },
+      {
         "name": "fail-on",
         "type": "conditions",
         "global": true,
@@ -162,7 +169,7 @@
       {
         "code": 3,
         "meaning": "Action needed: a plan has unresolved items, a confirmation was needed with no terminal, or --fail-on found changes",
-        "from": "INGESTION_BATCH_UNRESOLVED, a declined or impossible prompt"
+        "from": "INGESTION_BATCH_UNRESOLVED, AI_SETUP_OUT_OF_DATE, a declined or impossible prompt"
       },
       {
         "code": 4,
@@ -6258,6 +6265,202 @@
       },
       {
         "path": [
+          "ai"
+        ],
+        "name": "ai",
+        "kind": "group",
+        "summary": "Set up the AI coding tools in this project (Claude Code, Cursor, Codex, Copilot, Gemini CLI) to work with Caitlyn",
+        "description": "AI coding tools work best with Caitlyn when they know how to use the CLI safely. setup finds the tools this project\nuses from their files, and gives each what it reads: the Caitlyn CLI section in its instructions file, the CLI's\nskill for Claude Code, and the workspace's MCP server. It shows every change before writing anything, writes\nonly inside the project, and never writes credentials. status says what is set up and whether it is out of date\nfor this version of the CLI; remove takes it out again, keeping everything else in each file.",
+        "usage": "caitlyn ai",
+        "generated": false,
+        "subcommands": [
+          "remove",
+          "setup",
+          "status"
+        ],
+        "exitCodes": [
+          0,
+          2
+        ],
+        "examples": [
+          {
+            "title": "",
+            "line": "caitlyn ai setup",
+            "exitCode": 0
+          },
+          {
+            "title": "",
+            "line": "caitlyn ai status",
+            "exitCode": 0
+          },
+          {
+            "title": "",
+            "line": "caitlyn ai setup --check",
+            "exitCode": 0
+          }
+        ],
+        "docs": "https://build.caitlyn.ai/cli/reference/ai/"
+      },
+      {
+        "path": [
+          "ai",
+          "remove"
+        ],
+        "name": "ai remove",
+        "kind": "command",
+        "summary": "Take out what ai setup made, keeping everything else",
+        "description": "Takes out what caitlyn ai setup made, found by the marks it leaves: its section in each instructions file, its\n@AGENTS.md line in CLAUDE.md, the skill, and the caitlyn server in each MCP file. Everything else in those files\nstays as it was, and a file left with nothing in it is deleted. A skill edited by hand since setup wrote it is\nonly removed once you agree. .caitlyn.toml is configuration rather than something setup owns, so it stays:\ncaitlyn config unset workspace --project removes its workspace.\n\n--tools takes out only what those tools use; AGENTS.md, which Cursor and Codex both read, goes when both are named.\nLike setup, it shows the plan and asks first, and under an AI tool it needs --yes.",
+        "usage": "caitlyn ai remove",
+        "generated": false,
+        "flags": [
+          {
+            "name": "dir",
+            "type": "string",
+            "description": "The project folder (default: the repository the working folder is in)"
+          },
+          {
+            "name": "tools",
+            "type": "stringSlice",
+            "repeatable": true,
+            "description": "Only what these tools use, separated by commas: claude-code, cursor, codex, copilot, gemini-cli"
+          },
+          {
+            "name": "with",
+            "type": "stringSlice",
+            "repeatable": true,
+            "description": "Only these, separated by commas: instructions, skill, mcp"
+          }
+        ],
+        "impact": "write",
+        "exitCodes": [
+          0,
+          2,
+          3
+        ],
+        "examples": [
+          {
+            "title": "",
+            "line": "caitlyn ai remove --dry-run",
+            "exitCode": 0
+          },
+          {
+            "title": "",
+            "line": "caitlyn ai remove --tools cursor,codex",
+            "exitCode": 0
+          }
+        ],
+        "docs": "https://build.caitlyn.ai/cli/reference/ai/#remove"
+      },
+      {
+        "path": [
+          "ai",
+          "setup"
+        ],
+        "name": "ai setup",
+        "kind": "command",
+        "summary": "Set up this project's AI coding tools to work with Caitlyn",
+        "description": "Finds the AI coding tools this project uses (Claude Code, Cursor, Codex, GitHub Copilot in VS Code and Gemini\nCLI) from their files in it, shows what it would write for them, and writes only what you accept:\n\n  instructions   The Caitlyn CLI section, in each tool's own file: AGENTS.md (Codex, Cursor), CLAUDE.md (Claude Code,\n                 as one @AGENTS.md line when AGENTS.md has the section), .github/copilot-instructions.md, GEMINI.md\n  skill          The CLI's skill for Claude Code, .claude/skills/caitlyn/, made from the CLI you have installed\n  mcp            The workspace's MCP server, in .mcp.json, .cursor/mcp.json and .vscode/mcp.json\n  defaults       .caitlyn.toml naming this project's workspace (not chosen unless you choose it)\n\nNothing is written until you agree to the plan; --dry-run only shows it, with every change as a diff in JSON.\nRunning it again changes nothing that is already right. No credentials go into any file: each tool signs in to\nthe workspace itself. Every file it writes is marked, so caitlyn ai status reports it and caitlyn ai remove takes it\nout again, even in a copy of the repository someone else cloned.\n\nThe files name the workspace. For a public repository, --no-workspace leaves it out (and the MCP server and\nproject defaults with it).\n\n--update regenerates what is already set up, and adds nothing; --check says whether any of it is out of date for\nthis version of the CLI, and exits 3 if it is, for CI.\n\nAn AI tool may run it: it never asks, prints the plan as JSON, and writes only with --yes, once the person has\nseen the plan, because these files tell AI tools how to behave. It never changes agent scopes.",
+        "usage": "caitlyn ai setup",
+        "generated": false,
+        "flags": [
+          {
+            "name": "check",
+            "type": "bool",
+            "description": "Say whether what is set up is out of date for this CLI, and exit 3 if it is"
+          },
+          {
+            "name": "dir",
+            "type": "string",
+            "description": "The project folder (default: the repository the working folder is in)"
+          },
+          {
+            "name": "no-workspace",
+            "type": "bool",
+            "description": "Leave the workspace's name out of the files, for a public repository"
+          },
+          {
+            "name": "tools",
+            "type": "stringSlice",
+            "repeatable": true,
+            "description": "The tools to set up, separated by commas: claude-code, cursor, codex, copilot, gemini-cli (default: the ones this project uses)"
+          },
+          {
+            "name": "update",
+            "type": "bool",
+            "description": "Regenerate what is already set up, and add nothing"
+          },
+          {
+            "name": "with",
+            "type": "stringSlice",
+            "repeatable": true,
+            "description": "What to set up, separated by commas: instructions, skill, mcp, defaults (default: all but defaults)"
+          }
+        ],
+        "impact": "write",
+        "exitCodes": [
+          0,
+          2,
+          3,
+          5
+        ],
+        "examples": [
+          {
+            "title": "",
+            "line": "caitlyn ai setup",
+            "exitCode": 0
+          },
+          {
+            "title": "Only show the plan, for these tools",
+            "line": "caitlyn ai setup --tools claude-code,cursor --with instructions,skill,mcp --dry-run",
+            "exitCode": 0
+          },
+          {
+            "title": "In CI: fail when the committed files are out of date",
+            "line": "caitlyn ai setup --check",
+            "exitCode": 0
+          }
+        ],
+        "docs": "https://build.caitlyn.ai/cli/reference/ai/#setup"
+      },
+      {
+        "path": [
+          "ai",
+          "status"
+        ],
+        "name": "ai status",
+        "kind": "command",
+        "summary": "What ai setup made in this project, and whether it is out of date",
+        "description": "Lists what caitlyn ai setup made in this project, from the marks it leaves in each file: the instructions\nsections, Claude Code's import of AGENTS.md, the skill and the MCP server's entries, with the CLI version and\nworkspace each was made for, and whether it is out of date (made by another version, for another workspace) or was\nedited by hand. It also shows which AI tools the project uses, and what the profile lets AI tools do.",
+        "usage": "caitlyn ai status",
+        "generated": false,
+        "flags": [
+          {
+            "name": "dir",
+            "type": "string",
+            "description": "The project folder (default: the repository the working folder is in)"
+          }
+        ],
+        "impact": "read",
+        "exitCodes": [
+          0,
+          2
+        ],
+        "examples": [
+          {
+            "title": "",
+            "line": "caitlyn ai status",
+            "exitCode": 0
+          },
+          {
+            "title": "",
+            "line": "caitlyn ai status --output json",
+            "exitCode": 0
+          }
+        ],
+        "docs": "https://build.caitlyn.ai/cli/reference/ai/#status"
+      },
+      {
+        "path": [
           "api"
         ],
         "name": "api",
@@ -10510,7 +10713,7 @@
         "name": "help",
         "kind": "command",
         "summary": "Help for any command, as text, JSON or Markdown",
-        "description": "Help for any command: caitlyn help agents draft save.\n\n--format json prints it as data, with the input's JSON Schema; --format markdown prints the same Markdown as the\ncommand's page in the docs.\n\nTwo topics are not commands:\n  caitlyn help agents       The AGENTS.md section for AI coding agents (--format markdown), or a Claude Code\n                            skill generated from this CLI (--format skill). --write writes it into this project.\n                            For the agents commands themselves: caitlyn agents --help.\n  caitlyn help exit-codes   What every exit code means.",
+        "description": "Help for any command: caitlyn help agents draft save. help also works after a command, as a subcommand:\ncaitlyn agents help and caitlyn agents draft help show the same as --help there, and so does a command that\ntakes no argument (caitlyn me help). Where a command takes an argument, help is that argument, so use --help.\n\nHelp is text, even when JSON is your configured output; --output json on the command line prints it as data.\n\n--format json prints it as data, with the input's JSON Schema; --format markdown prints the same Markdown as the\ncommand's page in the docs.\n\nTwo topics are not commands:\n  caitlyn help agents       The AGENTS.md section for AI coding agents (--format markdown), or a Claude Code\n                            skill generated from this CLI (--format skill). --write writes it into this project\n                            and shows the change; with --dry-run it only shows it. caitlyn ai setup does this for\n                            every AI coding tool in the project. For the agents commands: caitlyn agents help, or\n                            caitlyn help agents <command>.\n  caitlyn help exit-codes   What every exit code means.",
         "usage": "caitlyn help [command]...",
         "generated": false,
         "args": [
@@ -10535,7 +10738,8 @@
           {
             "name": "write",
             "type": "bool",
-            "description": "caitlyn help agents only: write the section into AGENTS.md, or the skill into .claude/skills/caitlyn/"
+            "impact": "write",
+            "description": "caitlyn help agents only: write the section into AGENTS.md, or the skill into .claude/skills/caitlyn/, and show the change (--dry-run only shows it)"
           }
         ],
         "impact": "read",
@@ -25487,7 +25691,7 @@
       }
     }
   },
-  "reference": "Every command the CLI has, generated from the CLI itself. Each group has a page, with a section for each of its commands. `caitlyn commands --json` prints the same as data.\n\n## Commands\n\n| Command | Description |\n| --- | --- |\n| [`caitlyn agents`](https://build.caitlyn.ai/cli/reference/agents/) | Create agents and change what they answer with, from their draft to the version people talk to |\n| [`caitlyn api`](https://build.caitlyn.ai/cli/reference/api/) | Call any operation by name, or any path, including ones newer than this CLI |\n| [`caitlyn apply`](https://build.caitlyn.ai/cli/reference/apply/) | Write agents' drafts from a folder of files |\n| [`caitlyn auth`](https://build.caitlyn.ai/cli/reference/auth/) | Sign in, sign out, and see who you're signed in as |\n| [`caitlyn chat`](https://build.caitlyn.ai/cli/reference/chat/) | Talk to an agent from your terminal, or ask it one question and get its cited answer |\n| [`caitlyn commands`](https://build.caitlyn.ai/cli/reference/commands/) | List every command as data, with its flags, impact and exit codes, for scripts and AI agents |\n| [`caitlyn config`](https://build.caitlyn.ai/cli/reference/config/) | Read and change the CLI's configuration |\n| [`caitlyn conversations`](https://build.caitlyn.ai/cli/reference/conversations/) | Read, continue and watch conversations |\n| [`caitlyn diff`](https://build.caitlyn.ai/cli/reference/diff/) | Compare a folder of agent files with the workspace, to see what apply would change |\n| [`caitlyn docs`](https://build.caitlyn.ai/cli/reference/docs/) | Open a command's page in the docs |\n| [`caitlyn events`](https://build.caitlyn.ai/cli/reference/events/) | Follow what happens in your workspace as it happens |\n| [`caitlyn export`](https://build.caitlyn.ai/cli/reference/export/) | Write agents' configuration to files, to keep as code |\n| [`caitlyn help`](https://build.caitlyn.ai/cli/reference/help/) | Help for any command, as text, JSON or Markdown |\n| [`caitlyn knowledge-bases`](https://build.caitlyn.ai/cli/reference/knowledge-bases/) | Knowledge bases and their documents, folders, fields and access |\n| [`caitlyn login`](https://build.caitlyn.ai/cli/reference/login/) | Sign in to a workspace (the same as auth login) |\n| [`caitlyn mcp`](https://build.caitlyn.ai/cli/reference/mcp/) | Add Caitlyn to Claude Code, Cursor or VS Code as an MCP server, so you can use your workspace's agents and knowledge bases from that tool's chat |\n| [`caitlyn me`](https://build.caitlyn.ai/cli/reference/me/) | Show who you're signed in as, and with which credential |\n| [`caitlyn telemetry`](https://build.caitlyn.ai/cli/reference/telemetry/) | Turn usage data for Caitlyn on or off, and see what it would send |\n| [`caitlyn update`](https://build.caitlyn.ai/cli/reference/update/) | Update the CLI, check for an update, or roll one back |\n| [`caitlyn version`](https://build.caitlyn.ai/cli/reference/version/) | Show the CLI's version, and what it detected about where it runs |\n\nThe low-level building blocks are under [`caitlyn completion`](https://build.caitlyn.ai/cli/reference/completion/): commands most work never needs.\n\nThe low-level building blocks are under [`caitlyn core`](https://build.caitlyn.ai/cli/reference/core/): commands most work never needs.\n\n## Global flags\n\nEvery command takes these.\n\n| Flag | Type | Description |\n| --- | --- | --- |\n| `--ci-format` | plain|off | Plain or off: turn off the CI provider's sections, annotations and summaries (auto in CI). |\n| `--color` | string | Always, never or auto. |\n| `--confirm` | string | Name the target of the highest-impact commands (AI agents and CI). |\n| `--debug` | string | Print each request and response on stderr, credentials redacted; --debug=body adds bodies. Given alone, `requests`. |\n| `--dry-run` | string | Print the request and send nothing; --dry-run=curl prints it as curl. Given alone, `request`. |\n| `--fail-on` | conditions | Exit non-zero when these hold: the command's conditions, deprecated, skew, or never. |\n| `--jq` | string | A jq expression over the result (no jq binary needed). |\n| `--no-color` | bool | No colour (the same as --color never). |\n| `--no-input` | bool | Never prompt; anything that would ask exits 3 and names the flag that answers it. Environment: `CAITLYN_NO_INPUT`. |\n| `--no-pager` | bool | Don't page long output. |\n| `--no-project-file` | bool | Ignore any .caitlyn.toml. |\n| `-o`, `--output` | string | Table, json, jsonl, yaml or text (default: table on a terminal, JSON when piped). Environment: `CAITLYN_OUTPUT`. |\n| `--outputs-file` | string | Write output values as dotenv (GitLab's artifacts:reports:dotenv). |\n| `--profile` | string | The profile to use (default: CAITLYN_PROFILE, then the project file, then default). Environment: `CAITLYN_PROFILE`. |\n| `--project-file` | string | Read this project file instead of finding .caitlyn.toml. |\n| `--query` | string | A JMESPath expression over the result. |\n| `--report` | format=path | Write a report beside the output: junit=, markdown=, json= or annotations=\\<path> (repeatable). |\n| `--show-secret` | bool | In CI, print a secret: auth token's, or a value the API marks sensitive (none yet). Masked first where the CI system can. |\n| `--summary-file` | string | Write the run's Markdown summary to this file. |\n| `--workspace` | string | The workspace, for example your-company.caitlyn.ai, instead of the profile's. Environment: `CAITLYN_WORKSPACE`. |\n| `-y`, `--yes` | bool | Answer yes: run a destructive or user-facing command without asking. |\n",
+  "reference": "Every command the CLI has, generated from the CLI itself. Each group has a page, with a section for each of its commands. `caitlyn commands --json` prints the same as data.\n\n## Commands\n\n| Command | Description |\n| --- | --- |\n| [`caitlyn agents`](https://build.caitlyn.ai/cli/reference/agents/) | Create agents and change what they answer with, from their draft to the version people talk to |\n| [`caitlyn ai`](https://build.caitlyn.ai/cli/reference/ai/) | Set up the AI coding tools in this project (Claude Code, Cursor, Codex, Copilot, Gemini CLI) to work with Caitlyn |\n| [`caitlyn api`](https://build.caitlyn.ai/cli/reference/api/) | Call any operation by name, or any path, including ones newer than this CLI |\n| [`caitlyn apply`](https://build.caitlyn.ai/cli/reference/apply/) | Write agents' drafts from a folder of files |\n| [`caitlyn auth`](https://build.caitlyn.ai/cli/reference/auth/) | Sign in, sign out, and see who you're signed in as |\n| [`caitlyn chat`](https://build.caitlyn.ai/cli/reference/chat/) | Talk to an agent from your terminal, or ask it one question and get its cited answer |\n| [`caitlyn commands`](https://build.caitlyn.ai/cli/reference/commands/) | List every command as data, with its flags, impact and exit codes, for scripts and AI agents |\n| [`caitlyn config`](https://build.caitlyn.ai/cli/reference/config/) | Read and change the CLI's configuration |\n| [`caitlyn conversations`](https://build.caitlyn.ai/cli/reference/conversations/) | Read, continue and watch conversations |\n| [`caitlyn diff`](https://build.caitlyn.ai/cli/reference/diff/) | Compare a folder of agent files with the workspace, to see what apply would change |\n| [`caitlyn docs`](https://build.caitlyn.ai/cli/reference/docs/) | Open a command's page in the docs |\n| [`caitlyn events`](https://build.caitlyn.ai/cli/reference/events/) | Follow what happens in your workspace as it happens |\n| [`caitlyn export`](https://build.caitlyn.ai/cli/reference/export/) | Write agents' configuration to files, to keep as code |\n| [`caitlyn help`](https://build.caitlyn.ai/cli/reference/help/) | Help for any command, as text, JSON or Markdown |\n| [`caitlyn knowledge-bases`](https://build.caitlyn.ai/cli/reference/knowledge-bases/) | Knowledge bases and their documents, folders, fields and access |\n| [`caitlyn login`](https://build.caitlyn.ai/cli/reference/login/) | Sign in to a workspace (the same as auth login) |\n| [`caitlyn mcp`](https://build.caitlyn.ai/cli/reference/mcp/) | Add Caitlyn to Claude Code, Cursor or VS Code as an MCP server, so you can use your workspace's agents and knowledge bases from that tool's chat |\n| [`caitlyn me`](https://build.caitlyn.ai/cli/reference/me/) | Show who you're signed in as, and with which credential |\n| [`caitlyn telemetry`](https://build.caitlyn.ai/cli/reference/telemetry/) | Turn usage data for Caitlyn on or off, and see what it would send |\n| [`caitlyn update`](https://build.caitlyn.ai/cli/reference/update/) | Update the CLI, check for an update, or roll one back |\n| [`caitlyn version`](https://build.caitlyn.ai/cli/reference/version/) | Show the CLI's version, and what it detected about where it runs |\n\nThe low-level building blocks are under [`caitlyn completion`](https://build.caitlyn.ai/cli/reference/completion/): commands most work never needs.\n\nThe low-level building blocks are under [`caitlyn core`](https://build.caitlyn.ai/cli/reference/core/): commands most work never needs.\n\n## Global flags\n\nEvery command takes these.\n\n| Flag | Type | Description |\n| --- | --- | --- |\n| `--ci-format` | plain|off | Plain or off: turn off the CI provider's sections, annotations and summaries (auto in CI). |\n| `--color` | string | Always, never or auto. |\n| `--confirm` | string | Name the target of the highest-impact commands (AI agents and CI). |\n| `--debug` | string | Print each request and response on stderr, credentials redacted; --debug=body adds bodies. Given alone, `requests`. |\n| `--dry-run` | string | Print the request and send nothing; --dry-run=curl prints it as curl. Given alone, `request`. |\n| `--error-format` | human|json | Human or json: how errors are printed on stderr (default: human for a person at a terminal, JSON for scripts, CI and AI agents). Environment: `CAITLYN_ERROR_FORMAT`. |\n| `--fail-on` | conditions | Exit non-zero when these hold: the command's conditions, deprecated, skew, or never. |\n| `--jq` | string | A jq expression over the result (no jq binary needed). |\n| `--no-color` | bool | No colour (the same as --color never). |\n| `--no-input` | bool | Never prompt; anything that would ask exits 3 and names the flag that answers it. Environment: `CAITLYN_NO_INPUT`. |\n| `--no-pager` | bool | Don't page long output. |\n| `--no-project-file` | bool | Ignore any .caitlyn.toml. |\n| `-o`, `--output` | string | Table, json, jsonl, yaml or text (default: table on a terminal, JSON when piped). Environment: `CAITLYN_OUTPUT`. |\n| `--outputs-file` | string | Write output values as dotenv (GitLab's artifacts:reports:dotenv). |\n| `--profile` | string | The profile to use (default: CAITLYN_PROFILE, then the project file, then default). Environment: `CAITLYN_PROFILE`. |\n| `--project-file` | string | Read this project file instead of finding .caitlyn.toml. |\n| `--query` | string | A JMESPath expression over the result. |\n| `--report` | format=path | Write a report beside the output: junit=, markdown=, json= or annotations=\\<path> (repeatable). |\n| `--show-secret` | bool | In CI, print a secret: auth token's, or a value the API marks sensitive (none yet). Masked first where the CI system can. |\n| `--summary-file` | string | Write the run's Markdown summary to this file. |\n| `--workspace` | string | The workspace, for example your-company.caitlyn.ai, instead of the profile's. Environment: `CAITLYN_WORKSPACE`. |\n| `-y`, `--yes` | bool | Answer yes: run a destructive or user-facing command without asking. |\n",
   "pages": [
     {
       "path": [
@@ -25958,6 +26162,20 @@
     },
     {
       "path": [
+        "ai"
+      ],
+      "title": "caitlyn ai",
+      "summary": "Set up the AI coding tools in this project (Claude Code, Cursor, Codex, Copilot, Gemini CLI) to work with Caitlyn",
+      "markdown": "Set up the AI coding tools in this project (Claude Code, Cursor, Codex, Copilot, Gemini CLI) to work with Caitlyn\n\n```sh\ncaitlyn ai <command> [flags]\n```\n\nAI coding tools work best with Caitlyn when they know how to use the CLI safely. setup finds the tools this project\nuses from their files, and gives each what it reads: the Caitlyn CLI section in its instructions file, the CLI's\nskill for Claude Code, and the workspace's MCP server. It shows every change before writing anything, writes\nonly inside the project, and never writes credentials. status says what is set up and whether it is out of date\nfor this version of the CLI; remove takes it out again, keeping everything else in each file.\n\n```sh\ncaitlyn ai setup\ncaitlyn ai status\ncaitlyn ai setup --check\n```\n\n| Command | Description |\n| --- | --- |\n| [`caitlyn ai remove`](https://build.caitlyn.ai/cli/reference/ai/#remove) | Take out what ai setup made, keeping everything else |\n| [`caitlyn ai setup`](https://build.caitlyn.ai/cli/reference/ai/#setup) | Set up this project's AI coding tools to work with Caitlyn |\n| [`caitlyn ai status`](https://build.caitlyn.ai/cli/reference/ai/#status) | What ai setup made in this project, and whether it is out of date |\n\n## remove\n\nTake out what ai setup made, keeping everything else\n\n```sh\ncaitlyn ai remove\n```\n\nTakes out what caitlyn ai setup made, found by the marks it leaves: its section in each instructions file, its\n@AGENTS.md line in CLAUDE.md, the skill, and the caitlyn server in each MCP file. Everything else in those files\nstays as it was, and a file left with nothing in it is deleted. A skill edited by hand since setup wrote it is\nonly removed once you agree. .caitlyn.toml is configuration rather than something setup owns, so it stays:\ncaitlyn config unset workspace --project removes its workspace.\n\n--tools takes out only what those tools use; AGENTS.md, which Cursor and Codex both read, goes when both are named.\nLike setup, it shows the plan and asks first, and under an AI tool it needs --yes.\n\n| | |\n| --- | --- |\n| Impact | `write`: changes drafts or your own work |\n\n### Flags\n\n| Flag | Type | Description |\n| --- | --- | --- |\n| `--dir` | string | The project folder (default: the repository the working folder is in). |\n| `--tools` | string, repeatable | Only what these tools use, separated by commas: claude-code, cursor, codex, copilot, gemini-cli. |\n| `--with` | string, repeatable | Only these, separated by commas: instructions, skill, mcp. |\n\nAnd the [global flags](https://build.caitlyn.ai/cli/reference/#global-flags).\n\n### Examples\n\n```sh\ncaitlyn ai remove --dry-run\n\ncaitlyn ai remove --tools cursor,codex\n```\n\n### Exit codes\n\n| Exit code | Meaning | Error codes |\n| --- | --- | --- |\n| 0 | Succeeded |  |\n| 2 | Usage error: bad flags or arguments, nothing sent |  |\n| 3 | Action needed: a plan has unresolved items, a confirmation was needed with no terminal, or --fail-on found changes |  |\n\nEvery error is printed on stderr with a hint of what to run next ([Exit codes](https://build.caitlyn.ai/cli/exit-codes/)). Each error code's page, `https://build.caitlyn.ai/errors/<CODE>/`, says what it means and what to do; [Errors](https://build.caitlyn.ai/cli/errors/) lists them all.\n\n## setup\n\nSet up this project's AI coding tools to work with Caitlyn\n\n```sh\ncaitlyn ai setup\n```\n\nFinds the AI coding tools this project uses (Claude Code, Cursor, Codex, GitHub Copilot in VS Code and Gemini\nCLI) from their files in it, shows what it would write for them, and writes only what you accept:\n\n  instructions   The Caitlyn CLI section, in each tool's own file: AGENTS.md (Codex, Cursor), CLAUDE.md (Claude Code,\n                 as one @AGENTS.md line when AGENTS.md has the section), .github/copilot-instructions.md, GEMINI.md\n  skill          The CLI's skill for Claude Code, .claude/skills/caitlyn/, made from the CLI you have installed\n  mcp            The workspace's MCP server, in .mcp.json, .cursor/mcp.json and .vscode/mcp.json\n  defaults       .caitlyn.toml naming this project's workspace (not chosen unless you choose it)\n\nNothing is written until you agree to the plan; --dry-run only shows it, with every change as a diff in JSON.\nRunning it again changes nothing that is already right. No credentials go into any file: each tool signs in to\nthe workspace itself. Every file it writes is marked, so caitlyn ai status reports it and caitlyn ai remove takes it\nout again, even in a copy of the repository someone else cloned.\n\nThe files name the workspace. For a public repository, --no-workspace leaves it out (and the MCP server and\nproject defaults with it).\n\n--update regenerates what is already set up, and adds nothing; --check says whether any of it is out of date for\nthis version of the CLI, and exits 3 if it is, for CI.\n\nAn AI tool may run it: it never asks, prints the plan as JSON, and writes only with --yes, once the person has\nseen the plan, because these files tell AI tools how to behave. It never changes agent scopes.\n\n| | |\n| --- | --- |\n| Impact | `write`: changes drafts or your own work |\n\n### Flags\n\n| Flag | Type | Description |\n| --- | --- | --- |\n| `--check` | bool | Say whether what is set up is out of date for this CLI, and exit 3 if it is. |\n| `--dir` | string | The project folder (default: the repository the working folder is in). |\n| `--no-workspace` | bool | Leave the workspace's name out of the files, for a public repository. |\n| `--tools` | string, repeatable | The tools to set up, separated by commas: claude-code, cursor, codex, copilot, gemini-cli (default: the ones this project uses). |\n| `--update` | bool | Regenerate what is already set up, and add nothing. |\n| `--with` | string, repeatable | What to set up, separated by commas: instructions, skill, mcp, defaults (default: all but defaults). |\n\nAnd the [global flags](https://build.caitlyn.ai/cli/reference/#global-flags).\n\n### Examples\n\n```sh\ncaitlyn ai setup\n\n# Only show the plan, for these tools\ncaitlyn ai setup --tools claude-code,cursor --with instructions,skill,mcp --dry-run\n\n# In CI: fail when the committed files are out of date\ncaitlyn ai setup --check\n```\n\n### Exit codes\n\n| Exit code | Meaning | Error codes |\n| --- | --- | --- |\n| 0 | Succeeded |  |\n| 2 | Usage error: bad flags or arguments, nothing sent |  |\n| 3 | Action needed: a plan has unresolved items, a confirmation was needed with no terminal, or --fail-on found changes |  |\n| 5 | Not allowed |  |\n\nEvery error is printed on stderr with a hint of what to run next ([Exit codes](https://build.caitlyn.ai/cli/exit-codes/)). Each error code's page, `https://build.caitlyn.ai/errors/<CODE>/`, says what it means and what to do; [Errors](https://build.caitlyn.ai/cli/errors/) lists them all.\n\n## status\n\nWhat ai setup made in this project, and whether it is out of date\n\n```sh\ncaitlyn ai status\n```\n\nLists what caitlyn ai setup made in this project, from the marks it leaves in each file: the instructions\nsections, Claude Code's import of AGENTS.md, the skill and the MCP server's entries, with the CLI version and\nworkspace each was made for, and whether it is out of date (made by another version, for another workspace) or was\nedited by hand. It also shows which AI tools the project uses, and what the profile lets AI tools do.\n\n| | |\n| --- | --- |\n| Impact | `read`: reads only |\n\n### Flags\n\n| Flag | Type | Description |\n| --- | --- | --- |\n| `--dir` | string | The project folder (default: the repository the working folder is in). |\n\nAnd the [global flags](https://build.caitlyn.ai/cli/reference/#global-flags).\n\n### Examples\n\n```sh\ncaitlyn ai status\n\ncaitlyn ai status --output json\n```\n\n### Exit codes\n\n| Exit code | Meaning | Error codes |\n| --- | --- | --- |\n| 0 | Succeeded |  |\n| 2 | Usage error: bad flags or arguments, nothing sent |  |\n\nEvery error is printed on stderr with a hint of what to run next ([Exit codes](https://build.caitlyn.ai/cli/exit-codes/)). Each error code's page, `https://build.caitlyn.ai/errors/<CODE>/`, says what it means and what to do; [Errors](https://build.caitlyn.ai/cli/errors/) lists them all.\n",
+      "commands": [
+        "ai remove",
+        "ai setup",
+        "ai status"
+      ],
+      "operations": []
+    },
+    {
+      "path": [
         "api"
       ],
       "title": "caitlyn api",
@@ -26231,7 +26449,7 @@
       ],
       "title": "caitlyn help",
       "summary": "Help for any command, as text, JSON or Markdown",
-      "markdown": "Help for any command, as text, JSON or Markdown\n\n```sh\ncaitlyn help [command]...\n```\n\nHelp for any command: caitlyn help agents draft save.\n\n--format json prints it as data, with the input's JSON Schema; --format markdown prints the same Markdown as the\ncommand's page in the docs.\n\nTwo topics are not commands:\n  caitlyn help agents       The AGENTS.md section for AI coding agents (--format markdown), or a Claude Code\n                            skill generated from this CLI (--format skill). --write writes it into this project.\n                            For the agents commands themselves: caitlyn agents --help.\n  caitlyn help exit-codes   What every exit code means.\n\n| | |\n| --- | --- |\n| Impact | `read`: reads only |\n\n## Arguments\n\n| Argument | Description |\n| --- | --- |\n| `<command>` | Command. Optional. Repeatable. |\n\n## Flags\n\n| Flag | Type | Description |\n| --- | --- | --- |\n| `--format` | string | Text, json or markdown; for caitlyn help agents, markdown or skill. Default: `text`. |\n| `--path` | string | With --write: the file (default AGENTS.md) or the skill's folder (default .claude/skills/caitlyn). |\n| `--write` | bool | Caitlyn help agents only: write the section into AGENTS.md, or the skill into .claude/skills/caitlyn/. |\n\nAnd the [global flags](https://build.caitlyn.ai/cli/reference/#global-flags).\n\n## Exit codes\n\n| Exit code | Meaning | Error codes |\n| --- | --- | --- |\n| 0 | Succeeded |  |\n| 2 | Usage error: bad flags or arguments, nothing sent |  |\n\nEvery error is printed on stderr with a hint of what to run next ([Exit codes](https://build.caitlyn.ai/cli/exit-codes/)). Each error code's page, `https://build.caitlyn.ai/errors/<CODE>/`, says what it means and what to do; [Errors](https://build.caitlyn.ai/cli/errors/) lists them all.\n",
+      "markdown": "Help for any command, as text, JSON or Markdown\n\n```sh\ncaitlyn help [command]...\n```\n\nHelp for any command: caitlyn help agents draft save. help also works after a command, as a subcommand:\ncaitlyn agents help and caitlyn agents draft help show the same as --help there, and so does a command that\ntakes no argument (caitlyn me help). Where a command takes an argument, help is that argument, so use --help.\n\nHelp is text, even when JSON is your configured output; --output json on the command line prints it as data.\n\n--format json prints it as data, with the input's JSON Schema; --format markdown prints the same Markdown as the\ncommand's page in the docs.\n\nTwo topics are not commands:\n  caitlyn help agents       The AGENTS.md section for AI coding agents (--format markdown), or a Claude Code\n                            skill generated from this CLI (--format skill). --write writes it into this project\n                            and shows the change; with --dry-run it only shows it. caitlyn ai setup does this for\n                            every AI coding tool in the project. For the agents commands: caitlyn agents help, or\n                            caitlyn help agents \\<command>.\n  caitlyn help exit-codes   What every exit code means.\n\n| | |\n| --- | --- |\n| Impact | `read`: reads only |\n\n## Arguments\n\n| Argument | Description |\n| --- | --- |\n| `<command>` | Command. Optional. Repeatable. |\n\n## Flags\n\n| Flag | Type | Description |\n| --- | --- | --- |\n| `--format` | string | Text, json or markdown; for caitlyn help agents, markdown or skill. Default: `text`. |\n| `--path` | string | With --write: the file (default AGENTS.md) or the skill's folder (default .claude/skills/caitlyn). |\n| `--write` | bool | Caitlyn help agents only: write the section into AGENTS.md, or the skill into .claude/skills/caitlyn/, and show the change (--dry-run only shows it). With it, the command's impact is `write`. |\n\nAnd the [global flags](https://build.caitlyn.ai/cli/reference/#global-flags).\n\n## Exit codes\n\n| Exit code | Meaning | Error codes |\n| --- | --- | --- |\n| 0 | Succeeded |  |\n| 2 | Usage error: bad flags or arguments, nothing sent |  |\n\nEvery error is printed on stderr with a hint of what to run next ([Exit codes](https://build.caitlyn.ai/cli/exit-codes/)). Each error code's page, `https://build.caitlyn.ai/errors/<CODE>/`, says what it means and what to do; [Errors](https://build.caitlyn.ai/cli/errors/) lists them all.\n",
       "commands": [
         "help"
       ],
@@ -27247,8 +27465,8 @@
       "operations": []
     }
   ],
-  "exitCodes": "| Exit code | Meaning | From |\n| --- | --- | --- |\n| 0 | Succeeded |  |\n| 1 | Failed: any error not listed below, and a batch or sync in which some items failed | 500, JOB_FAILED, INGESTION_BATCH_FAILED, other problems |\n| 2 | Usage error: bad flags or arguments, nothing sent |  |\n| 3 | Action needed: a plan has unresolved items, a confirmation was needed with no terminal, or --fail-on found changes | INGESTION_BATCH_UNRESOLVED, a declined or impossible prompt |\n| 4 | Not signed in, or the credential was refused | 401, sign_in_required, invalid_grant |\n| 5 | Not allowed | 403, interactive-only operations, agent scopes, a read-only profile |\n| 6 | Not found | 404, a missing live version |\n| 7 | Conflict or stale | 409, 412, 428 |\n| 8 | Not supported by this workspace's release | NotSupportedByServer, 404 UNKNOWN_OPERATION |\n| 9 | Timed out | WAIT_TIMEOUT, --timeout |\n| 10 | Could not reach Caitlyn, or the stream was lost | CONNECTION_ERROR, STREAM_LOST |\n| 11 | Rate limited after retries | 429 |\n| 130 | Interrupted (Ctrl-C) |  |\n",
-  "agentsSnippet": "## Caitlyn CLI\n\nThis project manages Caitlyn with the `caitlyn` CLI.\n\n- Discover commands with `caitlyn commands --json`; one command with `caitlyn help <command> --format json`.\n- Output is JSON when you run it. Errors are JSON on stderr; follow `hint.next`. Exit codes: https://build.caitlyn.ai/cli/exit-codes/\n- Explore with a read-only sign-in: `caitlyn --profile readonly …` (ask the person to run `caitlyn auth login --read-only --profile readonly` once).\n- Writes change drafts only. `caitlyn agents versions publish` changes what users get: ask the person first.\n- Commands marked destructive need `--yes`. Run them with `--dry-run` first and show the person the plan.\n- Long waits: pass `--timeout`, and use the printed resume command if it runs out.\n- For conversational work from an AI client, use the workspace MCP server: `caitlyn mcp add <client>`.\n- Docs for agents: https://build.caitlyn.ai/llms.txt\n",
+  "exitCodes": "| Exit code | Meaning | From |\n| --- | --- | --- |\n| 0 | Succeeded |  |\n| 1 | Failed: any error not listed below, and a batch or sync in which some items failed | 500, JOB_FAILED, INGESTION_BATCH_FAILED, other problems |\n| 2 | Usage error: bad flags or arguments, nothing sent |  |\n| 3 | Action needed: a plan has unresolved items, a confirmation was needed with no terminal, or --fail-on found changes | INGESTION_BATCH_UNRESOLVED, AI_SETUP_OUT_OF_DATE, a declined or impossible prompt |\n| 4 | Not signed in, or the credential was refused | 401, sign_in_required, invalid_grant |\n| 5 | Not allowed | 403, interactive-only operations, agent scopes, a read-only profile |\n| 6 | Not found | 404, a missing live version |\n| 7 | Conflict or stale | 409, 412, 428 |\n| 8 | Not supported by this workspace's release | NotSupportedByServer, 404 UNKNOWN_OPERATION |\n| 9 | Timed out | WAIT_TIMEOUT, --timeout |\n| 10 | Could not reach Caitlyn, or the stream was lost | CONNECTION_ERROR, STREAM_LOST |\n| 11 | Rate limited after retries | 429 |\n| 130 | Interrupted (Ctrl-C) |  |\n",
+  "agentsSnippet": "## Caitlyn CLI\n\nThis project manages Caitlyn with the `caitlyn` CLI.\n\n- Discover commands with `caitlyn commands --json`; one command with `caitlyn help <command> --format json`.\n- Output is JSON when you run it. Errors are JSON on stderr; follow `hint.next`. Exit codes: https://build.caitlyn.ai/cli/exit-codes/\n- What you may do is set by the profile's agent scopes, which the person chose at sign-in: read only unless they chose more. A command outside them exits 5 without sending anything; ask the person rather than changing `agent_scopes` (only a person can).\n- Writes change drafts only. `caitlyn agents versions publish` changes what users get: ask the person first.\n- Commands marked destructive need `--yes`. Run them with `--dry-run` first and show the person the plan.\n- Long waits: pass `--timeout`, and use the printed resume command if it runs out.\n- For conversational work from an AI client, use the workspace MCP server: `caitlyn mcp add <client>`.\n- Docs for agents: https://build.caitlyn.ai/llms.txt\n",
   "skillDescription": "Use the caitlyn CLI to manage a Caitlyn workspace: agents, their drafts, versions and live version, knowledge bases and their documents, conversations and events. Use it when the person asks to change or inspect an agent or a knowledge base, sync documents, publish or roll back a version, or script Caitlyn in CI.",
   "schemas": {
     "agents conversations list": {

@@ -309,6 +309,18 @@ groups:
     examples:
       - caitlyn mcp add claude-code
       - caitlyn mcp add vscode --write
+  ai:
+    short: Set up the AI coding tools in this project (Claude Code, Cursor, Codex, Copilot, Gemini CLI) to work with Caitlyn
+    long: |
+      AI coding tools work best with Caitlyn when they know how to use the CLI safely. setup finds the tools this project
+      uses from their files, and gives each what it reads: the Caitlyn CLI section in its instructions file, the CLI's
+      skill for Claude Code, and the workspace's MCP server. It shows every change before writing anything, writes
+      only inside the project, and never writes credentials. status says what is set up and whether it is out of date
+      for this version of the CLI; remove takes it out again, keeping everything else in each file.
+    examples:
+      - caitlyn ai setup
+      - caitlyn ai status
+      - caitlyn ai setup --check
   telemetry:
     short: Turn usage data for Caitlyn on or off, and see what it would send
     long: |

@@ -1388,7 +1388,8 @@ test('[wait.cancel-returns] the wait of a call that cancels returns the thing on
   // Any other wait on that batch still raises CANCELLED.
   assert.equal((await expectError(batch.wait())).code, 'CANCELLED');
   // A document's cancelProcessing(): its running job ends cancelled, and wait() gives the document as it then stands.
-  await busy('doc-0002', undefined, { cancellableProcessing: true });
+  // Its job stays running until the cancel (holdJobs), however long the watch left below takes to close.
+  await busy('doc-0002', undefined, { cancellableProcessing: true, holdJobs: { 'doc-0002': true } });
   const doc = kb.documents('doc-0002');
   for await (const event of doc.watch()) {
     if (event.type === 'snapshot') break; // its job is running now

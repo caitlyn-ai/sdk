@@ -121,3 +121,9 @@ Sign in to your workspace, then try [a first session](/cli/#a-first-session):
 ```sh
 caitlyn auth login --workspace your-company.caitlyn.ai
 ```
+
+Working with an AI coding tool such as Claude Code, Cursor or Codex? From your project, [set it up to use the CLI](/cli/ai-agents/#set-up-your-ai-tools):
+
+```sh
+caitlyn ai setup
+```

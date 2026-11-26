@@ -8,12 +8,14 @@ claude mcp add --transport http caitlyn https://your-company.caitlyn.ai/api/mcp
     }
   }
 }
-{
-  "written": [
-    "<tmp>"
-  ]
-}
-## Caitlyn CLI
-
-This project manages Caitlyn with the `caitlyn` CLI (workspace: your-company.caitlyn.ai).
+create AGENTS.md
+create CLAUDE.md
+create .claude/skills/caitlyn/SKILL.md
+create .claude/skills/caitlyn/references/commands.md
+create .mcp.json
+create .cursor/mcp.json
+6
+<!-- caitlyn ai setup: Claude Code reads the Caitlyn CLI section from AGENTS.md -->
+@AGENTS.md
+true
 [exit 0]

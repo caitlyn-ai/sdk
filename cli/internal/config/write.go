@@ -190,6 +190,35 @@ func editFile(path, table, key string, lit *string, project bool) error {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	out, changed, err := editText(string(b), table, key, lit, path)
+	if err != nil || !changed {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	return replaceFile(path, out)
+}
+
+// SetProjectText is a project file's text with key = value set, as config set --project writes it: for showing the
+// change before it is made (caitlyn ai setup). Only keys a project file may hold are accepted.
+func SetProjectText(text, key, value string) (string, error) {
+	k := KeyNamed(key)
+	if k == nil || !k.Project {
+		return "", fmt.Errorf("%s may not be set in a project file", key)
+	}
+	lit, err := literal(k, value)
+	if err != nil {
+		return "", err
+	}
+	out, _, err := editText(text, "", key, &lit, ".caitlyn.toml")
+	return out, err
+}
+
+// editText sets (lit != nil) or removes key in table ("" is the top level) of a TOML file's text, line by line, and
+// checks the result still parses. changed is false when there is nothing to remove.
+func editText(text, table, key string, lit *string, path string) (out string, changed bool, err error) {
+	b := []byte(text)
 	lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
 	if len(b) == 0 {
 		lines = nil
@@ -235,14 +264,14 @@ func editFile(path, table, key string, lit *string, project bool) error {
 	if found >= 0 {
 		v := strings.TrimSpace(lines[found][strings.Index(lines[found], "=")+1:])
 		if (strings.HasPrefix(v, "[") && strings.Count(v, "[") > strings.Count(v, "]")) || strings.HasPrefix(v, `"""`) || strings.HasPrefix(v, "'''") {
-			return fmt.Errorf("%s in %s spans several lines, which config can't edit: put it on one line (%s = [\"a\", \"b\"]) or edit the file yourself", key, path, key)
+			return "", false, fmt.Errorf("%s in %s spans several lines, which config can't edit: put it on one line (%s = [\"a\", \"b\"]) or edit the file yourself", key, path, key)
 		}
 	}
 	switch {
 	case lit == nil && found >= 0:
 		lines = append(lines[:found], lines[found+1:]...)
 	case lit == nil:
-		return nil
+		return text, false, nil
 	case found >= 0:
 		lines[found] = key + " = " + *lit
 	case table == "" || start >= 0:
@@ -259,14 +288,16 @@ func editFile(path, table, key string, lit *string, project bool) error {
 		}
 		lines = append(lines, "["+table+"]", key+" = "+*lit)
 	}
-	out := strings.Join(lines, "\n") + "\n"
+	out = strings.Join(lines, "\n") + "\n"
 	var check map[string]any
 	if err := toml.Unmarshal([]byte(out), &check); err != nil {
-		return fmt.Errorf("%s would not be valid TOML after this change, so it was left as it was: %w", path, err)
+		return "", false, fmt.Errorf("%s would not be valid TOML after this change, so it was left as it was: %w", path, err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
+	return out, true, nil
+}
+
+// replaceFile writes out over path through a new file of its own, keeping path's mode (0600 for a new file).
+func replaceFile(path, out string) error {
 	mode := os.FileMode(0o600)
 	if fi, err := os.Stat(path); err == nil {
 		mode = fi.Mode().Perm()

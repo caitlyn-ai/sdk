@@ -319,6 +319,8 @@ The CLI uses the first of these that is set:
 
 What `--jq` and `--query` return is always printed as JSON, and a string as itself, whatever the format.
 
+The format shapes a command's data on stdout, not its errors: a person at a terminal gets errors as a message even with JSON configured. See [When something fails](#when-something-fails).
+
 The same list in each format:
 
 <!-- example: examples/cli/output-formats.sh#table -->
@@ -460,7 +462,16 @@ More: --all, or --cursor eyJvZmZzZXQiOjN9
 
 ## When something fails
 
-Every command ends with an exit code from one fixed table, so a script can branch on it: 0 succeeded, 2 a usage error (nothing was sent), 6 not found, 7 a conflict or a stale ETag, and so on ([Exit codes](/cli/exit-codes/)). The error is printed on stderr with a hint of what to run next, as JSON when stderr is not a terminal:
+Every command ends with an exit code from one fixed table, so a script can branch on it: 0 succeeded, 2 a usage error (nothing was sent), 6 not found, 7 a conflict or a stale ETag, and so on ([Exit codes](/cli/exit-codes/)). The error goes to stderr, in the form that suits whoever reads it, whatever `--output` says:
+
+| Who reads stderr | What they get |
+| --- | --- |
+| A person: stderr is a terminal, outside CI and not under an AI agent | A message: what went wrong, the commands you may have meant, the usage for a usage error, what to run next and the page to read |
+| A script, a CI job or an AI agent: stderr isn't a terminal, or the CLI is in CI or agent mode | One line of JSON with `exitCode` and a `hint` of what to run next, the same in every release |
+
+`--error-format human` or `--error-format json` chooses for one command, and `CAITLYN_ERROR_FORMAT=human` or `=json` for every command. The flag wins over the variable, and both win over what the CLI detects. The exit code is the same either way.
+
+A script sees this:
 
 <!-- example: examples/cli/recover-from-errors.sh#already-exists -->
 ```sh
@@ -475,6 +486,34 @@ echo "exit code $?"
 exit code 7
 ```
 
+A person at a terminal sees a message instead:
+
+<!-- example: examples/cli/recover-from-errors.sh#person-usage -->
+```sh
+# A usage error, as a person sees it: what is missing, the command's usage, and an example to copy
+caitlyn agents draft save GHT7YRWXPL --error-format human
+echo "exit code $?"
+```
+
+<!-- output: examples/cli/recover-from-errors.sh -->
+```text
+✗ caitlyn agents draft save needs --name.
+
+  Usage:
+      caitlyn agents draft save <agent> [flags]
+
+  → Missing: --name
+
+  → For example (keep the tested draft as a version):
+      caitlyn agents draft save GHT7YRWXPL --if-match '"draft-ZmeDr4VIILFpik5n"' --name november-candidate --note 'Quotes the policy clause it relied on.'
+
+  USAGE
+  docs: https://build.caitlyn.ai/cli/reference/agents/draft/#save
+exit code 2
+```
+
+A mistyped command gets the nearest commands, and `caitlyn <group> help` to see the rest.
+
 ## Safe by default
 
 - Commands are classed by what they change: `read`, `write` (drafts and your own work), `user-facing` (what other people get, such as publishing a version) and `destructive` (what can't be undone). Destructive commands ask first, and in CI or under an AI agent they need `--yes`.
@@ -483,7 +522,7 @@ exit code 7
 
 ## Finding your way
 
-- `caitlyn help <command>` explains one command; `caitlyn docs <command>` opens its page here.
+- `caitlyn help <command>` explains one command, and so does `help` after it: `caitlyn agents help`, `caitlyn agents draft help`. Where a command takes an argument, `help` is that argument, so use `--help` there. `caitlyn docs <command>` opens its page here.
 - `caitlyn commands --json` describes every command, flag and exit code as data, from the CLI you have installed.
 - [Command reference](/cli/reference/): every command, generated from the CLI itself.
 

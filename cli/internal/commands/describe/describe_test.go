@@ -453,10 +453,148 @@ func TestHelpAgentsSnippet(t *testing.T) {
 		t.Errorf("no workspace:\n%s", anon.out)
 	}
 	// Every line of the design's snippet is there
-	for _, s := range []string{"caitlyn commands --json", "hint.next", "https://build.caitlyn.ai/cli/exit-codes/", "caitlyn auth login --read-only --profile readonly", "caitlyn agents versions publish", "--dry-run", "--timeout", "caitlyn mcp add <client>", "https://build.caitlyn.ai/llms.txt"} {
+	for _, s := range []string{"caitlyn commands --json", "hint.next", "https://build.caitlyn.ai/cli/exit-codes/", "agent scopes", "`agent_scopes`", "exits 5", "caitlyn agents versions publish", "--dry-run", "--timeout", "caitlyn mcp add <client>", "https://build.caitlyn.ai/llms.txt"} {
 		if !strings.Contains(anon.out, s) {
 			t.Errorf("snippet lacks %q", s)
 		}
+	}
+	// No second sign-in for protection agent scopes already give
+	if strings.Contains(anon.out, "--profile readonly") {
+		t.Errorf("the snippet still sends agents to a read-only profile:\n%s", anon.out)
+	}
+}
+
+func TestHelpAgentsWriteStampsAndShowsTheDiff(t *testing.T) {
+	work := t.TempDir()
+	env := []string{"CAITLYN_WORKSPACE=acme.caitlyn.ai"}
+	// --dry-run shows the change and writes nothing
+	dry := runIn(t, work, env, "help", "agents", "--write", "--dry-run")
+	var v struct {
+		Written []string `json:"written"`
+		DryRun  bool     `json:"dryRun"`
+		Changes []struct {
+			File, Action, Diff string
+			Added              int
+		} `json:"changes"`
+	}
+	decode(t, dry.out, &v)
+	if dry.code != 0 || !v.DryRun || len(v.Written) != 0 || len(v.Changes) != 1 || v.Changes[0].Action != "create" {
+		t.Fatalf("exit %d: %s%s", dry.code, dry.out, dry.errOut)
+	}
+	if !strings.Contains(v.Changes[0].Diff, "--- /dev/null\n+++ b/AGENTS.md\n") || !strings.Contains(v.Changes[0].Diff, "+## Caitlyn CLI\n+<!-- caitlyn ai setup · caitlyn ") {
+		t.Errorf("diff:\n%s", v.Changes[0].Diff)
+	}
+	if _, err := os.Stat(filepath.Join(work, "AGENTS.md")); !os.IsNotExist(err) {
+		t.Fatal("--dry-run wrote AGENTS.md")
+	}
+	// As text: the diff, then what was written; the section carries the stamp under its heading
+	res := runIn(t, work, env, "help", "agents", "--write", "--output", "text")
+	if res.code != 0 || !strings.Contains(res.out, "+## Caitlyn CLI") || !strings.Contains(res.out, "Wrote "+filepath.Join(work, "AGENTS.md")) {
+		t.Fatalf("exit %d: %s%s", res.code, res.out, res.errOut)
+	}
+	b, _ := os.ReadFile(filepath.Join(work, "AGENTS.md"))
+	sec, ok := describe.FindSection(string(b))
+	if !ok || !sec.Stamped || sec.Stamp.Workspace != "acme.caitlyn.ai" || sec.Stamp.Version == "" {
+		t.Errorf("stamp: %+v\n%s", sec, b)
+	}
+	again := runIn(t, work, env, "help", "agents", "--write", "--output", "text")
+	if !strings.Contains(again.out, "is up to date. Nothing changed.") {
+		t.Errorf("second write: %s", again.out)
+	}
+	// --jq works on what it prints
+	jq := runIn(t, t.TempDir(), env, "help", "agents", "--write", "--jq", ".written | length")
+	if strings.TrimSpace(jq.out) != "1" {
+		t.Errorf("--jq: %q", jq.out)
+	}
+	// Writing makes the run a write: the tree says so on the flag
+	tr, _, _ := tree(t)
+	h := tr.Find([]string{"help"})
+	if h == nil {
+		t.Fatal("help is not in the tree")
+	}
+	for _, fl := range h.Flags {
+		if fl.Name == "write" && fl.Impact != "write" {
+			t.Errorf("help --write impact %q", fl.Impact)
+		}
+	}
+}
+
+func TestHelpAgentsSkillDryRun(t *testing.T) {
+	work := t.TempDir()
+	res := runIn(t, work, nil, "help", "agents", "--format", "skill", "--write", "--dry-run", "--output", "text")
+	if res.code != 0 || !strings.Contains(res.out, "+++ b/.claude/skills/caitlyn/SKILL.md") || !strings.Contains(res.out, "+++ b/.claude/skills/caitlyn/references/commands.md") || !strings.Contains(res.out, "Dry run: nothing was written.") {
+		t.Fatalf("exit %d: %s%s", res.code, res.out, res.errOut)
+	}
+	if _, err := os.Stat(filepath.Join(work, ".claude")); !os.IsNotExist(err) {
+		t.Fatal("--dry-run wrote the skill")
+	}
+}
+
+func TestStamps(t *testing.T) {
+	s := describe.NewStamp("0.12.4", "acme.caitlyn.ai")
+	if s.Comment() != "<!-- caitlyn ai setup · caitlyn 0.12.4 · acme.caitlyn.ai -->" {
+		t.Errorf("comment %q", s.Comment())
+	}
+	for _, in := range []string{s.Comment(), s.Text(), `"` + s.Text() + `"`} {
+		if got, ok := describe.ParseStamp(in); !ok || got != s {
+			t.Errorf("ParseStamp(%q) = %+v %v", in, got, ok)
+		}
+	}
+	if got, ok := describe.ParseStamp("<!-- caitlyn ai setup · caitlyn 0.12.4 -->"); !ok || got.Workspace != "" {
+		t.Errorf("no workspace: %+v %v", got, ok)
+	}
+	for _, in := range []string{"<!-- something else -->", "caitlyn ai setup", ""} {
+		if _, ok := describe.ParseStamp(in); ok {
+			t.Errorf("ParseStamp(%q) took it", in)
+		}
+	}
+	if describe.NewStamp("", "").Version != "dev" {
+		t.Error("a development build's stamp")
+	}
+}
+
+func TestSkillStampAndHash(t *testing.T) {
+	files := describe.StampSkill([]describe.SkillFile{
+		{Path: "SKILL.md", Text: "---\nname: caitlyn\ndescription: x\n---\n\n# Body\n"},
+		{Path: "references/commands.md", Text: "# commands\n"},
+	}, describe.NewStamp("0.12.4", "acme.caitlyn.ai"))
+	m, ok := describe.ReadSkillMark(files[0].Text, files[1].Text)
+	if !ok || m.Edited || m.Stamp.Version != "0.12.4" || !strings.HasPrefix(m.Hash, "sha256:") {
+		t.Fatalf("%+v %v\n%s", m, ok, files[0].Text)
+	}
+	if m, _ := describe.ReadSkillMark(files[0].Text+"Mine.\n", files[1].Text); !m.Edited {
+		t.Error("an edited SKILL.md isn't seen")
+	}
+	if m, _ := describe.ReadSkillMark(files[0].Text, "# changed\n"); !m.Edited {
+		t.Error("an edited commands.md isn't seen")
+	}
+	if _, ok := describe.ReadSkillMark("---\nname: caitlyn\n---\n", ""); ok {
+		t.Error("an unstamped skill has a mark")
+	}
+}
+
+func TestRemoveLinesRestores(t *testing.T) {
+	sec := describe.StampedSnippet(describe.NewStamp("0.12.4", ""))
+	cases := []struct{ before string }{
+		{""},
+		{"# A\n"},
+		{"# A\n\nSome text.\n"},
+	}
+	for _, c := range cases {
+		doc := describe.ReplaceSection(c.before, sec)
+		s, ok := describe.FindSection(doc)
+		if !ok || !s.Stamped {
+			t.Fatalf("no stamped section in %q", doc)
+		}
+		if got := describe.RemoveLines(doc, s.Start, s.End); got != c.before {
+			t.Errorf("RemoveLines(%q) = %q", doc, got)
+		}
+	}
+	// In the middle of other content
+	doc := "# P\n\nIntro.\n\n" + sec + "\n## Testing\n\nRun.\n"
+	s, _ := describe.FindSection(doc)
+	if got := describe.RemoveLines(doc, s.Start, s.End); got != "# P\n\nIntro.\n\n## Testing\n\nRun.\n" {
+		t.Errorf("middle: %q", got)
 	}
 }
 
@@ -522,8 +660,12 @@ func TestHelpAgentsSkill(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(skill)
-	if !strings.HasPrefix(s, "---\nname: caitlyn\ndescription: "+describe.SkillDescription+"\n---\n") || !strings.Contains(s, "acme.caitlyn.ai") {
+	if !strings.HasPrefix(s, "---\nname: caitlyn\ndescription: "+describe.SkillDescription+"\nmetadata:\n  caitlyn-ai-setup: \"caitlyn ai setup · caitlyn ") || !strings.Contains(s, "acme.caitlyn.ai") {
 		t.Errorf("SKILL.md:\n%s", s)
+	}
+	refs, _ := os.ReadFile(filepath.Join(work, ".claude", "skills", "caitlyn", "references", "commands.md"))
+	if m, ok := describe.ReadSkillMark(s, string(refs)); !ok || m.Edited || m.Stamp.Workspace != "acme.caitlyn.ai" {
+		t.Errorf("the skill's mark: %+v %v", m, ok)
 	}
 	if !strings.Contains(s, "`caitlyn agents versions publish` (user-facing)") || !strings.Contains(s, "`caitlyn agents delete` (destructive)") {
 		t.Error("SKILL.md does not name the commands to ask about first")
@@ -657,6 +799,18 @@ func TestMCPAddWriteKeepsOtherServers(t *testing.T) {
 	b, _ = os.ReadFile(filepath.Join(work, ".mcp.json"))
 	if !strings.Contains(string(b), `"type": "http"`) {
 		t.Errorf(".mcp.json: %s", b)
+	}
+}
+
+func TestMCPAddRefusesAnEntryWithCredentials(t *testing.T) {
+	work := t.TempDir()
+	file := filepath.Join(work, ".mcp.json")
+	before := `{"mcpServers":{"caitlyn":{"type":"http","url":"https://acme.caitlyn.ai/api/mcp","headers":{"Authorization":"Bearer x"}}}}`
+	_ = os.WriteFile(file, []byte(before), 0o644)
+	r := runIn(t, work, []string{"CAITLYN_WORKSPACE=acme.caitlyn.ai"}, "mcp", "add", "claude-code", "--write")
+	kept, _ := os.ReadFile(file)
+	if r.code != 2 || !strings.Contains(r.errOut, "MCP_ENTRY_HAS_CREDENTIALS") || string(kept) != before {
+		t.Errorf("exit %d %s\nfile %s", r.code, r.errOut, kept)
 	}
 }
 

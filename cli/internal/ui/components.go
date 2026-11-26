@@ -164,9 +164,15 @@ func (u *UI) Detail(w io.Writer, title, id string, groups []Group, next string) 
 	}
 }
 
-// RenderError prints an error for people (12.9): what happened, why, how to fix it, then the code, request ID and
-// the error's page. The machine form is cmdutil.Error.JSON.
+// RenderError prints an error for people (12.9): what happened, why, the commands they may have meant, the
+// command's usage, how to fix it, then the code, request ID and the error's page. It prints the error's human form
+// (cmdutil.Error.ForPeople); the machine form is cmdutil.Error.JSON.
 func (u *UI) RenderError(w io.Writer, e *cmdutil.Error) {
+	var human cmdutil.HumanForm
+	if e.Human != nil {
+		human = *e.Human
+	}
+	e = e.ForPeople()
 	s := u.Err
 	fmt.Fprintf(w, "%s %s\n", s.Paint(Error, u.G.Failure), s.Paint(Strong, strings.TrimSpace(e.Title)))
 	if e.Detail != "" && e.Detail != e.Title {
@@ -183,6 +189,20 @@ func (u *UI) RenderError(w io.Writer, e *cmdutil.Error) {
 				name = f.Pointer
 			}
 			fmt.Fprintf(w, "  %s %s  %s\n", s.Paint(Error, u.G.Bullet), s.Paint(Strong, name), f.Detail)
+		}
+	}
+	if len(human.Suggestions) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "  %s\n", "Did you mean this?")
+		for _, c := range human.Suggestions {
+			fmt.Fprintf(w, "      %s\n", c)
+		}
+	}
+	if len(human.Usage) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "  %s\n", s.Paint(Muted, "Usage:"))
+		for _, line := range human.Usage {
+			fmt.Fprintf(w, "      %s\n", line)
 		}
 	}
 	if e.Hint != nil {

@@ -163,6 +163,7 @@ func WelcomeScreen(f *cmdutil.Factory, u *ui.UI) Screen {
 		{"caitlyn agents list", "your agents"},
 		{`caitlyn chat <agent> "` + u.G.Ellipsis + `"`, "ask an agent"},
 		{"caitlyn kb sync <kb> <folder>", "keep a folder in step"},
+		{"caitlyn ai setup", "set up your AI coding tools"},
 	}
 	rest := []string{"", u.S(ui.Strong, "Start here")}
 	for _, c := range cmds {

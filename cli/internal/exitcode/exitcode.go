@@ -9,7 +9,8 @@ const (
 	Failed = 1
 	// Usage is a bad flag or argument; nothing was sent.
 	Usage = 2
-	// ActionNeeded: a plan has unresolved items, a confirmation was needed with no terminal, or --fail-on found changes.
+	// ActionNeeded: a plan has unresolved items, a confirmation was needed with no terminal, or --fail-on (or ai setup
+	// --check) found changes.
 	ActionNeeded = 3
 	// Auth: not signed in, or the credential was refused.
 	Auth = 4
@@ -43,7 +44,7 @@ var Table = []Entry{
 	{OK, "Succeeded", ""},
 	{Failed, "Failed: any error not listed below, and a batch or sync in which some items failed", "500, JOB_FAILED, INGESTION_BATCH_FAILED, other problems"},
 	{Usage, "Usage error: bad flags or arguments, nothing sent", ""},
-	{ActionNeeded, "Action needed: a plan has unresolved items, a confirmation was needed with no terminal, or --fail-on found changes", "INGESTION_BATCH_UNRESOLVED, a declined or impossible prompt"},
+	{ActionNeeded, "Action needed: a plan has unresolved items, a confirmation was needed with no terminal, or --fail-on found changes", "INGESTION_BATCH_UNRESOLVED, AI_SETUP_OUT_OF_DATE, a declined or impossible prompt"},
 	{Auth, "Not signed in, or the credential was refused", "401, sign_in_required, invalid_grant"},
 	{Forbidden, "Not allowed", "403, interactive-only operations, agent scopes, a read-only profile"},
 	{NotFound, "Not found", "404, a missing live version"},

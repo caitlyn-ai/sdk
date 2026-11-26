@@ -13,6 +13,56 @@ operations: []
 
 AI coding agents, such as Claude Code, Cursor, Codex and Gemini CLI, drive the CLI as readily as people do. The CLI notices when one is running it and changes how it behaves: no prompts, JSON output, no decoration, and an error that says what to run next. This page is for the person who works with the agent, and for the agent.
 
+## Set up your AI tools
+
+`caitlyn ai setup` makes the AI coding tools you use in a project Caitlyn-aware in one step. It finds each tool from its files in the project, shows you what it would write for it, and writes only what you accept:
+
+| Tool | Found by | Instructions | Skill | Workspace MCP server |
+| --- | --- | --- | --- | --- |
+| Claude Code | `CLAUDE.md`, `.claude/`, `.mcp.json` | `CLAUDE.md`, as one `@AGENTS.md` line when `AGENTS.md` has the section | `.claude/skills/caitlyn/` | `.mcp.json` |
+| Cursor | `.cursor/`, `.cursorrules` | `AGENTS.md` | | `.cursor/mcp.json` |
+| Codex | `AGENTS.md`, `.codex/` | `AGENTS.md` | | |
+| GitHub Copilot (VS Code) | `.github/copilot-instructions.md`, `.vscode/mcp.json` | `.github/copilot-instructions.md` | | `.vscode/mcp.json` |
+| Gemini CLI | `GEMINI.md`, `.gemini/` | `GEMINI.md` | | |
+
+The instructions are [the section below](#tell-your-agent-about-the-cli), the skill is the CLI's own for Claude Code, and the MCP server is [your workspace's](#connect-an-ai-client-to-the-mcp-server). A tool found only on your machine (its command on your `PATH`, or its folder in your home folder) is offered but not chosen. When no tool is found, setup offers `AGENTS.md`, which most tools read. It can also write `.caitlyn.toml`, so that commands run in the project use its workspace; that one is never chosen for you.
+
+<!-- example: examples/cli/connect-an-ai-client.sh#ai-setup -->
+```sh
+caitlyn ai setup --tools claude-code,cursor --dry-run --jq '.changes[] | "\(.action) \(.file)"'
+caitlyn ai setup --tools claude-code,cursor --yes --jq '.changes | length'
+cat CLAUDE.md
+caitlyn ai setup --check --jq .upToDate
+```
+
+<!-- output: examples/cli/connect-an-ai-client.sh -->
+```text
+create AGENTS.md
+create CLAUDE.md
+create .claude/skills/caitlyn/SKILL.md
+create .claude/skills/caitlyn/references/commands.md
+create .mcp.json
+create .cursor/mcp.json
+6
+<!-- caitlyn ai setup: Claude Code reads the Caitlyn CLI section from AGENTS.md -->
+@AGENTS.md
+true
+```
+
+At a terminal, with no flags, it asks which of these you want, lists the plan, and asks before writing; "Show the changes in full" shows every change as a diff.
+
+- **Nothing is written until you agree.** `--dry-run` only shows the plan, and as JSON it carries each change's diff.
+- **Running it again is safe.** What is already right isn't changed, and it says so.
+- **No credentials go into any file.** An MCP server's entry is its address only, and each tool signs in to the workspace itself. Setup refuses to change a `caitlyn` entry that has `headers` or `env`, which can hold credentials.
+- **Everything it writes is marked**, with the CLI's version and the workspace: `caitlyn ai status` reports it, and `caitlyn ai remove` takes it out again, keeping everything else in each file, even in a copy of the repository a teammate cloned. A skill you have edited is only replaced or removed once you agree.
+- **The files name the workspace.** For a public repository, `--no-workspace` leaves it out, and the MCP servers and project defaults with it.
+- **It writes only inside the project.** Commit the files to share them with your team, or add them to `.gitignore` to keep them to yourself.
+- **Keep it current.** After updating the CLI, `caitlyn ai setup --update` regenerates what is set up and adds nothing. In CI, `caitlyn ai setup --check` exits 3 when the committed files are out of date for the CLI the pipeline uses.
+
+`caitlyn auth login` offers to run it, in one question at the end of sign-in, when you sign in at a terminal from a project that uses an AI tool and isn't set up yet. Choose "Don't ask again for this project" and it is remembered in your user folder (`~/.caitlyn/`), never in the repository. Outside a project, or in one where no tool is found, sign-in ends with a one-line reminder instead. Nothing is offered in CI, under an agent, with `--no-input`, or when the output isn't a terminal.
+
+An agent may run `caitlyn ai setup` too: it never asks, prints the plan as JSON, and writes only with `--yes` (see [Safety](#safety)).
+
 ## How the CLI knows
 
 The CLI is in agent mode when:
@@ -31,11 +81,11 @@ For a tool not listed, set `AI_AGENT=<its name>` or `CAITLYN_AGENT=1` in its env
 | Output | JSON, even with a terminal attached, unless `--output`, `CAITLYN_OUTPUT` or the profile's `agent_output` says otherwise |
 | Decoration | None: no colour, spinners, progress bars, pager or notices |
 | Waiting | A `--wait` with no `--timeout` gets 4 minutes, so a wait never outlasts the agent's own tool call; on timeout it exits 9 and prints the command that resumes the wait |
-| Errors | One JSON object on stderr, with `exitCode` and a `hint` |
+| Errors | One JSON object on stderr, with `exitCode` and a `hint`, even with a terminal attached and whatever `--output` says |
 
 ## Errors an agent can act on
 
-Every error carries a hint: the flags that are missing, and complete commands to run next that reuse the identifiers and flags of the command that failed. A placeholder appears only for a value the CLI can't know, such as `<etag>`.
+Every error carries a hint: the flags that are missing, and complete commands to run next that reuse the identifiers and flags of the command that failed. A placeholder appears only for a value the CLI can't know, such as `<etag>`. An agent always gets errors as JSON on stderr, as do scripts and CI; only a person at a terminal gets a message. `--error-format json` or `CAITLYN_ERROR_FORMAT=json` makes that certain anywhere.
 
 <!-- example: examples/cli/recover-from-errors.sh#stale -->
 ```sh
@@ -86,6 +136,7 @@ Under an agent, and in CI:
 - `user-facing` and `destructive` commands need `--yes` on the command line. Without it they exit 3, with a hint to run `--dry-run` first. `--yes` never comes from an environment variable or a configuration file, so nothing approves a delete in advance.
 - The highest-impact commands (deleting an agent or a knowledge base, and publishing) also need `--confirm <id>` naming the exact target, which stops a wrong-target accident in a loop.
 - `caitlyn auth token` is refused, so an agent can't copy a token into a file, a log or a prompt.
+- `caitlyn ai setup` and `caitlyn ai remove` need `--yes` too, although they are `write` commands: they change the files that tell AI tools how to behave, so the person sees the plan (`--dry-run`) before an agent writes it. Without `--yes` they print the plan and exit 3. They never change agent scopes, and an agent can't choose the project's workspace in `.caitlyn.toml`.
 - Signing in stays with the person: an agent may start `caitlyn auth login`, but the approval in the browser is the person's. Sign-in with a device code is refused under an agent, because relaying a code is how device-code phishing works.
 
 ## Agent scopes: a seatbelt, not isolation
@@ -98,7 +149,7 @@ This is a seatbelt against an agent's mistakes, not a wall against a hostile pro
 
 ## Tell your agent about the CLI
 
-`caitlyn help agents --write` adds this section to the project's `AGENTS.md` (or the file `--path` names, such as `CLAUDE.md`), with the profile's workspace filled in; it replaces an older copy rather than adding a second.
+`caitlyn ai setup` puts this section in each tool's own file. To write it into one file yourself, `caitlyn help agents --write` adds it to the project's `AGENTS.md` (or the file `--path` names, such as `CLAUDE.md`), with the profile's workspace filled in and the CLI's version marked under its heading; it replaces an older copy rather than adding a second, shows the change as a diff, and with `--dry-run` only shows it.
 
 ```markdown
 ## Caitlyn CLI
@@ -107,7 +158,7 @@ This project manages Caitlyn with the `caitlyn` CLI.
 
 - Discover commands with `caitlyn commands --json`; one command with `caitlyn help <command> --format json`.
 - Output is JSON when you run it. Errors are JSON on stderr; follow `hint.next`. Exit codes: https://build.caitlyn.ai/cli/exit-codes/
-- Explore with a read-only sign-in: `caitlyn --profile readonly …` (ask the person to run `caitlyn auth login --read-only --profile readonly` once).
+- What you may do is set by the profile's agent scopes, which the person chose at sign-in: read only unless they chose more. A command outside them exits 5 without sending anything; ask the person rather than changing `agent_scopes` (only a person can).
 - Writes change drafts only. `caitlyn agents versions publish` changes what users get: ask the person first.
 - Commands marked destructive need `--yes`. Run them with `--dry-run` first and show the person the plan.
 - Long waits: pass `--timeout`, and use the printed resume command if it runs out.

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"testing/iotest"
+	"testing/synctest"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -47,38 +48,42 @@ func TestMotionAllowed(t *testing.T) {
 	}
 }
 
+// The spinner's delay and frames run on synctest's fake clock: time moves only when every goroutine in the bubble is
+// blocked, so each sleep below is exact and the test never depends on how busy the machine is.
 func TestSpinnerDelay(t *testing.T) {
-	old := SpinnerDelay
-	defer func() { SpinnerDelay = old }()
-	SpinnerDelay = 150 * time.Millisecond
-	u, f, _, errOut := testUI(t, true)
-	s := u.StartSpinner(f, "Planning the batch…")
-	time.Sleep(20 * time.Millisecond)
-	s.Stop()
-	if errOut.Len() != 0 {
-		t.Fatalf("a fast call shows nothing: %q", errOut.String())
-	}
-	SpinnerDelay = 5 * time.Millisecond
-	s = u.StartSpinner(f, "Planning the batch…")
-	time.Sleep(60 * time.Millisecond)
-	s.SetLabel("Uploading")
-	time.Sleep(150 * time.Millisecond)
-	s.Stop()
-	got := errOut.String()
-	if !strings.Contains(got, "Planning the batch…") || !strings.Contains(got, "Uploading") || !strings.ContainsAny(got, "⠋⠙⠹⠸") {
-		t.Fatalf("spinner output %q", got)
-	}
-	if !strings.HasSuffix(got, "\r\x1b[K") {
-		t.Errorf("Stop clears the line: %q", got)
-	}
-	// disabled: nothing, even after the delay
-	u, f, _, errOut = testUI(t, true, "CAITLYN_SPINNER_DISABLED=1")
-	s = u.StartSpinner(f, "x")
-	time.Sleep(30 * time.Millisecond)
-	s.Stop()
-	if errOut.Len() != 0 {
-		t.Errorf("disabled spinner wrote %q", errOut.String())
-	}
+	synctest.Test(t, func(t *testing.T) {
+		old := SpinnerDelay
+		defer func() { SpinnerDelay = old }()
+		SpinnerDelay = 150 * time.Millisecond
+		u, f, _, errOut := testUI(t, true)
+		s := u.StartSpinner(f, "Planning the batch…")
+		time.Sleep(20 * time.Millisecond)
+		s.Stop()
+		if errOut.Len() != 0 {
+			t.Fatalf("a fast call shows nothing: %q", errOut.String())
+		}
+		SpinnerDelay = 5 * time.Millisecond
+		s = u.StartSpinner(f, "Planning the batch…")
+		time.Sleep(60 * time.Millisecond)
+		s.SetLabel("Uploading")
+		time.Sleep(150 * time.Millisecond)
+		s.Stop()
+		got := errOut.String()
+		if !strings.Contains(got, "Planning the batch…") || !strings.Contains(got, "Uploading") || !strings.ContainsAny(got, "⠋⠙⠹⠸") {
+			t.Fatalf("spinner output %q", got)
+		}
+		if !strings.HasSuffix(got, "\r\x1b[K") {
+			t.Errorf("Stop clears the line: %q", got)
+		}
+		// disabled: nothing, even after the delay
+		u, f, _, errOut = testUI(t, true, "CAITLYN_SPINNER_DISABLED=1")
+		s = u.StartSpinner(f, "x")
+		time.Sleep(30 * time.Millisecond)
+		s.Stop()
+		if errOut.Len() != 0 {
+			t.Errorf("disabled spinner wrote %q", errOut.String())
+		}
+	})
 }
 
 func TestPlainProgressLines(t *testing.T) {

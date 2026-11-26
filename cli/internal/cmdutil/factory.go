@@ -27,6 +27,7 @@ type Globals struct {
 	Profile       string
 	Workspace     string
 	Output        string
+	ErrorFormat   string
 	Query         string
 	JQ            string
 	Color         string

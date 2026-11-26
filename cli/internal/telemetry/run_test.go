@@ -224,6 +224,10 @@ func TestUnknownFlagIsSentAsUnknown(t *testing.T) {
 // TestHangingEndpointDoesNotSlowACommand: a flush due at the end of a run runs detached; the run doesn't wait for it.
 func TestHangingEndpointDoesNotSlowACommand(t *testing.T) {
 	setup(t)
+	// The flush's 3-second budget, at 200 ms: the same checks without the wait
+	old := telemetry.PostTimeout
+	telemetry.PostTimeout = 200 * time.Millisecond
+	defer func() { telemetry.PostTimeout = old }()
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
@@ -256,7 +260,7 @@ func TestHangingEndpointDoesNotSlowACommand(t *testing.T) {
 	select {
 	case took := <-flushed:
 		if took > telemetry.PostTimeout+time.Second {
-			t.Fatalf("the flush took %s, past its 3-second limit", took)
+			t.Fatalf("the flush took %s, past its %s limit", took, telemetry.PostTimeout)
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("the flush never ended")
@@ -264,7 +268,7 @@ func TestHangingEndpointDoesNotSlowACommand(t *testing.T) {
 	if n := len(queued(t, home)); n != 20 {
 		t.Fatalf("a failed flush keeps the queue: %d", n)
 	}
-	// The flush command itself gives up after 3 seconds, silently
+	// The flush command itself gives up at its budget, silently
 	telemetry.Spawn = func([]string) error { return nil }
 	fr := cli(t, home, e, false, "telemetry", "flush")
 	if fr.code != 0 || fr.stderr != "" || fr.took > telemetry.PostTimeout+time.Second {

@@ -6,4 +6,28 @@ exit code 7
 exit code 6
 {"error":{"code":"USAGE","exitCode":2,"hint":{"missing":["--name"],"next":[{"run":"caitlyn agents draft save GHT7YRWXPL --if-match '\"draft-ZmeDr4VIILFpik5n\"' --name november-candidate --note 'Quotes the policy clause it relied on.'","why":"for example (keep the tested draft as a version)"}],"docs":"https://build.caitlyn.ai/cli/reference/agents/draft/#save"},"title":"caitlyn agents draft save needs --name.","type":"https://build.caitlyn.ai/errors/USAGE"}}
 exit code 2
+✗ Not found
+
+  No agent NOPE0000
+
+  → Find a valid identifier:
+      caitlyn agents list
+
+  404 NOT_FOUND · request <request-id>
+  https://build.caitlyn.ai/errors/NOT_FOUND
+  docs: https://build.caitlyn.ai/cli/reference/agents/#get
+exit code 6
+✗ caitlyn agents draft save needs --name.
+
+  Usage:
+      caitlyn agents draft save <agent> [flags]
+
+  → Missing: --name
+
+  → For example (keep the tested draft as a version):
+      caitlyn agents draft save GHT7YRWXPL --if-match '"draft-ZmeDr4VIILFpik5n"' --name november-candidate --note 'Quotes the policy clause it relied on.'
+
+  USAGE
+  docs: https://build.caitlyn.ai/cli/reference/agents/draft/#save
+exit code 2
 [exit 0]
