@@ -24,6 +24,16 @@ import (
 // loginWait is how long browser sign-in waits for the person to approve, unless --timeout says otherwise.
 const loginWait = 10 * time.Minute
 
+// AfterSignIn runs once sign-in has saved the profile, with the workspace, profile and agent scopes it saved: the
+// offer to set up the project's AI coding tools (caitlyn ai setup), which another package installs.
+var AfterSignIn func(f *cmdutil.Factory, cmd *cobra.Command, workspace, profile string, agentScopes []string) error
+
+// signedIn is what a sign-in saved.
+type signedIn struct {
+	workspace, profile string
+	agentScopes        []string
+}
+
 type loginOptions struct {
 	device, withToken, readOnly, insecure bool
 	scopes                                []string
@@ -58,7 +68,11 @@ In CI, sign in with the pipeline's own identity instead: https://build.caitlyn.a
 			if !cmd.Flags().Changed("scopes") {
 				o.scopes = nil
 			}
-			return runLogin(cmd.Context(), f, o)
+			s, err := runLogin(cmd.Context(), f, o)
+			if err != nil || AfterSignIn == nil {
+				return err
+			}
+			return AfterSignIn(f, cmd, s.workspace, s.profile, s.agentScopes)
 		},
 	}
 	fl := cmd.Flags()
@@ -73,51 +87,51 @@ In CI, sign in with the pipeline's own identity instead: https://build.caitlyn.a
 	return cmd
 }
 
-func runLogin(ctx context.Context, f *cmdutil.Factory, o *loginOptions) error {
+func runLogin(ctx context.Context, f *cmdutil.Factory, o *loginOptions) (*signedIn, error) {
 	if f.CI.In() {
 		e := cmdutil.Usagef("auth login doesn't run in CI: sign in with the pipeline's own identity instead.")
 		e.Code = "LOGIN_IN_CI"
 		e.Detail = fmt.Sprintf("%s was detected (%s). Every sign-in mode works from environment variables alone, and a workload identity needs no stored secret.", ciName(f.CI.Name), f.CI.Reason)
 		e.Hint = &cmdutil.Hint{Docs: "https://build.caitlyn.ai/cli/ci/#signing-in-without-secrets"}
 		e.AddNext("export CAITLYN_AUTH=workload-identity CAITLYN_WORKSPACE=your-company.caitlyn.ai", "sign in with the pipeline's OIDC token (GitLab id_tokens, GitHub Actions, Buildkite)")
-		return e
+		return nil, e
 	}
 	if o.device && f.Agent.On {
 		e := cmdutil.Forbiddenf("DEVICE_SIGN_IN_REFUSED", "Device sign-in is refused to AI agents.")
 		e.Detail = "Relaying a sign-in code is how device-code phishing works, so only a person may start it."
 		e.AddNext("caitlyn auth login", "sign in with the browser; the approval there is the person's")
-		return e
+		return nil, e
 	}
 	if o.device && o.withToken {
-		return cmdutil.Usagef("--device and --with-token are two ways to sign in: choose one.")
+		return nil, cmdutil.Usagef("--device and --with-token are two ways to sign in: choose one.")
 	}
 	if o.readOnly && o.scopes != nil {
-		return cmdutil.Usagef("--read-only asks for api:read only, so it can't be used with --scopes.")
+		return nil, cmdutil.Usagef("--read-only asks for api:read only, so it can't be used with --scopes.")
 	}
 	if err := checkChoice("--output-default", o.outputDefault, outputChoices); err != nil {
-		return err
+		return nil, err
 	}
 	if err := checkChoice("--agent-output", o.agentOutput, agentOutputChoices); err != nil {
-		return err
+		return nil, err
 	}
 	agentScopes, err := parseAgentScopes(o.agentScopes)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	cfg, err := f.Config()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	ws, err := loginWorkspace(f, cfg.String("workspace"))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	profile := cfg.Profile()
 	insecure := o.insecure || cfg.Bool("insecure_storage")
 	st := newStore(cfg.Dir(), homeDir(f), ws, profile, insecure)
 	// Before anyone is asked to approve anything: there must be somewhere to keep the tokens
 	if err := st.b.probe(); err != nil {
-		return err
+		return nil, err
 	}
 	scopes := o.scopes
 	switch {
@@ -141,13 +155,13 @@ func runLogin(ctx context.Context, f *cmdutil.Factory, o *loginOptions) error {
 		entry, err = browserLogin(ctx, f, u, oc, cfg.String("browser"), ws, scopes)
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	who, callerErr := getCaller(ctx, f, ws, core.Token(entry.AccessToken))
 	if callerErr != nil && entry.Kind == "token" {
 		// A personal access token is checked before it is kept: a mistyped one is never saved
-		return callerErr
+		return nil, callerErr
 	}
 	err = st.WithLock(ctx, func(context.Context) error {
 		if old, _ := st.Load(st.PersonKey()); old != nil && old.AgentKey != "" {
@@ -157,7 +171,7 @@ func runLogin(ctx context.Context, f *cmdutil.Factory, o *loginOptions) error {
 		return st.Save(st.PersonKey(), entry)
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if who != nil && who.label() != "" {
@@ -192,17 +206,21 @@ func runLogin(ctx context.Context, f *cmdutil.Factory, o *loginOptions) error {
 	}
 	asked, err := askProfileQuestions(f, o, agentScopes, entry.Scopes(), values)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := cfg.SetProfile(profile, values); err != nil {
-		return fmt.Errorf("signed in, but profile %s could not be saved: %w", profile, err)
+		return nil, fmt.Errorf("signed in, but profile %s could not be saved: %w", profile, err)
 	}
 	if asked {
 		u.Successf("Saved to profile %s. Change it any time: caitlyn config set output %s --profile %s", profile, u.G.Ellipsis, profile)
 	} else {
 		u.Infof("Saved as profile %s.", profile)
 	}
-	return nil
+	s := &signedIn{workspace: ws, profile: profile}
+	if v := values["agent_scopes"]; v != "" {
+		s.agentScopes = strings.Split(v, ",")
+	}
+	return s, nil
 }
 
 func ciName(name string) string {

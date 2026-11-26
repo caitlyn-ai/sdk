@@ -4122,7 +4122,7 @@ async def test_wait_cancel_returns(mock: Mock, case_id: str) -> None:
     # watch, busyDocuments) is stopped by the call (cancellableProcessing), and the job it cancelled raises nothing.
     for run in ("async", "sync"):
         mock.reset()
-        mock.faults(busyDocuments={"doc-0001": True}, jobSteps=10_000, cancellableProcessing=True)
+        mock.faults(busyDocuments={"doc-0001": True}, holdJobs={"doc-0001": True}, cancellableProcessing=True)
         async with client(mock).knowledge_bases(KB).documents("doc-0001").watch() as stream:
             async for _ in stream:
                 break

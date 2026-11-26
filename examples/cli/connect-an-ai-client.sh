@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Point an AI client at the workspace's MCP server, and give an AI coding agent the CLI's AGENTS.md section.
+# Point an AI client at the workspace's MCP server, and set up a project's AI coding tools to use the CLI.
 set -euo pipefail
 cd "$(mktemp -d)"
 
@@ -9,7 +9,9 @@ caitlyn mcp add vscode --write --output json --jq '{file: (.file | split("/") | 
 cat .vscode/mcp.json
 # #endregion
 
-# #region agents-md
-caitlyn help agents --write --output json --jq '.written | length'
-head -3 AGENTS.md
+# #region ai-setup
+caitlyn ai setup --tools claude-code,cursor --dry-run --jq '.changes[] | "\(.action) \(.file)"'
+caitlyn ai setup --tools claude-code,cursor --yes --jq '.changes | length'
+cat CLAUDE.md
+caitlyn ai setup --check --jq .upToDate
 # #endregion

@@ -320,6 +320,9 @@ func flagText(f *Flag) string {
 	if f.Secret {
 		parts = append(parts, "A secret: never a flag value, so it stays out of shell history.")
 	}
+	if f.Impact != "" {
+		parts = append(parts, "With it, the command's impact is `"+f.Impact+"`.")
+	}
 	return strings.Join(parts, " ")
 }
 

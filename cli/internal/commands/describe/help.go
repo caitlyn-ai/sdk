@@ -62,15 +62,21 @@ func newHelpCmd(f *cmdutil.Factory) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "help [command]...",
 		Short: "Help for any command, as text, JSON or Markdown",
-		Long: `Help for any command: caitlyn help agents draft save.
+		Long: `Help for any command: caitlyn help agents draft save. help also works after a command, as a subcommand:
+caitlyn agents help and caitlyn agents draft help show the same as --help there, and so does a command that
+takes no argument (caitlyn me help). Where a command takes an argument, help is that argument, so use --help.
+
+Help is text, even when JSON is your configured output; --output json on the command line prints it as data.
 
 --format json prints it as data, with the input's JSON Schema; --format markdown prints the same Markdown as the
 command's page in the docs.
 
 Two topics are not commands:
   caitlyn help agents       The AGENTS.md section for AI coding agents (--format markdown), or a Claude Code
-                            skill generated from this CLI (--format skill). --write writes it into this project.
-                            For the agents commands themselves: caitlyn agents --help.
+                            skill generated from this CLI (--format skill). --write writes it into this project
+                            and shows the change; with --dry-run it only shows it. caitlyn ai setup does this for
+                            every AI coding tool in the project. For the agents commands: caitlyn agents help, or
+                            caitlyn help agents <command>.
   caitlyn help exit-codes   What every exit code means.`,
 		Args: cobra.ArbitraryArgs,
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -94,6 +100,10 @@ Two topics are not commands:
 				return cmdutil.Usagef("--format takes text, json, markdown or skill, not %q", format)
 			}
 			if len(args) == 1 && args[0] == "agents" {
+				if write {
+					// writing files: the run is a write, whatever the command's own class
+					cmd.Annotations[AnnotationImpact] = "write"
+				}
 				return helpAgents(cmd, f, format, write, path)
 			}
 			if write {
@@ -131,12 +141,15 @@ Two topics are not commands:
 				_, err := io.WriteString(f.IO.Out, md)
 				return err
 			}
+			// the same help as --help there, whose flag cobra adds only to the command it runs
+			target.InitDefaultHelpFlag()
 			target.SetOut(f.IO.Out)
 			return target.Help()
 		},
 	}
 	c.Flags().StringVar(&format, "format", FormatText, "text, json or markdown; for caitlyn help agents, markdown or skill")
-	c.Flags().BoolVar(&write, "write", false, "caitlyn help agents only: write the section into AGENTS.md, or the skill into .claude/skills/caitlyn/")
+	c.Flags().BoolVar(&write, "write", false, "caitlyn help agents only: write the section into AGENTS.md, or the skill into .claude/skills/caitlyn/, and show the change (--dry-run only shows it)")
+	_ = c.Flags().SetAnnotation("write", AnnotationImpact, []string{"write"})
 	c.Flags().StringVar(&path, "path", "", "With --write: the file (default AGENTS.md) or the skill's folder (default .claude/skills/caitlyn)")
 	return annotate(c, "read", "")
 }
@@ -178,9 +191,11 @@ func helpExitCodes(f *cmdutil.Factory, format string) error {
 	return nil
 }
 
-// helpAgents prints, or writes, the AGENTS.md section or the skill (18.4).
+// helpAgents prints, or writes, the AGENTS.md section or the skill (18.4). Writing shows what it changes as a diff,
+// and with --dry-run only shows it. caitlyn ai setup does the same for every AI coding tool in a project at once.
 func helpAgents(cmd *cobra.Command, f *cmdutil.Factory, format string, write bool, path string) error {
 	ws := workspaceOf(f)
+	stamp := NewStamp(f.Version, ws)
 	switch format {
 	case "", FormatText, FormatMarkdown:
 		snippet := AgentsSnippet(ws)
@@ -188,15 +203,16 @@ func helpAgents(cmd *cobra.Command, f *cmdutil.Factory, format string, write boo
 			if path == "" {
 				path = "AGENTS.md"
 			}
-			file, err := writeSnippet(f, path, snippet)
+			c, err := ReadFileChange(resolve(f, "."), resolve(f, path))
 			if err != nil {
 				return err
 			}
-			return reportWritten(f, []string{file})
+			c.After = ReplaceSection(c.Before, StampedSnippet(stamp))
+			return writeChanges(f, []*FileChange{c})
 		}
 		_, err := io.WriteString(f.IO.Out, snippet)
 		if err == nil && format != FormatMarkdown && f.IO.IsStdoutTTY() {
-			fmt.Fprintln(f.IO.ErrOut, "\nAdd it to AGENTS.md (or CLAUDE.md) with: caitlyn help agents --write. For the agents commands: caitlyn agents --help")
+			fmt.Fprintln(f.IO.ErrOut, "\nAdd it to AGENTS.md (or CLAUDE.md) with: caitlyn help agents --write. To set up every AI tool in this project: caitlyn ai setup. For the agents commands: caitlyn agents --help")
 		}
 		return err
 	case FormatJSON:
@@ -205,9 +221,8 @@ func helpAgents(cmd *cobra.Command, f *cmdutil.Factory, format string, write boo
 	}
 	// FormatSkill
 	t := Build(cmd.Root(), f, Options{})
-	files := Skill(t, ws)
 	if !write {
-		for i, sf := range files {
+		for i, sf := range Skill(t, ws) {
 			if i > 0 {
 				fmt.Fprintln(f.IO.Out)
 			}
@@ -219,27 +234,64 @@ func helpAgents(cmd *cobra.Command, f *cmdutil.Factory, format string, write boo
 		path = filepath.Join(".claude", "skills", "caitlyn")
 	}
 	dir := resolve(f, path)
-	var written []string
-	for _, sf := range files {
-		p := filepath.Join(dir, filepath.FromSlash(sf.Path))
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			return cmdutil.FromError(err)
+	var changes []*FileChange
+	for _, sf := range StampSkill(Skill(t, ws), stamp) {
+		c, err := ReadFileChange(resolve(f, "."), filepath.Join(dir, filepath.FromSlash(sf.Path)))
+		if err != nil {
+			return err
 		}
-		if err := os.WriteFile(p, []byte(sf.Text), 0o644); err != nil {
-			return cmdutil.FromError(err)
-		}
-		written = append(written, p)
+		c.After = sf.Text
+		changes = append(changes, c)
 	}
-	return reportWritten(f, written)
+	return writeChanges(f, changes)
 }
 
-func reportWritten(f *cmdutil.Factory, files []string) error {
-	format, _ := output.Resolve(f)
-	if format == output.JSON || format == output.JSONL {
-		return writeJSON(f.IO.Out, map[string]any{"written": files})
+// writtenChange is one file help agents --write changed, as JSON.
+type writtenChange struct {
+	File    string `json:"file"`
+	Action  string `json:"action"`
+	Added   int    `json:"added"`
+	Removed int    `json:"removed"`
+	Diff    string `json:"diff"`
+}
+
+// writeChanges writes the changes (none with --dry-run) and says what they were: each file's diff and "Wrote", or as
+// JSON the files written and every change with its diff.
+func writeChanges(f *cmdutil.Factory, changes []*FileChange) error {
+	dry := f.Globals.DryRun != ""
+	written := []string{}
+	var shown []writtenChange
+	for _, c := range changes {
+		if !c.Changed() {
+			continue
+		}
+		a, r := c.Counts()
+		shown = append(shown, writtenChange{File: c.Path, Action: c.Action(), Added: a, Removed: r, Diff: c.Diff()})
+		if dry {
+			continue
+		}
+		if err := c.Write(); err != nil {
+			return err
+		}
+		written = append(written, c.Path)
 	}
-	for _, p := range files {
-		fmt.Fprintf(f.IO.Out, "Wrote %s\n", p)
+	format, _ := output.Resolve(f)
+	if format == output.JSON || format == output.JSONL || format == output.YAML || f.Globals.JQ != "" || f.Globals.Query != "" {
+		return printData(f, map[string]any{"written": written, "dryRun": dry, "changes": shown})
+	}
+	u := gen.UIFor(f)
+	for _, c := range changes {
+		if !c.Changed() {
+			fmt.Fprintf(f.IO.Out, "%s is up to date. Nothing changed.\n", c.Path)
+			continue
+		}
+		RenderDiff(f.IO.Out, u, c.Diff())
+		if !dry {
+			fmt.Fprintf(f.IO.Out, "Wrote %s\n", c.Path)
+		}
+	}
+	if dry && len(shown) > 0 {
+		fmt.Fprintln(f.IO.Out, "Dry run: nothing was written. Run again without --dry-run to write it.")
 	}
 	return nil
 }
@@ -256,51 +308,20 @@ func resolve(f *cmdutil.Factory, p string) string {
 	return filepath.Join(dir, p)
 }
 
-// writeSnippet puts the section into the file: in place of a "## Caitlyn CLI" section it already has, or at its end.
-// Everything else in the file is kept as it was.
-func writeSnippet(f *cmdutil.Factory, path, snippet string) (string, error) {
-	p := resolve(f, path)
-	old, err := os.ReadFile(p)
-	if err != nil && !os.IsNotExist(err) {
-		return "", cmdutil.FromError(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return "", cmdutil.FromError(err)
-	}
-	return p, os.WriteFile(p, []byte(ReplaceSection(string(old), snippet)), 0o644)
-}
-
 // ReplaceSection replaces the document's "## Caitlyn CLI" section (to the next heading of the same or a higher
 // level) with section, or appends section when there is none.
 func ReplaceSection(doc, section string) string {
-	lines := strings.Split(doc, "\n")
-	start, end := -1, len(lines)
-	fence := false
-	for i, l := range lines {
-		if strings.HasPrefix(strings.TrimSpace(l), "```") {
-			fence = !fence
-		}
-		if fence {
-			continue
-		}
-		if start < 0 && strings.TrimSpace(l) == "## Caitlyn CLI" {
-			start = i
-			continue
-		}
-		if start >= 0 && (strings.HasPrefix(l, "## ") || strings.HasPrefix(l, "# ")) {
-			end = i
-			break
-		}
-	}
 	section = strings.TrimRight(section, "\n") + "\n"
-	if start < 0 {
+	sec, ok := FindSection(doc)
+	if !ok {
 		if strings.TrimSpace(doc) == "" {
 			return section
 		}
 		return strings.TrimRight(doc, "\n") + "\n\n" + section
 	}
-	before := strings.Join(lines[:start], "\n")
-	after := strings.Join(lines[end:], "\n")
+	lines := strings.Split(doc, "\n")
+	before := strings.Join(lines[:sec.Start], "\n")
+	after := strings.Join(lines[sec.End:], "\n")
 	out := before
 	if out != "" {
 		out += "\n"

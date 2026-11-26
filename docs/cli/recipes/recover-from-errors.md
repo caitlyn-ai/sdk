@@ -12,7 +12,7 @@ operations:
 
 # Recover from errors
 
-A command that fails ends with an exit code from one fixed table, and prints the error on stderr: JSON when stderr is not a terminal, with `exitCode` and a `hint` whose `next` commands are complete, reusing what the failed command was given. A script branches on the exit code; an AI agent runs the hint.
+A command that fails ends with an exit code from one fixed table, and prints the error on stderr. For a script, a CI job or an AI agent it is JSON, with `exitCode` and a `hint` whose `next` commands are complete, reusing what the failed command was given. A script branches on the exit code; an AI agent runs the hint. A person at a terminal gets the same error as a message instead (see [What a person sees](#what-a-person-sees)).
 
 ## A name already used
 
@@ -56,6 +56,32 @@ A flag left out, or one the command doesn't have. Exit code 2, and nothing was s
 # A required flag left out: exit code 2, and nothing was sent
 caitlyn agents draft save GHT7YRWXPL
 echo "exit code $?"
+```
+
+## What a person sees
+
+At a terminal, outside CI and not under an AI agent, the error is a message, even when JSON is your configured output. `--error-format human` asks for it anywhere, and `--error-format json` asks for the JSON at a terminal; `CAITLYN_ERROR_FORMAT` does the same for every command. The exit code doesn't change:
+
+<!-- example: examples/cli/recover-from-errors.sh#person -->
+```sh
+# What a person at a terminal sees for the same not-found error (--error-format human asks for it here)
+caitlyn agents get NOPE0000 --error-format human
+echo "exit code $?"
+```
+
+<!-- output: examples/cli/recover-from-errors.sh -->
+```text
+✗ Not found
+
+  No agent NOPE0000
+
+  → Find a valid identifier:
+      caitlyn agents list
+
+  404 NOT_FOUND · request <request-id>
+  https://build.caitlyn.ai/errors/NOT_FOUND
+  docs: https://build.caitlyn.ai/cli/reference/agents/#get
+exit code 6
 ```
 
 ## Next

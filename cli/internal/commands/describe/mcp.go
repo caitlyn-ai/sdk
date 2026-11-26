@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -130,9 +129,9 @@ signs you in to the workspace with its own OAuth sign-in: the CLI never hands it
 }
 
 // AddMCP works out the client's entry for the workspace and, with write, merges it into the configuration file under
-// dir. A file that is not JSON is refused rather than overwritten.
+// dir. A file that is not JSON is refused rather than overwritten, and so is a caitlyn entry that holds credentials.
 func AddMCP(client MCPClient, workspace, dir string, write bool) (*MCPAdded, error) {
-	url := "https://" + workspace + "/api/mcp"
+	url := MCPURL(workspace)
 	entry := client.Entry(url)
 	res := &MCPAdded{
 		Client:    client.Name,
@@ -147,40 +146,129 @@ func AddMCP(client MCPClient, workspace, dir string, write bool) (*MCPAdded, err
 	if !write {
 		return res, nil
 	}
-	path := filepath.Join(dir, client.File)
+	plan, err := PlanMCP(client, workspace, dir)
+	if err != nil {
+		return nil, err
+	}
+	res.File = plan.Change.Path
+	res.Written = true
+	res.Changed = plan.Change.Changed()
+	if err := plan.Change.Write(); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+// MCPURL is the workspace's MCP server.
+func MCPURL(workspace string) string { return "https://" + workspace + "/api/mcp" }
+
+// MCPPlan is the change that adds (or removes) the caitlyn server in a client's file in a project, and how many other
+// servers the file has, which it keeps.
+type MCPPlan struct {
+	Change *FileChange
+	Others int
+}
+
+// readMCP reads a client's file in the project: the document, its servers, and the change to make to it.
+func readMCP(client MCPClient, dir string) (*FileChange, map[string]any, map[string]any, error) {
+	c, err := ReadFileChange(dir, filepath.Join(dir, client.File))
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	doc := map[string]any{}
-	if b, err := os.ReadFile(path); err == nil && len(bytes.TrimSpace(b)) > 0 {
-		if err := json.Unmarshal(b, &doc); err != nil {
-			e := cmdutil.Usagef("%s isn't JSON this command can safely change: %v", path, err)
-			e.Detail = "Nothing was written. Add the entry printed without --write by hand."
-			return nil, e
+	if strings.TrimSpace(c.Before) != "" {
+		if err := json.Unmarshal([]byte(c.Before), &doc); err != nil {
+			e := cmdutil.Usagef("%s isn't JSON this command can safely change: %v", c.Path, err)
+			e.Detail = "Nothing was written. Add the entry caitlyn mcp add prints without --write by hand."
+			return nil, nil, nil, e
 		}
-	} else if err != nil && !os.IsNotExist(err) {
-		return nil, cmdutil.FromError(err)
 	}
 	servers, _ := doc[client.Key].(map[string]any)
+	return c, doc, servers, nil
+}
+
+// PlanMCP is the change that puts the workspace's server in the client's file under dir, keeping every other server.
+func PlanMCP(client MCPClient, workspace, dir string) (*MCPPlan, error) {
+	c, doc, servers, err := readMCP(client, dir)
+	if err != nil {
+		return nil, err
+	}
 	if servers == nil {
 		servers = map[string]any{}
 	}
-	res.Changed = !jsonEqual(servers[MCPServerName], entry)
+	if old, ok := servers[MCPServerName].(map[string]any); ok && HoldsCredentials(old) {
+		e := cmdutil.Usagef("The %s server in %s has headers or env, which can hold credentials, so it wasn't changed.", MCPServerName, c.Rel())
+		e.Code = "MCP_ENTRY_HAS_CREDENTIALS"
+		e.Detail = "The CLI never writes credentials into a file, and won't change an entry that may have them. Each AI client signs in to the workspace itself: remove headers and env from the entry (and any token in them), or rename it, then run this again."
+		return nil, e
+	}
+	entry := client.Entry(MCPURL(workspace))
+	plan := &MCPPlan{Change: c, Others: len(servers)}
+	if _, ok := servers[MCPServerName]; ok {
+		plan.Others--
+	}
+	if c.Exists && jsonEqual(servers[MCPServerName], entry) {
+		return plan, nil
+	}
 	servers[MCPServerName] = entry
 	doc[client.Key] = servers
-	res.File = path
-	res.Written = true
-	if !res.Changed {
-		return res, nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, cmdutil.FromError(err)
-	}
 	var buf bytes.Buffer
 	if err := writeJSON(&buf, doc); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
-		return nil, cmdutil.FromError(err)
+	c.After = buf.String()
+	return plan, nil
+}
+
+// PlanMCPRemoval is the change that takes the caitlyn server out of the client's file under dir, keeping every other
+// server; the file goes too when nothing else is left in it. ok is false when the file has no caitlyn server the CLI
+// could have written (one with credentials in it, or not pointing at a workspace's MCP server, is left alone, and
+// why says so).
+func PlanMCPRemoval(client MCPClient, dir string) (plan *MCPPlan, why string, err error) {
+	c, doc, servers, err := readMCP(client, dir)
+	if err != nil {
+		return nil, "", err
 	}
-	return res, nil
+	old, ok := servers[MCPServerName].(map[string]any)
+	if !ok {
+		return nil, "", nil
+	}
+	if HoldsCredentials(old) {
+		return nil, "it has headers or env, which caitlyn ai setup never writes", nil
+	}
+	if url, _ := old["url"].(string); !strings.HasPrefix(url, "https://") || !strings.HasSuffix(url, "/api/mcp") {
+		return nil, "it doesn't point at a workspace's MCP server", nil
+	}
+	delete(servers, MCPServerName)
+	plan = &MCPPlan{Change: c, Others: len(servers)}
+	if len(servers) == 0 {
+		delete(doc, client.Key)
+	}
+	if len(doc) == 0 {
+		c.After, c.Delete = "", true
+		return plan, "", nil
+	}
+	var buf bytes.Buffer
+	if err := writeJSON(&buf, doc); err != nil {
+		return nil, "", err
+	}
+	c.After = buf.String()
+	return plan, "", nil
+}
+
+// MCPEntry reads the caitlyn server from the client's file under dir, nil when there is none.
+func MCPEntry(client MCPClient, dir string) (map[string]any, error) {
+	_, _, servers, err := readMCP(client, dir)
+	if err != nil {
+		return nil, err
+	}
+	old, _ := servers[MCPServerName].(map[string]any)
+	return old, nil
+}
+
+// HoldsCredentials reports whether an MCP server entry has what can hold credentials: headers or env.
+func HoldsCredentials(entry map[string]any) bool {
+	return entry["headers"] != nil || entry["env"] != nil
 }
 
 func jsonEqual(a, b any) bool {

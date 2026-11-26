@@ -155,7 +155,7 @@ function exitCodesPage(tree) {
     byExit.get(e.exitCode).push(e.code);
   }
   const out = [];
-  out.push('Every command ends with one of these exit codes, and they never change meaning, so a script or an AI agent can branch on them. Every error the CLI prints carries its exit code as `exitCode`, and a hint of what to run next. `caitlyn help exit-codes` prints this table.', '');
+  out.push('Every command ends with one of these exit codes, and they never change meaning, so a script or an AI agent can branch on them. Every error the CLI prints as JSON carries its exit code as `exitCode`, and a hint of what to run next. `caitlyn help exit-codes` prints this table.', '');
   out.push('| Exit code | Meaning | Error codes |', '| --- | --- | --- |');
   for (const e of tree.exitCodes) {
     const codes = (byExit.get(e.code) ?? []).sort().map((c) => `[\`${c}\`](/errors/${c}/)`).join(', ');
@@ -164,7 +164,7 @@ function exitCodesPage(tree) {
   }
   out.push('');
   out.push('## Errors on stderr', '');
-  out.push('When stderr is not a terminal, with `--output json`, or when an AI agent runs the CLI, an error is one JSON object on stderr: the problem details Caitlyn sent, with the exit code and a hint whose `next` commands reuse the identifiers and flags of the command that failed.', '');
+  out.push('When stderr is not a terminal, in CI, or when an AI agent runs the CLI, an error is one JSON object on stderr: the problem details Caitlyn sent, with the exit code and a hint whose `next` commands reuse the identifiers and flags of the command that failed. A person at a terminal gets the same error as a message instead, whatever `--output` says. `--error-format json` or `CAITLYN_ERROR_FORMAT=json` asks for the JSON anywhere, and `human` for the message; the flag wins over the variable. See [When something fails](/cli/#when-something-fails).', '');
   const pf = tree.errors.PRECONDITION_FAILED;
   const sample = {
     error: {
@@ -257,7 +257,7 @@ export function errorSection(code, tree) {
   if (!e) return '';
   const meaning = tree.exitCodes.find((x) => x.code === e.exitCode)?.meaning ?? '';
   const out = ['## In the CLI', ''];
-  out.push(`A command that gets this error exits with code ${e.exitCode} (${meaning.replace(/\.$/, '').toLowerCase()}; [Exit codes](/cli/exit-codes/)). The error is printed on stderr, as JSON when stderr is not a terminal, with \`exitCode\` and a \`hint\`.`, '');
+  out.push(`A command that gets this error exits with code ${e.exitCode} (${meaning.replace(/\.$/, '').toLowerCase()}; [Exit codes](/cli/exit-codes/)). The error is printed on stderr: as JSON with \`exitCode\` and a \`hint\` for scripts, CI and AI agents, and as a message for a person at a terminal ([When something fails](/cli/#when-something-fails)).`, '');
   if (e.hint?.next?.length) {
     out.push(`For \`caitlyn ${e.hintCommand}\`, the hint suggests:`, '');
     for (const n of e.hint.next) out.push(`- \`${n.run}\`: ${n.why}`);
@@ -512,6 +512,9 @@ export function commandLineProblems(line, tree, { pending = PENDING_COMMANDS } =
       rest = true;
       continue;
     }
+    // help as the last word is help, as --help is (caitlyn agents help), where the command takes no argument
+    const noArgs = (c) => c.kind === 'group' || (!(c.args ?? []).length && !/<|\[(?!flags\])/.test(c.usage ?? ''));
+    if (w.text === 'help' && !w.quoted && cmd && i === words.length - 1 && !childOf(path, 'help') && noArgs(cmd)) continue;
     const next = childOf(path, w.text);
     if (next) {
       typed.push(w.text);

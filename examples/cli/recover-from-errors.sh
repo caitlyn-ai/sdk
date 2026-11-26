@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # What a script or an AI agent sees when a command fails: an exit code to branch on, and the error as JSON on stderr,
-# with a hint whose next steps are complete commands.
+# with a hint whose next steps are complete commands. The last two show what a person at a terminal sees instead.
 set -uo pipefail
 
 # #region already-exists
@@ -24,5 +24,17 @@ echo "exit code $?"
 # #region usage
 # A required flag left out: exit code 2, and nothing was sent
 caitlyn agents draft save GHT7YRWXPL
+echo "exit code $?"
+# #endregion
+
+# #region person
+# What a person at a terminal sees for the same not-found error (--error-format human asks for it here)
+caitlyn agents get NOPE0000 --error-format human
+echo "exit code $?"
+# #endregion
+
+# #region person-usage
+# A usage error, as a person sees it: what is missing, the command's usage, and an example to copy
+caitlyn agents draft save GHT7YRWXPL --error-format human
 echo "exit code $?"
 # #endregion

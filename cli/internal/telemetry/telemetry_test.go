@@ -151,8 +151,8 @@ func TestQueueCaps(t *testing.T) {
 	}
 	// Past 256 KB: the oldest go
 	big := ev(now, 0)
-	big.Flags = []string{strings.Repeat("x", 2000)}
-	for i := 0; i < 200; i++ {
+	big.Flags = []string{strings.Repeat("x", 20000)} // twenty of these pass the cap, each Append rewriting the queue
+	for i := 0; i < 20; i++ {
 		e := big
 		e.EventID = fmt.Sprintf("b%04d", i)
 		if _, err := q.Append(e); err != nil {
@@ -164,7 +164,7 @@ func TestQueueCaps(t *testing.T) {
 		t.Fatalf("queue is %d bytes, over %d", st.Size(), MaxQueueBytes)
 	}
 	evs, _ = q.Pending()
-	if evs[len(evs)-1].EventID != "b0199" || evs[0].EventID == "b0000" {
+	if evs[len(evs)-1].EventID != "b0019" || evs[0].EventID == "b0000" {
 		t.Fatal("the newest events are kept, the oldest dropped")
 	}
 }
@@ -208,6 +208,7 @@ func TestFlush(t *testing.T) {
 }
 
 func TestFlushGivesUpAfter3Seconds(t *testing.T) {
+	shortPostTimeout(t)
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
@@ -222,7 +223,7 @@ func TestFlushGivesUpAfter3Seconds(t *testing.T) {
 	start := time.Now()
 	_, err := q.Flush(context.Background(), srv.URL, nil)
 	took := time.Since(start)
-	if err == nil || took < PostTimeout-100*time.Millisecond || took > PostTimeout+time.Second {
+	if err == nil || took < PostTimeout-50*time.Millisecond || took > PostTimeout+time.Second {
 		t.Fatalf("took %s, err %v", took, err)
 	}
 	if evs, _ := q.Pending(); len(evs) != 1 {
@@ -752,4 +753,13 @@ func TestReleaseBuildsCarryTheEndpoint(t *testing.T) {
 	if Endpoint != "" {
 		t.Fatalf("a build with no ldflags has the endpoint %q; it must have none", Endpoint)
 	}
+}
+
+// shortPostTimeout gives a test that waits out the flush's budget 200 ms in place of 3 seconds; it checks the same
+// thing, the flush giving up at its budget, without the wait.
+func shortPostTimeout(t *testing.T) {
+	t.Helper()
+	old := PostTimeout
+	PostTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { PostTimeout = old })
 }

@@ -3224,7 +3224,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             // first watch, busyDocuments) is stopped by the call (cancellableProcessing), and the job it cancelled
             // raises nothing.
             m.reset().await;
-            m.faults(json!({"busyDocuments": {"doc-0001": true}, "jobSteps": 10_000, "cancellableProcessing": true}))
+            m.faults(json!({"busyDocuments": {"doc-0001": true}, "holdJobs": {"doc-0001": true}, "cancellableProcessing": true}))
                 .await;
             let doc = client(m).knowledge_base(KB).document("doc-0001");
             let mut watch = doc.watch().await.map_err(s)?;
@@ -8484,7 +8484,7 @@ fn rust_case<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 "cancel's wait {r:?}"
             );
             // cancel_processing: result() is the document, wait() follows it until no job runs on it, then reads it.
-            m.faults(json!({"busyDocuments": {"doc-0001": true}, "jobSteps": 10_000, "cancellableProcessing": true}))
+            m.faults(json!({"busyDocuments": {"doc-0001": true}, "holdJobs": {"doc-0001": true}, "cancellableProcessing": true}))
                 .await;
             let doc = c.knowledge_base(KB).document("doc-0001");
             let mut watch = doc.watch().await.map_err(s)?;

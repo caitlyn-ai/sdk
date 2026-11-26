@@ -12,8 +12,8 @@ import (
 )
 
 // Error is every failure the CLI reports: what happened (Title), why (Detail), how to fix it (Hint), and the exit
-// code. Rendered for people on stderr, or as problem details with exitCode and hint when stderr is not a terminal
-// or output is JSON (the CLI design, 4.5 and 18.2).
+// code. Rendered for a person at a terminal, or as problem details with exitCode and hint for scripts, CI and AI
+// agents (the CLI design, 4.5 and 18.2). --output shapes a command's data, never its errors.
 type Error struct {
 	Exit   int
 	Title  string
@@ -28,6 +28,45 @@ type Error struct {
 	Cause     error
 	// Silent errors print nothing (the command already said what happened); only the exit code is kept.
 	Silent bool
+	// Human is what a person at a terminal sees in place of, or as well as, the machine form. JSON never carries it,
+	// so the problem details scripts and AI agents read stay as they are.
+	Human *HumanForm
+}
+
+// HumanForm is the part of an error only a person reads: a shorter title, the commands they may have meant, the
+// command's usage, and next steps that suit a person (caitlyn ai help rather than caitlyn commands --output json).
+type HumanForm struct {
+	Title       string
+	Suggestions []string
+	Usage       []string
+	Hint        *Hint
+}
+
+// ForPeople is the error as a person at a terminal reads it: the human form's title and hint in place of the
+// machine form's, and a next step of `caitlyn commands --output json` as plain `caitlyn commands`.
+func (e *Error) ForPeople() *Error {
+	p := *e
+	h := e.Human
+	if h == nil {
+		h = &HumanForm{}
+	}
+	if h.Title != "" {
+		p.Title = h.Title
+	}
+	hint := h.Hint
+	if hint == nil && e.Hint != nil {
+		c := *e.Hint
+		c.Next = make([]NextStep, len(e.Hint.Next))
+		for i, n := range e.Hint.Next {
+			if n.Run == "caitlyn commands --output json" || n.Run == "caitlyn commands --json" {
+				n.Run = "caitlyn commands"
+			}
+			c.Next[i] = n
+		}
+		hint = &c
+	}
+	p.Hint = hint
+	return &p
 }
 
 // FieldProblem is one field error, named by the flag that set it when the CLI knows it.

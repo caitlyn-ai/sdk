@@ -18,7 +18,7 @@ func AgentsSnippet(workspace string) string {
 	}
 	b.WriteString(`- Discover commands with ` + "`caitlyn commands --json`" + `; one command with ` + "`caitlyn help <command> --format json`" + `.
 - Output is JSON when you run it. Errors are JSON on stderr; follow ` + "`hint.next`" + `. Exit codes: https://build.caitlyn.ai/cli/exit-codes/
-- Explore with a read-only sign-in: ` + "`caitlyn --profile readonly …`" + ` (ask the person to run ` + "`caitlyn auth login --read-only --profile readonly`" + ` once).
+- What you may do is set by the profile's agent scopes, which the person chose at sign-in: read only unless they chose more. A command outside them exits 5 without sending anything; ask the person rather than changing ` + "`agent_scopes`" + ` (only a person can).
 - Writes change drafts only. ` + "`caitlyn agents versions publish`" + ` changes what users get: ask the person first.
 - Commands marked destructive need ` + "`--yes`" + `. Run them with ` + "`--dry-run`" + ` first and show the person the plan.
 - Long waits: pass ` + "`--timeout`" + `, and use the printed resume command if it runs out.
@@ -48,7 +48,7 @@ func Skill(t *Tree, workspace string) []SkillFile {
 	if workspace != "" {
 		fmt.Fprintf(&b, "This project's workspace is %s.\n\n", workspace)
 	}
-	fmt.Fprintf(&b, "Generated from caitlyn %s (Caitlyn API %s). When the CLI is newer, regenerate this skill with `caitlyn help agents --format skill --write`.\n\n", t.CLI.Version, t.CLI.ModelVersion)
+	fmt.Fprintf(&b, "Generated from caitlyn %s (Caitlyn API %s). When the CLI is newer, regenerate this skill with `caitlyn ai setup --update`.\n\n", t.CLI.Version, t.CLI.ModelVersion)
 	b.WriteString(`## How to work
 
 1. Find the command: ` + "`caitlyn commands --json`" + ` lists every command with its flags, impact and exit codes; ` + "`caitlyn help <command> --format json`" + ` gives one, with its input's JSON Schema. [references/commands.md](references/commands.md) lists them all.

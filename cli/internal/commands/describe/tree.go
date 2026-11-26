@@ -187,6 +187,8 @@ type Flag struct {
 	MaxLength  *float64 `json:"maxLength,omitempty"`
 	Env        string   `json:"env,omitempty"`
 	Hidden     bool     `json:"hidden,omitempty"`
+	// Impact, when set, is the command's impact class when this flag is given (help --write writes files).
+	Impact string `json:"impact,omitempty"`
 	// Global flags are the root's, which every command takes.
 	Global      bool   `json:"global,omitempty"`
 	Description string `json:"description"`
@@ -581,6 +583,9 @@ func flags(fs *pflag.FlagSet, g *gen.Command, global bool, skip ...*pflag.FlagSe
 		if v, ok := fl.Annotations[cobra.BashCompOneRequiredFlag]; ok && len(v) > 0 && v[0] == "true" {
 			d.Required = true
 		}
+		if v := fl.Annotations[AnnotationImpact]; len(v) > 0 {
+			d.Impact = v[0]
+		}
 		if g != nil {
 			if mem, secret, ok := g.FlagMember(fl.Name); ok {
 				d.Member = mem.Wire
@@ -635,10 +640,11 @@ func flags(fs *pflag.FlagSet, g *gen.Command, global bool, skip ...*pflag.FlagSe
 
 // globalEnv are the variables that set a global flag's value when it is not given (13.4).
 var globalEnv = map[string]string{
-	"profile":   "CAITLYN_PROFILE",
-	"workspace": "CAITLYN_WORKSPACE",
-	"output":    "CAITLYN_OUTPUT",
-	"no-input":  "CAITLYN_NO_INPUT",
+	"profile":      "CAITLYN_PROFILE",
+	"workspace":    "CAITLYN_WORKSPACE",
+	"output":       "CAITLYN_OUTPUT",
+	"error-format": "CAITLYN_ERROR_FORMAT",
+	"no-input":     "CAITLYN_NO_INPUT",
 }
 
 // usage is a flag's usage text without a trailing full stop's absence mattering: one sentence, as written.

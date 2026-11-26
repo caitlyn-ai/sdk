@@ -186,3 +186,17 @@ func writeTreeText(w io.Writer, t *Tree) {
 	}
 	fmt.Fprintf(w, "\nOne command: caitlyn help <command>. As JSON for scripts and AI agents: caitlyn commands --json\n")
 }
+
+// Print prints data another package made as this package prints its own: YAML for --output yaml, else JSON, through
+// --jq or --query when given.
+func Print(f *cmdutil.Factory, v any) error {
+	if format, _ := output.Resolve(f); format == output.YAML && f.Globals.JQ == "" && f.Globals.Query == "" {
+		return writeYAML(f.IO.Out, v)
+	}
+	return printData(f, v)
+}
+
+// Annotate marks a command another package adds with its impact and exit codes, as this package marks its own.
+func Annotate(c *cobra.Command, impact, exitCodes string) *cobra.Command {
+	return annotate(c, impact, exitCodes)
+}

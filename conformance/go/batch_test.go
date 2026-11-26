@@ -692,7 +692,7 @@ func TestGoStartedHandles(t *testing.T) {
 	}
 	// CancelDocumentProcessing: the document as Result, and Wait until nothing runs on it ([wait.cancel-returns]
 	// checks what that Wait gives)
-	m.faults(t, map[string]any{"busyDocuments": map[string]any{"doc-0001": true}, "cancellableProcessing": true})
+	m.faults(t, map[string]any{"busyDocuments": map[string]any{"doc-0001": true}, "holdJobs": map[string]any{"doc-0001": true}, "cancellableProcessing": true})
 	stopped, err := c.KnowledgeBase(kb).Document("doc-0001").CancelProcessing(ctx)
 	if err != nil || stopped.Result.ID != "doc-0001" || stopped.Result.ETag == "" {
 		t.Fatalf("cancel processing %+v, %v", stopped, err)
@@ -718,7 +718,7 @@ func init() {
 		_, err = b.Wait(ctx)
 		sdkError(t, err, "CANCELLED")
 		// doc.CancelProcessing(…).Wait: the document as it then stands, its processing cancelled
-		m.faults(t, map[string]any{"busyDocuments": map[string]any{"doc-0001": true}, "cancellableProcessing": true})
+		m.faults(t, map[string]any{"busyDocuments": map[string]any{"doc-0001": true}, "holdJobs": map[string]any{"doc-0001": true}, "cancellableProcessing": true})
 		stopped, err := c.KnowledgeBase(kb).Document("doc-0001").CancelProcessing(ctx)
 		if err != nil {
 			t.Fatal(err)

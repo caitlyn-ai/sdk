@@ -71,22 +71,22 @@ func Run(ctx context.Context, io *iostreams.IOStreams, args []string, setup func
 		fmt.Fprintln(io.ErrOut, "caitlyn:", err)
 		return exitcode.Failed
 	}
-	cmd.SetArgs(args)
+	cmd.SetArgs(helpArgs(cmd, args))
 	cmd.SetIn(io.In)
 	cmd.SetOut(io.Out)
 	cmd.SetErr(io.ErrOut)
 	start := time.Now()
 	executed, err := cmd.ExecuteContextC(ctx)
-	code := exitcode.OK
-	if err != nil {
-		e := classify(err, ctx)
-		code = e.Exit
-		if !e.Silent {
-			report(f, u, e)
-		}
-	}
 	if executed == nil {
 		executed = cmd
+	}
+	code := exitcode.OK
+	if err != nil {
+		e := classify(err, ctx, executed)
+		code = e.Exit
+		if !e.Silent {
+			report(f, u, e, executed)
+		}
 	}
 	// Your own traces: close the root span, named after the command, and flush (a second at most)
 	f.Traces.End(strings.TrimSpace(strings.TrimPrefix(executed.CommandPath(), "caitlyn")), code)
@@ -96,8 +96,9 @@ func Run(ctx context.Context, io *iostreams.IOStreams, args []string, setup func
 	return code
 }
 
-// classify turns cobra's and everyone else's errors into *cmdutil.Error with an exit code.
-func classify(err error, ctx context.Context) *cmdutil.Error {
+// classify turns cobra's and everyone else's errors into *cmdutil.Error with an exit code. cmd is the command cobra
+// reached: for an unknown command, the group it was looked for in.
+func classify(err error, ctx context.Context, cmd *cobra.Command) *cmdutil.Error {
 	var ce *cmdutil.Error
 	if errors.As(err, &ce) {
 		return ce
@@ -111,6 +112,7 @@ func classify(err error, ctx context.Context) *cmdutil.Error {
 			e := cmdutil.Usagef("%s", strings.TrimSuffix(msg, "\n"))
 			if strings.Contains(msg, "unknown command") {
 				e.AddNext("caitlyn commands --output json", "list every command")
+				e.Human = unknownCommand(msg, cmd)
 			}
 			return e
 		}
@@ -118,9 +120,101 @@ func classify(err error, ctx context.Context) *cmdutil.Error {
 	return cmdutil.FromError(err)
 }
 
-// report prints an error: problem details as JSON when stderr is not a terminal or output is JSON, short "try:"
-// lines for an AI agent reading text, the full block for people (4.5, 18.2).
-func report(f *cmdutil.Factory, u *ui.UI, e *cmdutil.Error) {
+// unknownCommand is the human form of cobra's "unknown command" error: the command cobra reached and the word it
+// didn't know, the commands it suggests, and `<group> help` to see the group's commands.
+func unknownCommand(msg string, cmd *cobra.Command) *cmdutil.HumanForm {
+	lines := strings.Split(strings.TrimSpace(msg), "\n")
+	word, _, _ := strings.Cut(strings.TrimPrefix(lines[0], "unknown command "), " for ")
+	path := "caitlyn"
+	if cmd != nil {
+		path = cmd.CommandPath()
+	}
+	h := &cmdutil.HumanForm{Title: fmt.Sprintf("%s: unknown command %s", path, word)}
+	var near []string
+	for _, l := range lines[1:] {
+		if strings.HasPrefix(l, "\t") {
+			near = append(near, strings.TrimSpace(l))
+		}
+	}
+	if len(near) == 0 && cmd != nil {
+		// cobra's own suggestions come only from its legacy argument check, which a command with Args never
+		// reaches; work them out the same way, within two edits as cobra does
+		if cmd.SuggestionsMinimumDistance <= 0 {
+			cmd.SuggestionsMinimumDistance = 2
+		}
+		near = cmd.SuggestionsFor(strings.Trim(word, `"`))
+	}
+	for _, n := range near {
+		h.Suggestions = append(h.Suggestions, path+" "+n)
+	}
+	segments := strings.Fields(strings.TrimPrefix(path, "caitlyn"))
+	why := "see the commands in " + path
+	if len(segments) == 0 {
+		why = "see every command"
+	}
+	h.Hint = &cmdutil.Hint{Next: []cmdutil.NextStep{{Run: path + " help", Why: why}}, Docs: gen.GroupDocsURL(segments)}
+	return h
+}
+
+// Error formats: --error-format and CAITLYN_ERROR_FORMAT.
+const (
+	errorsHuman = "human"
+	errorsJSON  = "json"
+)
+
+// errorFormatValue is --error-format.
+type errorFormatValue struct{ g *cmdutil.Globals }
+
+func (v errorFormatValue) String() string { return v.g.ErrorFormat }
+func (v errorFormatValue) Type() string   { return "human|json" }
+func (v errorFormatValue) Set(s string) error {
+	switch s = strings.ToLower(s); s {
+	case errorsHuman, errorsJSON:
+		v.g.ErrorFormat = s
+		return nil
+	}
+	return fmt.Errorf("--error-format takes human or json, not %q", s)
+}
+
+// errorFormat is how errors are printed, when something says: --error-format, then CAITLYN_ERROR_FORMAT. "" leaves
+// it to who is reading stderr.
+func errorFormat(f *cmdutil.Factory) string {
+	if f.Globals.ErrorFormat != "" {
+		return f.Globals.ErrorFormat
+	}
+	switch v := strings.ToLower(strings.TrimSpace(f.IO.Getenv("CAITLYN_ERROR_FORMAT"))); v {
+	case errorsHuman, errorsJSON:
+		return v
+	}
+	return ""
+}
+
+// report prints an error for whoever reads stderr (4.5, 18.2). --output shapes a command's data, not its errors.
+// --error-format, then CAITLYN_ERROR_FORMAT, decide when set. Otherwise: an AI agent reading text gets short "try:"
+// lines; scripts, CI and AI agents (stderr not a terminal, or CI or agent mode) get problem details as JSON; and a
+// person at a terminal gets the full block, with the command's usage for a usage error.
+func report(f *cmdutil.Factory, u *ui.UI, e *cmdutil.Error, cmd *cobra.Command) {
+	human := func() {
+		if e.Code == "USAGE" && cmd != nil {
+			if e.Human == nil {
+				e.Human = &cmdutil.HumanForm{}
+			}
+			e.Human.Usage = usageLines(cmd)
+		}
+		u.RenderError(f.IO.ErrOut, e)
+	}
+	machine := func() {
+		b, _ := jsonMarshal(e.JSON())
+		fmt.Fprintf(f.IO.ErrOut, "%s\n", b)
+	}
+	switch errorFormat(f) {
+	case errorsHuman:
+		human()
+		return
+	case errorsJSON:
+		machine()
+		return
+	}
 	format := f.Globals.Output
 	if format == "" {
 		if v, err := output.Resolve(f); err == nil {
@@ -130,12 +224,20 @@ func report(f *cmdutil.Factory, u *ui.UI, e *cmdutil.Error) {
 	switch {
 	case f.Agent.On && format == output.Text:
 		u.RenderErrorLines(f.IO.ErrOut, e)
-	case !f.IO.IsStderrTTY() || format == output.JSON || format == output.JSONL || f.Agent.On:
-		b, _ := jsonMarshal(e.JSON())
-		fmt.Fprintf(f.IO.ErrOut, "%s\n", b)
+	case !f.IO.IsStderrTTY() || f.Agent.On || f.CI.In():
+		machine()
 	default:
-		u.RenderError(f.IO.ErrOut, e)
+		human()
 	}
+}
+
+// usageLines is a command's short usage, as a usage error shows it: a group's form with <command>, or the command's
+// own line.
+func usageLines(cmd *cobra.Command) []string {
+	if cmd.HasAvailableSubCommands() {
+		return []string{cmd.CommandPath() + " <command> [flags]"}
+	}
+	return []string{cmd.UseLine()}
 }
 
 // New builds the root command and its tree. u is replaced once the global flags are known.
@@ -144,7 +246,7 @@ func New(f *cmdutil.Factory, u **ui.UI) (*cobra.Command, error) {
 	root := &cobra.Command{
 		Use:           "caitlyn",
 		Short:         "Caitlyn on the command line",
-		Long:          "Agents, knowledge bases, chat, unattended runs and configuration as code, from a terminal, a script or CI.\n\nOutput is a table on a terminal and JSON when piped; errors are problem details with an exit code.\nDocs: https://build.caitlyn.ai/cli/",
+		Long:          "Agents, knowledge bases, chat, unattended runs and configuration as code, from a terminal, a script or CI.\n\nOutput is a table on a terminal and JSON when piped. Errors are a message for people at a terminal, and problem\ndetails with an exit code for scripts, CI and AI agents. `caitlyn <command> help` explains any command.\nDocs: https://build.caitlyn.ai/cli/",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args:          cobra.NoArgs,
@@ -157,6 +259,7 @@ func New(f *cmdutil.Factory, u **ui.UI) (*cobra.Command, error) {
 	pf.StringVar(&g.Profile, "profile", "", "The profile to use (default: CAITLYN_PROFILE, then the project file, then default)")
 	pf.StringVar(&g.Workspace, "workspace", "", "The workspace, for example your-company.caitlyn.ai, instead of the profile's")
 	pf.StringVarP(&g.Output, "output", "o", "", "table, json, jsonl, yaml or text (default: table on a terminal, JSON when piped)")
+	pf.Var(errorFormatValue{g}, "error-format", "human or json: how errors are printed on stderr (default: human for a person at a terminal, JSON for scripts, CI and AI agents)")
 	pf.StringVar(&g.Query, "query", "", "A JMESPath expression over the result")
 	pf.StringVar(&g.JQ, "jq", "", "A jq expression over the result (no jq binary needed)")
 	pf.StringVar(&g.Color, "color", "", "always, never or auto")
@@ -173,6 +276,9 @@ func New(f *cmdutil.Factory, u **ui.UI) (*cobra.Command, error) {
 	pf.BoolVar(&g.NoProjectFile, "no-project-file", false, "Ignore any .caitlyn.toml")
 	_ = root.RegisterFlagCompletionFunc("output", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		return output.Formats, cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = root.RegisterFlagCompletionFunc("error-format", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return []string{errorsHuman, errorsJSON}, cobra.ShellCompDirectiveNoFileComp
 	})
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
 		e := cmdutil.Usagef("%v", err)
@@ -233,6 +339,9 @@ func prepare(f *cmdutil.Factory, cmd *cobra.Command) error {
 	}
 	if g.DryRun != "" && g.DryRun != "request" && g.DryRun != "curl" {
 		return cmdutil.Usagef("--dry-run takes no value, or curl")
+	}
+	if v := strings.TrimSpace(f.IO.Getenv("CAITLYN_ERROR_FORMAT")); v != "" && errorFormat(f) == "" {
+		return cmdutil.Usagef("CAITLYN_ERROR_FORMAT takes human or json, not %q", v)
 	}
 	startTraces(f, cmd)
 	for _, h := range BeforeRun {
