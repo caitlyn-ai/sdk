@@ -2,20 +2,17 @@
   "$comment": "What a reader of each page usually wants next: page addresses without slashes, up to three each, or {\"page\", \"label\"} to show another label. scripts/docs-build.mjs resolves them to titles and descriptions and fails on one that names no page. Pages not listed show no \"What's next\". The landing page's entry is the four-column band under its hero.",
   "": [
     "getting-started",
+    "how-to-integrate",
     "authentication",
     {
       "page": "sdk/get-agent-version",
       "label": "API reference"
-    },
-    {
-      "page": "errors",
-      "label": "Errors and codes"
     }
   ],
   "getting-started": [
+    "how-to-integrate",
     "authentication",
-    "errors",
-    "streaming"
+    "errors"
   ],
   "authentication": [
     "guides/sign-in-from-a-browser",
