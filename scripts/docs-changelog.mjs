@@ -13,6 +13,7 @@
 // serviceErrorRemoved, errorCodeAdded, errorCodeRemoved, memberAdded, memberRemoved, memberChanged, enumValueAdded and enumValueRemoved.
 import fs from 'node:fs';
 import path from 'node:path';
+import { allErrors } from './docs-model.mjs';
 
 const SECTION_NAMES = {
   Features: 'New',
@@ -20,6 +21,15 @@ const SECTION_NAMES = {
   'Performance Improvements': 'Performance',
   Reverts: 'Reverted',
 };
+// The API's changes in an SDK release (scripts/release-notes.mjs), by their CHANGELOG.md heading
+const API_SECTIONS = {
+  'New operations': { badge: 'new', label: 'New in the API', slug: 'api-new' },
+  'Changed operations and types': { badge: 'changed', label: 'Changed in the API', slug: 'api-changed' },
+  'Stability changes': { badge: 'stability', label: 'Stability', slug: 'api-stability' },
+  'Breaking API changes': { badge: 'breaking', label: 'Breaking in the API', slug: 'api-breaking' },
+};
+/** The heading id of the Unreleased entry a merge request's preview shows. */
+export const UNRELEASED_ID = 'unreleased';
 // A change's scope, as a reader would name it
 const SCOPE_NAMES = { typescript: 'TypeScript', python: 'Python', go: 'Go', rust: 'Rust', auth: 'Sign-in', retry: 'Retries', docs: 'Developer docs', cli: 'CLI', model: 'API' };
 // The page a scope, or a word in a change, is about (only pages the site builds are linked)
@@ -35,7 +45,7 @@ const TOPIC_WORDS = [
   [/\bevery operation\b/i, 'sdk'],
 ];
 // The order a release's changes are listed in
-const SECTION_ORDER = ['Breaking changes', 'New', 'Fixes', 'Performance', 'Reverted'];
+const SECTION_ORDER = ['Breaking changes', 'Breaking API changes', 'New', 'Fixes', 'Performance', 'Reverted', 'New operations', 'Changed operations and types', 'Stability changes'];
 const sectionsOf = (r) => [...new Set(r.changes.map((c) => c.section))].sort((a, b) => (SECTION_ORDER.indexOf(a) + 1 || 99) - (SECTION_ORDER.indexOf(b) + 1 || 99));
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -48,12 +58,13 @@ export const longDate = (iso) => {
 export const releaseId = (version) => `v${version.replace(/\./g, '-')}`;
 /** An API release's heading id: 5.115.0 -> api-5-115-0 */
 export const apiReleaseId = (version) => `api-${version.replace(/\./g, '-')}`;
-const idOf = (r) => (r.api ? apiReleaseId(r.version) : releaseId(r.version));
+const idOf = (r) => (r.api ? apiReleaseId(r.version) : r.unreleased ? UNRELEASED_ID : releaseId(r.version));
 
 /**
  * The releases in CHANGELOG.md, newest first: { version, date, compare, changes: [{ section, scope, subject, commit, url,
- * breaking, highlights }] }. A change's `highlights` are the indented list written under it by hand (its parts, each
- * linking its guide), which semantic-release leaves alone once the release is written.
+ * breaking, highlights }] }. A change's `highlights` are the indented list under it: its change file's highlights
+ * (scripts/release-notes.mjs), each linking its page. An `# Unreleased (date)` heading, which only a merge request's
+ * preview has, is a release with `unreleased: true`.
  */
 export function parseChangelog(markdown) {
   const releases = [];
@@ -61,9 +72,10 @@ export function parseChangelog(markdown) {
   let section = null;
   let last = null;
   for (const line of markdown.split('\n')) {
-    const head = /^#{1,2} (?:\[(\d+\.\d+\.\d+)\]\(([^)]+)\)|(\d+\.\d+\.\d+))(?: "[^"]*")? \((\d{4}-\d{2}-\d{2})\)\s*$/.exec(line);
+    const head = /^#{1,2} (?:\[(\d+\.\d+\.\d+)\]\(([^)]+)\)|(\d+\.\d+\.\d+|Unreleased))(?: "[^"]*")? \((\d{4}-\d{2}-\d{2})\)\s*$/.exec(line);
     if (head) {
       release = { version: head[1] ?? head[3], compare: head[2] ?? null, date: head[4], changes: [] };
+      if (release.version === 'Unreleased') release.unreleased = true;
       releases.push(release);
       section = null;
       continue;
@@ -162,6 +174,29 @@ export function mergeReleases(sdk, api = []) {
     .map((x) => x.r);
 }
 
+/**
+ * What an API change's error links need from the model: each error class's codes ({ ConflictError: ['CONFLICT', …] }),
+ * and the operations each code belongs to (those that return its class and give the code in an example or their
+ * documentation), for a code an error class adds or drops.
+ */
+export function errorLinks(ast) {
+  const errorCodes = Object.fromEntries(allErrors(ast).map((e) => [e.name, e.codes]));
+  const codeOperations = {};
+  const service = Object.values(ast.shapes).find((x) => x.type === 'service');
+  const serviceErrors = new Set((service.errors ?? []).map((e) => e.target));
+  for (const e of allErrors(ast)) {
+    for (const c of e.codes) {
+      const ops = Object.entries(ast.shapes)
+        .filter(([, sh]) => sh.type === 'operation' && (serviceErrors.has(e.id) || (sh.errors ?? []).some((x) => x.target === e.id)))
+        .filter(([, sh]) => (sh.traits?.['smithy.api#documentation'] ?? '').includes(c) || JSON.stringify(sh.traits?.['smithy.api#examples'] ?? []).includes(`"${c}"`))
+        .map(([id]) => id.split('#')[1])
+        .sort();
+      if (ops.length) codeOperations[c] = ops;
+    }
+  }
+  return { errorCodes, codeOperations };
+}
+
 const code = (s) => `\`${s}\``;
 const list = (items) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
 const STABILITY_NAMES = { ga: 'GA', beta: 'beta' };
@@ -210,6 +245,10 @@ function apiLinker(pages, errorCodes = {}) {
 }
 
 // What a change to an operation or a type says, by kind (in this order within one entry)
+// How many operations and types changed alike before the change leads their line and they follow as a list
+const SHARED_AT = 4;
+// That line, as apiSections writes it, which the page sets as the change over a column list of its subjects
+const SHARED_ROW = /^- (Each .+?, in \d+ (?:operations|types|operations and types|operations and types)): (.+)\.$/;
 const CHANGED_KINDS = ['serviceErrorAdded', 'serviceErrorRemoved', 'errorAdded', 'errorRemoved', 'errorCodeAdded', 'errorCodeRemoved', 'memberAdded', 'memberRemoved', 'memberChanged', 'enumValueAdded', 'enumValueRemoved'];
 
 /**
@@ -221,7 +260,9 @@ const CHANGED_KINDS = ['serviceErrorAdded', 'serviceErrorRemoved', 'errorAdded',
  */
 export function apiSections(release, pages, { errorCodes, codeOperations = {} } = {}) {
   const link = apiLinker(pages, errorCodes);
-  const beta = (changes) => (changes.every((c) => c.surface === 'beta') ? ' (beta)' : '');
+  // "(beta)" tells a beta change from a GA one, so a release whose changes are all beta (the whole API, today) needs none
+  const mixed = release.changes.some((c) => c.surface !== 'beta');
+  const beta = (changes) => (mixed && changes.every((c) => c.surface === 'beta') ? ' (beta)' : '');
   const of = (kind) => release.changes.filter((c) => c.kind === kind);
   const sections = [];
 
@@ -303,9 +344,24 @@ export function apiSections(release, pages, { errorCodes, codeOperations = {} } 
         // "its request adds …", or "its request's `ifMatch` is now …" when a changed member comes first
         if (phrases.length) parts.push(part ? `its ${part}${phrases[0].startsWith('`') ? "'s" : ''} ${phrases.join('; ')}` : phrases.join('; '));
       }
-      const phrases = parts;
       const subject = s.op ? link.op(s.op) : s.shape ? (errorCodes?.[s.shape] ? link.error(s.shape) : link.type(s.shape)) : s.label;
-      return `- ${subject}${beta(s.changes)}: ${phrases.join('; ')}.`;
+      return { subject, noun: s.op ? 'operation' : s.shape ? 'type' : 'other', beta: beta(s.changes), desc: parts.join('; ') };
+    })
+    // Operations and types that changed alike are one line: "A, B and C: each request's `ifMatch` is now …"
+    .reduce((rows, r) => {
+      const same = rows.find((x) => x.desc === r.desc && x.beta === r.beta);
+      if (same) {
+        same.subjects.push(r.subject);
+        same.nouns.add(r.noun);
+      } else rows.push({ ...r, subjects: [r.subject], nouns: new Set([r.noun]) });
+      return rows;
+    }, [])
+    .map((r) => {
+      if (r.subjects.length === 1) return `- ${r.subject}${r.beta}: ${r.desc}.`;
+      // A few names lead the line; more follow the change, which the page sets as a column list (SHARED_ROW)
+      if (r.subjects.length < SHARED_AT) return `- ${list(r.subjects)}${r.beta}: each ${r.desc.replace(/^its /, '')}.`;
+      const nouns = r.nouns.has('other') ? 'operations and types' : [...r.nouns].sort().map((n) => `${n}s`).join(' and ');
+      return `- Each ${r.desc.replace(/^its /, '')}${r.beta}, in ${r.subjects.length} ${nouns}: ${list(r.subjects)}.`;
     });
   if (changed.length) sections.push({ title: 'Changed operations and types', slug: 'changed', badge: 'changed', label: 'Changed', items: changed });
 
@@ -339,17 +395,26 @@ const SDK_GROUPS = [
   { badge: 'changed', label: 'Faster', slug: 'performance', has: (c) => c.section === 'Performance' },
   { badge: 'changed', label: 'Reverted', slug: 'reverted', has: (c) => c.section === 'Reverted' },
 ];
-const SDK_GROUP_OF = (c) => SDK_GROUPS.find((g) => g.has(c)) ?? { badge: 'changed', label: sentence(c.section), slug: c.section.toLowerCase().replace(/[^a-z]+/g, '-') };
+const SDK_GROUP_OF = (c) => API_SECTIONS[c.section] ?? SDK_GROUPS.find((g) => g.has(c)) ?? { badge: 'changed', label: sentence(c.section), slug: c.section.toLowerCase().replace(/[^a-z]+/g, '-') };
+const GROUP_ORDER = [...SDK_GROUPS.map((g) => g.slug).slice(0, 1), ...Object.values(API_SECTIONS).filter((g) => g.badge === 'breaking').map((g) => g.slug), ...SDK_GROUPS.map((g) => g.slug).slice(1), ...Object.values(API_SECTIONS).filter((g) => g.badge !== 'breaking').map((g) => g.slug)];
+/** A merge request preview's mark on an entry this merge request adds (src/styles/components.css .caitlyn-this-mr). */
+export const THIS_MR = '<span class="caitlyn-this-mr">This merge request</span>';
+// An SDK entry's summary, set as the title of its highlights (src/styles/components.css .caitlyn-entry-title)
+const TITLE_OPEN = '<span class="caitlyn-entry-title">';
+const TITLE_CLOSE = '</span>';
 
 /** One SDK change as its entry: its scope, its subject as a sentence, and the pages it touches. */
-function sdkEntry(c, pages, operations) {
-  // A change with highlights links through them; its own words' links would undersell it
-  const links = c.highlights?.length ? [] : changeLinks(c, pages);
+function sdkEntry(c, pages, operations, { mark = false } = {}) {
+  // A change with highlights links through them, and an API change names its own pages; their words' links would
+  // undersell them
+  const links = c.highlights?.length || API_SECTIONS[c.section] ? [] : changeLinks(c, pages);
   for (const l of links) {
     const p = pages.find((q) => `/${q.slug}/` === l.link);
     if (p?.operation) operations.add(p.operation.name);
   }
-  const head = `- ${c.scope ? `**${scopeName(c.scope)}:** ` : ''}${sentence(c.subject)}${links.length ? `. See ${links.map((l) => `[${l.title}](${l.link})`).join(', ')}.` : ''}`;
+  const summary = `${c.scope ? `**${scopeName(c.scope)}:** ` : ''}${siteLinks(API_SECTIONS[c.section] ? c.subject : sentence(c.subject))}`;
+  const title = API_SECTIONS[c.section] ? summary : `${TITLE_OPEN}${summary}${TITLE_CLOSE}`;
+  const head = `- ${title}${links.length ? `. See ${links.map((l) => `[${l.title}](${l.link})`).join(', ')}.` : ''}${mark && c.thisMr ? ` ${THIS_MR}` : ''}`;
   return [head, ...(c.highlights ?? []).map((h) => `  - ${siteLinks(h)}`)].join('\n');
 }
 /** The site's own address, as written in CHANGELOG.md (read on GitHub too), made a link within the site. */
@@ -365,32 +430,64 @@ export function releaseViews(releases, pages, { errorCodes = {}, codeOperations 
     if (r.api) {
       const { sections, operations: ops } = apiSections(r, pages, { errorCodes, codeOperations });
       for (const o of ops) operations.add(o);
-      return { id: apiReleaseId(r.version), kind: 'API', version: r.version, date: r.date, intro: r.changes.length ? null : 'Nothing in the public API changed.', compare: { link: '/api/', text: 'API reference' }, groups: sections.map((s) => ({ badge: s.badge, label: s.label, slug: s.slug, items: s.items })) };
+      return { id: apiReleaseId(r.version), kind: 'API', version: r.version, date: r.date, intro: r.changes.length ? null : 'Nothing in the public API changed.', compare: { link: '/api/', text: 'API reference' }, groups: sections.map((s) => ({ badge: s.badge, label: s.label, slug: s.slug, source: 'api', items: s.items })) };
     }
     const groups = [];
-    for (const c of shownChanges(r)) {
+    // Marks tell this merge request's entries from the rest, so when every entry is its own there are none
+    const shown = shownChanges(r);
+    const allMine = r.unreleased && shown.length > 0 && shown.every((c) => c.thisMr);
+    for (const c of shown) {
       const g = SDK_GROUP_OF(c);
       let group = groups.find((x) => x.slug === g.slug);
-      if (!group) groups.push((group = { badge: g.badge, label: g.label, slug: g.slug, items: [] }));
-      group.items.push(sdkEntry(c, pages, operations));
+      if (!group) groups.push((group = { badge: g.badge, label: g.label, slug: g.slug, source: API_SECTIONS[c.section] ? 'api' : 'sdk', items: [] }));
+      group.items.push(sdkEntry(c, pages, operations, { mark: r.unreleased && !allMine }));
     }
-    const order = (g) => SDK_GROUPS.findIndex((x) => x.slug === g.slug) + 1 || 99;
+    const order = (g) => GROUP_ORDER.indexOf(g.slug) + 1 || 99;
     groups.sort((a, b) => order(a) - order(b));
     const previous = r.compare && /\/compare\/v?([\d.]+)\.\.\./.exec(r.compare)?.[1];
+    if (r.unreleased) {
+      return {
+        id: UNRELEASED_ID,
+        kind: 'Unreleased',
+        version: 'Unreleased',
+        date: r.date,
+        intro: `${UNRELEASED_INTRO(r.since, allMine)}${groups.length ? '' : ' Nothing yet.'}`,
+        compare: null,
+        groups,
+      };
+    }
     return {
       id: releaseId(r.version),
       kind: 'SDK',
       version: r.version,
       date: r.date,
       intro: groups.length ? null : 'No change to the SDKs themselves.',
-      compare: r.compare ? { link: r.compare, text: previous ? `Compare with ${previous}` : 'Every change in this release' } : null,
+      compare: r.compare ? { link: r.compare, text: 'Show diff', label: previous ? `The code changes since ${previous}, on GitHub` : 'The code changes in this release, on GitHub' } : null,
       groups,
     };
   });
   return { views, operations: [...operations].sort() };
 }
 
+// What a merge request's preview says above its Unreleased entry
+const UNRELEASED_INTRO = (since, allMine) =>
+  `A preview, not a release: what main has${since ? ` since ${since}` : ''}, with this merge request merged. ${allMine ? 'Every entry here is from this merge request.' : 'Entries marked "This merge request" are its own.'}`;
+
 const INTRO = (feed) => `Every SDK and API release, newest first. Read a breaking change before you upgrade. Follow them in a feed reader with the [Atom feed](${feed}).`;
+// Following the releases in Slack: its RSS app posts each new entry of the feed to the channel
+const SLACK_COMMAND = (feedUrl) => `/feed subscribe ${feedUrl}`;
+const FOLLOW = (feedUrl) => `**Get each release in Slack.** In the channel, run \`${SLACK_COMMAND(feedUrl)}\`, and Slack's RSS app posts every release there as it ships: its headline changes, linked to its notes here.`;
+/** The site's form of FOLLOW: the command as a button that copies it (src/scripts/copy-command.ts) */
+const followHtml = (feedUrl) => {
+  const command = escAttr(SLACK_COMMAND(feedUrl));
+  return [
+    '<div class="caitlyn-follow">',
+    `<p><strong>Get each release in Slack.</strong> In the channel, run this, and Slack's RSS app posts every release there as it ships: its headline changes, linked to its notes here.</p>`,
+    `<button type="button" class="caitlyn-copy-command" data-copy="${command}" aria-label="Copy the command: ${command}"><code>${command}</code><span class="caitlyn-copy-command-label" aria-hidden="true">Copy</span></button>`,
+    '</div>',
+  ].join('\n');
+};
+const escAttr = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 /**
  * The Changelog page (no title): `body`, its Markdown copy, a heading per release and one per group; `siteBody`, the
@@ -398,23 +495,23 @@ const INTRO = (feed) => `Every SDK and API release, newest first. Read a breakin
  * their badges on the right (src/styles/components.css .caitlyn-release), so the page's contents list the versions
  * alone; and the operations its entries link to. `releases` are SDK and API releases together (mergeReleases).
  */
-export function changelogPage(releases, pages, { feed = '/changelog/feed.xml', errorCodes = {}, codeOperations = {} } = {}) {
+export function changelogPage(releases, pages, { feed = '/changelog/feed.xml', feedUrl = `https://build.caitlyn.ai${feed}`, errorCodes = {}, codeOperations = {} } = {}) {
   const { views, operations } = releaseViews(releases, pages, { errorCodes, codeOperations });
-  const md = [INTRO(feed), ''];
-  const site = [INTRO(feed), '', '<div class="caitlyn-releases">', ''];
+  const md = [INTRO(feed), '', FOLLOW(feedUrl), ''];
+  const site = [INTRO(feed), '', followHtml(feedUrl), '', '<div class="caitlyn-releases">', ''];
   for (const v of views) {
-    const when = `${v.kind === 'API' ? 'API' : 'SDK'} release, ${longDate(v.date)}.`;
-    md.push(`## ${v.kind === 'API' ? 'API ' : ''}${v.version} {#${v.id}}`, '', `${when}${v.intro ? ` ${v.intro}` : ''}${v.compare ? ` [${v.compare.text}](${v.compare.link}).` : ''}`, '');
-    for (const g of v.groups) md.push(`### ${g.label} {#${v.id}-${g.slug}}`, '', ...g.items, '');
+    const when = v.kind === 'Unreleased' ? '' : `${v.kind === 'API' ? 'API' : 'SDK'} release, ${longDate(v.date)}.`;
+    md.push(`## ${v.kind === 'API' ? 'API ' : ''}${v.version} {#${v.id}}`, '', [when, v.intro, v.compare ? `[${v.compare.text}](${v.compare.link}).` : ''].filter(Boolean).join(' '), '');
+    for (const g of v.groups) md.push(`### ${g.label} {#${v.id}-${g.slug}}`, '', ...g.items.map(plainMark), '');
 
     site.push(
       `<section class="caitlyn-release" data-kind="${v.kind.toLowerCase()}"${v.groups.some((g) => g.badge === 'breaking') ? ' data-breaking' : ''}>`,
       '<div class="caitlyn-release-meta">',
       '',
-      `## ${v.version} <span class="caitlyn-release-kind">${v.kind}</span> {#${v.id}}`,
+      v.kind === 'Unreleased' ? `## Unreleased {#${v.id}}` : `## ${v.version} <span class="caitlyn-release-kind">${v.kind}</span> {#${v.id}}`,
       '',
-      `<p class="caitlyn-release-date"><time datetime="${v.date}">${longDate(v.date)}</time></p>`,
-      ...(v.compare ? [`<p class="caitlyn-release-compare"><a href="${v.compare.link}">${v.compare.text}</a></p>`] : []),
+      ...(v.kind === 'Unreleased' ? [`<p class="caitlyn-release-date">Preview, ${longDate(v.date)}</p>`] : [`<p class="caitlyn-release-date"><time datetime="${v.date}">${longDate(v.date)}</time></p>`]),
+      ...(v.compare ? [`<p class="caitlyn-release-compare"><a href="${v.compare.link}"${v.compare.label ? ` title="${v.compare.label}"` : ''}>${v.compare.text}</a></p>`] : []),
       '',
       '</div>',
       '<div class="caitlyn-release-entries">',
@@ -422,7 +519,9 @@ export function changelogPage(releases, pages, { feed = '/changelog/feed.xml', e
     );
     if (v.intro) site.push(`<p class="caitlyn-release-intro">${inlineHtml(v.intro)}</p>`, '');
     for (const g of v.groups) {
-      site.push(`<div class="caitlyn-release-group" data-change="${g.badge}">`, `<p class="caitlyn-release-label"><span class="caitlyn-stability" data-change="${g.badge}">${g.label}</span></p>`, '', ...g.items, '', '</div>', '');
+      // Every badge is the kind of change alone; where it came from (the API) is a quiet label beside it
+      const [badge, scope] = / in the API$/.test(g.label) ? [g.label.replace(/ in the API$/, ''), 'in the API'] : [g.label, null];
+      site.push(`<div class="caitlyn-release-group" data-change="${g.badge}" data-source="${g.source ?? 'sdk'}">`, `<p class="caitlyn-release-label"><span class="caitlyn-stability" data-change="${g.badge}">${badge}</span>${scope ? `<span class="caitlyn-release-scope">${scope}</span>` : ''}</p>`, '', ...g.items.map(siteItem), '', '</div>', '');
     }
     site.push('</div>', '</section>', '');
   }
@@ -433,6 +532,22 @@ export function changelogPage(releases, pages, { feed = '/changelog/feed.xml', e
   site.push('</div>', '');
   return { body: md.join('\n'), siteBody: site.join('\n'), operations };
 }
+
+/** The Markdown copy's form of an item: the preview's mark in words, and none of the page's styling spans. */
+const plainMark = (md) => md.replace(` ${THIS_MR}`, ' *(This merge request)*').replace(/<span class="caitlyn-(?:entry-title|see)">(.*?)<\/span>/g, '$1');
+
+/**
+ * An item as the site shows it: a highlight's closing "See …" reference set as a footnote (.caitlyn-see), and an API
+ * line naming many operations as the change over a column list of them (.caitlyn-api-subjects).
+ */
+const siteItem = (md) => {
+  const shared = SHARED_ROW.exec(md);
+  if (shared) {
+    const names = shared[2].split(/, | and (?=\[)/).map((n) => `<span class="caitlyn-api-subject">${n}</span>`);
+    return `- ${shared[1]}:<span class="caitlyn-api-subjects">${names.join('')}</span>`;
+  }
+  return md.replace(/ (See (?:\[[^\]]+\]\([^)]+\)(?:, | and )?)+\.)$/gm, ' <span class="caitlyn-see">$1</span>');
+};
 
 /** Inline Markdown (code, bold, links) as HTML, for text inside the timeline's own elements. */
 const inlineHtml = (md) =>
@@ -451,8 +566,25 @@ const inline = (md, base) =>
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, href) => `<a href="${href.startsWith('/') ? base + href : href}">${text}</a>`);
 
 /** The Atom feed: one entry per release, SDK and API alike, newest first, each linking to its heading on the Changelog page. */
+/**
+ * A release's feed summary, what Slack's RSS app and most feed readers show under its title: its headline changes, one
+ * sentence each, then how many API changes it brings, and a breaking change named first.
+ */
+function feedSummary(r) {
+  const plain = (md) => md.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/[`*]/g, '');
+  const sdk = r.changes.filter((c) => !API_SECTIONS[c.section]);
+  const api = r.changes.filter((c) => API_SECTIONS[c.section]);
+  if (!sdk.length && !api.length) return `Released ${longDate(r.date)}: no change to the SDKs themselves.`;
+  const lines = sdk.map((c) => `${sentence(plain(c.subject))}.`);
+  if (api.length) lines.push(`And ${api.length} ${api.length === 1 ? 'change' : 'changes'} in the API.`);
+  const breaking = r.changes.some((c) => c.breaking || c.section === 'Breaking API changes');
+  return esc(`${breaking ? 'Includes a breaking change. ' : ''}${lines.join(' ')}`);
+}
+
 export function atomFeed(releases, pages, { base, path: pagePath = '/changelog/', feed = '/changelog/feed.xml', errorCodes = {}, codeOperations = {} }) {
   const page = `${base}${pagePath}`;
+  // A merge request's Unreleased entry is a preview, never a release a reader follows
+  releases = releases.filter((r) => !r.unreleased);
   const updated = releases[0] ? `${releases[0].date}T00:00:00Z` : '1970-01-01T00:00:00Z';
   const entries = releases.map((r) => {
     let html;
@@ -469,15 +601,17 @@ export function atomFeed(releases, pages, { base, path: pagePath = '/changelog/'
       html = sectionsOf(shown)
         .map((s) => {
           const items = shown.changes.filter((c) => c.section === s).map((c) => {
-            const links = changeLinks(c, pages);
-            const md = `${c.breaking && s !== 'Breaking changes' ? '**Breaking.** ' : ''}${c.scope ? `**${scopeName(c.scope)}:** ` : ''}${sentence(c.subject)}${links.length ? `. See ${links.map((l) => `[${l.title}](${l.link})`).join(', ')}.` : ''}`;
-            return `<li>${inline(md, base)}</li>`;
+            const api = !!API_SECTIONS[c.section];
+            const links = c.highlights?.length || api ? [] : changeLinks(c, pages);
+            const md = `${c.breaking && s !== 'Breaking changes' ? '**Breaking.** ' : ''}${c.scope ? `**${scopeName(c.scope)}:** ` : ''}${siteLinks(api ? c.subject : sentence(c.subject))}${links.length ? `. See ${links.map((l) => `[${l.title}](${l.link})`).join(', ')}.` : ''}`;
+            const highlights = (c.highlights ?? []).map((h) => `<li>${inline(siteLinks(h), base)}</li>`).join('');
+            return `<li>${inline(md, base)}${highlights ? `<ul>${highlights}</ul>` : ''}</li>`;
           });
-          return `<h3>${esc(s)}</h3><ul>${items.join('')}</ul>`;
+          return `<h3>${esc(API_SECTIONS[s]?.label ?? s)}</h3><ul>${items.join('')}</ul>`;
         })
         .join('');
       title = `Caitlyn SDKs ${r.version}`;
-      summary = shown.changes.length ? `Released ${longDate(r.date)}: ${shown.changes.length} ${shown.changes.length === 1 ? 'change' : 'changes'}${shown.changes.some((c) => c.breaking) ? ', including a breaking change' : ''}.` : `Released ${longDate(r.date)}: no change to the SDKs themselves.`;
+      summary = feedSummary(shown);
     }
     return [
       '  <entry>',

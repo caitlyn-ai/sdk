@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"time"
@@ -94,6 +93,18 @@ func ErrorsIfMatch(ctx context.Context, client *caitlyn.Client) error {
 	}
 	// #endregion
 	return err
+}
+
+// NameYourApp creates a client that names its application, CI system and agent in the user agent.
+func NameYourApp() (*caitlyn.Client, error) {
+	// #region name-your-app
+	client, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token(os.Getenv("CAITLYN_TOKEN")),
+		caitlyn.WithAppID("release-bot#2.1.0"), // app/release-bot#2.1.0
+		caitlyn.WithCI("gitlab"),               // ci/gitlab: the CI system it is running in
+		caitlyn.WithAgent("claude-code"),       // agent/claude-code: the AI agent driving it
+	)
+	// #endregion
+	return client, err
 }
 
 // Retries creates a client that tries harder.

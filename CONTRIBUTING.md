@@ -255,8 +255,8 @@ To run it by hand for an app commit: Build → Pipelines → Run pipeline on `ma
 
 1. `fetch-semantic-version` (a semantic-release dry run) writes the next version to `VERSION.txt`.
 2. `stamp-version` stamps it into every SDK file (`scripts/version.mjs release`), as artifacts.
-3. `release` (semantic-release) checks the stamped files name that version, adds the release notes to the top of
-   `CHANGELOG.md` (`@semantic-release/changelog`), commits both to `main` as `chore(release): x.y.z`
+3. `release` (semantic-release) checks the stamped files name that version, writes the release notes ("Release
+   notes", below) and adds them to the top of `CHANGELOG.md` (`@semantic-release/changelog`), commits both to `main` as `chore(release): x.y.z`
    (`@semantic-release/git`), tags that commit `v<version>`, tags the same commit `go/v<version>` for the Go
    module (`scripts/go-tag.mjs`), and creates the GitLab release with the same notes.
 4. The push mirror takes `main` and the protected tags to `github.com/caitlyn-ai/sdk`. The Go release is done:
@@ -286,10 +286,9 @@ was seeded with the GitLab releases' notes for v0.3.0 to v0.8.0; v0.2.0 and earl
 
 **Links in the notes point at the GitHub mirror**, never at this GitLab, which the public cannot open: the notes are
 `CHANGELOG.md` and the GitHub releases, and the GitLab release shows the same text. The mirror has the same commits
-and tags, so `https://github.com/caitlyn-ai/sdk/commit/<sha>` and `…/compare/vX...vY` work. semantic-release builds
-links from `repositoryUrl`, which must stay this GitLab because it pushes there, so `.releaserc.yml` gives the notes
-generator the angular preset's header and commit templates with the GitHub address written in (issue references are
-left unlinked, since their numbers are this GitLab's). As a safety net, `release-github` points any link still under
+and tags, so `https://github.com/caitlyn-ai/sdk/commit/<sha>` and `…/compare/vX...vY` work. `scripts/release-notes.mjs`
+writes them with the GitHub address, not semantic-release's `repositoryUrl`, which must stay this GitLab because it
+pushes there (issue references are left out, since their numbers are this GitLab's). As a safety net, `release-github` points any link still under
 `https://git.customd.com/custom-d/caitlyn/sdk/` at the mirror, and fails rather than publish any other
 `git.customd.com` address.
 
@@ -487,6 +486,51 @@ Set up once, before the first Go release:
 1. **Protect the Go tags.** In GitLab, `custom-d/caitlyn/sdk` → Settings → Repository → Protected tags → `go/v*`,
    allowed to create: Maintainers. The push mirror sends only protected tags, and `v*` does not match `go/v0.9.0`.
 2. **After that release**, check it resolves: `go list -m github.com/caitlyn-ai/sdk/go@v<version>`.
+
+## Release notes
+
+Every release's notes are written by `scripts/release-notes.mjs`, which semantic-release runs as its notes generator
+(`.releaserc.yml`, `generateNotesCmd`). Nobody writes or edits notes at release time. A release's section has:
+
+- **One entry per change file** added since the last release (`changes/<name>.md`, the format is in
+  [changes/README.md](changes/README.md)): its summary, linked to the commit that added it, and its highlights, each
+  saying what changed and why, and linking the page it is about.
+- **A line for each releasing commit with no change file**, from its subject, as semantic-release wrote them before.
+  The `model:main` job's `feat(model)` commits get none when the API changed: the next item says what they did.
+- **What changed in the public API**, from the model at the last release tag to the one being released
+  (`scripts/model-diff.mjs`, which says what the app's `CaitlynChanges` says, checked against two changes.json it
+  wrote): new operations, changed operations and types (members, errors, error codes, enum values), stability changes,
+  and the breaking ones together under **Breaking API changes**. Each operation and type links to its reference page,
+  worked out from the model as the docs build does (`scripts/docs-reference.mjs` `referencePages`). This works whether
+  the snapshot is locked to a published model or a local build.
+- **BREAKING CHANGES**, every change file with `breaking: true`.
+
+**Merge requests.** A releasing title (`feat`, `fix`, `perf`, `revert`, or `!`; not a `docs` or `ci` scope) needs a
+change file. The `changes:check` job fails when it is missing, reads badly (no bold lead, no docs link, internal
+wording), has another type than the title, or disagrees with it about `!`, and when the model's changes break callers
+(a removed operation, member or enum value, a member made required, a changed type) without the title's `!` and a
+breaking change file. A changed type breaks no one when both are plain strings or numbers (the SDKs spell them as the
+language's own types, so no one imports their names) and the new one takes every value the old one did: a wider
+number, or a length or range no narrower (`scripts/model-diff.mjs` `widens`). An enum, structure, list, map or union
+changed to another breaks code that names it. Like `docs:mr-title`, rerun it after editing the title: GitLab starts no
+pipeline for that.
+
+**A change that merged without its file.** Any merge request can add one later with `commit: <hash>` in its front
+matter, naming the commit it describes: it takes that commit's line in the notes, and is checked against that commit's
+title rather than its own. The commit must be on `main`, not released yet, and have no other file.
+
+**The preview.** A merge request's docs preview (`docs:build` with `DOCS_UNRELEASED=on`) opens its Changelog with an
+**Unreleased** entry: the section the next release would have if it were cut once the merge request merged. That is the
+change files and releasing commits merged to `main` since the last release, the merge request's own change files (or
+its title, as the squash commit it becomes, when it adds none), and the model's changes. The merge request's own entries,
+and the API changes its model brings, are marked **This merge request**. Its links are checked with every other page's,
+so a broken one fails the preview, not the release. The live site never shows the entry, and the feed leaves it out.
+`node scripts/release-notes.mjs unreleased` prints it locally, from `origin/main`.
+
+**Trying it on past releases.** `node scripts/release-notes.mjs dry-run <version> <from tag> <to tag> <dir>` prints the
+section a past release would have had with `<dir>`'s change files, each standing for that range's releasing commit of
+its type. `docs/site/test/fixtures/release-notes/` holds change files for 0.10.0, 0.10.1 and 0.11.0, written from their
+merge requests, and `docs/site/test/release-notes.test.mjs` regenerates the three.
 
 ## Commit messages
 

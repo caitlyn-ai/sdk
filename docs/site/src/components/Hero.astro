@@ -1,12 +1,14 @@
 ---
-// The landing page's hero: the design system's Edge cover archetype on `cover-ground`. The approved field orb
+// The landing page's hero: the design system's Edge cover archetype on `cover-ground`. The approved amber orb
 // enters from the right edge, cropped by it; the title and tagline hang from the left margin. Distinct from
 // caitlyn.ai's home page (a centred Horizon on white) and from the app's built-in docs (a pattern panel beside the title).
-// The orb is the design system's `orb-field.png`, scaled only (src/assets/orb-field.png); Astro serves it as WebP.
+// The orb is the design system's `orb-amber.png`, as supplied (src/assets/orb-amber.png), in the site's own accent; Astro
+// serves it as WebP. With WebGL, src/scripts/orb.ts draws the animated particle orb in its place, sampling this artwork
+// for where its particles gather, and hides the image once it has drawn.
 // Under it, the four places most readers start (the landing page's entry in src/whats-next.json), as the same cards
 // as "What's next".
 import { Image } from 'astro:assets';
-import orb from '../assets/orb-field.png';
+import orb from '../assets/orb-amber.png';
 import NextCards from './NextCards.astro';
 
 const { data } = Astro.locals.starlightRoute.entry;
@@ -14,7 +16,7 @@ const { title = data.title, tagline, actions = [] } = data.hero || {};
 const band = (data as { whatsNext?: { link: string; title: string; description: string; section: string; icon: string }[] }).whatsNext ?? [];
 ---
 
-<section class="caitlyn-hero" aria-labelledby="_top">
+<section class="caitlyn-hero" aria-labelledby="_top" data-orb>
   <div class="caitlyn-hero-orb" aria-hidden="true">
     <Image src={orb} alt="" width={900} loading="eager" fetchpriority="high" />
   </div>
@@ -42,3 +44,7 @@ const band = (data as { whatsNext?: { link: string; title: string; description: 
     </nav>
   )
 }
+
+<script>
+  import '../scripts/orb.ts';
+</script>
