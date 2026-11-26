@@ -219,7 +219,7 @@ server.
 
 ## Next
 
-- [Authentication](/authentication/): sign in as a service, as a person, or as a workload on AWS or in CI.
 - [How to integrate](/how-to-integrate/): the other ways in, from embedding the chat to MCP.
+- [Authentication](/authentication/): sign in as a service, as a person, or as a workload on AWS or in CI.
 - [Errors](/errors/): what each failure looks like, and which ones to handle.
 - [Streaming](/streaming/): ask an agent a question and stream the answer.

@@ -530,8 +530,8 @@ for (const p of pages) {
 }
 
 // The sidebar, as topics (starlight-sidebar-topics): each topic is a section of the site with its own sidebar, and
-// a page's topic is the one whose sidebar lists it. Get started and How the API works take the start pages named in
-// TOPIC_START; a start page in neither (a new one) lands in Get started. Guides holds the guides, the SECTIONS and
+// a page's topic is the one whose sidebar lists it. How the API works and Guides take the start pages named in
+// TOPIC_START; every other start page (a new one included) is a topic of its own. Guides holds the guides, the SECTIONS and
 // the app's guides. SDK reference holds the operations by SDK namespace, then the types and the error codes.
 const bySlug = new Map(pages.map((p) => [p.slug, p]));
 // Starlight puts the base in front of sidebar links itself
@@ -567,9 +567,15 @@ const referenceGroups = [
 ];
 const guidePages = pages.filter((p) => p.kind === 'guides');
 const howItWorks = startPagesOf(TOPIC_START['how-the-api-works']);
+// The start pages are topics of their own, a page each: the overview (the landing page), Getting started and How to
+// integrate before the sections, the rest (the FAQ, the Changelog, and any new one) after them
+const FIRST_TOPICS = ['', 'getting-started', 'how-to-integrate'];
+const pageTopic = (p) => {
+  const item = link(p, p.slug === '' ? 'Overview' : p.title);
+  return { label: item.label, link: item.link, icon: 'document', items: [item] };
+};
 const sidebar = [
-  // The section's own link is Getting started; the logo and the section's Overview item are the landing page (/)
-  { label: 'Get started', link: '/getting-started/', icon: 'rocket', items: getStarted.map((p) => link(p, p.slug === '' ? 'Overview' : p.title)) },
+  ...FIRST_TOPICS.map((s) => getStarted.find((p) => p.slug === s)).filter(Boolean).map(pageTopic),
   {
     label: 'Guides',
     link: link(guidePages[0] ?? sectionPages(SECTIONS[0], pages)[0]).link,
@@ -583,6 +589,7 @@ const sidebar = [
   { label: 'How the API works', link: link(howItWorks[0]).link, icon: 'puzzle', items: howItWorks.map((p) => link(p)) },
   { label: 'SDK reference', link: '/sdk/', icon: 'seti:json', badge: { text: 'Beta', variant: 'default' }, items: [link(bySlug.get('sdk'), 'Overview'), ...referenceGroups] },
 ];
+const laterTopics = getStarted.filter((p) => !FIRST_TOPICS.includes(p.slug)).map(pageTopic);
 // The HTTP API's reference: its overview, its operations by the SDK reference's groups, then shortcuts to the types and
 // the error codes, which are the SDK reference's pages. The published OpenAPI document is beside the pages.
 // The CLI's JSON Schema files (generated, like the OpenAPI document: docs/site/public/cli/ is ignored by git)
@@ -644,6 +651,8 @@ sidebar.push(apiTopic);
   if (!start) fail('docs/cli/index.md', 'the CLI section has no start page');
   else sidebar.push({ label: 'CLI', link: '/cli/', icon: 'seti:shell', items: [link(start, 'Overview'), ...groups] });
 }
+// The FAQ, the Changelog and any other start page, after the sections
+sidebar.push(...laterTopics);
 // No two entries side by side share a label, in any topic's sidebar (docs/site/test/sidebar.test.mjs checks the
 // reference sidebars before the build)
 (function distinct(items, where) {
@@ -667,7 +676,7 @@ const iconUrl = (id) => {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}">${icon.body}</svg>`;
   return `url("data:image/svg+xml,${encodeURIComponent(svg).replace(/'/g, '%27')}")`;
 };
-const TOPIC_ICONS = { 'Get started': 'rocket-launch-outline-rounded', Guides: 'menu-book-outline-rounded', 'How the API works': 'extension-outline-rounded', 'SDK reference': 'code-outline-rounded', 'API reference': 'api-outline-rounded', CLI: 'terminal-rounded' };
+const TOPIC_ICONS = { Overview: 'home-outline-rounded', 'Getting started': 'rocket-launch-outline-rounded', 'How to integrate': 'hub-outline-rounded', FAQ: 'help-outline-rounded', Changelog: 'update-rounded', Guides: 'menu-book-outline-rounded', 'How the API works': 'extension-outline-rounded', 'SDK reference': 'code-outline-rounded', 'API reference': 'api-outline-rounded', CLI: 'terminal-rounded' };
 const GROUP_ICONS = {
   Conversations: 'chat-bubble-outline-rounded', Documents: 'description-outline-rounded', Uploads: 'upload-outline-rounded',
   Agents: 'smart-toy-outline-rounded', Versions: 'stacks-outline-rounded', 'Live history': 'history-rounded', Callers: 'badge-outline-rounded',
