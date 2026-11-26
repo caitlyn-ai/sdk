@@ -312,9 +312,10 @@ groups:
   telemetry:
     short: Turn usage data for Caitlyn on or off, and see what it would send
     long: |
-      Usage data for Caitlyn: the CLI can send Caitlyn anonymous usage data, which commands and flags run (never their
-      values), how long they take and how they end. It is opt-in, in every release, beta included, and off in CI: on
-      turns it on, off turns it off again and deletes anything queued, and status shows whether it is on and why.
+      Usage data for Caitlyn: the CLI can send Caitlyn usage data, with a random install ID: which commands and flags
+      run (never their values), how long they take and how they end. It is opt-in, in every release, beta included,
+      and off in CI: on turns it on, off turns it off again and deletes anything queued, and status shows whether it
+      is on and why.
 
       These commands are only about usage data for Caitlyn. Your own traces (OpenTelemetry to your own collector) are
       separate: OTEL_EXPORTER_OTLP_ENDPOINT turns them on.
@@ -522,7 +523,7 @@ commands:
       - caitlyn telemetry off
   telemetry reset:
     long: |
-      Makes a new anonymous install ID for usage data for Caitlyn, so later events can't be linked to earlier ones,
+      Makes a new random install ID for usage data for Caitlyn, so later events can't be linked to earlier ones,
       and deletes anything queued.
     examples:
       - caitlyn telemetry reset

@@ -92,7 +92,7 @@ var Keys = []Key{
 	{Name: "browser", Env: []string{"CAITLYN_BROWSER", "BROWSER"}, Doc: "The browser for sign-in"},
 	{Name: "update_notice", Default: "true", Doc: "true, prompt or false"},
 	{Name: "update_channel", Default: "stable", Doc: "stable or beta"},
-	{Name: "telemetry", Default: "false", Doc: "Usage data for Caitlyn: anonymous usage data sent to Caitlyn, off until you turn it on (caitlyn telemetry on writes true, off writes false). Not your own traces (traces.otlp_endpoint)"},
+	{Name: "telemetry", Default: "false", Doc: "Usage data for Caitlyn: usage data sent to Caitlyn with a random install ID, off until you turn it on (caitlyn telemetry on writes true, off writes false). Not your own traces (traces.otlp_endpoint)"},
 	{Name: "traces.otlp_endpoint", Env: []string{"OTEL_EXPORTER_OTLP_ENDPOINT"}, Doc: "Your own traces: the OTLP/HTTP collector to send OpenTelemetry traces of the CLI's calls to (off when unset). Unrelated to usage data for Caitlyn"},
 	{Name: "agent", Project: true, Profile: true, Env: []string{"CAITLYN_AGENT_ID"}, Doc: "The default agent for commands that take one"},
 	{Name: "version", Project: true, Profile: true, Env: []string{"CAITLYN_VERSION"}, Doc: "The default agent version"},

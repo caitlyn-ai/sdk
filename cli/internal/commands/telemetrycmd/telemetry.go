@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -24,8 +25,8 @@ func Add(root *cobra.Command, f *cmdutil.Factory) {
 	cmd := &cobra.Command{
 		Use:   "telemetry",
 		Short: "Turn usage data for Caitlyn on or off, and see what it would send",
-		Long: "Usage data for Caitlyn: the CLI can send Caitlyn anonymous usage data, which commands and flags run (never\n" +
-			"their values), how long they take, and whether they succeed. Never arguments, IDs, content or anything about\n" +
+		Long: "Usage data for Caitlyn: the CLI can send Caitlyn usage data, with a random install ID: which commands and\n" +
+			"flags run (never their values), how long they take, and whether they succeed. Never arguments, IDs, content or anything about\n" +
 			"you or your workspace. It is opt-in, in every release, beta included, and always off in CI unless\n" +
 			"CAITLYN_TELEMETRY=1: nothing is sent unless you turn it on.\n\n" +
 			"What decides it, first match wins: CAITLYN_TELEMETRY=0 or 1; DO_NOT_TRACK; telemetry in your user file\n" +
@@ -41,7 +42,7 @@ func Add(root *cobra.Command, f *cmdutil.Factory) {
 func onOff(f *cmdutil.Factory, on bool) *cobra.Command {
 	use, short := "off", "Turn usage data for Caitlyn off and delete anything queued"
 	if on {
-		use, short = "on", "Turn usage data for Caitlyn on: send anonymous usage data from this machine"
+		use, short = "on", "Turn usage data for Caitlyn on: send usage data from this machine"
 	}
 	return &cobra.Command{
 		Use: use, Short: short, Args: cobra.NoArgs,
@@ -54,6 +55,10 @@ func onOff(f *cmdutil.Factory, on bool) *cobra.Command {
 				return &cmdutil.Error{Exit: 1, Code: "CONFIG_WRITE_FAILED", Title: "The setting couldn't be saved.", Detail: err.Error(), Cause: err}
 			}
 			q := telemetry.QueueFor(f)
+			if on {
+				// on again: a 410 or a Retry-After the endpoint answered before no longer stops it
+				_ = q.ClearStop()
+			}
 			if !on {
 				if err := q.Delete(); err != nil {
 					return &cmdutil.Error{Exit: 1, Code: "TELEMETRY_QUEUE", Title: "Usage data for Caitlyn is off, but its queue couldn't be deleted.", Detail: err.Error(), Cause: err}
@@ -84,6 +89,10 @@ type statusView struct {
 	DocsURL    string            `json:"docs"`
 	QueueFile  string            `json:"queueFile"`
 	Collecting bool              `json:"collecting"`
+	// StoppedByEndpoint is the endpoint that answered 410 to this version, which then sends nothing more to it
+	StoppedByEndpoint *telemetry.Stop `json:"stoppedByEndpoint,omitempty"`
+	// WaitingUntil is when the endpoint asked to be sent to again (Retry-After), while that's in the future
+	WaitingUntil *time.Time `json:"waitingUntil,omitempty"`
 }
 
 func status(f *cmdutil.Factory) *cobra.Command {
@@ -99,6 +108,14 @@ func status(f *cmdutil.Factory) *cobra.Command {
 			v := statusView{On: d.On, Rule: d.Rule, Reason: d.Reason, Endpoint: telemetry.EndpointFor(f) != "",
 				InstallID: st.InstallID, Notice: !st.NoticeShown.IsZero(), Queued: len(evs), DocsURL: telemetry.DocsURL,
 				QueueFile: q.Path(), Collecting: d.Collects()}
+			endpoint := telemetry.EndpointFor(f)
+			if q.Gone(endpoint) {
+				v.StoppedByEndpoint = st.Stopped
+				v.Collecting = false
+			}
+			if until := q.WaitUntil(endpoint); !until.IsZero() {
+				v.WaitingUntil = &until
+			}
 			format, err := output.Resolve(f)
 			if err != nil {
 				return err
@@ -121,6 +138,13 @@ func status(f *cmdutil.Factory) *cobra.Command {
 			}
 			if format == output.Table || format == output.Text {
 				fmt.Fprintln(f.IO.Out, d.String())
+				if v.StoppedByEndpoint != nil {
+					fmt.Fprintf(f.IO.Out, "Stopped: the endpoint answered 410 to caitlyn %s on %s, so this version sends nothing more to it. caitlyn telemetry on starts again.\n",
+						v.StoppedByEndpoint.Version, v.StoppedByEndpoint.At.Format("2006-01-02"))
+				}
+				if v.WaitingUntil != nil {
+					fmt.Fprintf(f.IO.Out, "Waiting: the endpoint asked for nothing to be sent before %s (Retry-After).\n", v.WaitingUntil.UTC().Format(time.RFC3339))
+				}
 				fmt.Fprintf(f.IO.Out, "Queued: %d events in %s\n", len(evs), q.Path())
 				if st.InstallID != "" {
 					fmt.Fprintf(f.IO.Out, "Install ID: %s (caitlyn telemetry reset makes a new one)\n", st.InstallID)
@@ -142,7 +166,7 @@ func status(f *cmdutil.Factory) *cobra.Command {
 
 func reset(f *cmdutil.Factory) *cobra.Command {
 	return &cobra.Command{
-		Use: "reset", Short: "Make a new anonymous install ID for usage data for Caitlyn, and delete anything queued", Args: cobra.NoArgs,
+		Use: "reset", Short: "Make a new random install ID for usage data for Caitlyn, and delete anything queued", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := telemetry.QueueFor(f).Reset()
 			if err != nil {
@@ -172,7 +196,7 @@ func flush(f *cmdutil.Factory) *cobra.Command {
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			// Failures are silent: the queue is kept for the next flush.
+			// Failures are silent: Flush keeps, drops or stops by the answer.
 			_, _ = q.Flush(ctx, telemetry.EndpointFor(f), HTTPClient)
 			return nil
 		},

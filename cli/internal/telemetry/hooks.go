@@ -83,7 +83,7 @@ func Dir(f *cmdutil.Factory) string {
 }
 
 // QueueFor is the run's queue.
-func QueueFor(f *cmdutil.Factory) Queue { return Queue{Dir: Dir(f), Now: f.Now} }
+func QueueFor(f *cmdutil.Factory) Queue { return Queue{Dir: Dir(f), Now: f.Now, Version: f.Version} }
 
 // DecideFor applies the switches to this run.
 func DecideFor(f *cmdutil.Factory) Decision {
@@ -181,9 +181,9 @@ func BuildEvent(f *cmdutil.Factory, cmd *cobra.Command, code int, took time.Dura
 		channel = "unknown"
 	}
 	e := Event{
-		EventID: NewUUID(), Time: RoundTime(f.Now()), InstallID: installID,
+		EventID: NewUUID(), Time: FormatTime(f.Now().Add(-took)), InstallID: installID,
 		Command: CommandName(cmd), Flags: FlagNames(cmd, unknownFlag), ExitCode: code,
-		DurationMS: RoundDuration(took), Version: f.Version, Channel: channel,
+		DurationMS: RoundDuration(took), Version: EventVersion(f.Version), Channel: channel,
 		OS: runtime.GOOS, Arch: runtime.GOARCH, CI: f.CI.In(), Agent: f.Agent.On,
 		TTY: [3]bool{f.IO.IsStdinTTY(), f.IO.IsStdoutTTY(), f.IO.IsStderrTTY()},
 	}
@@ -216,6 +216,9 @@ func AfterRun(f *cmdutil.Factory, cmd *cobra.Command, code int, took time.Durati
 		return
 	}
 	q := QueueFor(f)
+	if q.Gone(EndpointFor(f)) {
+		return // the endpoint told this version to stop (410)
+	}
 	st := q.LoadState()
 	id := st.InstallID
 	if id == "" {
@@ -225,7 +228,8 @@ func AfterRun(f *cmdutil.Factory, cmd *cobra.Command, code int, took time.Durati
 		}
 	}
 	due, err := q.Append(BuildEvent(f, cmd, code, took, id, r.unknownFlag))
-	if err != nil || !due || !q.ClaimSpawn() {
+	// No background flush while the endpoint asked to wait (Retry-After)
+	if err != nil || !due || !q.WaitUntil(EndpointFor(f)).IsZero() || !q.ClaimSpawn() {
 		return
 	}
 	env := append([]string(nil), f.IO.Environ...)

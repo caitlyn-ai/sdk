@@ -12,7 +12,7 @@ The CLI has two kinds of telemetry. They are separate: each has its own switch, 
 
 | | Your own traces | Usage data for Caitlyn |
 | --- | --- | --- |
-| What it is | OpenTelemetry traces of your commands and their API calls, for you | Anonymous usage data about the CLI, for Caitlyn |
+| What it is | OpenTelemetry traces of your commands and their API calls, for you | Usage data about the CLI, with a random install ID, for Caitlyn |
 | Who receives it | Your own OpenTelemetry collector | Caitlyn |
 | What it sends | A span per command and per API call: operations, timings, status codes and request IDs | One event per command run: the fields [below](#what-is-sent), and nothing else |
 | On by default | No: only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set | No: only when you turn it on |
@@ -48,7 +48,7 @@ Your own traces go only to the collector you name. Caitlyn never receives them, 
 
 ## Usage data for Caitlyn
 
-The CLI can send Caitlyn anonymous usage data, so we can see which commands are used and which fail, and make the CLI better. It never sends what you typed, what Caitlyn returned, or anything that identifies you or your workspace. It is opt-in, in every release, stable and beta alike, and off in CI: nothing is sent unless you turn it on.
+The CLI can send Caitlyn usage data, so we can see which commands are used and which fail, and make the CLI better. It never sends what you typed, what Caitlyn returned, or anything that identifies you or your workspace. It is opt-in, in every release, stable and beta alike, and off in CI: nothing is sent unless you turn it on.
 
 ```sh
 caitlyn telemetry on
@@ -65,23 +65,23 @@ Usage data for Caitlyn is one event per command run, with these fields:
 | The command | `kb sync`, `agents draft save` |
 | The names of the flags used, never their values | `["--remove-missing", "--yes", "--output"]` |
 | The exit code | `3` |
-| How long it took, to the nearest 10 ms | `52.31 s` |
-| The CLI's version and release channel | `0.12.0`, `stable` |
+| How long it took, to the nearest 10 ms, and at most a day | `52.31 s` |
+| The CLI's version (`unknown` for a build that isn't a release) and release channel | `0.12.0`, `stable` |
 | The operating system and architecture | `darwin`, `arm64` |
 | Whether it ran in CI, and which CI | `ci: true`, `gitlab` |
 | Whether an AI agent ran it, and which | `agent: claude-code` |
 | Whether stdin, stdout and stderr were terminals | `[true, false, true]` |
-| An anonymous install ID | A random UUID made on the first run, unrelated to the machine, you or your workspace. `caitlyn telemetry reset` makes a new one |
-| An event ID, and the hour it ran in | For removing duplicates |
+| A random install ID | A random UUID made on the first run, unrelated to the machine, you or your workspace. `caitlyn telemetry reset` makes a new one |
+| An event ID, and the exact time the run started, in UTC to the millisecond | `2026-11-25T09:47:12.005Z`; the event ID lets a repeat of the same event be counted once |
 
 A flag's name is taken from the CLI's own list of flags, so a value can't be sent by being mistaken for one: a flag the CLI doesn't know is sent as `unknown`.
 
-An example event, exactly as it is queued and sent. Every event has these fields and no others; the payload sent is `{"events": [...]}`:
+An example event, exactly as it is queued and sent. Every event has these fields and no others; the payload sent is `{"schema": "caitlyn-cli-usage/1", "events": [...]}`:
 
 ```json
 {
   "event_id": "3b0f9a52-8c1e-4f7a-9d6b-2e5c7a1f0b84",
-  "time": "2026-11-25T09:00:00Z",
+  "time": "2026-11-25T09:47:12.005Z",
   "install_id": "f1c2d3e4-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
   "command": "agents draft save",
   "flags": ["--if-match", "--name", "--note"],
@@ -107,7 +107,7 @@ An example event, exactly as it is queued and sent. Every event has these fields
 - Workspace names, hostnames and addresses.
 - Error messages, which can quote your data; the exit code says enough.
 - Names, email addresses and tokens.
-- IP addresses: the endpoint does not store them.
+- IP addresses. Every request comes from one, but Caitlyn doesn't log or store IP addresses; our firewall holds an address only briefly, while it is limiting that address's requests.
 
 `caitlyn telemetry status --pending` prints exactly what is waiting to be sent, so you can check it yourself.
 
@@ -129,8 +129,8 @@ A project's `.caitlyn.toml` can't turn it on or off: whether to share usage data
 The first time you run the CLI at a terminal, it asks, once, on stderr:
 
 ```text
-Usage data for Caitlyn. Help improve the Caitlyn CLI by sending Caitlyn anonymous usage
-data: which commands and flags run, how long they take and whether they succeed. Never
+Usage data for Caitlyn. Help improve the Caitlyn CLI by sending Caitlyn usage data:
+which commands and flags run, how long they take and whether they succeed. Never
 arguments, IDs, content or anything about you or your workspace. It's off unless you
 turn it on: caitlyn telemetry on
 More: https://build.caitlyn.ai/cli/telemetry
@@ -147,7 +147,8 @@ Off, as everywhere: an outbound call nobody expected is a finding in a security 
 - Each run adds its event to a small file in your home folder (`~/.caitlyn/telemetry/queue.jsonl`, readable only by you) as it exits. No network.
 - When 20 events are waiting, or the oldest is a day old, the CLI starts a separate process that sends them over HTTPS, and exits without waiting for it. Sending gives up after 3 seconds and tries again next time; a command never waits on it.
 - Events older than 7 days are dropped, and no more than 256 KB is ever kept.
+- Each request holds at most 100 events and 64 KB, so a long queue goes in several. A request Caitlyn can't accept (400, 413 or 415) is dropped rather than sent again; one it can't take yet (429, a server error or no answer) is kept for next time, and when it says how long to wait (`Retry-After`, up to an hour), nothing is sent to it before then. If the endpoint answers 410, this version of the CLI deletes the events it queued and sends nothing more to that endpoint; `caitlyn telemetry status` says so, and `caitlyn telemetry on` starts it again.
 
 ## Where usage data for Caitlyn goes
 
-To Caitlyn, never your workspace: the CLI may not be signed in, and usage data must never mix with your workspace's data. It is stored in Singapore (the ap-southeast-1 Region) for 13 months (395 days), then deleted.
+To Caitlyn's intake at `https://telemetry.caitlyn.ai/cli`, never your workspace: the CLI may not be signed in, and usage data must never mix with your workspace's data. Every release of the CLI sends there, but only once you turn usage data on; a CLI built from source sends nothing. It is stored in Singapore (the ap-southeast-1 Region). Events are deleted after 13 months; summary counts with no IDs may be kept longer.

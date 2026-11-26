@@ -4,15 +4,21 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gofrs/flock"
 )
 
 // The queue's limits (9.1).
@@ -24,14 +30,20 @@ const (
 	// FlushCount and FlushAge start a background flush: 20 events, or the oldest a day old.
 	FlushCount = 20
 	FlushAge   = 24 * time.Hour
-	// PostTimeout is the flush's whole budget for its one request.
+	// PostTimeout is the flush's whole budget, for all its requests.
 	PostTimeout = 3 * time.Second
+	// MaxBatchEvents and MaxBatchBytes cap one request, as the intake does (usage-event.schema.json's maxItems): a
+	// bigger queue goes in several requests.
+	MaxBatchEvents = 100
+	MaxBatchBytes  = 64 * 1024
 )
 
 // Queue is ~/.caitlyn/telemetry: queue.jsonl (mode 0600), the install ID and whether the notice was shown.
 type Queue struct {
 	Dir string
 	Now func() time.Time
+	// Version is the CLI's, for the User-Agent and for a stop (410).
+	Version string
 }
 
 func (q Queue) now() time.Time {
@@ -47,10 +59,64 @@ func (q Queue) Path() string { return filepath.Join(q.Dir, "queue.jsonl") }
 func (q Queue) statePath() string { return filepath.Join(q.Dir, "state.json") }
 func (q Queue) lockPath() string  { return filepath.Join(q.Dir, "flush.lock") }
 
+// locked runs fn holding queue.lock, so rewriting the queue (Append's prune, Flush taking it and putting events back)
+// never loses another process's write.
+func (q Queue) locked(fn func() error) error {
+	if err := os.MkdirAll(q.Dir, 0o700); err != nil {
+		return err
+	}
+	l := flock.New(filepath.Join(q.Dir, "queue.lock"))
+	if err := l.Lock(); err != nil {
+		return err
+	}
+	defer func() { _ = l.Unlock() }()
+	return fn()
+}
+
 // State is what the CLI remembers about telemetry between runs.
 type State struct {
 	InstallID   string    `json:"install_id"`
 	NoticeShown time.Time `json:"notice_shown,omitzero"`
+	// Stopped is the endpoint that answered 410 Gone, and the CLI version it answered: that version queues and sends
+	// nothing more to that endpoint. Another version, or another endpoint, isn't affected; caitlyn telemetry on clears
+	// it.
+	Stopped *Stop `json:"stopped,omitempty"`
+	// RetryAfter is, per endpoint, when it may be sent to again: it answered 429 or 503 with Retry-After.
+	RetryAfter map[string]time.Time `json:"retry_after,omitempty"`
+}
+
+// Stop records a 410.
+type Stop struct {
+	Version  string    `json:"version"`
+	Endpoint string    `json:"endpoint"`
+	At       time.Time `json:"at"`
+}
+
+// MaxRetryAfter caps how long a Retry-After keeps the CLI from sending.
+const MaxRetryAfter = time.Hour
+
+// Gone reports whether endpoint told this CLI version to stop sending (410).
+func (q Queue) Gone(endpoint string) bool {
+	st := q.LoadState().Stopped
+	return st != nil && st.Version == q.Version && st.Endpoint == endpoint
+}
+
+// WaitUntil is when endpoint may be sent to again, or the zero time when it may now.
+func (q Queue) WaitUntil(endpoint string) time.Time {
+	if t, ok := q.LoadState().RetryAfter[endpoint]; ok && q.now().Before(t) {
+		return t
+	}
+	return time.Time{}
+}
+
+// ClearStop forgets a 410 and any Retry-After: caitlyn telemetry on starts sending again.
+func (q Queue) ClearStop() error {
+	st := q.LoadState()
+	if st.Stopped == nil && len(st.RetryAfter) == 0 {
+		return nil
+	}
+	st.Stopped, st.RetryAfter = nil, nil
+	return q.SaveState(st)
 }
 
 // LoadState reads the state; a missing or broken file is an empty state.
@@ -203,9 +269,15 @@ func (q Queue) prune(evs []Event) []Event {
 
 // Append adds an event: one local write, and no network. It returns whether a flush is due.
 func (q Queue) Append(e Event) (flushDue bool, err error) {
-	if err := os.MkdirAll(q.Dir, 0o700); err != nil {
-		return false, err
-	}
+	err = q.locked(func() error {
+		var aerr error
+		flushDue, aerr = q.appendLocked(e)
+		return aerr
+	})
+	return flushDue, err
+}
+
+func (q Queue) appendLocked(e Event) (flushDue bool, err error) {
 	line, err := json.Marshal(e)
 	if err != nil {
 		return false, err
@@ -262,58 +334,202 @@ func (q Queue) ClaimSpawn() bool {
 	return true
 }
 
-// Batch is the request body.
+// Batch is the request body: SchemaID and the events, as usage-event.schema.json describes.
 type Batch struct {
+	Schema string  `json:"schema"`
 	Events []Event `json:"events"`
 }
 
-// Flush sends the queue in one request with a 3-second limit, deletes what was accepted, and stops. Failures are
-// kept for the next flush; the error is for tests and status, never shown after a command.
+// SchemaID names the batch's version for the intake, which validates the body against usage-event.schema.json.
+const SchemaID = "caitlyn-cli-usage/1"
+
+// outcome is what an answer means for the batch it was sent with.
+type outcome int
+
+const (
+	sent outcome = iota // 2xx: delete it
+	drop                // 400, 413, 415: the intake will never take it, so delete it
+	keep                // 429, 5xx, a network error, anything else: keep it for the next flush
+	gone                // 410: delete the queue and stop sending
+)
+
+func classify(status int, err error) outcome {
+	switch {
+	case err != nil:
+		return keep
+	case status >= 200 && status <= 299:
+		return sent
+	case status == http.StatusBadRequest, status == http.StatusRequestEntityTooLarge, status == http.StatusUnsupportedMediaType:
+		return drop
+	case status == http.StatusGone:
+		return gone
+	}
+	return keep
+}
+
+// batches splits events into requests of at most MaxBatchEvents events and MaxBatchBytes bytes of body each, in
+// order, encoding each event once and counting the body's bytes as it goes. An event too big to send on its own
+// (none can be, by the schema's limits) is left out.
+func batches(evs []Event) [][]Event {
+	// {"schema":"…","events":[ e1,e2 ]}: the fixed part, then each event and the commas between them
+	empty, _ := json.Marshal(Batch{Schema: SchemaID, Events: []Event{}})
+	fixed := len(empty)
+	var out [][]Event
+	var cur []Event
+	size := fixed
+	for _, e := range evs {
+		b, _ := json.Marshal(e)
+		add := len(b)
+		if len(cur) > 0 {
+			add++ // the comma
+		}
+		if len(cur) > 0 && (len(cur)+1 > MaxBatchEvents || size+add > MaxBatchBytes) {
+			out = append(out, cur)
+			cur, size, add = nil, fixed, len(b)
+		}
+		if fixed+len(b) > MaxBatchBytes {
+			continue
+		}
+		cur = append(cur, e)
+		size += add
+	}
+	if len(cur) > 0 {
+		out = append(out, cur)
+	}
+	return out
+}
+
+// Flush sends the queue, in requests of at most MaxBatchEvents events and MaxBatchBytes, all within PostTimeout,
+// and stops. Each answer decides its batch: 2xx is sent, and 400, 413 and 415 are dropped (the intake will never
+// take them); 429, 5xx and a network error keep it, and every batch after it, for the next flush, and a Retry-After
+// on 429 or 503 keeps this endpoint from being sent to until it passes (at most MaxRetryAfter); 410 deletes this
+// version's events and stops it sending to this endpoint, leaving other versions' events alone. The error is for
+// tests and status, never shown after a command.
 func (q Queue) Flush(ctx context.Context, endpoint string, client *http.Client) (int, error) {
 	if endpoint == "" {
 		return 0, errors.New("no telemetry endpoint")
 	}
-	// Take the queue: runs that end meanwhile start a new one. A batch left by a flush that died is taken too.
-	sending := filepath.Join(q.Dir, "queue."+NewUUID()[:8]+".sending")
-	if err := os.Rename(q.Path(), sending); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return 0, err
+	if q.Gone(endpoint) {
+		return 0, errors.New("the endpoint said this CLI version should stop sending (410)")
 	}
-	matches, _ := filepath.Glob(filepath.Join(q.Dir, "queue.*.sending"))
+	if until := q.WaitUntil(endpoint); !until.IsZero() {
+		return 0, fmt.Errorf("the endpoint asked to wait until %s (Retry-After)", until.UTC().Format(time.RFC3339))
+	}
 	var files []string
 	var evs []Event
-	for _, m := range matches {
-		if m != sending {
-			if st, err := os.Stat(m); err != nil || q.now().Sub(st.ModTime()) < time.Minute {
-				continue // another flush is sending it
+	err := q.locked(func() error {
+		// Take the queue: runs that end meanwhile start a new one. A batch left by a flush that died is taken too. The
+		// taken file's time is now, not its last Append's, so a flush running at the same time leaves it alone.
+		sending := filepath.Join(q.Dir, "queue."+NewUUID()[:8]+".sending")
+		if err := os.Rename(q.Path(), sending); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		now := q.now()
+		_ = os.Chtimes(sending, now, now)
+		matches, _ := filepath.Glob(filepath.Join(q.Dir, "queue.*.sending"))
+		for _, m := range matches {
+			if m != sending {
+				if st, err := os.Stat(m); err != nil || q.now().Sub(st.ModTime()) < time.Minute {
+					continue // another flush is sending it
+				}
+			}
+			if e, err := readEvents(m); err == nil {
+				evs = append(evs, e...)
+				files = append(files, m)
 			}
 		}
-		if e, err := readEvents(m); err == nil {
-			evs = append(evs, e...)
-			files = append(files, m)
-		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
 	}
 	evs = q.prune(dedupe(evs))
-	if len(evs) == 0 {
+	n := 0
+	var kept []Event
+	var last error
+	stopped := false
+	if len(evs) > 0 {
+		pctx, cancel := context.WithTimeout(ctx, PostTimeout)
+		defer cancel()
+		all := batches(evs)
+	send:
+		for i, b := range all {
+			status, wait, err := q.post(pctx, endpoint, client, b)
+			switch classify(status, err) {
+			case sent:
+				n += len(b)
+				continue
+			case drop:
+				last = fmt.Errorf("the telemetry endpoint refused a batch (%d); it was dropped", status)
+				continue
+			case gone:
+				stopped = true
+				last = errors.New("the telemetry endpoint is gone (410): this CLI version stops sending to it")
+				// This version's events go; another version's stay, whatever the endpoint said to this one
+				mine := EventVersion(q.Version)
+				for _, r := range all[i:] {
+					for _, e := range r {
+						if e.Version != mine {
+							kept = append(kept, e)
+						}
+					}
+				}
+				break send
+			}
+			// keep: this batch and the rest, for the next flush
+			for _, r := range all[i:] {
+				kept = append(kept, r...)
+			}
+			if err != nil {
+				last = err
+			} else {
+				last = fmt.Errorf("the telemetry endpoint answered %d", status)
+			}
+			if wait > 0 {
+				st := q.LoadState()
+				if st.RetryAfter == nil {
+					st.RetryAfter = map[string]time.Time{}
+				}
+				st.RetryAfter[endpoint] = q.now().Add(min(wait, MaxRetryAfter))
+				_ = q.SaveState(st)
+			}
+			break
+		}
+	}
+	err = q.locked(func() error {
+		if stopped {
+			st := q.LoadState()
+			st.Stopped = &Stop{Version: q.Version, Endpoint: endpoint, At: q.now().UTC()}
+			_ = q.SaveState(st)
+			// and this version's events queued while it was sending: other versions' stay
+			if b, rerr := os.ReadFile(q.Path()); rerr == nil {
+				mine := EventVersion(q.Version)
+				var others []Event
+				for _, e := range parseEvents(b) {
+					if e.Version != mine {
+						others = append(others, e)
+					}
+				}
+				_ = writeAtomic(q.Path(), encode(others))
+			}
+		}
+		if len(kept) > 0 {
+			f, oerr := os.OpenFile(q.Path(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+			if oerr != nil {
+				return oerr
+			}
+			_, _ = f.Write(encode(kept))
+			_ = f.Close()
+		}
 		for _, f := range files {
 			_ = os.Remove(f)
 		}
-		return 0, nil
+		return nil
+	})
+	if err != nil && last == nil {
+		last = err
 	}
-	err := post(ctx, endpoint, client, evs)
-	if err != nil {
-		// Put them back for the next flush.
-		if f, oerr := os.OpenFile(q.Path(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); oerr == nil {
-			_, _ = f.Write(encode(evs))
-			_ = f.Close()
-		}
-	}
-	for _, f := range files {
-		_ = os.Remove(f)
-	}
-	if err != nil {
-		return 0, err
-	}
-	return len(evs), nil
+	return n, last
 }
 
 func dedupe(evs []Event) []Event {
@@ -328,26 +544,57 @@ func dedupe(evs []Event) []Event {
 	return out
 }
 
-func post(ctx context.Context, endpoint string, client *http.Client, evs []Event) error {
+// post sends one batch and returns the answer's status, and the wait a 429 or 503 asked for with Retry-After. The
+// body's SHA-256, in hex, goes in x-amz-content-sha256: the intake is a Lambda function URL behind CloudFront with
+// origin access control, which signs the request with it.
+func (q Queue) post(ctx context.Context, endpoint string, client *http.Client, evs []Event) (int, time.Duration, error) {
 	if client == nil {
 		client = &http.Client{}
 	}
-	ctx, cancel := context.WithTimeout(ctx, PostTimeout)
-	defer cancel()
-	body, _ := json.Marshal(Batch{Events: evs})
+	body, _ := json.Marshal(Batch{Schema: SchemaID, Events: evs})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
+	sum := sha256.Sum256(body)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-amz-content-sha256", hex.EncodeToString(sum[:]))
+	req.Header.Set("User-Agent", "caitlyn-cli/"+userAgentVersion(q.Version))
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return errors.New("the telemetry endpoint answered " + strings.TrimSpace(resp.Status))
+	var wait time.Duration
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable {
+		wait = retryAfter(resp.Header.Get("Retry-After"), q.now())
 	}
-	return nil
+	return resp.StatusCode, wait, nil
+}
+
+// retryAfter reads a Retry-After header: seconds, or an HTTP date. Anything else, or a time already past, is no wait.
+func retryAfter(v string, now time.Time) time.Duration {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(v); err == nil {
+		if secs > 0 {
+			return time.Duration(secs) * time.Second
+		}
+		return 0
+	}
+	if t, err := http.ParseTime(v); err == nil && t.After(now) {
+		return t.Sub(now)
+	}
+	return 0
+}
+
+// userAgentVersion is the version for the User-Agent, or "unknown" when it isn't one (a dev build's).
+func userAgentVersion(v string) string {
+	if versionPattern.MatchString(v) {
+		return v
+	}
+	return "unknown"
 }
