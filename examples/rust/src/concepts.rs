@@ -82,6 +82,21 @@ pub async fn errors_if_match(client: &Client) -> Result<(), Error> {
     Ok(())
 }
 
+/// A client that names its application, CI system and agent in the user agent.
+pub fn name_your_app() -> Result<Client, Box<dyn std::error::Error>> {
+    // #region name-your-app
+    let client = Client::builder(
+        "your-company.getcaitlyn.ai",
+        Auth::token(std::env::var("CAITLYN_TOKEN")?),
+    )
+    .app_id("release-bot#2.1.0") // app/release-bot#2.1.0
+    .ci("gitlab") // ci/gitlab: the CI system it is running in
+    .agent("claude-code") // agent/claude-code: the AI agent driving it
+    .build()?;
+    // #endregion
+    Ok(client)
+}
+
 /// A client that tries harder.
 pub fn retries() -> Result<Client, Box<dyn std::error::Error>> {
     // #region retries

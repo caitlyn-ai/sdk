@@ -80,6 +80,19 @@ def errors_if_match() -> None:
     # #endregion
 
 
+def name_your_app() -> Caitlyn:
+    # #region name-your-app
+    caitlyn = Caitlyn(
+        workspace="your-company.getcaitlyn.ai",
+        auth=Token(os.environ["CAITLYN_TOKEN"]),
+        app_id="release-bot#2.1.0",  # app/release-bot#2.1.0
+        ci="gitlab",  # ci/gitlab: the CI system it is running in
+        agent="claude-code",  # agent/claude-code: the AI agent driving it
+    )
+    # #endregion
+    return caitlyn
+
+
 def retries() -> Caitlyn:
     # #region retries
     patient = Caitlyn(

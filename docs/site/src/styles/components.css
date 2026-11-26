@@ -55,7 +55,7 @@
 }
 
 /* ------------------------------------------------------------------- landing hero */
-/* The Edge cover archetype on cover-ground: the field orb enters from the right edge, cropped by it; the title
+/* The Edge cover archetype on cover-ground: the amber orb enters from the right edge, cropped by it; the title
    and tagline hang from the left margin. Full width of the page, in both themes. */
 [data-has-hero] .content-panel:first-of-type {
   padding-top: 0;
@@ -83,6 +83,18 @@
   display: block;
   width: 100%;
   height: auto;
+}
+/* The animated orb (src/scripts/orb.ts) covers the hero and draws the orb where the artwork sits; once it has drawn,
+   the artwork is hidden (it still holds the orb's place, which the script measures) */
+.caitlyn-hero-orb-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.caitlyn-hero[data-orb-live] .caitlyn-hero-orb img {
+  visibility: hidden;
 }
 .caitlyn-hero-copy {
   position: relative;
@@ -2461,7 +2473,7 @@ main:has(.caitlyn-page-header[data-reference]) .sl-markdown-content > p.caitlyn-
   grid-template-columns: 9.5rem minmax(0, 1fr);
   column-gap: 32px; /* space-8 */
   margin: 0;
-  padding: 24px 0; /* space-6 */
+  padding: 48px 0; /* 2 × space-6: a release is the largest break on the page */
   border-top: 1px solid var(--caitlyn-rule);
 }
 .sl-markdown-content .caitlyn-release > * {
@@ -2508,26 +2520,143 @@ main:has(.caitlyn-page-header[data-reference]) .sl-markdown-content > p.caitlyn-
 }
 .sl-markdown-content .caitlyn-release-compare a {
   color: var(--caitlyn-muted);
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--caitlyn-rule); /* secondary to the version: amber only on hover */
+}
+.sl-markdown-content .caitlyn-release-compare a:hover {
+  text-decoration-color: var(--caitlyn-accent-colour);
+}
+/* Following the releases in Slack, under the intro: a line, then the command to copy */
+.sl-markdown-content .caitlyn-follow {
+  color: var(--caitlyn-muted);
+  font-size: var(--caitlyn-text-body);
+}
+.sl-markdown-content .caitlyn-follow > * {
+  margin: 0;
+}
+.sl-markdown-content .caitlyn-follow strong {
+  color: var(--caitlyn-ink);
+}
+/* A command to copy (src/scripts/copy-command.ts): the command in the code face, and a Copy label at its end */
+.sl-markdown-content .caitlyn-copy-command {
+  display: flex;
+  align-items: center;
+  gap: 16px; /* space-4 */
+  width: 100%;
+  margin-top: 8px; /* space-2 */
+  padding: 10px 12px; /* space-3 across */
+  border: 1px solid var(--caitlyn-rule);
+  border-radius: 0;
+  background: var(--caitlyn-panel);
+  color: var(--caitlyn-ink);
+  font: inherit;
+  text-align: start;
+  cursor: copy;
+}
+.sl-markdown-content .caitlyn-copy-command:hover {
+  border-color: var(--caitlyn-ink);
+}
+.sl-markdown-content .caitlyn-copy-command:focus-visible {
+  outline: 2px solid var(--caitlyn-ink);
+  outline-offset: 2px;
+}
+.sl-markdown-content .caitlyn-copy-command code {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  font-size: var(--caitlyn-text-code-face);
+  overflow-wrap: anywhere;
+}
+.sl-markdown-content .caitlyn-copy-command-label {
+  flex: none;
+  color: var(--caitlyn-muted);
+  font-size: var(--caitlyn-text-kicker);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sl-markdown-content .caitlyn-copy-command[data-copied] .caitlyn-copy-command-label {
+  color: var(--caitlyn-ink);
+}
+/* The page's links are lighter than the site's: a release's entries end in many of them */
+.sl-markdown-content .caitlyn-release a {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.sl-markdown-content .caitlyn-release a:hover {
+  text-decoration-thickness: 2px;
+}
+/* A highlight's closing "See …" reads as a footnote; the page it links stays ink */
+.sl-markdown-content .caitlyn-see {
+  color: var(--caitlyn-muted);
+}
+.sl-markdown-content .caitlyn-see a {
+  color: var(--caitlyn-ink);
 }
 .sl-markdown-content .caitlyn-release-entries > * {
   margin: 0;
 }
+.sl-markdown-content .caitlyn-release-entries {
+  max-width: 68ch;
+}
 .sl-markdown-content .caitlyn-release-entries > * + * {
-  margin-top: 16px; /* space-4 */
+  margin-top: 32px; /* space-8: between groups */
+}
+.sl-markdown-content .caitlyn-release-intro + * {
+  margin-top: 24px; /* space-6 */
 }
 .sl-markdown-content .caitlyn-release-intro {
   color: var(--caitlyn-muted);
 }
 .sl-markdown-content .caitlyn-release-label {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   margin: 0;
   line-height: 1;
 }
-.sl-markdown-content .caitlyn-release-group ul {
-  margin: 8px 0 0; /* space-2 */
+/* Where a change came from (the API), beside its badge: the badges are the kinds of change alone */
+.sl-markdown-content .caitlyn-release-scope {
+  color: var(--caitlyn-muted);
+  font-size: var(--caitlyn-text-kicker);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sl-markdown-content .caitlyn-release-group > ul {
+  margin: 12px 0 0; /* space-3: badge to first entry */
   padding-inline-start: 1.1em;
 }
 .sl-markdown-content .caitlyn-release-group li + li {
-  margin-top: 6px;
+  margin-top: 8px; /* space-2: API lines are short */
+}
+/* An API line's names: mono alone marks them, without the panel tint */
+.sl-markdown-content .caitlyn-release-group[data-source='api'] code {
+  padding: 0;
+  background: none;
+  font-size: var(--caitlyn-text-code-face);
+}
+/* A change many operations share, then those operations in quiet columns */
+.sl-markdown-content .caitlyn-api-subjects {
+  display: block;
+  margin-top: 8px; /* space-2 */
+  columns: 14rem;
+  column-gap: 24px; /* space-6 */
+}
+.sl-markdown-content .caitlyn-api-subject {
+  display: block;
+  break-inside: avoid;
+  line-height: 1.7;
+}
+.sl-markdown-content .caitlyn-api-subject code {
+  color: var(--caitlyn-muted);
+}
+.sl-markdown-content .caitlyn-api-subject a {
+  text-decoration: none;
+}
+.sl-markdown-content .caitlyn-api-subject a:hover {
+  text-decoration: underline 1px var(--caitlyn-accent-colour);
 }
 /* The change badges, in the stability badges' shape and fixed dark ink: New field green, as GA; Fixed and Changed the
    light neutral; Stability amber, as Beta; Breaking (and an API release's Removed) clay, the strongest tint */
@@ -2547,17 +2676,72 @@ main:has(.caitlyn-page-header[data-reference]) .sl-markdown-content > p.caitlyn-
 }
 /* A breaking group stands out from the rest of its release with a clay rule beside it; its entries keep the body weight */
 .sl-markdown-content .caitlyn-release-group[data-change='breaking'] {
+  margin-inline-start: -17px; /* the rule hangs in the column gap, so the group lines up with the rest */
   padding-inline-start: 14px;
   border-inline-start: 3px solid var(--caitlyn-clay-primary);
 }
 .sl-markdown-content .caitlyn-release-group li > ul {
-  margin-top: 6px;
+  margin-top: 8px; /* space-2: a title to its highlights */
+}
+/* An SDK change is its summary, set as a title, over its highlights: the highlights are the group's only bullets */
+.sl-markdown-content .caitlyn-release-group[data-source='sdk'] > ul {
+  padding-inline-start: 0;
+  list-style: none;
+}
+.sl-markdown-content .caitlyn-release-group[data-source='sdk'] > ul > li + li {
+  margin-top: 24px; /* space-6: between entries */
+}
+.sl-markdown-content .caitlyn-release-group[data-source='sdk'] > ul > li > ul {
+  padding-inline-start: 1.1em;
+  list-style: disc;
+}
+.sl-markdown-content .caitlyn-release-group[data-source='sdk'] > ul > li > ul > li + li {
+  margin-top: 12px; /* space-3: between highlights */
+}
+.sl-markdown-content .caitlyn-release-group[data-source='sdk'] code {
+  padding: 0 0.25em;
+  font-size: var(--caitlyn-text-code-face);
+}
+/* The title is one step above its highlights, so it reads as their heading and the bold leads as run-in labels */
+.sl-markdown-content .caitlyn-entry-title {
+  color: var(--caitlyn-ink);
+  font-size: var(--caitlyn-text-card);
+  font-weight: 500; /* Medium: the body font's only web weight above Regular */
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+/* A merge request's preview opens with its Unreleased entry (scripts/release-notes.mjs): set apart from the releases
+   by a dashed rule, its own entries marked with an accent outline that reads as a note, not as a change's badge */
+.sl-markdown-content .caitlyn-release[data-kind='unreleased'] {
+  border-top-style: dashed;
+}
+.sl-markdown-content .caitlyn-this-mr {
+  display: inline-block;
+  margin-inline-start: 6px;
+  vertical-align: 1px;
+  padding: 0 6px;
+  border: 1px solid var(--caitlyn-accent-colour);
+  border-radius: var(--caitlyn-radius-inline);
+  color: var(--caitlyn-ink);
+  font-size: var(--caitlyn-text-kicker);
+  font-weight: 500;
+  line-height: 1.6;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+/* A long release's version stays in view while its entries scroll, on a wide screen */
+@media (min-width: 50rem) {
+  .sl-markdown-content .caitlyn-release-meta {
+    position: sticky;
+    top: calc(var(--sl-nav-height) + 24px);
+    align-self: start;
+  }
 }
 @media (max-width: 50rem) {
   .sl-markdown-content .caitlyn-release {
     grid-template-columns: minmax(0, 1fr);
     row-gap: 12px; /* space-3 */
-    padding: 20px 0; /* space-5 */
+    padding: 32px 0; /* space-8 */
   }
   .sl-markdown-content .caitlyn-release-meta {
     display: flex;

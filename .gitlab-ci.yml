@@ -11,6 +11,9 @@
 #   model:version-check    Is the snapshot the latest published model? A warning on merge requests when not.
 #   model:snapshot-only    Merge requests: fails when model/ changes without model/model.lock.json, that is, when the
 #                          snapshot was edited here instead of pulled from the app's smithy/ (CONTRIBUTING.md).
+#   changes:check          Merge requests: a releasing title comes with a change file (changes/*.md) that reads well,
+#                          and the file, the title's `!` and the model's breaking changes agree (CONTRIBUTING.md,
+#                          "Release notes").
 #   docs:*                 Developer docs build, merge request previews, publishing to build.caitlyn.ai and to
 #                          the ask.caitlyn.ai knowledge base. Off until DOCS_ENABLED is "true" (docs/README.md).
 #   fetch-semantic-version On main: the version the next release would have (VERSION.txt), from the shared
@@ -308,8 +311,8 @@ model:snapshot-only:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
-# A merge request's title is the squash commit's message, and a releasing one (feat, fix, perf, revert, or !) becomes
-# a line of CHANGELOG.md, which build.caitlyn.ai publishes as its Changelog. This runs the docs' public-wording rules
+# A merge request's title is the squash commit's message, and a releasing one (feat, fix, perf, revert, or !) with no
+# change file becomes a line of CHANGELOG.md, which build.caitlyn.ai publishes as its Changelog. This runs the docs' public-wording rules
 # over it (scripts/docs-mr-title.mjs), so a title that would publish something internal fails while it can still be
 # edited. GitLab does not start a pipeline when only the title changes: rerun this job after editing it.
 docs:mr-title:
@@ -317,6 +320,22 @@ docs:mr-title:
   stage: generate
   script:
     - node scripts/docs-mr-title.mjs "$CI_MERGE_REQUEST_TITLE"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# A releasing merge request (feat, fix, perf, revert, or !) adds a change file, changes/<name>.md, which becomes its
+# entry in the release notes (scripts/release-notes.mjs, .releaserc.yml). This checks the files it adds or edits
+# (front matter, a bold lead and a docs link on each highlight, the public-wording rules), that their type and
+# `breaking` match the title, and that a model change that breaks callers is marked breaking. The preview's Changelog
+# shows the result as its Unreleased entry (docs:build). GitLab starts no pipeline for a title edit: rerun this job.
+changes:check:
+  extends: .toolchain
+  stage: generate
+  variables:
+    # The model and the change files where the merge request branched, to compare with its own
+    GIT_DEPTH: '0'
+  script:
+    - node scripts/release-notes.mjs check
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
@@ -372,9 +391,12 @@ docs:build:
     # The live build shows "Was this page useful?" and sends answers to /_feedback (production-demo-infrastructure,
     # developer-docs/feedback.tf). Previews show it, so a reviewer sees the page as it ships, but send nothing: they
     # have no endpoint (their hosting has no /_feedback), and the panel says the answer was not sent.
+    # A preview's Changelog opens with an Unreleased entry (DOCS_UNRELEASED): what the next release's notes would say
+    # once this merge request merges, its own entries marked (scripts/release-notes.mjs unreleased)
     - if: $DOCS_ENABLED == "true" && $CI_PIPELINE_SOURCE == "merge_request_event"
       variables:
         PUBLIC_DOCS_FEEDBACK: 'on'
+        DOCS_UNRELEASED: 'on'
     - if: $DOCS_ENABLED == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       variables:
         PUBLIC_DOCS_FEEDBACK: 'on'

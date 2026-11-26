@@ -1,7 +1,8 @@
 # semantic-release on main (the shared template custom-d/devops-platform/ci-templates/semantic-versioning runs it; see
 # .gitlab-ci.yml). From the conventional commits since the last v* tag it works out the next version, then:
 #   1. checks that the stamp-version job's files carry that version (scripts/version.mjs check);
-#   2. adds the release notes to the top of CHANGELOG.md (@semantic-release/changelog);
+#   2. writes the release notes (scripts/release-notes.mjs) and adds them to the top of CHANGELOG.md
+#      (@semantic-release/changelog);
 #   3. commits the stamped files and CHANGELOG.md to main as `chore(release): <version>` (@semantic-release/git);
 #   4. tags that commit vX.Y.Z, then tags the same commit go/vX.Y.Z for the Go module, which lives in go/ and so
 #      takes its versions from go/-prefixed tags (scripts/go-tag.mjs), and creates a GitLab release with the same
@@ -18,8 +19,9 @@
 #
 # Merge requests are squashed, and the squash commit is the merge request's title alone, so a breaking change must be
 # marked in the title: `feat(typescript)!: …`. The release image has only the angular preset, whose parser does not
-# read the `!`, so parserOpts teaches both the analyser and the notes generator to: a `!` before the colon is a
-# breaking change, listed under BREAKING CHANGES. A BREAKING CHANGE footer still works too.
+# read the `!`, so parserOpts teaches the analyser to: a `!` before the colon is a breaking change. A BREAKING
+# CHANGE footer still works too. The notes list a breaking change under BREAKING CHANGES from its change file's
+# `breaking: true`, which the changes:check job keeps in step with the title's `!`.
 plugins:
   - - '@semantic-release/commit-analyzer'
     - releaseRules:
@@ -27,57 +29,24 @@ plugins:
         # revert are patch, as the default rules say. Going to 1.0 is a deliberate decision: remove this rule then.
         - breaking: true
           release: minor
-      parserOpts: &parserOpts
+      parserOpts:
         headerPattern: '^(\w*)(?:\((.*)\))?!?: (.*)$'
         breakingHeaderPattern: '^(\w*)(?:\((.*)\))?!: (.*)$'
-  # The notes' links point at the public GitHub mirror (github.com/caitlyn-ai/sdk), which has the same commits and
-  # tags, not at this GitLab, which the public cannot open: the notes are CHANGELOG.md and the GitHub releases, and
-  # the GitLab release reads them too. repositoryUrl stays this GitLab, where semantic-release pushes. The notes
-  # generator builds its links from repositoryUrl, so headerPartial and commitPartial are the angular preset's own
-  # (conventional-changelog-angular 7.0.0, which semantic-release 23 in the release image uses) with the GitHub
-  # address written in. Issue references stay unlinked: their numbers are this GitLab's, not GitHub's.
-  - - '@semantic-release/release-notes-generator'
-    - parserOpts: *parserOpts
-      writerOpts:
-        headerPartial: |
-          {{#if isPatch~}}
-            ##
-          {{~else~}}
-            #
-          {{~/if}} {{#if @root.linkCompare~}}
-            [{{version}}](https://github.com/caitlyn-ai/sdk/compare/{{previousTag}}...{{currentTag}})
-          {{~else}}
-            {{~version}}
-          {{~/if}}
-          {{~#if title}} "{{title}}"
-          {{~/if}}
-          {{~#if date}} ({{date}})
-          {{/if}}
-        commitPartial: |+
-          *{{#if scope}} **{{scope}}:**
-          {{~/if}} {{#if subject}}
-            {{~subject}}
-          {{~else}}
-            {{~header}}
-          {{~/if}}
-
-          {{~!-- commit link --}} {{#if @root.linkReferences~}}
-            ([{{shortHash}}](https://github.com/caitlyn-ai/sdk/commit/{{hash}}))
-          {{~else}}
-            {{~shortHash}}
-          {{~/if}}
-
-          {{~!-- commit references, unlinked --}}
-          {{~#if references~}}
-            , closes
-            {{~#each references}} {{#if this.owner}}{{this.owner}}/{{/if}}{{this.repository}}#{{this.issue}}{{/each}}
-          {{~/if}}
-
+  # The notes are scripts/release-notes.mjs's (generateNotesCmd, in the exec step below), not the angular preset's: each
+  # change file (changes/*.md) added since the last release, with its highlights; a line for each releasing commit
+  # that added none; and what changed in the public API, from the model at the last release tag to this one, each
+  # operation and type linked to its page on build.caitlyn.ai (CONTRIBUTING.md, "Release notes"). Its links point at
+  # the public GitHub mirror (github.com/caitlyn-ai/sdk), which has the same commits and tags, never at this GitLab,
+  # which the public cannot open: the notes are CHANGELOG.md and the GitHub releases, and the GitLab release reads them
+  # too. Issue references are left out: their numbers are this GitLab's, not GitHub's.
   # VERSION.txt is the fetch-semantic-version job's artifact: the version the next release would have. Before the
   # release commit, the files stamp-version wrote from it must name exactly the version being released. Once vX.Y.Z
   # is pushed, publishCmd tags the same commit go/vX.Y.Z (the `release:go` job does the same by hand).
+  # generateNotesCmd writes the release notes (above); it fails the release, before anything is committed or tagged,
+  # when a change file cannot be published as it is.
   - - '@semantic-release/exec'
     - verifyReleaseCmd: 'echo ${nextRelease.version} > VERSION.txt'
+      generateNotesCmd: 'node scripts/release-notes.mjs notes ${nextRelease.version} ${lastRelease.gitTag}'
       prepareCmd: 'node scripts/version.mjs check ${nextRelease.version}'
       publishCmd: 'node scripts/go-tag.mjs ${nextRelease.version}'
   # The notes go into CHANGELOG.md, newest first, in the release commit; its message stays free of them (below).

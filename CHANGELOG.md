@@ -4,20 +4,62 @@
 ### Features
 
 * one page of any list, and its pages, in every SDK ([0c580a7](https://github.com/caitlyn-ai/sdk/commit/0c580a75b2f25df25aa76b38a9b15f8097ff8d4d))
+  * **One page at a time:** `list(…).page()` makes one request from the input's `cursor` and returns its `items`, `nextCursor` and `hasNextPage`, so a table can show a page without reading the ones before it. See [Read one page](https://build.caitlyn.ai/pagination/#read-one-page).
+  * **The next page:** `page.nextPage()` reads the page after it with the same input, and on the last page gives nothing without a request. See [Read the next page](https://build.caitlyn.ai/pagination/#read-the-next-page).
+  * **Every page:** `list(…).pages()` yields every page from the cursor, and iterating the list still yields every item, so existing loops are unchanged. See [Iterate the pages](https://build.caitlyn.ai/pagination/#iterate-the-pages).
+  * **TypeScript keeps the cursor:** a TypeScript list is now `Paginated`, which no longer throws `nextCursor` away. See [Carry on from a cursor](https://build.caitlyn.ai/pagination/#carry-on-from-a-cursor).
+
 
 ## [0.10.1](https://github.com/caitlyn-ai/sdk/compare/v0.10.0...v0.10.1) (2026-11-18)
 
 
 ### Bug Fixes
 
-* SDK 0.10.1, timeouts, upload windows and uploads S3 accepts ([c3b5ebd](https://github.com/caitlyn-ai/sdk/commit/c3b5ebdd0d0dafa44880c2887af80c5afbaeb92a))
+* timeouts, upload windows and uploads S3 accepts ([c3b5ebd](https://github.com/caitlyn-ai/sdk/commit/c3b5ebdd0d0dafa44880c2887af80c5afbaeb92a))
+  * **Timeouts:** a stalled upload fails after 60 seconds without progress, and an unanswered call after 120 seconds, each retried first, instead of waiting for ever. See [Retries](https://build.caitlyn.ai/retries/#what-is-retried).
+  * **Uploads S3 accepts:** batch uploads in TypeScript, Go and Rust are accepted by S3 whatever fields the upload policy carries, as Python's always were. See [Build a batch yourself](https://build.caitlyn.ai/guides/how-ingestion-works/#build-a-batch-yourself).
+  * **Your own upload window:** `uploadWindowSeconds` on a new batch sets how long its uploads have, down to a minute, and the SDK renews the policy halfway through each one. See [Create an ingestion batch](https://build.caitlyn.ai/sdk/create-ingestion-batch/).
+  * **Cancel one item:** a batch's item can be cancelled on its own, leaving the rest of the batch to carry on. See [Cancelled items](https://build.caitlyn.ai/guides/how-ingestion-works/#cancelled-items).
+
+
+### New operations
+
+* [Cancel a batch item](https://build.caitlyn.ai/sdk/cancel-ingestion-batch-item/) (`CancelIngestionBatchItem`)
+
+
+### Changed operations and types
+
+* Each request's `ifMatch` is now `EntityTagCondition` (was `EntityTag`), in 14 operations: [`CreateDocumentVersion`](https://build.caitlyn.ai/sdk/create-document-version/), [`PutAccess`](https://build.caitlyn.ai/sdk/put-access/), [`ReplaceDraftVersion`](https://build.caitlyn.ai/sdk/replace-draft-version/), [`ResetDraftVersion`](https://build.caitlyn.ai/sdk/reset-draft-version/), [`SaveDraftVersion`](https://build.caitlyn.ai/sdk/save-draft-version/), [`StartIngestionBatch`](https://build.caitlyn.ai/sdk/start-ingestion-batch/), [`UpdateAgent`](https://build.caitlyn.ai/sdk/update-agent/), [`UpdateDocument`](https://build.caitlyn.ai/sdk/update-document/), [`UpdateDraftVersion`](https://build.caitlyn.ai/sdk/update-draft-version/), [`UpdateField`](https://build.caitlyn.ai/sdk/update-field/), [`UpdateFolder`](https://build.caitlyn.ai/sdk/update-folder/), [`UpdateIngestionBatch`](https://build.caitlyn.ai/sdk/update-ingestion-batch/), [`UpdateIngestionBatchItem`](https://build.caitlyn.ai/sdk/update-ingestion-batch-item/) and [`UpdateKnowledgeBase`](https://build.caitlyn.ai/sdk/update-knowledge-base/).
+* [`CreateIngestionBatch`](https://build.caitlyn.ai/sdk/create-ingestion-batch/): its request adds `uploadWindowSeconds` (`Integer`).
+* [`CreateUpload`](https://build.caitlyn.ai/sdk/create-upload/): its request adds `expiresInSeconds` (`Integer`).
+* [`IngestionBatch`](https://build.caitlyn.ai/sdk/types/ingestion-batch/): adds `uploadWindowSeconds` (`Integer`).
+
 
 # [0.10.0](https://github.com/caitlyn-ai/sdk/compare/v0.9.0...v0.10.0) (2026-11-17)
 
 
 ### Features
 
-* SDK 0.10.0, aligned error codes and safer batch uploads ([314e0dd](https://github.com/caitlyn-ai/sdk/commit/314e0ddc0d287e44ea77ce5eaa0a8aaed4218859))
+* aligned error codes and safer batch uploads ([314e0dd](https://github.com/caitlyn-ai/sdk/commit/314e0ddc0d287e44ea77ce5eaa0a8aaed4218859))
+  * **Public readers:** a folder or document can be opened to anyone, guests and anonymous visitors of a public agent included, with the new `public` readers setting. See [Readers](https://build.caitlyn.ai/sdk/types/readers/).
+  * **One code per failure:** every error code has a named constant in each SDK, and any failure during a call, an unreadable file or an undecodable response included, reaches you as a Caitlyn error with a code, the language's own error kept as its cause. See [Errors the SDK raises itself](https://build.caitlyn.ai/errors/#errors-the-sdk-raises-itself).
+  * **Renamed codes:** `INGESTION_FILE_MISSING` (Rust) and `SYNC_FILE_UNKNOWN` (Python) are now `INGESTION_ITEM_HAS_NO_FILE`, and a failed job with no code of its own is `JOB_FAILED`. See [Error codes](https://build.caitlyn.ai/errors/#error-codes).
+  * **Versions not numbered:** deleting a document version by its number before its versions are numbered gives its own conflict code. See [VERSIONS_NOT_NUMBERED](https://build.caitlyn.ai/errors/VERSIONS_NOT_NUMBERED/).
+  * **Long uploads finish:** a batch renews its upload policy while any upload is still in flight, and its watch, wait and sync read the batch again after its upload deadline, so a large last file is never failed as expired although it arrives. See [What happens to a batch](https://build.caitlyn.ai/guides/how-ingestion-works/#what-happens-to-a-batch).
+  * **Enum values to come:** in TypeScript an enum's type accepts values this SDK version does not know yet, so a `switch` that relied on being exhaustive needs a default case. See [Errors](https://build.caitlyn.ai/errors/#handling-errors).
+
+
+### Changed operations and types
+
+* [`DeleteDocumentVersion`](https://build.caitlyn.ai/sdk/delete-document-version/): can now return [`VERSIONS_NOT_NUMBERED`](https://build.caitlyn.ai/errors/VERSIONS_NOT_NUMBERED/) (409).
+* [`IngestionBatch`](https://build.caitlyn.ai/sdk/types/ingestion-batch/): adds `uploadsExpireAt` (`DateTime`).
+* [`ReadersKind`](https://build.caitlyn.ai/sdk/types/readers-kind/): adds the value `public`.
+
+
+### Breaking API changes
+
+* [`IngestionBatchStatus`](https://build.caitlyn.ai/sdk/types/ingestion-batch-status/): drops the value `expired`.
+
 
 # [0.9.0](https://github.com/caitlyn-ai/sdk/compare/v0.8.2...v0.9.0) (2026-11-17)
 

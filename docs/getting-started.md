@@ -39,7 +39,11 @@ cargo add tokio --features macros,rt-multi-thread
 ```
 
 Every SDK has the same version number. See [Releases](https://github.com/caitlyn-ai/sdk/releases) for the latest
-version and what changed.
+version and what changed, or the [Changelog](/changelog/).
+
+Between releases, each change to the API is published as a beta of the next version once every SDK's tests pass on
+it: `0.13.0b1` on PyPI, `0.13.0-beta.1` on crates.io and as a Go tag. A package manager installs a beta only when you
+name it, or allow pre-releases.
 
 ## Install the CLI
 
@@ -202,6 +206,57 @@ client gets is bound to. A token for one workspace is refused by every other.
 
 To send requests somewhere else, such as a proxy or a Caitlyn running on your machine, set the client's
 `endpoint` option. The token audience still comes from the workspace.
+
+## Name your application
+
+Tell Caitlyn what is calling it. The client's app ID names your application, and `ci` and `agent` say which CI
+system it is running in and which AI agent is driving it. Each SDK adds them to the end of its user agent, as
+`app/release-bot#2.1.0 ci/gitlab agent/claude-code`. Your workspace can then count calls from CI and from agents,
+and the audit log can say which agent made a change. They are declared, never checked, and grant nothing.
+
+The app ID is a name, optionally followed by `#` and a version. `ci` and `agent` are 1 to 32 characters of `a-z`,
+`0-9` and `-`, and any other value fails when the client is created, before anything is sent. For `ci`, use
+`github`, `gitlab`, `buildkite`, `circleci`, `jenkins`, `azure-pipelines`, `bitbucket` or `generic`.
+
+<!-- example: examples/typescript/concepts.ts#name-your-app -->
+```ts tab="TypeScript"
+const caitlyn = new Caitlyn({
+  workspace: 'your-company.getcaitlyn.ai',
+  auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! },
+  appId: 'release-bot#2.1.0', // app/release-bot#2.1.0
+  ci: 'gitlab', // ci/gitlab: the CI system it is running in
+  agent: 'claude-code', // agent/claude-code: the AI agent driving it
+});
+```
+<!-- example: examples/python/concepts.py#name-your-app -->
+```python tab="Python"
+caitlyn = Caitlyn(
+    workspace="your-company.getcaitlyn.ai",
+    auth=Token(os.environ["CAITLYN_TOKEN"]),
+    app_id="release-bot#2.1.0",  # app/release-bot#2.1.0
+    ci="gitlab",  # ci/gitlab: the CI system it is running in
+    agent="claude-code",  # agent/claude-code: the AI agent driving it
+)
+```
+<!-- example: examples/go/concepts/concepts.go#name-your-app -->
+```go tab="Go"
+client, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token(os.Getenv("CAITLYN_TOKEN")),
+	caitlyn.WithAppID("release-bot#2.1.0"), // app/release-bot#2.1.0
+	caitlyn.WithCI("gitlab"),               // ci/gitlab: the CI system it is running in
+	caitlyn.WithAgent("claude-code"),       // agent/claude-code: the AI agent driving it
+)
+```
+<!-- example: examples/rust/src/concepts.rs#name-your-app -->
+```rust tab="Rust"
+let client = Client::builder(
+    "your-company.getcaitlyn.ai",
+    Auth::token(std::env::var("CAITLYN_TOKEN")?),
+)
+.app_id("release-bot#2.1.0") // app/release-bot#2.1.0
+.ci("gitlab") // ci/gitlab: the CI system it is running in
+.agent("claude-code") // agent/claude-code: the AI agent driving it
+.build()?;
+```
 
 ## Versions and older servers
 

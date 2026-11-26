@@ -71,6 +71,19 @@ export async function errorsIfMatch(): Promise<void> {
   // #endregion
 }
 
+export function nameYourApp(): Caitlyn {
+  // #region name-your-app
+  const caitlyn = new Caitlyn({
+    workspace: 'your-company.getcaitlyn.ai',
+    auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! },
+    appId: 'release-bot#2.1.0', // app/release-bot#2.1.0
+    ci: 'gitlab', // ci/gitlab: the CI system it is running in
+    agent: 'claude-code', // agent/claude-code: the AI agent driving it
+  });
+  // #endregion
+  return caitlyn;
+}
+
 export function retries(): Caitlyn {
   // #region retries
   const patient = new Caitlyn({

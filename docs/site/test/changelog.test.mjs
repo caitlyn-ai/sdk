@@ -72,7 +72,7 @@ test('the page lists each release with its date and heading, breaking changes fi
   assert.match(body, /\[Atom feed\]\(\/changelog\/feed\.xml\)/);
   assert.match(body, /^## 0\.9\.1 \{#v0-9-1\}$/m);
   // One compare link a release, no commit hashes
-  assert.match(body, /^SDK release, 30 November 2026\. \[Compare with 0\.8\.2\]\(https:\/\/github\.com\/caitlyn-ai\/sdk\/compare\/v0\.8\.2\.\.\.v0\.9\.0\)\.$/m);
+  assert.match(body, /^SDK release, 30 November 2026\. \[Show diff\]\(https:\/\/github\.com\/caitlyn-ai\/sdk\/compare\/v0\.8\.2\.\.\.v0\.9\.0\)\.$/m);
   assert.doesNotMatch(body, /1111111|2222222|abc1234/);
   // Breaking changes are their own group, first; the change is not repeated under New
   assert.ok(body.indexOf('### Breaking {#v0-9-0-breaking}') < body.indexOf('### Fixed {#v0-9-0-fixed}'), 'Breaking before Fixed');
@@ -91,13 +91,13 @@ test('the site\'s page is a timeline: a row per release, its version, tag and da
   assert.deepEqual(siteBody.match(/^#+ .*$/gm), ['## 0.9.1 <span class="caitlyn-release-kind">SDK</span> {#v0-9-1}', '## 0.9.0 <span class="caitlyn-release-kind">SDK</span> {#v0-9-0}']);
   assert.equal((siteBody.match(/<section class="caitlyn-release"/g) ?? []).length, 2);
   assert.match(siteBody, /<p class="caitlyn-release-date"><time datetime="2026-11-30">30 November 2026<\/time><\/p>/);
-  assert.match(siteBody, /<a href="https:\/\/github\.com\/caitlyn-ai\/sdk\/compare\/v0\.8\.2\.\.\.v0\.9\.0">Compare with 0\.8\.2<\/a>/);
+  assert.match(siteBody, /<a href="https:\/\/github\.com\/caitlyn-ai\/sdk\/compare\/v0\.8\.2\.\.\.v0\.9\.0" title="The code changes since 0\.8\.2, on GitHub">Show diff<\/a>/);
   // The release with a breaking change says so, and its Breaking badge comes before the others
   assert.match(siteBody, /<section class="caitlyn-release" data-kind="sdk" data-breaking>/);
   const v090 = siteBody.slice(siteBody.indexOf('{#v0-9-0}'));
   assert.ok(v090.indexOf('data-change="breaking">Breaking<') < v090.indexOf('data-change="fixed">Fixed<'));
   // Each badge's group is HTML around Markdown entries, a blank line apart, so the entries' links still render
-  assert.match(siteBody, /<p class="caitlyn-release-label"><span class="caitlyn-stability" data-change="fixed">Fixed<\/span><\/p>\n\n- \*\*Python:\*\* create_document/);
+  assert.match(siteBody, /<p class="caitlyn-release-label"><span class="caitlyn-stability" data-change="fixed">Fixed<\/span><\/p>\n\n- <span class="caitlyn-entry-title">\*\*Python:\*\* create_document/);
 });
 
 test('docs and CI entries are left off the page and out of the feed; a release with nothing else says so', () => {
@@ -106,7 +106,7 @@ test('docs and CI entries are left off the page and out of the feed; a release w
   assert.equal(releases[0].changes.length, 2, 'CHANGELOG.md keeps them');
   const { body, siteBody } = changelogPage(releases, PAGES);
   assert.doesNotMatch(body, /mid-word|preview/);
-  assert.match(body, /^SDK release, 3 December 2026\. No change to the SDKs themselves\. \[Compare with 0\.9\.1\]/m);
+  assert.match(body, /^SDK release, 3 December 2026\. No change to the SDKs themselves\. \[Show diff\]/m);
   assert.match(siteBody, /<p class="caitlyn-release-intro">No change to the SDKs themselves\.<\/p>/);
   const [view] = releaseViews(releases, PAGES).views;
   assert.deepEqual(view.groups, []);
@@ -214,12 +214,12 @@ test('an API release is labelled with its version, and its changes are grouped b
   const order = ['### New {#api-5-114-0-new-operations}', '### Changed {#api-5-114-0-changed}', '### Removed {#api-5-114-0-removed}'].map((h) => release.indexOf(h));
   assert.ok(order.every((i, n) => i >= 0 && (n === 0 || i > order[n - 1])), `sections in order: ${order}`);
   // One entry per operation or type, its errors, members and values together; a change reaching only beta operations says so
-  assert.match(body, /^- \[`ReadersKind`\]\(\/sdk\/types\/readers-kind\/\) \(beta\): adds the value `public`\.$/m);
-  assert.match(body, /^- \[`DeleteAgentVersion`\]\(\/sdk\/delete-agent-version\/\) \(beta\): can now return \[`ConflictError`\]\(\/errors\/#error-codes\) \(409\)/m);
-  assert.match(body, /^- `UpdateDraftVersion` \(beta\): no longer returns \[`PRECONDITION_REQUIRED`\]\(\/errors\/PRECONDITION_REQUIRED\/\) \(428\); /m);
-  assert.match(body, /^- `GetCaller` \(beta\): its response's `scopes` is now `OAuthScopeList` \(was `ScopeList`\)\.$/m);
-  assert.match(body, /^- `OperationStatus` \(beta\): adds the value `completed_with_failures`; drops the value `succeeded_with_failures`\.$/m);
-  assert.match(release, /^- `PinDraftVersion` \(beta\)$/m);
+  assert.match(body, /^- \[`ReadersKind`\]\(\/sdk\/types\/readers-kind\/\): adds the value `public`\.$/m);
+  assert.match(body, /^- \[`DeleteAgentVersion`\]\(\/sdk\/delete-agent-version\/\): can now return \[`ConflictError`\]\(\/errors\/#error-codes\) \(409\)/m);
+  assert.match(body, /^- `UpdateDraftVersion`: no longer returns \[`PRECONDITION_REQUIRED`\]\(\/errors\/PRECONDITION_REQUIRED\/\) \(428\); /m);
+  assert.match(body, /^- `GetCaller`: its response's `scopes` is now `OAuthScopeList` \(was `ScopeList`\)\.$/m);
+  assert.match(body, /^- `OperationStatus`: adds the value `completed_with_failures`; drops the value `succeeded_with_failures`\.$/m);
+  assert.match(release, /^- `PinDraftVersion`$/m);
   // Removing an operation is breaking: the Removed badge takes the breaking style
   assert.match(siteBody, /data-change="breaking">Removed</);
 });
@@ -227,11 +227,11 @@ test('an API release is labelled with its version, and its changes are grouped b
 test('an error code an error class adds is a change to the operations that give it, linked to its page', () => {
   const [newer, older] = readApiReleases(FIXTURES).releases;
   const { body } = changelogPage([newer], API_PAGES, { errorCodes: ERROR_CODES, codeOperations: CODE_OPERATIONS });
-  assert.match(body, /^- `DeleteDocumentVersion` \(beta\): can now return \[`VERSIONS_NOT_NUMBERED`\]\(\/errors\/VERSIONS_NOT_NUMBERED\/\) \(409\)\.$/m);
+  assert.match(body, /^- `DeleteDocumentVersion`: can now return \[`VERSIONS_NOT_NUMBERED`\]\(\/errors\/VERSIONS_NOT_NUMBERED\/\) \(409\)\.$/m);
   // A code no operation gives: a change to the operations that return its class; a code with no page is named, not linked
   const older_ = changelogPage([older], API_PAGES, { errorCodes: ERROR_CODES, codeOperations: CODE_OPERATIONS }).body;
-  assert.match(older_, /^- Operations that return \[`ConflictError`\]\(\/errors\/#error-codes\) \(beta\): can now return .*`TARGET_IN_USE` \(409\)/m);
-  assert.match(older_, /^- \[`DeleteAgentVersion`\]\(\/sdk\/delete-agent-version\/\) \(beta\): can now return \[`ConflictError`\]\(\/errors\/#error-codes\) \(409\) and `VERSION_IN_USE` \(409\)\.$/m);
+  assert.match(older_, /^- Operations that return \[`ConflictError`\]\(\/errors\/#error-codes\): can now return .*`TARGET_IN_USE` \(409\)/m);
+  assert.match(older_, /^- \[`DeleteAgentVersion`\]\(\/sdk\/delete-agent-version\/\): can now return \[`ConflictError`\]\(\/errors\/#error-codes\) \(409\) and `VERSION_IN_USE` \(409\)\.$/m);
   // A dropped code
   const dropped = apiSections({ api: true, version: '5.120.0', date: '2026-12-10', changes: [{ kind: 'errorCodeRemoved', surface: 'ga', error: 'ConflictError', code: 'VERSIONS_NOT_NUMBERED', status: 409 }] }, API_PAGES, { errorCodes: ERROR_CODES, codeOperations: CODE_OPERATIONS });
   assert.deepEqual(dropped.sections[0].items, ['- `DeleteDocumentVersion`: no longer returns [`VERSIONS_NOT_NUMBERED`](/errors/VERSIONS_NOT_NUMBERED/) (409).']);
@@ -258,13 +258,13 @@ test('stability changes have their own section, and a change a GA operation reac
 test('an API release links every operation, type and error code to its page, and an operation with no page yet is named, not linked', () => {
   const [, older] = readApiReleases(FIXTURES).releases;
   const { body, operations } = changelogPage([older], API_PAGES, { errorCodes: ERROR_CODES });
-  assert.match(body, /^- \[Add items to a batch\]\(\/sdk\/batch-create-ingestion-batch-items\/\) \(`BatchCreateIngestionBatchItems`\) \(beta\)$/m);
+  assert.match(body, /^- \[Add items to a batch\]\(\/sdk\/batch-create-ingestion-batch-items\/\) \(`BatchCreateIngestionBatchItems`\)$/m);
   // No page for CancelDocumentProcessing in this site: its title and name, unlinked
-  assert.match(body, /^- Stop processing a document \(`CancelDocumentProcessing`\) \(beta\)$/m);
+  assert.match(body, /^- Stop processing a document \(`CancelDocumentProcessing`\)$/m);
   // The HTTP API's page is not the SDK reference's: DeleteDocument has only an /api/ page here, so it is not linked
-  assert.match(body, /^- `DeleteDocument` \(beta\): /m);
+  assert.match(body, /^- `DeleteDocument`: /m);
   // A type with a page is linked where it is a member's type too
-  assert.match(body, /^- \[`AgentConfiguration`\]\(\/sdk\/types\/agent-configuration\/\) \(beta\): adds `answers` \(\[`AnswerSettings`\]\(\/sdk\/types\/answer-settings\/\)\), `connectors` \(`ConnectorBindingList`\)/m);
+  assert.match(body, /^- \[`AgentConfiguration`\]\(\/sdk\/types\/agent-configuration\/\): adds `answers` \(\[`AnswerSettings`\]\(\/sdk\/types\/answer-settings\/\)\), `connectors` \(`ConnectorBindingList`\)/m);
   assert.deepEqual(operations, ['BatchCreateIngestionBatchItems', 'CreateDocument', 'DeleteAgentVersion']);
   // Every link is to a page the site builds
   const slugs = new Set(API_PAGES.map((p) => `/${p.slug}/`));
@@ -292,7 +292,7 @@ test('a change\'s hand-written highlights are its entry\'s nested list, each lin
   const { body, siteBody } = changelogPage([r], PAGES);
   // The subject's own word links ("watch": Streaming) give way to the highlights'
   assert.match(body, /^- SDK 0\.9\.0: callable scopes and watch and wait\n {2}- \*\*Callable scopes:\*\* a scope sends nothing\. See \[Groups and operations\]\(\/sdk\/#groups-and-operations\)\.\n {2}- \*\*Watch and wait:\*\* `wait\(\)` for its end\. See \[Streaming\]\(\/streaming\/\)\.$/m);
-  assert.match(siteBody, /data-change="breaking">Breaking<\/span><\/p>\n\n- SDK 0\.9\.0: callable scopes and watch and wait\n {2}- \*\*Callable scopes:\*\*/);
+  assert.match(siteBody, /data-change="breaking">Breaking<\/span><\/p>\n\n- <span class="caitlyn-entry-title">SDK 0\.9\.0: callable scopes and watch and wait<\/span>\n {2}- \*\*Callable scopes:\*\*/);
 });
 
 test('the page opens with one sentence and the feed', () => {

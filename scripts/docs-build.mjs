@@ -15,18 +15,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { frontMatter, metadataProblems, sinceVersion } from './docs-metadata.mjs';
 import { MARKER, readPages } from './docs-guides.mjs';
-import { allErrors, fillIfMatchOptional, fillNotAvailable, ifMatchOptional, kebab, loadModel, root } from './docs-model.mjs';
+import { fillIfMatchOptional, fillNotAvailable, ifMatchOptional, kebab, loadModel, root } from './docs-model.mjs';
 import { RENAMED_TYPES, referencePages, sdkOverview } from './docs-reference.mjs';
 import { SDK_TYPES, addIngestionIntro, apiOverview, apiPages, entryTips, publishedOpenapi, sdkReturns, sdkTypePages, sidebarGroups, sidebarLabel } from './docs-api.mjs';
 import { documentProblems, lineProblems } from './docs-wording.mjs';
 import { LIVE_URL, isLive, lastModified, robotsTxt, sitemapXml } from './docs-sitemap.mjs';
-import { atomFeed, changelogPage, mergeReleases, parseChangelog, readApiReleases } from './docs-changelog.mjs';
+import { atomFeed, changelogPage, errorLinks, mergeReleases, parseChangelog, readApiReleases } from './docs-changelog.mjs';
+import { unreleased } from './release-notes.mjs';
 import { CLI_SECTIONS, TREE_FILE, cliExamples, cliPages, cliProblems, commandProblems, commandsByOperation, errorSection, llmsFiles, loadCli, swallowedPlaceholders, uncapturedOutput, unrunConsoleBlocks } from './docs-cli.mjs';
 import { ERROR_CODES } from '../docs/error-codes.mjs';
 
 // Where the site is served: https://build.caitlyn.ai, at the root; a merge request's preview is the same build at the
 // root of its own host (docs:preview). pages.json, llms.txt, the sitemap and the moved pages name these addresses.
 const PROD_URL = LIVE_URL;
+// The pages with a link-preview card of their own: 1200×630, from the marketing design system's Edge cover
+const OG_IMAGES = { changelog: { path: '/images/og/changelog.png', alt: 'Caitlyn Changelog: SDK and API releases' } };
 const out = path.join(root, 'build/docs');
 const site = path.join(out, 'site');
 const project = path.join(root, 'docs/site');
@@ -217,28 +220,25 @@ if (!sdkReleases.length) fail('CHANGELOG.md', 'no release headings the Changelog
 for (const r of sdkReleases) if (!r.changes.length) fail('CHANGELOG.md', `the ${r.version} release lists no change the Changelog can read`);
 const apiReleases = readApiReleases(path.join(root, 'model/changes'));
 for (const problem of apiReleases.problems) fail('the API releases', problem);
-const releases = mergeReleases(sdkReleases, apiReleases.releases);
-// Each error class's codes, so an API release's error links to its code's page
-const errorCodes = Object.fromEntries(allErrors(ast).map((e) => [e.name, e.codes]));
-// The operations each error code belongs to, for a code an error class adds or drops: those that return its class and
-// give the code in an example or their documentation
-const codeOperations = {};
-{
-  const service = Object.values(ast.shapes).find((x) => x.type === 'service');
-  const serviceErrors = new Set((service.errors ?? []).map((e) => e.target));
-  for (const e of allErrors(ast)) {
-    for (const c of e.codes) {
-      const ops = Object.entries(ast.shapes)
-        .filter(([, sh]) => sh.type === 'operation' && (serviceErrors.has(e.id) || (sh.errors ?? []).some((x) => x.target === e.id)))
-        .filter(([, sh]) => (sh.traits?.['smithy.api#documentation'] ?? '').includes(c) || JSON.stringify(sh.traits?.['smithy.api#examples'] ?? []).includes(`"${c}"`))
-        .map(([id]) => id.split('#')[1])
-        .sort();
-      if (ops.length) codeOperations[c] = ops;
-    }
+// Each error class's codes, so an API change's error links to its code's page, and the operations each code belongs to
+const { errorCodes, codeOperations } = errorLinks(ast);
+// A merge request's preview (DOCS_UNRELEASED, docs:build) opens with an Unreleased entry: what the next release's
+// notes would say once it merges, from the change files and commits merged to main since the last release, its own
+// change files or title, and the model's changes (scripts/release-notes.mjs unreleased). Its own entries are marked.
+// The live site never shows one, and the feed leaves it out.
+if (process.env.DOCS_UNRELEASED === 'on') {
+  const { markdown, from, thisMr } = unreleased({ site: { pages, errorCodes, codeOperations } });
+  const [preview] = parseChangelog(markdown);
+  if (preview) {
+    preview.since = from;
+    const mine = new Set(thisMr.subjects);
+    for (const c of preview.changes) c.thisMr = mine.has(c.subject) || mine.has(c.subject.split(/: | \(beta\)/)[0]);
+    sdkReleases.unshift(preview);
   }
 }
+const releases = mergeReleases(sdkReleases, apiReleases.releases);
 {
-  const { body, siteBody, operations } = changelogPage(releases, pages, { feed: CHANGELOG_FEED, errorCodes, codeOperations });
+  const { body, siteBody, operations } = changelogPage(releases, pages, { feed: CHANGELOG_FEED, feedUrl: `${PROD_URL}${CHANGELOG_FEED}`, errorCodes, codeOperations });
   pages.push({
     slug: 'changelog',
     title: 'Changelog',
@@ -498,9 +498,22 @@ for (const p of pages) {
   const next = p.slug ? dedupe([...(own ? own.cards : []), ...whatsNext(p.slug), ...neighbours(p)], p) : whatsNext(p.slug);
   const nextNotes = own?.notes ?? [];
 
+  // A page with its own link-preview card (docs/site/public/images/og/): Slack, and any site that unfurls a link, shows it
+  const og = OG_IMAGES[p.slug];
   const fm = [
     '---',
     `title: ${yaml(p.title)}`,
+    ...(og
+      ? [
+          `head: ${yaml([
+            { tag: 'meta', attrs: { property: 'og:image', content: `${PROD_URL}${og.path}` } },
+            { tag: 'meta', attrs: { property: 'og:image:width', content: '1200' } },
+            { tag: 'meta', attrs: { property: 'og:image:height', content: '630' } },
+            { tag: 'meta', attrs: { property: 'og:image:alt', content: og.alt } },
+            { tag: 'meta', attrs: { name: 'twitter:card', content: 'summary_large_image' } },
+          ])}`,
+        ]
+      : []),
     // An operation's or helper's name, under its title (src/components/PageTitle.astro)
     ...(p.subtitle ? [`subtitle: ${yaml(p.subtitle)}`] : []),
     `description: ${yaml(description(p.body))}`,
@@ -649,7 +662,7 @@ sidebar.push(apiTopic);
   groups.splice(tablesAt < 0 ? groups.length : tablesAt, 0, reference);
   const start = bySlug.get('cli');
   if (!start) fail('docs/cli/index.md', 'the CLI section has no start page');
-  else sidebar.push({ label: 'CLI', link: '/cli/', icon: 'seti:shell', items: [link(start, 'Overview'), ...groups] });
+  else sidebar.push({ label: 'CLI', link: '/cli/', icon: 'seti:shell', badge: { text: 'Beta', variant: 'default' }, items: [link(start, 'Overview'), ...groups] });
 }
 // The FAQ, the Changelog and any other start page, after the sections
 sidebar.push(...laterTopics);
