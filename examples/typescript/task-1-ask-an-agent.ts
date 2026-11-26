@@ -3,7 +3,7 @@
 import { Caitlyn } from '@caitlyn-ai/sdk';
 
 const service = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: { mode: 'clientCredentials', clientId: process.env.CAITLYN_CLIENT_ID!, clientSecret: process.env.CAITLYN_CLIENT_SECRET! },
 });
 declare function showChip(event: { label: string; status?: string }): void;

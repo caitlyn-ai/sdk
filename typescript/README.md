@@ -15,7 +15,7 @@ Runnable examples are in `examples/typescript/` in the SDK repository.
 
 ## Creating a client
 
-`workspace` is your workspace's hostname, or its URL (`https://your-company.getcaitlyn.ai`); a path, query string
+`workspace` is your workspace's hostname, or its URL (`https://your-company.caitlyn.ai`); a path, query string
 or other scheme is refused with a `TypeError`. `auth.mode` says how the client signs in. Every mode except
 `session` ends in the same short-lived Caitlyn bearer token, which the client caches and renews a minute
 before it expires, one request at a time however many calls are waiting.
@@ -24,7 +24,7 @@ before it expires, one request at a time however many calls are waiting.
 import { Caitlyn } from '@caitlyn-ai/sdk';
 
 // A script using a personal access token (it starts cait-pat-)
-const caitlyn = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! } });
+const caitlyn = new Caitlyn({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! } });
 ```
 
 | Mode | For | Options |
@@ -45,7 +45,7 @@ and `caitlyn.auth.resource` show what the client uses.
 
 ```ts
 const app = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: { mode: 'oauth', clientId, clientSecret, redirectUri: 'https://app.example.com/callback', scopes: ['chat:write'], tokenStore },
 });
 
@@ -68,7 +68,7 @@ the server refuses (`invalid_grant`) clears the store and fails the call with `C
 ### Workloads on AWS (`awsIam`)
 
 ```ts
-const worker = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'awsIam', region: 'ap-southeast-2' } });
+const worker = new Caitlyn({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'awsIam', region: 'ap-southeast-2' } });
 ```
 
 The client calls AWS STS `GetWebIdentityToken` on the regional endpoint with the workload's own AWS
@@ -94,7 +94,7 @@ that trusts the account's issuer and the role.
 publish:
   id_tokens:
     CAITLYN_ID_TOKEN:
-      aud: https://your-company.getcaitlyn.ai/api
+      aud: https://your-company.caitlyn.ai/api
 ```
 
 ```ts
@@ -194,7 +194,7 @@ import { Agent } from 'undici'; // or ProxyAgent, for a proxy
 
 const dispatcher = new Agent({ connect: { ca: fs.readFileSync('ca.pem') } });
 const caitlyn = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! },
   requestHandler: { customFetch: (request) => fetch(request, { dispatcher } as RequestInit) },
 });

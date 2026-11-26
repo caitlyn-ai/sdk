@@ -19,12 +19,12 @@ test('requestHandler: API calls go through the handler the client was given', as
       return { response: new HttpResponse({ statusCode: 200, headers: { 'content-type': 'application/json', 'caitlyn-request-id': 'R1', etag: '"draft-1"' }, body }) };
     },
   };
-  const c = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 'cait-pat-test' }, requestHandler: handler });
+  const c = new Caitlyn({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'token', token: 'cait-pat-test' }, requestHandler: handler });
   const v = await c.agents('GHT7YRWXPL').draft.get();
   assert.equal(v.name, 'draft');
   assert.equal(v.$metadata.requestId, 'R1');
-  assert.deepEqual(seen, ['GET https://your-company.getcaitlyn.ai/api/v3/agents/GHT7YRWXPL/versions/draft']);
-  const other = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 'cait-pat-test' } });
+  assert.deepEqual(seen, ['GET https://your-company.caitlyn.ai/api/v3/agents/GHT7YRWXPL/versions/draft']);
+  const other = new Caitlyn({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'token', token: 'cait-pat-test' } });
   assert.notEqual(other.client.config.requestHandler, c.client.config.requestHandler);
 });
 
@@ -34,10 +34,10 @@ test('requestHandler: the default fetch handler takes customFetch, which Node cl
     seen.push(`${request.method} ${request.url} ${request.headers.get('authorization')}`);
     return new Response(JSON.stringify(VERSION), { status: 200, headers: { 'content-type': 'application/json', 'caitlyn-request-id': 'R2' } });
   };
-  const c = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 'cait-pat-test' }, requestHandler: { customFetch } as never });
+  const c = new Caitlyn({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'token', token: 'cait-pat-test' }, requestHandler: { customFetch } as never });
   const v = await c.agents('GHT7YRWXPL').draft.get();
   assert.equal(v.$metadata.requestId, 'R2');
-  assert.deepEqual(seen, ['GET https://your-company.getcaitlyn.ai/api/v3/agents/GHT7YRWXPL/versions/draft Bearer cait-pat-test']);
+  assert.deepEqual(seen, ['GET https://your-company.caitlyn.ai/api/v3/agents/GHT7YRWXPL/versions/draft Bearer cait-pat-test']);
 });
 
 test('requestHandler: a signal reused for many calls keeps no listener from the calls that have finished', async () => {
@@ -49,7 +49,7 @@ test('requestHandler: a signal reused for many calls keeps no listener from the 
     if (n % 3 === 0) return new Response(JSON.stringify({ type: 'about:blank', title: 'Not found', status: 404, code: 'NOT_FOUND' }), { status: 404, headers: { 'content-type': 'application/problem+json' } });
     return new Response(JSON.stringify(VERSION), { status: 200, headers: { 'content-type': 'application/json', 'caitlyn-request-id': `R${n}` } });
   };
-  const c = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 'cait-pat-test' }, requestHandler: { customFetch } as never, maxAttempts: 1 });
+  const c = new Caitlyn({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'token', token: 'cait-pat-test' }, requestHandler: { customFetch } as never, maxAttempts: 1 });
   const controller = new AbortController();
   for (let i = 0; i < 30; i++) await c.agents('GHT7YRWXPL').draft.get({ signal: controller.signal }).catch(() => undefined);
   assert.equal(n, 30, 'every call reached fetch');
@@ -64,7 +64,7 @@ test('requestHandler: a signal reused for many watches keeps no listener from th
       status: 200,
       headers: { 'content-type': 'text/event-stream', 'caitlyn-request-id': 'RW' },
     });
-  const c = new Caitlyn({ workspace: 'your-company.getcaitlyn.ai', auth: { mode: 'token', token: 'cait-pat-test' }, requestHandler: { customFetch } as never });
+  const c = new Caitlyn({ workspace: 'your-company.caitlyn.ai', auth: { mode: 'token', token: 'cait-pat-test' }, requestHandler: { customFetch } as never });
   const controller = new AbortController();
   for (let i = 0; i < 15; i++) {
     for await (const event of c.conversations('c-w').watch({}, { signal: controller.signal })) {

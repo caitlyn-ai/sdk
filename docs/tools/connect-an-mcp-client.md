@@ -19,7 +19,7 @@ an MCP server you build.
 
 ## Before you start
 
-- **Your workspace's address**, such as `your-company.getcaitlyn.ai`.
+- **Your workspace's address**, such as `your-company.caitlyn.ai`.
 - **The MCP server turned on for your workspace.** It is turned on per workspace. If connecting fails at the
   first step, email [support@getcaitlyn.ai](mailto:support@getcaitlyn.ai).
 - **A Caitlyn account.** The client acts as you, so you sign in as yourself when you connect it.
@@ -31,14 +31,17 @@ an MCP server you build.
 The server's address is your workspace's address followed by `/api/mcp`:
 
 ```text
-https://your-company.getcaitlyn.ai/api/mcp
+https://your-company.caitlyn.ai/api/mcp
 ```
 
 Add it to your client as a remote (HTTP) MCP server. In Claude Code, for example:
 
 ```bash
-claude mcp add --transport http caitlyn https://your-company.getcaitlyn.ai/api/mcp
+claude mcp add --transport http caitlyn https://your-company.caitlyn.ai/api/mcp
 ```
+
+With the Caitlyn CLI signed in, [`caitlyn mcp add`](/cli/ai-agents/#connect-an-ai-client-to-the-mcp-server) writes
+this configuration for Claude Code, Cursor or VS Code for you, with your workspace's address filled in.
 
 You don't need a client ID or secret. The client finds Caitlyn's sign-in from the server's discovery documents
 (`/.well-known/oauth-authorization-server` and `/api/mcp/.well-known/oauth-protected-resource`) and registers

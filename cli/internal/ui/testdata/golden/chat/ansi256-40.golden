@@ -1,0 +1,22 @@
+-- stdout --
+[JYes. Up to **5 days** can be carried over 
+[2A[JYes. Up to **5 days** can be carried over with your manager's approval [1]. 
+[2A[JYes. Up to **5 days** can be carried over with your manager's approval [1]. Anything above that must be taken by 31 March or paid out
+[4A[JYes. Up to **5 days** can be carried over with your manager's approval [1]. Anything above that must be taken by 31 March or paid out
+[4A[JYes. Up to [1m5 days[m can be carried over
+with your manager's approval [38;5;208m[1][m.
+Anything above that must be taken by 31
+March or paid out [38;5;208m[1][m.
+
+See the policy for exceptions.
+[2A[J
+See the policy for exceptions.
+
+[1mSources[m
+  [38;5;208m[1][m Leave policy, page 4
+      [4mhttps://intranet.example.govt.nz/policies/leave#carry-over[m
+
+[38;5;248mHR assistant (live, v12) · conversation 0193b1d4…7a10[m
+[38;5;248m→ caitlyn chat --conversation 0193b1d4-5e2a-7c11-a9f0-2d6e8b4c7a10 "…"[m
+-- stderr --
+[38;5;214m⠋[m [38;5;208m›[m Searching HR policies[38;5;214m⠋[m [38;5;208m›[m Searching HR policies[38;5;214m⠋[m [38;5;208m›[m Searching HR policies[38;5;214m⠋[m [38;5;208m›[m Searching HR policies[38;5;214m⠋[m [38;5;208m›[m Checking the carry-over clause[38;5;214m⠋[m [38;5;208m›[m Checking the carry-over clause

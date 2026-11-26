@@ -36,7 +36,7 @@ Either way, the callback URL is known before you start in Azure, so the whole se
 Before you begin, ensure you have:
 
 - **Microsoft Entra ID admin access**: An account with permission to create app registrations and grant admin consent (Application Administrator, Cloud Application Administrator, or Global Administrator).
-- **Your Caitlyn domain**: The URL we have provisioned for you (e.g. `https://your-company.getcaitlyn.ai`). We provide this. Contact us if you don't have it yet.
+- **Your Caitlyn domain**: The URL we have provisioned for you (e.g. `https://your-company.caitlyn.ai`). We provide this. Contact us if you don't have it yet.
 - **If you are adding the sign-in method yourself**: A Caitlyn account that can open **Settings → Sign-in Methods** and add a method. We send you an email invite with a suitable role.
 
 > **Note**: Caitlyn is configured as **single-tenant** by default. Only members of your organisation's Entra ID directory will be able to sign in. You do not need to expose anything to the public internet or to other Microsoft tenants.
@@ -236,7 +236,7 @@ Full detail on this page, including renaming and replacing credentials later, is
 Skip this step if you registered the callback URL in Step 1. Caitlyn shows the **Callback URL** from the moment the sign-in method is created. It looks like this:
 
 ```text
-https://your-company.getcaitlyn.ai/api/auth/callback/microsoftEntraId__<id>
+https://your-company.caitlyn.ai/api/auth/callback/microsoftEntraId__<id>
 ```
 
 Sign-in fails until this URL is registered on the app registration.

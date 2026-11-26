@@ -1,0 +1,9 @@
+-- stdout --
+[38;2;102;116;112mNAME[m                        [38;2;102;116;112mID[m          [38;2;102;116;112mLIVE[m  [38;2;102;116;112mDRAFT[m         [38;2;102;116;112mUPDATED[m
+[38;2;217;213;211m─────────────────────────────────────────────────────────────────────────[m
+[1mHR assistant[m                GHT7YRWXPL  v12   [33mchanged[m       2 hours ago
+[1mSupplier contract reviewer[m  REVIEWER01  v7    same as live  3 days ago
+[1mLeave form helper[m           AGYFAMYTND  [38;2;102;116;112mnone[m  new           5 minutes ago
+
+[38;2;102;116;112m3 agents[m
+-- stderr --

@@ -1,0 +1,15 @@
+-- stdout --
+[1mHR policies[m  [38;2;168;176;173mKB4T7YQ2WL[m
+
+  [38;2;168;176;173mstatus[m        [32m✓[m ready
+  [38;2;168;176;173mdescription[m   Company HR policies and staff handbook.
+  [38;2;168;176;173mdocuments[m     214 · 2 processing · [31m1 failed[m
+  [38;2;168;176;173msearch[m        layout-aware
+  [38;2;168;176;173mupdated[m       24 Nov 2026, 2:14 pm (Aroha Ngata)
+
+  [1maccess[m
+  [38;2;168;176;173mreaders[m       Everyone in HR, Managers
+  [38;2;168;176;173meditors[m       Aroha Ngata
+
+[38;2;168;176;173m→ caitlyn kb documents list --kb KB4T7YQ2WL --filter 'status[eq]=failed'[m
+-- stderr --

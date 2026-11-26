@@ -1,0 +1,16 @@
+agents delete
+agents draft reset
+agents versions delete
+knowledge-bases delete
+knowledge-bases documents cancel-processing
+knowledge-bases documents delete
+knowledge-bases documents delete-many
+knowledge-bases documents versions delete
+knowledge-bases fields delete
+knowledge-bases folders delete
+knowledge-bases ingestion batches cancel
+knowledge-bases ingestion batches items cancel
+["agentId","name"]
+https://build.caitlyn.ai/cli/reference/agents/draft/#save
+Conflict or stale
+[exit 0]

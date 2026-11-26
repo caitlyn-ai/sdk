@@ -37,7 +37,7 @@ Before you begin, ensure you have:
 
 - **Google Cloud Console access**: permission to create a project (or use an existing one), configure its OAuth consent screen, and create OAuth clients and service accounts.
 - **Google Admin console super administrator access**: needed in Step 4 to give the service account a read-only admin role.
-- **Your Caitlyn domain**: the URL we have provisioned for you (e.g. `https://your-company.getcaitlyn.ai`). We provide this. Contact us if you don't have it yet.
+- **Your Caitlyn domain**: the URL we have provisioned for you (e.g. `https://your-company.caitlyn.ai`). We provide this. Contact us if you don't have it yet.
 - **If you are adding the sign-in method yourself**: a Caitlyn account that can open **Settings → Sign-in Methods** and add a method. We send you an email invite with a suitable role.
 
 ## Step 1: Configure the OAuth Consent Screen
@@ -169,7 +169,7 @@ Full detail on this page, including renaming and replacing credentials later, is
 Skip this step if you registered the callback URL in Step 2. Caitlyn shows the **Callback URL** from the moment the sign-in method is created. It looks like this:
 
 ```text
-https://your-company.getcaitlyn.ai/api/auth/callback/google__<id>
+https://your-company.caitlyn.ai/api/auth/callback/google__<id>
 ```
 
 Sign-in fails until this URL is registered on the OAuth client.

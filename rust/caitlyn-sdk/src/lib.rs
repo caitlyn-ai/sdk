@@ -12,7 +12,7 @@
 //! # async fn run() -> Result<(), caitlyn_sdk::Error> {
 //! use caitlyn_sdk::{Auth, Client};
 //!
-//! let client = Client::new("your-company.getcaitlyn.ai", Auth::token("cait-pat-…"))?;
+//! let client = Client::new("your-company.caitlyn.ai", Auth::token("cait-pat-…"))?;
 //! let kb = client.knowledge_base("kb_123");
 //! let document = kb.documents().create("./leave-policy.pdf").folder("/hr/").wait().await?;
 //! println!("{} {}", document.id, document.status);

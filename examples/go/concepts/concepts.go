@@ -99,7 +99,7 @@ func ErrorsIfMatch(ctx context.Context, client *caitlyn.Client) error {
 // Retries creates a client that tries harder.
 func Retries() (*caitlyn.Client, error) {
 	// #region retries
-	patient, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token(os.Getenv("CAITLYN_TOKEN")),
+	patient, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.Token(os.Getenv("CAITLYN_TOKEN")),
 		caitlyn.WithMaxAttempts(5),               // the first attempt included; default 3
 		caitlyn.WithMaxRetryDelay(2*time.Minute), // the longest Retry-After to wait for; default 60 s
 	)
@@ -110,7 +110,7 @@ func Retries() (*caitlyn.Client, error) {
 // RetryBudget creates a client with a larger retry budget.
 func RetryBudget() (*caitlyn.Client, error) {
 	// #region retry-budget
-	batch, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token(os.Getenv("CAITLYN_TOKEN")),
+	batch, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.Token(os.Getenv("CAITLYN_TOKEN")),
 		caitlyn.WithRetryBudget(2000), // retry tokens shared by every call on this client; default 500, and 0 turns retries off
 	)
 	// #endregion
@@ -268,7 +268,7 @@ func PaginationCursor(ctx context.Context, client *caitlyn.Client, cursor *strin
 // Telemetry creates a client that sends trace context.
 func Telemetry() (*caitlyn.Client, error) {
 	// #region telemetry
-	traced, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token(os.Getenv("CAITLYN_TOKEN")),
+	traced, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.Token(os.Getenv("CAITLYN_TOKEN")),
 		caitlyn.WithTracerProvider(otel.GetTracerProvider()), // default: the global provider
 		caitlyn.WithPropagator(propagation.TraceContext{}),   // default: the global propagator
 	)

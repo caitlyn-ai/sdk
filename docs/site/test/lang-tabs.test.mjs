@@ -52,3 +52,17 @@ test('no page has a tab strip with a language twice, or more panels than tabs', 
   }
   assert.ok(seen > 0);
 });
+
+test('output tabs are their own groups, marked apart from language tabs', () => {
+  const out = (lang, label, value) => ({ type: 'code', lang, meta: `tab-output="${label}"`, value });
+  const tree = { type: 'root', children: [...LANGS.map(([l, n]) => code(l, n, 'call')), out('text', 'Table', 'NAME'), out('json', 'JSON', '{}')] };
+  remarkLangTabs()(tree);
+  const [lang, output] = tree.children;
+  assert.equal(lang.data.hProperties.dataLangTabs, '');
+  assert.equal(lang.data.hProperties.dataOutputTabs, undefined);
+  assert.equal(output.data.hProperties.dataOutputTabs, '');
+  assert.equal(output.data.hProperties.dataLangTabs, undefined);
+  assert.deepEqual(output.children[0].children.map((t) => [t.children[0].value, t.data.hProperties.dataOutput]), [['Table', 'table'], ['JSON', 'json']]);
+  assert.equal(output.children[0].data.hProperties.ariaLabel, 'Output');
+  for (const p of output.children.slice(1)) assert.equal(p.data.hProperties.dataLang, undefined);
+});

@@ -41,6 +41,36 @@ cargo add tokio --features macros,rt-multi-thread
 Every SDK has the same version number. See [Releases](https://github.com/caitlyn-ai/sdk/releases) for the latest
 version and what changed.
 
+## Install the CLI
+
+The `caitlyn` command line does the same from a terminal or a script, and needs no code.
+
+```sh tab-install="macOS and Linux"
+curl -fsSL https://build.caitlyn.ai/releases/cli/install.sh | sh
+```
+```sh tab-install="Windows"
+irm https://build.caitlyn.ai/releases/cli/install.ps1 | iex
+```
+```sh tab-install="Homebrew"
+brew install caitlyn-ai/tap/caitlyn
+```
+```sh tab-install="Scoop"
+scoop bucket add caitlyn https://github.com/caitlyn-ai/scoop-bucket
+scoop install caitlyn
+```
+```sh tab-install="Container"
+docker run --rm ghcr.io/caitlyn-ai/caitlyn:0.12 caitlyn version
+```
+
+Sign in, then check who you are:
+
+```sh
+caitlyn auth login --workspace your-company.caitlyn.ai
+caitlyn me
+```
+
+The [CLI's Install section](/cli/#install) has more about each, and [Installing the CLI](/cli/install/) how to verify a release.
+
 ## Make a first call
 
 Create a client for your workspace, then call an operation. This reads the draft version of an agent: its
@@ -51,7 +81,7 @@ configuration, and its ETag, for a change that must not overwrite someone else's
 import { Caitlyn } from '@caitlyn-ai/sdk';
 
 const caitlyn = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! },
 });
 
@@ -66,7 +96,7 @@ import os
 from caitlyn import Caitlyn
 from caitlyn.auth import Token
 
-caitlyn = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token(os.environ["CAITLYN_TOKEN"]))
+caitlyn = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token(os.environ["CAITLYN_TOKEN"]))
 
 # Read the draft of an agent: its configuration and its ETag
 draft = caitlyn.agents("GHT7YRWXPL").draft.get()
@@ -85,7 +115,7 @@ import (
 
 func main() {
 	ctx := context.Background()
-	client, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token(os.Getenv("CAITLYN_TOKEN")))
+	client, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.Token(os.Getenv("CAITLYN_TOKEN")))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -108,7 +138,7 @@ use caitlyn_sdk::{Auth, Client};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new(
-        "your-company.getcaitlyn.ai",
+        "your-company.caitlyn.ai",
         Auth::token(std::env::var("CAITLYN_TOKEN")?),
     )?;
 
@@ -166,7 +196,7 @@ println!("scopes: {}", caller.scopes.join(" "));
 
 ## The workspace
 
-`workspace` is your workspace's hostname, such as `your-company.getcaitlyn.ai`. It decides two things, the way a
+`workspace` is your workspace's hostname, such as `your-company.caitlyn.ai`. It decides two things, the way a
 region does in the AWS SDKs: where requests go (`https://<workspace>/api`), and the audience every token the
 client gets is bound to. A token for one workspace is refused by every other.
 

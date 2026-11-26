@@ -1,0 +1,15 @@
+-- stdout --
+[1mHR policies[m  KB4T7YQ2WL
+
+  status        + ready
+  description   Company HR policies and staff handbook.
+  documents     214 - 2 processing - 1 failed
+  search        layout-aware
+  updated       24 Nov 2026, 2:14 pm (Aroha Ngata)
+
+  [1maccess[m
+  readers       Everyone in HR, Managers
+  editors       Aroha Ngata
+
+-> caitlyn kb documents list --kb KB4T7YQ2WL --filter 'status[eq]=failed'
+-- stderr --

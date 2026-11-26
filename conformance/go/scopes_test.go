@@ -769,7 +769,7 @@ func watchServer(t *testing.T, answers ...string) (*caitlyn.Client, *atomic.Int3
 		w.Write([]byte(answers[i]))
 	}))
 	t.Cleanup(srv.Close)
-	c, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token("pat_test"), caitlyn.WithEndpoint(srv.URL))
+	c, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.Token("pat_test"), caitlyn.WithEndpoint(srv.URL))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -820,7 +820,7 @@ func progressServer(t *testing.T) *caitlyn.Client {
 		w.Write([]byte(`{"id":"doc-1","status":"indexed"}`))
 	}))
 	t.Cleanup(srv.Close)
-	c, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token("pat_test"), caitlyn.WithEndpoint(srv.URL))
+	c, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.Token("pat_test"), caitlyn.WithEndpoint(srv.URL))
 	if err != nil {
 		t.Fatal(err)
 	}

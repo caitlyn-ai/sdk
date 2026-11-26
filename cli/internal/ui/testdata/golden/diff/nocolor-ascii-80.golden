@@ -1,0 +1,15 @@
+-- stdout --
+[1mPlan for your-company.caitlyn.ai (profile default)[m
+
+~ agent HR assistant  GHT7YRWXPL  draft
+    ~ guidance.instructions
+        Answer leave and pay questions. Quote the policy clause you relied
+        [-on.-] {+on, and its number.+}
+    + knowledgeBases[KB9M2QXR4T]  maxQueries 2
+    ~ model  standard -> advanced
+    - starters[2]  How do I book leave?
++ policy Leave and pay  leave-and-pay
+  1 knowledge base set-up unchanged
+
+[1m2 changes, 1 addition. Drafts only; live doesn't change.[m
+-- stderr --

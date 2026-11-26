@@ -14,7 +14,7 @@ import (
 
 func main() {
 	ctx := context.Background()
-	client, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token(os.Getenv("CAITLYN_TOKEN")))
+	client, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.Token(os.Getenv("CAITLYN_TOKEN")))
 	if err != nil {
 		log.Fatal(err)
 	}

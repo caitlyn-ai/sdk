@@ -1,0 +1,94 @@
+# Caitlyn CLI: plan configuration changes in a merge request (the CLI design, 15.7). Shows the plan as job-log
+# sections, in the test widget (JUnit) and as an artifact, and fails on invalid files with their file and line. With
+# comment: true it also posts the plan to the merge request, which needs a CAITLYN_GITLAB_TOKEN variable (a
+# project access token with the api scope): the CLI itself never posts.
+spec:
+  inputs:
+    workspace:
+      description: The Caitlyn workspace, such as your-company.caitlyn.ai
+    path:
+      description: The folder of configuration files
+      default: caitlyn/
+    stage:
+      default: test
+    cli_version:
+      default: latest
+    fail_on:
+      description: --fail-on conditions; changes fails the job when the plan has any
+      default: never
+    comment:
+      description: Post the plan to the merge request (needs CAITLYN_GITLAB_TOKEN)
+      type: boolean
+      default: false
+    cosign_image:
+      description: An image with cosign and a shell, to check the CLI image's signature (pinned by digest)
+      default: cgr.dev/chainguard/cosign:latest-dev@sha256:bc725b1ce4fdd6266c66407d0d34cf59a03ded765089956cd985411d790f9b55
+    release_key:
+      description: Caitlyn's release key, which signs every CLI image
+      default: https://build.caitlyn.ai/releases/cli/cosign.pub
+    job_name:
+      default: caitlyn-diff
+---
+# The CLI image this job runs, checked against Caitlyn's release key in .pre, before any later stage: a failed check
+# stops the pipeline. Pin cli_version with its digest (0.12.0@sha256:...) and the image checked is the image run.
+$[[ inputs.job_name ]]-verify-image:
+  stage: .pre
+  image:
+    name: $[[ inputs.cosign_image ]]
+    entrypoint: ['']
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes: ['$[[ inputs.path ]]**/*']
+  script:
+    - cosign verify --key '$[[ inputs.release_key ]]' 'ghcr.io/caitlyn-ai/caitlyn:$[[ inputs.cli_version ]]' > /dev/null
+    - echo "ghcr.io/caitlyn-ai/caitlyn:$[[ inputs.cli_version ]] is signed with Caitlyn's release key"
+
+$[[ inputs.job_name ]]:
+  image: ghcr.io/caitlyn-ai/caitlyn:$[[ inputs.cli_version ]]
+  stage: $[[ inputs.stage ]]
+  variables:
+    CAITLYN_WORKSPACE: $[[ inputs.workspace ]]
+    CAITLYN_AUTH: workload-identity
+    CAITLYN_COMMENT: '$[[ inputs.comment ]]'
+  id_tokens:
+    CAITLYN_ID_TOKEN:
+      aud: https://$[[ inputs.workspace ]]/api
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes: ['$[[ inputs.path ]]**/*']
+  script:
+    - >
+      caitlyn diff -f '$[[ inputs.path ]]' --fail-on '$[[ inputs.fail_on ]]'
+      --report markdown=caitlyn-plan.md --report junit=caitlyn-plan.xml --outputs-file caitlyn.env
+  after_script:
+    - |
+      # Post (or update) the plan as one merge-request comment, found again by its marker
+      if [ "$CAITLYN_COMMENT" = "true" ] && [ -f caitlyn-plan.md ]; then
+        if [ -z "${CAITLYN_GITLAB_TOKEN:-}" ]; then
+          echo "comment: true needs a CAITLYN_GITLAB_TOKEN variable; the plan is in the job's artifacts"
+          exit 0
+        fi
+        api="$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes"
+        body="$( (echo '<!-- caitlyn-diff -->'; cat caitlyn-plan.md) | jq -Rs '{body: .}')"
+        # Only this token's own note is updated: anyone who can comment can post one that starts with the marker
+        me="$(curl -fsS --header "PRIVATE-TOKEN: $CAITLYN_GITLAB_TOKEN" "$CI_API_V4_URL/user" | jq -r .id)"
+        # every page, so a long merge request still finds its plan rather than posting a second one
+        note=""; page=1
+        while [ -z "$note" ] && [ -n "$page" ]; do
+          notes="$(curl -fsS -D caitlyn-headers.txt --header "PRIVATE-TOKEN: $CAITLYN_GITLAB_TOKEN" "$api?per_page=100&sort=desc&page=$page")"
+          note="$(printf '%s' "$notes" | jq -r --argjson me "$me" '[.[] | select(.author.id == $me and (.body | startswith("<!-- caitlyn-diff -->")))][0].id // empty')"
+          page="$(sed -n 's/^[Xx]-[Nn]ext-[Pp]age: *\([0-9]*\).*/\1/p' caitlyn-headers.txt | tr -d '\r')"
+        done
+        if [ -n "$note" ]; then
+          curl -fsS -X PUT --header "PRIVATE-TOKEN: $CAITLYN_GITLAB_TOKEN" --header 'Content-Type: application/json' --data "$body" "$api/$note" > /dev/null
+        else
+          curl -fsS -X POST --header "PRIVATE-TOKEN: $CAITLYN_GITLAB_TOKEN" --header 'Content-Type: application/json' --data "$body" "$api" > /dev/null
+        fi
+      fi
+  artifacts:
+    when: always
+    expose_as: Caitlyn plan
+    paths: [caitlyn-plan.md]
+    reports:
+      junit: caitlyn-plan.xml
+      dotenv: caitlyn.env

@@ -37,8 +37,8 @@ fn s<E: std::fmt::Display>(e: E) -> String {
 
 const KB: &str = "KB4T7YQ2WL";
 const AGENT: &str = "GHT7YRWXPL";
-const WORKSPACE: &str = "your-company.getcaitlyn.ai";
-const RESOURCE: &str = "https://your-company.getcaitlyn.ai/api";
+const WORKSPACE: &str = "your-company.caitlyn.ai";
+const RESOURCE: &str = "https://your-company.caitlyn.ai/api";
 const PAT: &str = "pat_test";
 const ANSWER: &str = "Staff receive 20 days of annual leave.";
 
@@ -2113,33 +2113,31 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
         }),
         "endpoint.workspace-url" => Box::pin(async move {
             for w in [
-                "https://your-company.getcaitlyn.ai",
-                "https://your-company.getcaitlyn.ai/",
-                "your-company.getcaitlyn.ai/",
-                "HTTPS://Your-Company.GetCaitlyn.ai",
+                "https://your-company.caitlyn.ai",
+                "https://your-company.caitlyn.ai/",
+                "your-company.caitlyn.ai/",
+                "HTTPS://Your-Company.Caitlyn.ai",
             ] {
                 let c = Client::new(w, Auth::token(PAT)).map_err(s)?;
                 ensure!(
-                    c.endpoint() == "https://your-company.getcaitlyn.ai/api"
-                        && c.auth().token_endpoint() == "https://your-company.getcaitlyn.ai/api/oauth/token",
+                    c.endpoint() == "https://your-company.caitlyn.ai/api"
+                        && c.auth().token_endpoint() == "https://your-company.caitlyn.ai/api/oauth/token",
                     "{w:?}: endpoint {}",
                     c.endpoint()
                 );
             }
             for w in [
-                "https://your-company.getcaitlyn.ai/api",
-                "https://your-company.getcaitlyn.ai/?x=1",
-                "https://your-company.getcaitlyn.ai#top",
-                "http://your-company.getcaitlyn.ai",
-                "ftp://your-company.getcaitlyn.ai",
-                "me@your-company.getcaitlyn.ai",
+                "https://your-company.caitlyn.ai/api",
+                "https://your-company.caitlyn.ai/?x=1",
+                "https://your-company.caitlyn.ai#top",
+                "http://your-company.caitlyn.ai",
+                "ftp://your-company.caitlyn.ai",
+                "me@your-company.caitlyn.ai",
                 "",
             ] {
                 match Client::new(w, Auth::token(PAT)) {
                     Err(Error::Input(e))
-                        if e.member == "workspace"
-                            && e.reason
-                                .contains("your-company.getcaitlyn.ai or https://your-company.getcaitlyn.ai") => {}
+                        if e.member == "workspace" && e.reason.contains("your-company.caitlyn.ai or https://your-company.caitlyn.ai") => {}
                     other => return Err(format!("{w:?}: {:?}", other.err())),
                 }
             }
@@ -2147,11 +2145,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
         }),
         "endpoint.workspace" => Box::pin(async move {
             let c = Client::new(WORKSPACE, Auth::token(PAT)).map_err(s)?;
-            ensure!(
-                c.endpoint() == "https://your-company.getcaitlyn.ai/api",
-                "endpoint {}",
-                c.endpoint()
-            );
+            ensure!(c.endpoint() == "https://your-company.caitlyn.ai/api", "endpoint {}", c.endpoint());
             Ok(())
         }),
         // ------------------------------------------------------------------ the client tree (PROTOCOL.md 10)
@@ -7779,7 +7773,7 @@ fn auth_case<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
     let oauth = || Auth::oauth("studio-client").redirect_uri("https://app.example.com/callback");
     Some(match id {
         "auth.workspace" => Box::pin(async move {
-            let plain = Client::new("https://your-company.getcaitlyn.ai/", Auth::token(PAT)).map_err(s)?;
+            let plain = Client::new("https://your-company.caitlyn.ai/", Auth::token(PAT)).map_err(s)?;
             ensure!(
                 plain.auth().workspace() == WORKSPACE && plain.workspace() == WORKSPACE,
                 "workspace {}",
@@ -7787,7 +7781,7 @@ fn auth_case<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             );
             ensure!(plain.auth().resource() == RESOURCE, "resource {}", plain.auth().resource());
             ensure!(
-                plain.auth().token_endpoint() == "https://your-company.getcaitlyn.ai/api/oauth/token",
+                plain.auth().token_endpoint() == "https://your-company.caitlyn.ai/api/oauth/token",
                 "token endpoint {}",
                 plain.auth().token_endpoint()
             );
@@ -7800,7 +7794,7 @@ fn auth_case<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             // A workspace given as a URL, with the endpoint moved to the mock: one token request to the mock,
             // still for the workspace's audience, then one call.
             let c = Client::builder(
-                "https://your-company.getcaitlyn.ai/",
+                "https://your-company.caitlyn.ai/",
                 Auth::client_credentials("machine-client", "machine-secret"),
             )
             .endpoint(&m.base)
@@ -8183,7 +8177,7 @@ fn auth_case<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             let e = auth_err(
                 read(&client_with(
                     m,
-                    Auth::workload_identity(|| async { Ok(oidc_token("https://other.getcaitlyn.ai/api")) }),
+                    Auth::workload_identity(|| async { Ok(oidc_token("https://other.caitlyn.ai/api")) }),
                 ))
                 .await,
             )?;

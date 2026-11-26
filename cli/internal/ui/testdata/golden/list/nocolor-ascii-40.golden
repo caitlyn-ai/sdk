@@ -1,0 +1,9 @@
+-- stdout --
+NAME      ID          LIVE  DRAFT     UPDATED
+----------------------------------------
+[1mHR as...[m  GHT7YRWXPL  v12   changed   2 hou...
+[1mSuppl...[m  REVIEWER01  v7    same ...  3 day...
+[1mLeave...[m  AGYFAMYTND  none  new       5 min...
+
+3 agents
+-- stderr --

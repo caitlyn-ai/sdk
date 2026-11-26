@@ -24,8 +24,8 @@ pub struct SdkInfo {
     pub error_shapes: &'static [(u16, &'static str)],
 }
 
-/// A workspace given as a hostname or a URL, as its bare hostname: `https://acme.getcaitlyn.ai/` gives
-/// `acme.getcaitlyn.ai`.
+/// A workspace given as a hostname or a URL, as its bare hostname: `https://acme.caitlyn.ai/` gives
+/// `acme.caitlyn.ai`.
 pub fn workspace_host(workspace: &str) -> String {
     if let Ok(host) = parse_workspace(workspace) {
         return host;
@@ -35,7 +35,7 @@ pub fn workspace_host(workspace: &str) -> String {
     w.split('/').next().unwrap_or_default().to_owned()
 }
 
-/// A workspace given as a hostname (`your-company.getcaitlyn.ai`) or as its URL (`https://your-company.getcaitlyn.ai`,
+/// A workspace given as a hostname (`your-company.caitlyn.ai`) or as its URL (`https://your-company.caitlyn.ai`,
 /// with or without a trailing slash), as its bare hostname in lower case. Anything else (another scheme, a path, a
 /// query string, a fragment, user information, an empty value) is an error message that names the expected form
 /// (PROTOCOL.md 12.1). [`ClientBuilder::build`] calls it.
@@ -43,7 +43,7 @@ pub fn parse_workspace(workspace: &str) -> Result<String, String> {
     let given = workspace.trim();
     let refuse = |what: &str| {
         Err(format!(
-            "must be a hostname such as your-company.getcaitlyn.ai or https://your-company.getcaitlyn.ai; {given:?} {what}. \
+            "must be a hostname such as your-company.caitlyn.ai or https://your-company.caitlyn.ai; {given:?} {what}. \
              Use ClientBuilder::endpoint for a proxy or a local server"
         ))
     };
@@ -704,9 +704,9 @@ mod tests {
 
     #[test]
     fn workspace_decides_endpoint_and_audience() {
-        assert_eq!(workspace_host("https://acme.getcaitlyn.ai/"), "acme.getcaitlyn.ai");
-        assert_eq!(workspace_endpoint("acme.getcaitlyn.ai"), "https://acme.getcaitlyn.ai/api");
-        assert_eq!(workspace_audience("https://acme.getcaitlyn.ai/x"), "https://acme.getcaitlyn.ai/api");
+        assert_eq!(workspace_host("https://acme.caitlyn.ai/"), "acme.caitlyn.ai");
+        assert_eq!(workspace_endpoint("acme.caitlyn.ai"), "https://acme.caitlyn.ai/api");
+        assert_eq!(workspace_audience("https://acme.caitlyn.ai/x"), "https://acme.caitlyn.ai/api");
     }
 
     #[test]

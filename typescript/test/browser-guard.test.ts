@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { Caitlyn, CaitlynAuthError, createAuth, createCaitlynClient, type AuthOptions } from '@caitlyn-ai/sdk';
 
 const g = globalThis as { window?: unknown; document?: unknown };
-const workspace = 'your-company.getcaitlyn.ai';
+const workspace = 'your-company.caitlyn.ai';
 const browser = () => Object.assign(g, { window: {}, document: {} });
 afterEach(() => {
   delete g.window;

@@ -16,7 +16,7 @@ OpenTelemetry API, which records nothing until you configure a tracer provider; 
 <!-- example: examples/typescript/concepts.ts#telemetry -->
 ```ts tab="TypeScript"
 const traced = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: { mode: 'token', token: process.env.CAITLYN_TOKEN! },
   telemetry: { tracerProvider: trace.getTracerProvider() }, // default: the global provider; enabled: false turns spans off
 });
@@ -24,14 +24,14 @@ const traced = new Caitlyn({
 <!-- example: examples/python/concepts.py#telemetry -->
 ```python tab="Python"
 traced = Caitlyn(
-    workspace="your-company.getcaitlyn.ai",
+    workspace="your-company.caitlyn.ai",
     auth=Token(os.environ["CAITLYN_TOKEN"]),
     tracer_provider=trace.get_tracer_provider(),  # default: the global provider
 )
 ```
 <!-- example: examples/go/concepts/concepts.go#telemetry -->
 ```go tab="Go"
-traced, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token(os.Getenv("CAITLYN_TOKEN")),
+traced, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.Token(os.Getenv("CAITLYN_TOKEN")),
 	caitlyn.WithTracerProvider(otel.GetTracerProvider()), // default: the global provider
 	caitlyn.WithPropagator(propagation.TraceContext{}),   // default: the global propagator
 )

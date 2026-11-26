@@ -23,6 +23,13 @@
 #                          release job's Go tag failed.
 #   release:*              A placeholder for the Homebrew release, and pointers to the GitHub workflows for npm, PyPI
 #                          and crates.io. Off until RELEASES_ENABLED is "true".
+#   cli:vet, cli:test      The CLI (cli/): gofmt, go vet and staticcheck; the tests under the race detector.
+#   cli:snapshot           Every pipeline: a GoReleaser snapshot build of every archive and package (no signing, no
+#                          image, nothing published), so a release can't be the first time the configuration runs.
+#   cli:release, cli:publish, cli:packages  By hand, on a protected release tag, once RELEASES_ENABLED is "true":
+#                          build, sign and lay out the release, upload it to s3://cd-caitlyn-cli-releases and move the
+#                          channel pointers (cli/scripts/release-publish.sh), and only then push the Homebrew formula
+#                          and the Scoop manifest that point at it (cli/scripts/release-packages.sh).
 #   model:main             Triggered by a merge to the app's main that changes its model: builds that model, regenerates
 #                          every SDK, and only once all four conformance suites pass commits it to main with a beta tag
 #                          (scripts/model-main.sh); the tag publishes the Python, Rust and Go betas.
@@ -32,7 +39,12 @@
 #   ASK_CAITLYN_CLIENT_ID and ASK_CAITLYN_CLIENT_SECRET (masked, protected),
 #   GITLAB_TOKEN (masked, protected: a project access token with the Maintainer role, which may create the
 #   protected v* and go/v* tags, and the api and write_repository scopes; semantic-release, scripts/go-tag.mjs and
-#   release:go and model:main use it), RELEASES_ENABLED, GO_TAG (release:go only).
+#   release:go and model:main use it), RELEASES_ENABLED, GO_TAG (release:go only),
+#   for the CLI's release (protected, so only protected v* tags see them): CLI_RELEASE_ROLE_ARN,
+#   CLI_MINISIGN_SECRET_ID, CLI_DISTRIBUTION_ID, CAITLYN_MINISIGN_PUBLIC_KEY, CLI_SIGNING_ROLE_ARN (the role that may
+#   sign with the KMS release key) and CAITLYN_COSIGN_PUBLIC_KEY (that key's public half, one line of base64 DER), CAITLYN_TELEMETRY_ENDPOINT (unset until
+#   the endpoint exists), HOMEBREW_TAP_TOKEN and SCOOP_BUCKET_TOKEN (masked), and GHCR_USERNAME and GHCR_TOKEN
+#   (masked) for ghcr.io/caitlyn-ai/caitlyn.
 
 include:
   # fetch-semantic-version and release: semantic-release in the shared image, as the app repository runs it.
@@ -70,7 +82,7 @@ stages:
 
 variables:
   # Bump when docker/Dockerfile or scripts/install-smithy-cli.sh changes; the toolchain job pushes this tag.
-  TOOLCHAIN_VERSION: '2'
+  TOOLCHAIN_VERSION: '3'
   TOOLCHAIN_IMAGE: '$CI_REGISTRY_IMAGE/toolchain:$TOOLCHAIN_VERSION'
   # The app project's package registry, where each app release publishes caitlyn-v3-model/<version>/.
   MODEL_PROJECT_ID: '653'
@@ -210,6 +222,52 @@ conformance:
   script:
     - node scripts/check-conformance.mjs
   rules: !reference [.mr-and-main, rules]
+
+# ---------------------------------------------------------------------------- the CLI
+
+cli:vet:
+  extends: .toolchain
+  stage: test
+  script:
+    - cd cli
+    - |
+      test -z "$(gofmt -l .)" || { gofmt -l .; echo "gofmt: the files above are not formatted" >&2; exit 1; }
+    - go build ./... && go vet ./... && staticcheck ./...
+  rules: !reference [.mr-and-main, rules]
+
+cli:test:
+  extends: .toolchain
+  stage: test
+  script:
+    - cd cli
+    - CGO_ENABLED=1 go test -race -count=1 ./...
+  rules: !reference [.mr-and-main, rules]
+
+# GoReleaser's whole configuration, in every pipeline, short of what needs a release: no cosign signature (the release
+# key signs only on a release tag), no SBOMs, no container image (no Docker daemon here) and nothing published.
+# install.ps1's own minisign verifier (C#, for Windows machines without minisign), in PowerShell 7 against real
+# minisign signatures (cli/scripts/testdata/minisign). install.sh's verifiers are tested by cli:test.
+cli:install-ps1:
+  stage: test
+  image: mcr.microsoft.com/powershell:7.4-ubuntu-22.04
+  needs: []
+  script:
+    - pwsh -NoProfile -File cli/scripts/test-install-ps1.ps1
+  rules: !reference [.mr-and-main, rules]
+
+cli:snapshot:
+  extends: .toolchain
+  stage: test
+  script:
+    - cd cli
+    - goreleaser release --snapshot --clean --skip=docker,sign,sbom
+  artifacts:
+    expire_in: 1 week
+    paths: [cli/dist/*.tar.gz, cli/dist/*.zip, cli/dist/*.deb, cli/dist/*.rpm, cli/dist/checksums.txt, cli/dist/homebrew/, cli/dist/scoop/]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG =~ /^v\d/
 
 # ---------------------------------------------------------------------------- the model
 
@@ -404,6 +462,142 @@ docs:knowledge-base:
   rules:
     - if: $DOCS_ENABLED == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
+# ---------------------------------------------------------------------------- the CLI's agent evaluation
+
+# The CLI's agent evaluation (cli/agent-eval/eval.mjs; the CLI design, 20.3). Offline on every merge request that
+# touches the CLI, its docs, the mock or the model: the harness's tests, and the scripted agent playing every task's
+# reference solution in all three arms against the CLI and the mock, so the tasks and graders can't rot. No model is
+# called.
+.cli-agent-eval-changes:
+  changes:
+    - cli/**/*
+    - docs/cli/**/*
+    - scripts/docs-cli.mjs
+    - conformance/mock-server/**/*
+    - model/**/*
+
+cli:agent-eval:offline:
+  extends: .toolchain
+  stage: test
+  needs: []
+  script:
+    - cli/agent-eval/run.sh --agent scripted --arms docs,snippet,skill
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths: [build/agent-eval/]
+    reports:
+      junit: build/agent-eval/junit.xml
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes: !reference [.cli-agent-eval-changes, changes]
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# The fast subset against a model: 12 tasks, one run each, the docs-only arm, with the merge request's CLI and built
+# docs. Required (allow_failure is false) once CLI_AGENT_EVAL is "true"; until then it does not run. The model API key
+# is ANTHROPIC_API_KEY, masked but not protected, because merge-request pipelines run on unprotected branches: anyone
+# who can push a branch can read it, so it must be a key kept for this evaluation alone, with a low spending limit,
+# and scoped to the agent-eval environment (set the variable's environment scope to agent-eval). The model is
+# CLI_AGENT_EVAL_MODEL.
+cli:agent-eval:
+  extends: .toolchain
+  stage: docs
+  needs:
+    - job: docs:build
+      optional: true
+  variables:
+    CAITLYN_AGENT_EVAL_LIVE: '1'
+    CLI_AGENT_EVAL_MODEL: claude-sonnet-5-5
+  script:
+    - test -d build/docs/site || scripts/docs-build.sh
+    - cli/agent-eval/run.sh --agent claude --model "$CLI_AGENT_EVAL_MODEL" --fast --arms docs --docs build/docs/site
+  environment:
+    name: agent-eval
+    action: access
+  artifacts:
+    when: always
+    expire_in: 4 weeks
+    paths: [build/agent-eval/]
+    reports:
+      junit: build/agent-eval/junit.xml
+  rules:
+    - if: $CLI_AGENT_EVAL != "true"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes: !reference [.cli-agent-eval-changes, changes]
+
+# The whole set nightly on main (a pipeline schedule with CLI_AGENT_EVAL_NIGHTLY set to "true"), and before a release:
+# every task, three runs each, all three arms, with each model. A missed threshold fails the job, and the job after it
+# opens an issue.
+cli:agent-eval:nightly:
+  extends: .toolchain
+  stage: docs
+  needs: []
+  timeout: 3h
+  parallel:
+    matrix:
+      - CLI_AGENT_EVAL_MODEL: [claude-sonnet-5-5, claude-opus-5-5]
+  variables:
+    CAITLYN_AGENT_EVAL_LIVE: '1'
+  script:
+    - scripts/docs-build.sh
+    - cli/agent-eval/run.sh --agent claude --model "$CLI_AGENT_EVAL_MODEL" --arms docs,snippet,skill --runs 3 --docs build/docs/site --out "build/agent-eval/$CLI_AGENT_EVAL_MODEL"
+  environment:
+    name: agent-eval
+    action: access
+  artifacts:
+    when: always
+    expire_in: 13 weeks
+    paths: [build/agent-eval/]
+    reports:
+      junit: build/agent-eval/*/junit.xml
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CLI_AGENT_EVAL_NIGHTLY == "true"
+    - if: $CI_COMMIT_TAG =~ /^v\d/ && $CLI_AGENT_EVAL == "true"
+
+# Opens an issue when the nightly evaluation misses a threshold. Needs CLI_AGENT_EVAL_ISSUE_TOKEN (masked: a project
+# access token with the api scope), because a job token can't create issues.
+cli:agent-eval:nightly:issue:
+  stage: release
+  image: curlimages/curl:8.11.1
+  needs: ['cli:agent-eval:nightly']
+  script:
+    - >
+      curl --fail --silent --show-error --request POST
+      --header "PRIVATE-TOKEN: $CLI_AGENT_EVAL_ISSUE_TOKEN"
+      --data-urlencode "title=The CLI's nightly agent evaluation missed a threshold ($(date -u +%Y-%m-%d))"
+      --data-urlencode "labels=CLI,Agent evaluation"
+      --data-urlencode "description=Pipeline $CI_PIPELINE_URL. The reports (junit.xml and report.json, with every transcript) are the cli:agent-eval:nightly jobs' artefacts. Triage each failed task as a docs gap, a hint gap, a naming problem or a model problem, fix the source the docs are made from, and add a regression task."
+      "$CI_API_V4_URL/projects/$CI_PROJECT_ID/issues"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CLI_AGENT_EVAL_NIGHTLY == "true" && $CLI_AGENT_EVAL_ISSUE_TOKEN
+      when: on_failure
+
+# The Ask Caitlyn evaluation (cli/agent-eval/ask-caitlyn.mjs; 20.4): the CLI question set, put nightly to the
+# ask.caitlyn.ai docs agent through the TypeScript SDK, signed in with workload identity (CAITLYN_ID_TOKEN below), so
+# no secret is stored. Needs ASK_CAITLYN_AGENT (the docs agent) and a schedule with ASK_CAITLYN_EVAL set to "true".
+cli:ask-caitlyn-eval:nightly:
+  extends: .toolchain
+  stage: docs
+  needs: []
+  id_tokens:
+    CAITLYN_ID_TOKEN:
+      aud: https://ask.caitlyn.ai/api
+  variables:
+    CAITLYN_ASK_EVAL_LIVE: '1'
+  script:
+    - (cd typescript && npm ci --no-audit --no-fund --silent && npm run -s build)
+    - (cd cli && go build -o ../build/cli/caitlyn ./cmd/caitlyn)
+    - node cli/agent-eval/ask-caitlyn.mjs --bin build/cli/caitlyn --live
+  artifacts:
+    when: always
+    expire_in: 13 weeks
+    paths: [build/ask-caitlyn-eval/]
+    reports:
+      junit: build/ask-caitlyn-eval/junit.xml
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $ASK_CAITLYN_EVAL == "true" && $ASK_CAITLYN_AGENT
+
 # ---------------------------------------------------------------------------- releases
 
 # The template's jobs (custom-d/devops-platform/ci-templates/semantic-versioning), with stamp-version between them,
@@ -463,6 +657,7 @@ stamp-version:
       - go/version.go # stamped
       - rust/caitlyn-sdk/Cargo.toml # stamped
       - rust/caitlyn-sdk/src/lib.rs # stamped
+      - cli/internal/spec/commands.json # stamped
   rules:
     - !reference [fetch-semantic-version, rules]
 
@@ -556,3 +751,142 @@ release:homebrew:
   extends: .release-placeholder
   variables:
     RELEASE_WHAT: 'Building the CLI and updating the github.com/caitlyn-ai Homebrew tap'
+
+# ---------------------------------------------------------------------------- the CLI's releases
+
+# Signing with the release key in AWS KMS (alias/caitlyn-cli-release): the job's GitLab id_token is exchanged for the
+# role cd-caitlyn-cli-signing (CLI_SIGNING_ROLE_ARN), which only protected v* tags may assume and which may only sign
+# with that key. cosign's AWS client reads the token file and role from the environment; no AWS key is stored.
+.cli-signing:
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: https://git.customd.com
+  variables:
+    AWS_ROLE_ARN: $CLI_SIGNING_ROLE_ARN
+    AWS_ROLE_SESSION_NAME: cli-release-$CI_JOB_ID
+    AWS_WEB_IDENTITY_TOKEN_FILE: /tmp/gitlab-oidc-token
+    AWS_REGION: ap-southeast-2
+    CLI_COSIGN_KEY: awskms:///alias/caitlyn-cli-release
+
+# By hand, on a protected release tag, once RELEASES_ENABLED is "true", with the variables listed at the top.
+.cli-release-rules:
+  rules:
+    - if: $RELEASES_ENABLED == "true" && $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/ && $CI_COMMIT_REF_PROTECTED == "true"
+      when: manual
+
+# Builds every archive and package with SBOMs, signs checksums.txt (which names them all by SHA-256) with the release
+# key in AWS KMS, and lays out the release as build.caitlyn.ai/releases/cli/ serves it, with cosign.pub. It first checks that
+# the KMS key is the one the binaries are built with. The minisign key never reaches this job: cli:publish signs the
+# manifest.
+cli:release:
+  extends: [.toolchain, .cli-signing]
+  stage: release
+  needs: []
+  script:
+    - printf '%s' "$GITLAB_OIDC_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE"
+    # The key KMS signs with must be the one the binaries are built with, before anything is built or signed
+    - cosign public-key --key "$CLI_COSIGN_KEY" > /tmp/cosign.pub
+    - cli/scripts/cosign-key-check.sh /tmp/cosign.pub
+    - cd cli
+    - goreleaser release --clean --skip=docker
+    - scripts/release-manifest.sh dist ../build/cli-release
+    # Published at build.caitlyn.ai/releases/cli/cosign.pub by cli:publish
+    - cp /tmp/cosign.pub ../build/cli-release/cosign.pub
+    - mkdir -p ../build/cli-tools && cp "$(command -v minisign)" "$(command -v cosign)" ../build/cli-tools/
+  artifacts:
+    expire_in: 1 month
+    # The formula and the Scoop manifest are written here but pushed by cli:packages, after cli:publish.
+    paths: [build/cli-release/, build/cli-tools/, cli/dist/homebrew/, cli/dist/scoop/]
+  rules: !reference [.cli-release-rules, rules]
+
+# Signs the manifest with the minisign key from Secrets Manager and checks the signature against
+# CAITLYN_MINISIGN_PUBLIC_KEY, the key every CLI build verifies with, then uploads the release to its own bucket
+# (cd-caitlyn-cli-releases: versioned, and this job's role can't delete), then the installers and the key, and moves
+# the channel pointer last.
+cli:publish:
+  stage: release
+  image:
+    name: amazon/aws-cli:2.27.50
+    entrypoint: ['']
+  needs: [cli:release]
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: https://git.customd.com
+  variables:
+    ROLE_ARN: $CLI_RELEASE_ROLE_ARN
+  before_script: !reference [.docs-aws, before_script]
+  script:
+    - export PATH="$CI_PROJECT_DIR/build/cli-tools:$PATH"
+    - cli/scripts/release-publish.sh build/cli-release
+  # channel-moved names the channel this release moved, if it moved one: cli:image moves latest only for stable
+  artifacts:
+    expire_in: 1 month
+    paths: [build/cli-release/channel-moved]
+  environment:
+    name: cli/releases
+    url: https://build.caitlyn.ai/releases/cli/
+  resource_group: cli-releases
+  rules: !reference [.cli-release-rules, rules]
+
+# Pushes the Homebrew formula to github.com/caitlyn-ai/homebrew-tap and the Scoop manifest to
+# github.com/caitlyn-ai/scoop-bucket, only after cli:publish has uploaded the archives they point to, so `brew` and
+# `scoop` never see a release whose download isn't there yet. HOMEBREW_TAP_TOKEN and SCOOP_BUCKET_TOKEN are masked and
+# protected; a missing one skips that package manager.
+cli:packages:
+  extends: .toolchain
+  stage: release
+  needs:
+    - job: cli:release
+      artifacts: true
+    - job: cli:publish
+      artifacts: false
+  script:
+    - cli/scripts/release-packages.sh cli/dist "$CI_COMMIT_TAG"
+  resource_group: cli-releases
+  rules:
+    - if: $RELEASES_ENABLED == "true" && $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/ && $CI_COMMIT_REF_PROTECTED == "true"
+
+# The container image, ghcr.io/caitlyn-ai/caitlyn, for amd64 and arm64, from cli/Dockerfile: built from the
+# release's own linux archives (checked against its manifest), never a second build, and signed with the release key
+# in AWS KMS before any tag names it (scripts/release-image.sh). Tags X.Y.Z, and X.Y and latest not for a
+# prerelease; latest only when this release moved the stable channel, which cli:publish records. After cli:publish,
+# so no tag points at a release that was never published, and one release at a time. It needs the docker-privileged
+# runner: a privileged Docker-in-Docker service, with QEMU for the arm64 image's `apk add`.
+cli:image:
+  extends: .cli-signing
+  stage: release
+  image: docker:27.5.1
+  services:
+    - name: docker:27.5.1-dind
+      alias: docker
+  tags: [docker-privileged]
+  needs:
+    - job: cli:release
+      artifacts: true
+    - job: cli:publish
+      artifacts: true
+  resource_group: cli-releases
+  variables:
+    AWS_ROLE_SESSION_NAME: cli-image-$CI_JOB_ID
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: /certs
+    DOCKER_CERT_PATH: /certs/client
+    DOCKER_TLS_VERIFY: '1'
+  before_script:
+    - until docker info > /dev/null 2>&1; do sleep 1; done
+    - docker run --privileged --rm tonistiigi/binfmt:qemu-v8.1.5 --install arm64
+    - printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
+  script:
+    - printf '%s' "$GITLAB_OIDC_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE"
+    - export PATH="$CI_PROJECT_DIR/build/cli-tools:$PATH"
+    - cli/scripts/release-image.sh build/cli-release
+  after_script:
+    - docker logout ghcr.io || true
+  rules: !reference [.cli-release-rules, rules]
+
+# Mirrors cli/integrations/gitlab to caitlyn-ai/ci-components and cli/integrations/github/* to
+# caitlyn-ai/setup-caitlyn and caitlyn-ai/diff-comment, tagged with the release, once those projects exist.
+cli:integrations:
+  extends: .release-placeholder
+  variables:
+    RELEASE_WHAT: 'Mirroring the CLI integrations to their own projects'

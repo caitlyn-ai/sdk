@@ -97,7 +97,7 @@ function caitlynFor(userId: string): Caitlyn {
   let client = clients.get(userId);
   if (!client) {
     client = new Caitlyn({
-      workspace: 'your-company.getcaitlyn.ai',
+      workspace: 'your-company.caitlyn.ai',
       auth: {
         mode: 'oauth',
         clientId: process.env.CAITLYN_CLIENT_ID!,
@@ -206,7 +206,7 @@ The client. With no token store, the SDK keeps tokens in memory:
 // No client secret: a public client. Tokens stay in this page's memory (the default when there is no token
 // store), so a reload signs in again.
 const caitlyn = new Caitlyn({
-  workspace: 'your-company.getcaitlyn.ai',
+  workspace: 'your-company.caitlyn.ai',
   auth: {
     mode: 'oauth',
     clientId: 'your-public-client-id', // an identifier, not a secret

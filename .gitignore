@@ -28,3 +28,5 @@ __pycache__/
 /docs/site/src/generated/
 /docs/site/.astro/
 /docs/site/public/api/
+# The CLI's JSON Schema files, written by scripts/docs-build.mjs from docs/cli/tree.json
+/docs/site/public/cli/

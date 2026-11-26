@@ -58,10 +58,10 @@ Add two lines of code where you want the chat widget to appear:
 ```html
 <!-- Caitlyn AI Chat Widget -->
 <div id="caitlyn-chat"></div>
-<script src="https://your-company.getcaitlyn.ai/scripts/caitlyn-chat.js" defer></script>
+<script src="https://your-company.caitlyn.ai/scripts/caitlyn-chat.js" defer></script>
 ```
 
-Replace `your-company.getcaitlyn.ai` with your workspace's address.
+Replace `your-company.caitlyn.ai` with your workspace's address.
 
 ### Configuration Options
 
@@ -74,7 +74,7 @@ The widget grows and shrinks dynamically with conversation content:
 ```html
 <!-- Widget grows with content (default behaviour) -->
 <div id="caitlyn-chat" data-chat-height="auto"></div>
-<script src="https://your-company.getcaitlyn.ai/scripts/caitlyn-chat.js" defer></script>
+<script src="https://your-company.caitlyn.ai/scripts/caitlyn-chat.js" defer></script>
 ```
 
 **Use when:**
@@ -91,7 +91,7 @@ The widget stays within a fixed container height with internal scrolling:
 ```html
 <!-- Widget respects container height -->
 <div id="caitlyn-chat" data-chat-height="contained" style="height: 600px;"></div>
-<script src="https://your-company.getcaitlyn.ai/scripts/caitlyn-chat.js" defer></script>
+<script src="https://your-company.caitlyn.ai/scripts/caitlyn-chat.js" defer></script>
 ```
 
 **Use when:**
@@ -126,7 +126,7 @@ The widget stays within a fixed container height with internal scrolling:
 <div class="caitlyn-chat-wrapper">
   <p>Ask our AI assistant</p>
   <div id="caitlyn-chat" data-chat-height="auto"></div>
-  <script src="<?php echo esc_url('https://your-company.getcaitlyn.ai/scripts/caitlyn-chat.js'); ?>" defer></script>
+  <script src="<?php echo esc_url('https://your-company.caitlyn.ai/scripts/caitlyn-chat.js'); ?>" defer></script>
 </div>
 
 <?php
@@ -226,7 +226,7 @@ const SupportPage = (): ReactElement => {
   return (
     <main>
       <p>Customer support</p>
-      <CaitlynChat domain="https://your-company.getcaitlyn.ai" heightMode="contained" height="700px" />
+      <CaitlynChat domain="https://your-company.caitlyn.ai" heightMode="contained" height="700px" />
     </main>
   );
 };
@@ -299,7 +299,7 @@ For Vue applications, use lifecycle hooks to load and clean up the script:
 <template>
   <main>
     <p>Customer support</p>
-    <CaitlynChat domain="https://your-company.getcaitlyn.ai" height-mode="auto" />
+    <CaitlynChat domain="https://your-company.caitlyn.ai" height-mode="auto" />
   </main>
 </template>
 
@@ -372,7 +372,7 @@ export class CaitlynChatComponent implements OnInit, OnDestroy {
 
 <main>
   <p>Customer support</p>
-  <app-caitlyn-chat domain="https://your-company.getcaitlyn.ai" heightMode="auto"></app-caitlyn-chat>
+  <app-caitlyn-chat domain="https://your-company.caitlyn.ai" heightMode="auto"></app-caitlyn-chat>
 </main>
 ```
 
@@ -385,7 +385,7 @@ For advanced use cases requiring full control over iframe configuration, you can
 ```html
 <!-- Direct iframe embed -->
 <iframe
-  src="https://your-company.getcaitlyn.ai"
+  src="https://your-company.caitlyn.ai"
   width="100%"
   height="600"
   frameborder="0"
@@ -468,7 +468,7 @@ Create a responsive container that adapts to different screen sizes:
 </style>
 
 <div class="caitlyn-responsive-wrapper">
-  <iframe src="https://your-company.getcaitlyn.ai" width="100%" height="600" frameborder="0" allow="microphone" title="Caitlyn AI Assistant"></iframe>
+  <iframe src="https://your-company.caitlyn.ai" width="100%" height="600" frameborder="0" allow="microphone" title="Caitlyn AI Assistant"></iframe>
 </div>
 ```
 
@@ -507,7 +507,7 @@ Create a floating chat widget anchored to the bottom-right corner:
 </style>
 
 <div class="caitlyn-floating-widget">
-  <iframe src="https://your-company.getcaitlyn.ai" width="100%" height="100%" frameborder="0" allow="microphone" title="Caitlyn AI Assistant"></iframe>
+  <iframe src="https://your-company.caitlyn.ai" width="100%" height="100%" frameborder="0" allow="microphone" title="Caitlyn AI Assistant"></iframe>
 </div>
 ```
 
@@ -580,7 +580,7 @@ Add a button to control widget visibility:
 <button class="caitlyn-toggle-btn" onclick="toggleCaitlyn()" aria-label="Toggle chat widget">💬</button>
 
 <div class="caitlyn-widget-container" id="caitlynWidget" role="dialog" aria-label="Chat widget">
-  <iframe src="https://your-company.getcaitlyn.ai" width="100%" height="100%" frameborder="0" allow="microphone" title="Caitlyn AI Assistant"></iframe>
+  <iframe src="https://your-company.caitlyn.ai" width="100%" height="100%" frameborder="0" allow="microphone" title="Caitlyn AI Assistant"></iframe>
 </div>
 
 <script>
@@ -645,7 +645,7 @@ Optimise chat widget for mobile devices:
 
 <div class="caitlyn-mobile-optimised">
   <div id="caitlyn-chat" data-chat-height="contained" style="height: 100%;"></div>
-  <script src="https://your-company.getcaitlyn.ai/scripts/caitlyn-chat.js" defer></script>
+  <script src="https://your-company.caitlyn.ai/scripts/caitlyn-chat.js" defer></script>
 </div>
 ```
 
@@ -676,7 +676,7 @@ Load different configurations based on device type:
 
   // Load script
   const script = document.createElement('script');
-  script.src = 'https://your-company.getcaitlyn.ai/scripts/caitlyn-chat.js';
+  script.src = 'https://your-company.caitlyn.ai/scripts/caitlyn-chat.js';
   script.defer = true;
   document.body.appendChild(script);
 </script>
@@ -689,27 +689,27 @@ Load different configurations based on device type:
 If your website uses CSP headers, you'll need to allow Caitlyn's domain:
 
 ```text
-Content-Security-Policy: frame-src https://your-company.getcaitlyn.ai;
+Content-Security-Policy: frame-src https://your-company.caitlyn.ai;
 ```
 
 **Apache (.htaccess):**
 
 ```apache
-Header set Content-Security-Policy "frame-src https://your-company.getcaitlyn.ai; script-src 'self' https://your-company.getcaitlyn.ai; connect-src https://your-company.getcaitlyn.ai;"
+Header set Content-Security-Policy "frame-src https://your-company.caitlyn.ai; script-src 'self' https://your-company.caitlyn.ai; connect-src https://your-company.caitlyn.ai;"
 ```
 
 **Nginx:**
 
 ```nginx
-add_header Content-Security-Policy "frame-src https://your-company.getcaitlyn.ai; script-src 'self' https://your-company.getcaitlyn.ai; connect-src https://your-company.getcaitlyn.ai;";
+add_header Content-Security-Policy "frame-src https://your-company.caitlyn.ai; script-src 'self' https://your-company.caitlyn.ai; connect-src https://your-company.caitlyn.ai;";
 ```
 
 ### HTTPS Requirement
 
 **Always use HTTPS** for your website as well as Caitlyn:
 
-- Works: `https://your-site.com` embedding `https://your-company.getcaitlyn.ai`
-- Blocked or degraded: `http://your-site.com` embedding `https://your-company.getcaitlyn.ai`
+- Works: `https://your-site.com` embedding `https://your-company.caitlyn.ai`
+- Blocked or degraded: `http://your-site.com` embedding `https://your-company.caitlyn.ai`
 
 Mixed content (HTTP page loading HTTPS iframe) may be blocked by browsers and will prevent voice input from working.
 
@@ -720,7 +720,7 @@ The recommended sandbox configuration balances security and functionality:
 ```html
 <iframe
   sandbox="allow-downloads allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts allow-top-navigation-by-user-activation"
-  src="https://your-company.getcaitlyn.ai"></iframe>
+  src="https://your-company.caitlyn.ai"></iframe>
 ```
 
 **Do not add:**
@@ -827,7 +827,7 @@ Load the chat widget only when needed to improve initial page load:
       if (entry.isIntersecting) {
         // Create and load script
         const script = document.createElement('script');
-        script.src = 'https://your-company.getcaitlyn.ai/scripts/caitlyn-chat.js';
+        script.src = 'https://your-company.caitlyn.ai/scripts/caitlyn-chat.js';
         script.defer = true;
         document.body.appendChild(script);
 
@@ -850,8 +850,8 @@ Add preconnect hints to reduce DNS lookup time:
 ```html
 <head>
   <!-- Preconnect to Caitlyn domain -->
-  <link rel="preconnect" href="https://your-company.getcaitlyn.ai" />
-  <link rel="dns-prefetch" href="https://your-company.getcaitlyn.ai" />
+  <link rel="preconnect" href="https://your-company.caitlyn.ai" />
+  <link rel="dns-prefetch" href="https://your-company.caitlyn.ai" />
 </head>
 ```
 
@@ -864,12 +864,12 @@ Ensure proper labelling for assistive technologies:
 ```html
 <!-- JavaScript Widget approach -->
 <div id="caitlyn-chat" role="region" aria-label="AI chat assistant" data-chat-height="auto"></div>
-<script src="https://your-company.getcaitlyn.ai/scripts/caitlyn-chat.js" defer></script>
+<script src="https://your-company.caitlyn.ai/scripts/caitlyn-chat.js" defer></script>
 
 <!-- Direct iframe approach -->
 
 <iframe
-  src="https://your-company.getcaitlyn.ai"
+  src="https://your-company.caitlyn.ai"
   title="Caitlyn AI Assistant - Ask questions about our products and services"
   aria-label="Chat interface"
   role="region"></iframe>

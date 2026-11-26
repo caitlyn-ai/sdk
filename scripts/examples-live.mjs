@@ -2,7 +2,7 @@
 // Runs every SDK's examples against a real Caitlyn workspace, not the conformance mock: the check that an example
 // in the developer docs works. It needs a workspace and a credential, so it is not part of `make check` or CI.
 //
-//   CAITLYN_WORKSPACE=your-company.getcaitlyn.ai CAITLYN_AGENT_ID=… CAITLYN_TOKEN_REF=op://… \
+//   CAITLYN_WORKSPACE=your-company.caitlyn.ai CAITLYN_AGENT_ID=… CAITLYN_TOKEN_REF=op://… \
 //     node scripts/examples-live.mjs [typescript python go rust]
 //
 // The examples call the workspace's API directly (https://<workspace>/api, or CAITLYN_ENDPOINT). The credential

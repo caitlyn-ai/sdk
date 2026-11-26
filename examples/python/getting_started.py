@@ -6,7 +6,7 @@ import os
 from caitlyn import Caitlyn
 from caitlyn.auth import Token
 
-caitlyn = Caitlyn(workspace="your-company.getcaitlyn.ai", auth=Token(os.environ["CAITLYN_TOKEN"]))
+caitlyn = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token(os.environ["CAITLYN_TOKEN"]))
 
 # Read the draft of an agent: its configuration and its ETag
 draft = caitlyn.agents("GHT7YRWXPL").draft.get()

@@ -20,7 +20,7 @@ export const LANGUAGES = [
   { key: 'rust', label: 'Rust', fence: 'rust' },
 ];
 
-const WORKSPACE = 'your-company.getcaitlyn.ai';
+const WORKSPACE = 'your-company.caitlyn.ai';
 /** A Python string literal: double quotes, or single quotes when the text has double quotes and no single ones. */
 const pyStr = (v) => (v.includes('"') && !v.includes("'") ? `'${v.replace(/\\/g, '\\\\')}'` : JSON.stringify(v));
 const snake = (s) => s.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '').toLowerCase();

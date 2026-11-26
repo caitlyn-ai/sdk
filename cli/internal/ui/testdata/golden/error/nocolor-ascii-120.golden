@@ -1,0 +1,12 @@
+-- stdout --
+-- stderr --
+x [1mThe draft changed since you read it.[m
+
+  Someone saved the draft of GHT7YRWXPL after you read it, so your change wasn't applied. Its ETag
+  is now "draft-43"; you sent "draft-41".
+
+  -> Read it again and re-apply your change:
+      caitlyn agents draft edit GHT7YRWXPL
+
+  412 PRECONDITION_FAILED - request 01JC9Q2W7R4M0H2T6N1S8V3B5X
+  https://build.caitlyn.ai/errors/PRECONDITION_FAILED

@@ -71,6 +71,7 @@ const stamped = [
   rule('codegen/smithy-build.json', String.raw`"package": "caitlyn",\n          "version": "${V}"`),
   rule('codegen/smithy-build.json', String.raw`"crate": "caitlyn-sdk",\n          "version": "${V}"`),
   rule('codegen/smithy-build.json', String.raw`"coreVersion": "${V}"`),
+  rule('codegen/smithy-build.json', String.raw`"caitlyn-cli-codegen": \{\n          "service": "ai.caitlyn.v3#Caitlyn",\n          "version": "${V}"`),
 ];
 
 /** Generated files: `make generate` writes them from the settings above; `check` only reads them. */
@@ -85,6 +86,8 @@ const generated = [
   rule('rust/caitlyn-sdk/Cargo.toml', String.raw`\nversion = "${V}"`),
   rule('rust/caitlyn-sdk/Cargo.toml', String.raw`caitlyn-sdk-core = \{ version = "${V}"`),
   rule('rust/caitlyn-sdk/src/lib.rs', String.raw`pub const SDK_VERSION: &str = "${V}";`),
+  // The CLI's command manifest, which also carries the CLI's own version (cli/internal/spec)
+  rule('cli/internal/spec/commands.json', String.raw`\n  "version": "${V}"`),
 ];
 
 if (mode === 'files' || mode === 'assets') {

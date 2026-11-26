@@ -2081,9 +2081,9 @@ main:has(.caitlyn-page-header[data-reference]) .sl-markdown-content > p.caitlyn-
   color: var(--caitlyn-ground);
 }
 
-/* ------------------------------------------------------------- the Server block (src/components/ServerBlock.astro) */
-/* The API's server and the reader's workspace, on the page ground with a hairline edge: the kicker, the URL in the
-   code face with the workspace in ink, then the variable's name and its field. */
+/* ------------------------------------------------------------- the Workspace box (src/components/ServerBlock.astro) */
+/* The API's server and the reader's workspace, on the page ground with a hairline edge: the Workspace kicker, which
+   is the field's label, then the URL in the code face with the workspace field in it. */
 .caitlyn-server {
   display: flex;
   flex-direction: column;
@@ -2096,9 +2096,9 @@ main:has(.caitlyn-page-header[data-reference]) .sl-markdown-content > p.caitlyn-
 .caitlyn-server > * {
   margin: 0;
 }
-/* The field's label sits with the field, left-aligned above the address line, the block's gap closing to space-1 */
-.caitlyn-server .caitlyn-server-label {
-  margin-bottom: -4px;
+/* The kicker is a <label>: a block, like the paragraph it replaced */
+.caitlyn-server .caitlyn-server-head {
+  display: block;
 }
 /* The address on one line: https://, the field, /api; on a phone the field takes the line's room and the line
    wraps rather than scroll */
@@ -2115,13 +2115,6 @@ main:has(.caitlyn-page-header[data-reference]) .sl-markdown-content > p.caitlyn-
   color: var(--caitlyn-muted);
   font-size: var(--caitlyn-text-code-face);
   white-space: nowrap;
-}
-.caitlyn-server .caitlyn-server-label code {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--caitlyn-ink);
-  font-size: var(--caitlyn-text-code-face);
 }
 .caitlyn-server-var input {
   flex: 1 1 14ch;
@@ -2287,8 +2280,16 @@ main:has(.caitlyn-page-header[data-reference]) .sl-markdown-content > p.caitlyn-
   display: none;
 }
 
+/* ------------------------------------------------------------- the CLI's command line */
+/* cli chosen: where a set of alternatives has the CLI (an operation's code panel, when the CLI has a command for its
+   example), the CLI shows; where it has none, TypeScript shows in its place, as for curl (src/scripts/lang-tabs.ts) */
+:root[data-lang='cli'] :has(> [data-lang-only='cli']) > [data-lang-only]:not([data-lang-only='cli']),
+:root[data-lang='cli'] :not(:has(> [data-lang-only='cli'])) > [data-lang-only]:not([data-lang-only='typescript']) {
+  display: none;
+}
+
 /* ------------------------------------------------------------- the API reference */
-/* The overview's Server block, under its header */
+/* The overview's Workspace box, under its header */
 .caitlyn-page-server {
   max-width: 40rem;
   margin-top: 24px; /* space-6 */

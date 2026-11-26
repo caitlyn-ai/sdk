@@ -13,14 +13,14 @@ pub async fn clients(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // #region token
     let script = Client::new(
-        "your-company.getcaitlyn.ai",
+        "your-company.caitlyn.ai",
         Auth::token(std::env::var("CAITLYN_TOKEN")?),
     )?;
     // #endregion
 
     // #region client-credentials
     let service = Client::new(
-        "your-company.getcaitlyn.ai",
+        "your-company.caitlyn.ai",
         Auth::client_credentials(
             std::env::var("CAITLYN_CLIENT_ID")?,
             std::env::var("CAITLYN_CLIENT_SECRET")?,
@@ -31,7 +31,7 @@ pub async fn clients(
 
     // #region oauth
     let as_person = Client::new(
-        "your-company.getcaitlyn.ai",
+        "your-company.caitlyn.ai",
         Auth::oauth(std::env::var("CAITLYN_CLIENT_ID")?)
             .client_secret(std::env::var("CAITLYN_CLIENT_SECRET")?) // a confidential client on a server
             .redirect_uri("https://app.example.com/caitlyn/callback")
@@ -72,22 +72,22 @@ pub async fn clients(
 
     // #region aws-iam
     let worker = Client::new(
-        "your-company.getcaitlyn.ai",
+        "your-company.caitlyn.ai",
         Auth::aws_iam().region("ap-southeast-2"),
     )?;
     // #endregion
 
     // #region workload-identity
     let ci_job = Client::new(
-        "your-company.getcaitlyn.ai",
+        "your-company.caitlyn.ai",
         WorkloadIdentity::from_env("CAITLYN_ID_TOKEN"),
     )?;
     // #endregion
 
     // #region session
     let app_page = Client::new(
-        "your-company.getcaitlyn.ai",
-        Auth::session(session_cookie).origin("https://your-company.getcaitlyn.ai"),
+        "your-company.caitlyn.ai",
+        Auth::session(session_cookie).origin("https://your-company.caitlyn.ai"),
     )?;
     // #endregion
 

@@ -1,6 +1,6 @@
 // The API reference at /api/ (scripts/docs-api.mjs): every operation in the OpenAPI document gets a page, the document
 // the site publishes at /api/openapi.json passes the public-wording check the pages pass (scripts/docs-wording.mjs),
-// and the curl examples carry the token as $CAITLYN_TOKEN and the workspace as the placeholder the Server block
+// and the curl examples carry the token as $CAITLYN_TOKEN and the workspace as the placeholder the Workspace box
 // replaces. Reads the prepared model (scripts/docs-build.sh runs prepare-model before these tests).
 // Run: npm test (in docs/site).
 import assert from 'node:assert/strict';
@@ -47,7 +47,7 @@ test('each curl example sends $CAITLYN_TOKEN to the workspace placeholder, and n
   assert.ok(commands.length > 0);
   for (const c of commands) {
     assert.match(c, /--header "Authorization: Bearer \$CAITLYN_TOKEN"/);
-    assert.match(c, /https:\/\/your-company\.getcaitlyn\.ai\/api\/v3\//);
+    assert.match(c, /https:\/\/your-company\.caitlyn\.ai\/api\/v3\//);
     assert.doesNotMatch(c, /Bearer (?!\$CAITLYN_TOKEN)/);
   }
 });

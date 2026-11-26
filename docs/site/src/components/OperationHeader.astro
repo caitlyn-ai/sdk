@@ -4,7 +4,7 @@
 // reference leads with the SDK call; the API reference leads with the HTTP call. scripts/docs-build.mjs writes the
 // data (scripts/docs-reference.mjs, scripts/docs-api.mjs).
 interface Props {
-  operation: { kind?: 'sdk' | 'api'; name: string; method: string; calls: Record<string, string>; http: { method: string; path: string }; other: { label: string; link: string } };
+  operation: { kind?: 'sdk' | 'api'; name: string; method: string; calls: Record<string, string>; http: { method: string; path: string }; other: { label: string; link: string }; cli?: { command: string; link: string } };
 }
 const { operation } = Astro.props;
 const LABELS: Record<string, string> = { typescript: 'TypeScript', python: 'Python', go: 'Go', rust: 'Rust' };
@@ -56,9 +56,21 @@ const api = operation.kind === 'api';
       </div>
     )
   }
+  {
+    operation.cli && (
+      <div class="caitlyn-operation-strip-row">
+        <dt class="caitlyn-kicker">CLI</dt>
+        <dd>
+          <button type="button" class="caitlyn-chip" data-chip={operation.cli.command} aria-label={`Copy the command: ${operation.cli.command}`}>
+            <code class="caitlyn-strip-code"><span class="caitlyn-chip-text">{operation.cli.command}</span></code>
+          </button>
+        </dd>
+      </div>
+    )
+  }
   {operation.other.link && (
   <div class="caitlyn-operation-strip-row caitlyn-operation-strip-api">
-    <dd><a href={operation.other.link}>{operation.other.label}</a></dd>
+    <dd><a href={operation.other.link}>{operation.other.label}</a>{operation.cli && <> · <a href={operation.cli.link}>CLI reference</a></>}</dd>
   </div>
   )}
 </dl>

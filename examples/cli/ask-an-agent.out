@@ -1,0 +1,25 @@
+## session
+Type a message. /attach <file>, /new, /quit.
+› How much annual leave do staff get?
+Staff receive 20 days of annual leave.
+
+
+Sources
+  [1] leave-policy.pdf, page 3
+
+GHT7YRWXPL@live · conversation <conversation-id> (answered by v12)
+→ caitlyn chat --conversation <conversation-id> "…"
+
+› /quit
+## ask
+Staff receive 20 days of annual leave.
+
+
+Sources
+  [1] leave-policy.pdf, page 3
+
+GHT7YRWXPL@draft · conversation <conversation-id> (answered by v12)
+→ caitlyn chat --conversation <conversation-id> "…"
+## json
+{"documentName":"leave-policy.pdf","pageNumber":3}
+[exit 0]

@@ -20,7 +20,7 @@ export const API_STATUS_TEXT = {
   404: 'Not found', 409: 'Conflict', 412: 'Precondition failed', 413: 'Payload too large', 422: 'Unprocessable content',
   428: 'Precondition required', 429: 'Too many requests', 500: 'Internal error', 503: 'Unavailable',
 };
-const WORKSPACE = 'your-company.getcaitlyn.ai';
+const WORKSPACE = 'your-company.caitlyn.ai';
 const oneLine = (s) => (s ?? '').replace(/\s*\n\s*/g, ' ').trim();
 const cell = (s) => oneLine(s).replace(/\|/g, '\\|');
 const firstSentence = (s) => (/^(.+?\.)(\s|$)/s.exec(oneLine(s))?.[1] ?? oneLine(s));
@@ -995,7 +995,7 @@ function operationExamples(op) {
 /** A shell word in single quotes */
 const sh = (v) => `'${String(v).replace(/'/g, `'\\''`)}'`;
 
-/** The example as a curl command: the reader's workspace (the Server block's, your-company.getcaitlyn.ai until one is
+/** The example as a curl command: the reader's workspace (the Workspace box's, your-company.caitlyn.ai until one is
  * given) and $CAITLYN_TOKEN, never a token of its own */
 export function curl(route, method, op, ex) {
   const path = route.replace(/\{([^}]+)\}/g, (_, name) => encodeURIComponent(ex.path[name] ?? `{${name}}`));
@@ -1241,7 +1241,7 @@ export function apiPages(doc, { ast, ops, sdkPages, typePages, tree, unreleased 
 }
 
 /** The overview at /api/: what the API is, its server, how to authenticate, every operation by resource, and the
- * OpenAPI document. Its Server block is the page's own (src/components/PageTitle.astro shows it). The site's page lists
+ * OpenAPI document. Its Workspace box is the page's own (src/components/PageTitle.astro shows it). The site's page lists
  * the operations as rows (the method in its colour, the name, the path, what it does); the Markdown copy as a list. */
 export function apiOverview(pages, { tree }) {
   const head = [
@@ -1249,7 +1249,7 @@ export function apiOverview(pages, { tree }) {
     '',
     '## Server',
     '',
-    `Every request goes to your workspace's own hostname, \`https://{workspace}/api\`, where \`workspace\` is the hostname you sign in at, such as \`${WORKSPACE}\`. Give yours in the Server block and every example on this site uses it.`,
+    `Every request goes to your workspace's own hostname, \`https://{workspace}/api\`, where \`workspace\` is the hostname you sign in at, such as \`${WORKSPACE}\`. Give yours in the Workspace box and every example on this site uses it.`,
     '',
     '## Authentication',
     '',

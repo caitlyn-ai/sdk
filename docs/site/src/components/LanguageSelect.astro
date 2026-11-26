@@ -12,11 +12,15 @@ export const LANGUAGES = [
   { value: 'rust', label: 'Rust' },
 ];
 export const CURL = { value: 'curl', label: 'curl' };
+/** The CLI's command line, offered last on both references' operation pages */
+export const CLI = { value: 'cli', label: 'CLI' };
 interface Props {
   /** The API reference's menu offers curl first */
   curl?: boolean;
+  /** The menu offers the CLI last: the panel has a CLI command for its examples */
+  cli?: boolean;
 }
-const options = Astro.props.curl ? [CURL, ...LANGUAGES] : LANGUAGES;
+const options = [...(Astro.props.curl ? [CURL] : []), ...LANGUAGES, ...(Astro.props.cli ? [CLI] : [])];
 const id = `caitlyn-lang-${Astro.props.curl ? 'api' : 'sdk'}`;
 ---
 

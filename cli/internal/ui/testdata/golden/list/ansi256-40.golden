@@ -1,0 +1,9 @@
+-- stdout --
+[38;5;248mNAME[m      [38;5;248mID[m          [38;5;248mLIVE[m  [38;5;248mDRAFT[m     [38;5;248mUPDATED[m
+[38;5;236m────────────────────────────────────────[m
+[1mHR assi…[m  GHT7YRWXPL  v12   [33mchanged[m   2 hours…
+[1mSupplie…[m  REVIEWER01  v7    same as…  3 days …
+[1mLeave f…[m  AGYFAMYTND  [38;5;248mnone[m  new       5 minut…
+
+[38;5;248m3 agents[m
+-- stderr --

@@ -13,7 +13,7 @@ stay in Caitlyn's Help, beside the current API's interactive reference, until v3
 then moves here, rewritten onto the SDKs.
 
 To open one, sign in to your workspace and go to **Help → Developers**, or add the path below to your workspace's
-address, for example `https://your-company.getcaitlyn.ai/settings/documentation/developers/integration-methods`.
+address, for example `https://your-company.caitlyn.ai/settings/documentation/developers/integration-methods`.
 
 | Guide | What it covers | Path in your workspace |
 | --- | --- | --- |

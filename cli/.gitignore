@@ -1,0 +1,6 @@
+# GoReleaser's output and the completions its before hook writes.
+/dist/
+/completions/
+# Copied from the repository root by GoReleaser's before hook.
+/LICENSE
+/NOTICE

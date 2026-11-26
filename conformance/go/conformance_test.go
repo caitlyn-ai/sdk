@@ -37,7 +37,7 @@ const (
 
 func client(t *testing.T, m mock, opts ...caitlyn.Option) *caitlyn.Client {
 	t.Helper()
-	c, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token("pat_test"), append([]caitlyn.Option{caitlyn.WithEndpoint(m.base)}, opts...)...)
+	c, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.Token("pat_test"), append([]caitlyn.Option{caitlyn.WithEndpoint(m.base)}, opts...)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1128,7 +1128,7 @@ var protocol = map[string]func(t *testing.T, m mock){
 			t.Fatalf("user agent %v", sent)
 		}
 		for _, bad := range []caitlyn.Option{caitlyn.WithCI("GitLab"), caitlyn.WithAgent("claude code"), caitlyn.WithCI(strings.Repeat("x", 33))} {
-			if _, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token("pat_test"), caitlyn.WithEndpoint(m.base), bad); err == nil {
+			if _, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.Token("pat_test"), caitlyn.WithEndpoint(m.base), bad); err == nil {
 				t.Fatal("an invalid ci/ or agent/ value built a client")
 			}
 		}
@@ -1395,21 +1395,21 @@ var protocol = map[string]func(t *testing.T, m mock){
 		}
 	},
 	"endpoint.workspace-url": func(t *testing.T, m mock) {
-		for _, w := range []string{"https://your-company.getcaitlyn.ai", "https://your-company.getcaitlyn.ai/", "your-company.getcaitlyn.ai/", "HTTPS://Your-Company.GetCaitlyn.ai"} {
+		for _, w := range []string{"https://your-company.caitlyn.ai", "https://your-company.caitlyn.ai/", "your-company.caitlyn.ai/", "HTTPS://Your-Company.Caitlyn.ai"} {
 			c, err := caitlyn.NewClient(w, caitlyn.Token("pat_test"))
-			if err != nil || c.Endpoint() != "https://your-company.getcaitlyn.ai/api" || c.Auth().TokenEndpoint() != "https://your-company.getcaitlyn.ai/api/oauth/token" {
+			if err != nil || c.Endpoint() != "https://your-company.caitlyn.ai/api" || c.Auth().TokenEndpoint() != "https://your-company.caitlyn.ai/api/oauth/token" {
 				t.Fatalf("%q: endpoint %v, err %v", w, c, err)
 			}
 		}
-		for _, w := range []string{"https://your-company.getcaitlyn.ai/api", "https://your-company.getcaitlyn.ai/?x=1", "https://your-company.getcaitlyn.ai#top", "http://your-company.getcaitlyn.ai", "ftp://your-company.getcaitlyn.ai", "me@your-company.getcaitlyn.ai", ""} {
-			if _, err := caitlyn.NewClient(w, caitlyn.Token("pat_test")); err == nil || !strings.Contains(err.Error(), "your-company.getcaitlyn.ai or https://your-company.getcaitlyn.ai") {
+		for _, w := range []string{"https://your-company.caitlyn.ai/api", "https://your-company.caitlyn.ai/?x=1", "https://your-company.caitlyn.ai#top", "http://your-company.caitlyn.ai", "ftp://your-company.caitlyn.ai", "me@your-company.caitlyn.ai", ""} {
+			if _, err := caitlyn.NewClient(w, caitlyn.Token("pat_test")); err == nil || !strings.Contains(err.Error(), "your-company.caitlyn.ai or https://your-company.caitlyn.ai") {
 				t.Fatalf("%q: err %v", w, err)
 			}
 		}
 	},
 	"endpoint.workspace": func(t *testing.T, m mock) {
-		c, err := caitlyn.NewClient("your-company.getcaitlyn.ai", caitlyn.Token("pat_test"))
-		if err != nil || c.Endpoint() != "https://your-company.getcaitlyn.ai/api" {
+		c, err := caitlyn.NewClient("your-company.caitlyn.ai", caitlyn.Token("pat_test"))
+		if err != nil || c.Endpoint() != "https://your-company.caitlyn.ai/api" {
 			t.Fatalf("endpoint %q err %v", c.Endpoint(), err)
 		}
 	},

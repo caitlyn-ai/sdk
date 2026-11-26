@@ -1,0 +1,170 @@
+# The Caitlyn CLI's releases (the CLI design, 8.4 and 17.1): archives for darwin, linux and windows on amd64 and
+# arm64, deb and rpm packages, a Scoop manifest, a Homebrew formula for github.com/caitlyn-ai/homebrew-tap,
+# a cosign signature on the checksums, and SBOMs. The container image is built and signed from these archives by
+# cli:image.
+#
+#   Every pipeline:  goreleaser release --snapshot --clean --skip=docker,sign,sbom   (the cli:snapshot job)
+#   A release tag:   goreleaser release --clean                                     (the cli:release job)
+#
+# GoReleaser makes no GitHub release (release.disable is set) and pushes no package or image: cli:release writes
+# the formula and the Scoop manifest; cli:publish uploads the release to s3://cd-caitlyn-cli-releases, whose root is
+# build.caitlyn.ai/releases/cli/, with the signed manifest, then moves the channel pointers (scripts/release-publish.sh); and
+# only then cli:packages pushes the formula to github.com/caitlyn-ai/homebrew-tap and the manifest to
+# github.com/caitlyn-ai/scoop-bucket (scripts/release-packages.sh), and cli:image builds ghcr.io/caitlyn-ai/caitlyn
+# from the linux archives and signs it (scripts/release-image.sh).
+#
+# Build-time values, from the release job's environment:
+#   CAITLYN_TELEMETRY_ENDPOINT    the telemetry endpoint; empty until it exists (17.3), and then nothing is sent
+#   CAITLYN_MINISIGN_PUBLIC_KEY   the manifest signing key's public half; unset keeps the placeholder, which
+#                                 refuses every update
+#   CAITLYN_COSIGN_PUBLIC_KEY     the release signing key's public half (KMS alias/caitlyn-cli-release), as one line
+#                                 of base64 DER; cli:release refuses to run when it isn't the key it signs with
+#   CLI_COSIGN_KEY                the signing key cosign uses, default awskms:///alias/caitlyn-cli-release
+version: 2
+project_name: caitlyn
+
+# The release is the repository's vX.Y.Z tag; the Go module's go/vX.Y.Z tag on the same commit isn't one.
+git:
+  ignore_tags:
+    - 'go/*'
+
+before:
+  hooks:
+    - go mod download
+    - sh scripts/completions.sh
+    # The licence files are at the repository's root; archives can only take files under cli/.
+    - cp ../LICENSE ../NOTICE .
+
+builds:
+  - id: caitlyn
+    main: ./cmd/caitlyn
+    binary: caitlyn
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    ldflags:
+      - -s -w
+      - -X github.com/caitlyn-ai/sdk/cli/internal/commands/root.Version={{ .Version }}
+      - -X github.com/caitlyn-ai/sdk/cli/internal/telemetry.Endpoint={{ envOrDefault "CAITLYN_TELEMETRY_ENDPOINT" "" }}
+      - -X github.com/caitlyn-ai/sdk/cli/internal/update.PublicKey={{ envOrDefault "CAITLYN_MINISIGN_PUBLIC_KEY" "REPLACE_AT_RELEASE_minisign_public_key" }}
+      - -X github.com/caitlyn-ai/sdk/cli/internal/update.CosignPublicKey={{ envOrDefault "CAITLYN_COSIGN_PUBLIC_KEY" "REPLACE_AT_RELEASE_cosign_public_key" }}
+
+archives:
+  - id: caitlyn
+    ids: [caitlyn]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    # The updater and the installers find their archive by this name, through the manifest (8.4).
+    name_template: 'caitlyn_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    files:
+      - README.md
+      - completions/*
+      - LICENSE
+      - NOTICE
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+nfpms:
+  - id: packages
+    ids: [caitlyn]
+    package_name: caitlyn
+    file_name_template: '{{ .ConventionalFileName }}'
+    vendor: Custom D
+    homepage: https://build.caitlyn.ai/cli/
+    maintainer: Caitlyn <support@caitlyn.ai>
+    description: The Caitlyn command-line tool.
+    license: Apache-2.0
+    formats: [deb, rpm]
+    bindir: /usr/bin
+    contents:
+      - src: completions/caitlyn.bash
+        dst: /usr/share/bash-completion/completions/caitlyn
+      - src: completions/caitlyn.zsh
+        dst: /usr/share/zsh/vendor-completions/_caitlyn
+      - src: completions/caitlyn.fish
+        dst: /usr/share/fish/vendor_completions.d/caitlyn.fish
+      - src: README.md
+        dst: /usr/share/doc/caitlyn/README.md
+      - src: LICENSE
+        dst: /usr/share/doc/caitlyn/copyright
+
+# brews (a formula) is deprecated in GoReleaser in favour of casks, but the tap's design is a formula that installs
+# the completions (8.4), so `goreleaser check` reports a deprecation; the build itself is unaffected.
+brews:
+  - name: caitlyn
+    ids: [caitlyn]
+    repository:
+      owner: caitlyn-ai
+      name: homebrew-tap
+    directory: Formula
+    # Archives are served from build.caitlyn.ai/cli (8.4), not from a GitHub release.
+    url_template: 'https://build.caitlyn.ai/releases/cli/{{ .Version }}/{{ .ArtifactName }}'
+    homepage: https://build.caitlyn.ai/cli/
+    description: The Caitlyn command-line tool
+    license: Apache-2.0
+    commit_author:
+      name: caitlyn-release
+      email: releases@caitlyn.ai
+    # GoReleaser only writes the formula (dist/homebrew): cli:packages pushes it after cli:publish has uploaded
+    # the archives it points to (scripts/release-packages.sh).
+    skip_upload: true
+    install: |
+      bin.install "caitlyn"
+      bash_completion.install "completions/caitlyn.bash" => "caitlyn"
+      zsh_completion.install "completions/caitlyn.zsh" => "_caitlyn"
+      fish_completion.install "completions/caitlyn.fish"
+    test: |
+      system "#{bin}/caitlyn", "version", "--json"
+
+scoops:
+  # The Scoop bucket is github.com/caitlyn-ai/scoop-bucket: `scoop bucket add caitlyn https://github.com/caitlyn-ai/scoop-bucket`
+  - name: caitlyn
+    ids: [caitlyn]
+    repository:
+      owner: caitlyn-ai
+      name: scoop-bucket
+    url_template: 'https://build.caitlyn.ai/releases/cli/{{ .Version }}/{{ .ArtifactName }}'
+    homepage: https://build.caitlyn.ai/cli/
+    description: The Caitlyn command-line tool
+    license: Apache-2.0
+    commit_author:
+      name: caitlyn-release
+      email: releases@caitlyn.ai
+    # Written to dist/scoop only; cli:packages pushes it after cli:publish (scripts/release-packages.sh).
+    skip_upload: true
+
+# The container image, ghcr.io/caitlyn-ai/caitlyn, isn't GoReleaser's: cli:image builds it from this release's linux
+# archives and signs it (scripts/release-image.sh), so it holds exactly the binaries released here.
+
+# A cosign signature on checksums.txt, which names every archive and package by SHA-256, made with the release key in
+# AWS KMS (the private key never leaves it; cli:release assumes the one role that may sign with it). Verify with the
+# public key at https://build.caitlyn.ai/releases/cli/cosign.pub (8.4):
+#   cosign verify-blob --key https://build.caitlyn.ai/releases/cli/cosign.pub --bundle checksums.txt.sigstore.json checksums.txt
+signs:
+  - id: cosign
+    cmd: cosign
+    artifacts: checksum
+    signature: '${artifact}.sigstore.json'
+    args: ['sign-blob', '--yes', '--key', '{{ envOrDefault "CLI_COSIGN_KEY" "awskms:///alias/caitlyn-cli-release" }}', '--bundle=${signature}', '${artifact}']
+
+sboms:
+  - id: archives
+    artifacts: archive
+  - id: packages
+    artifacts: package
+
+release:
+  disable: true
+
+changelog:
+  disable: true
+
+snapshot:
+  version_template: '{{ incpatch .Version }}-snapshot.{{ .ShortCommit }}'

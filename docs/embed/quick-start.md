@@ -15,7 +15,7 @@ your workspace's theme. There is no back end to build and no credential in the p
 
 ## Before you start
 
-- **Your workspace's address**, such as `your-company.getcaitlyn.ai`. Every example below uses that
+- **Your workspace's address**, such as `your-company.caitlyn.ai`. Every example below uses that
   placeholder, so substitute your own. If you don't have a workspace yet, email
   [support@getcaitlyn.ai](mailto:support@getcaitlyn.ai).
 - **A page you can edit**, served over HTTPS. Voice input needs a secure page.
@@ -26,7 +26,7 @@ Put these two lines where the chat should appear:
 
 ```html
 <div id="caitlyn-chat"></div>
-<script src="https://your-company.getcaitlyn.ai/scripts/caitlyn-chat.js" defer></script>
+<script src="https://your-company.caitlyn.ai/scripts/caitlyn-chat.js" defer></script>
 ```
 
 The script creates the chat's iframe inside the `caitlyn-chat` container. It also sets the iframe's height as the
@@ -47,7 +47,7 @@ The `data-chat-height` attribute on the container decides the chat's height:
 <!-- Stays 600 pixels tall and scrolls inside -->
 <div id="caitlyn-chat" data-chat-height="contained" style="height: 600px;"></div>
 
-<script src="https://your-company.getcaitlyn.ai/scripts/caitlyn-chat.js" defer></script>
+<script src="https://your-company.caitlyn.ai/scripts/caitlyn-chat.js" defer></script>
 ```
 
 To load a particular agent rather than the workspace's default agent, add its IDs to the container. The

@@ -1,0 +1,9 @@
+{"error":{"code":"ALREADY_EXISTS","detail":"Agent GHT7YRWXPL already has a version v12.","exitCode":7,"hint":{"next":[{"run":"caitlyn agents list","why":"see what already exists"}],"docs":"https://build.caitlyn.ai/cli/reference/agents/draft/#save"},"requestId":"<request-id>","status":409,"title":"Conflict","type":"https://build.caitlyn.ai/errors/ALREADY_EXISTS"}}
+exit code 7
+{"error":{"code":"PRECONDITION_FAILED","detail":"The draft of agent GHT7YRWXPL changed since you read it. Read it again and reapply your change.","exitCode":7,"hint":{"next":[{"run":"caitlyn agents draft get GHT7YRWXPL --query etag","why":"read the current ETag"},{"run":"caitlyn agents draft update GHT7YRWXPL --set guidance.instructions=Shorter. --if-match <etag>","why":"re-apply your change with it"}],"docs":"https://build.caitlyn.ai/cli/reference/agents/draft/#update"},"requestId":"<request-id>","status":412,"title":"The resource has changed","type":"https://build.caitlyn.ai/errors/PRECONDITION_FAILED"}}
+exit code 7
+{"error":{"code":"NOT_FOUND","detail":"No agent NOPE0000","exitCode":6,"hint":{"next":[{"run":"caitlyn agents list","why":"find a valid identifier"}],"docs":"https://build.caitlyn.ai/cli/reference/agents/#get"},"requestId":"<request-id>","status":404,"title":"Not found","type":"https://build.caitlyn.ai/errors/NOT_FOUND"}}
+exit code 6
+{"error":{"code":"USAGE","exitCode":2,"hint":{"missing":["--name"],"next":[{"run":"caitlyn agents draft save GHT7YRWXPL --if-match '\"draft-ZmeDr4VIILFpik5n\"' --name november-candidate --note 'Quotes the policy clause it relied on.'","why":"for example (keep the tested draft as a version)"}],"docs":"https://build.caitlyn.ai/cli/reference/agents/draft/#save"},"title":"caitlyn agents draft save needs --name.","type":"https://build.caitlyn.ai/errors/USAGE"}}
+exit code 2
+[exit 0]

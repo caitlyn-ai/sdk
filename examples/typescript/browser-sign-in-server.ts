@@ -47,7 +47,7 @@ function caitlynFor(userId: string): Caitlyn {
   let client = clients.get(userId);
   if (!client) {
     client = new Caitlyn({
-      workspace: 'your-company.getcaitlyn.ai',
+      workspace: 'your-company.caitlyn.ai',
       auth: {
         mode: 'oauth',
         clientId: process.env.CAITLYN_CLIENT_ID!,

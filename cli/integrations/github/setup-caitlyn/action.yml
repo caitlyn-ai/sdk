@@ -1,0 +1,78 @@
+# caitlyn-ai/setup-caitlyn: installs a pinned Caitlyn CLI, adds it to PATH, and sets up secret-free sign-in
+# (the CLI design, 15.8). A composite action, so it runs on Linux, macOS and Windows runners. Steps then call
+# `caitlyn` directly.
+name: Set up the Caitlyn CLI
+description: Install the Caitlyn CLI and sign in to a workspace with GitHub's OpenID Connect token
+author: Caitlyn
+branding:
+  icon: terminal
+  color: purple
+inputs:
+  version:
+    description: The CLI version to install, such as 0.12.0. Pinning one is recommended; latest is the channel's newest
+    default: latest
+  channel:
+    description: stable or beta, when version is latest
+    default: stable
+  workspace:
+    description: The Caitlyn workspace, such as your-company.caitlyn.ai. Sets CAITLYN_WORKSPACE and workload-identity sign-in (the job needs permissions id-token write)
+    default: ''
+  base-url:
+    description: Where releases are published
+    default: https://build.caitlyn.ai/releases/cli/
+outputs:
+  version:
+    description: The installed version
+    value: ${{ steps.unix.outputs.version || steps.windows.outputs.version }}
+runs:
+  using: composite
+  steps:
+    - id: unix
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        CAITLYN_CHANNEL: ${{ inputs.channel }}
+        CAITLYN_BASE_URL: ${{ inputs.base-url }}
+        # Every runner can check the release's signature (OpenSSL 3 or Node.js), so an unchecked one stops the job
+        CAITLYN_REQUIRE_SIGNATURE: '1'
+      run: |
+        set -euo pipefail
+        # The published installer, the one people run, never a copy in this action: a release carries its public
+        # key, which it checks the release's manifest with.
+        installer="$RUNNER_TEMP/caitlyn-install.sh"
+        curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "$installer" "${CAITLYN_BASE_URL%/}/install.sh"
+        if [ "$INPUT_VERSION" != "latest" ]; then export CAITLYN_INSTALL_VERSION="${INPUT_VERSION#v}"; fi
+        dir="$RUNNER_TOOL_CACHE/caitlyn/${CAITLYN_INSTALL_VERSION:-$CAITLYN_CHANNEL}/$(uname -m)"
+        CAITLYN_INSTALL_DIR="$dir" sh "$installer"
+        echo "$dir" >> "$GITHUB_PATH"
+        echo "version=$("$dir/caitlyn" version --json | sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' | head -n 1)" >> "$GITHUB_OUTPUT"
+    - id: windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        CAITLYN_CHANNEL: ${{ inputs.channel }}
+        CAITLYN_BASE_URL: ${{ inputs.base-url }}
+        CAITLYN_REQUIRE_SIGNATURE: '1'
+      run: |
+        $ErrorActionPreference = 'Stop'
+        # The published installer, as on Linux and macOS
+        $installer = Join-Path $env:RUNNER_TEMP 'caitlyn-install.ps1'
+        Invoke-WebRequest -UseBasicParsing -Uri ($env:CAITLYN_BASE_URL.TrimEnd('/') + '/install.ps1') -OutFile $installer -MaximumRetryCount 3
+        if ($env:INPUT_VERSION -ne 'latest') { $env:CAITLYN_INSTALL_VERSION = $env:INPUT_VERSION.TrimStart('v') }
+        $label = if ($env:CAITLYN_INSTALL_VERSION) { $env:CAITLYN_INSTALL_VERSION } else { $env:CAITLYN_CHANNEL }
+        $env:CAITLYN_INSTALL_DIR = Join-Path $env:RUNNER_TOOL_CACHE "caitlyn\$label\$env:PROCESSOR_ARCHITECTURE"
+        & $installer
+        Add-Content -Path $env:GITHUB_PATH -Value $env:CAITLYN_INSTALL_DIR
+        $v = (& (Join-Path $env:CAITLYN_INSTALL_DIR 'caitlyn.exe') version --json | ConvertFrom-Json).version
+        Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$v"
+    - if: inputs.workspace != ''
+      shell: bash
+      env:
+        WORKSPACE: ${{ inputs.workspace }}
+      run: |
+        {
+          echo "CAITLYN_WORKSPACE=$WORKSPACE"
+          echo "CAITLYN_AUTH=workload-identity"
+        } >> "$GITHUB_ENV"

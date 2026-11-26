@@ -33,9 +33,9 @@ const (
 	mockAWSRegion     = "ap-southeast-2"
 	mockPAT           = "pat_test"
 	mockSessionCookie = "caitlyn_session=mock-session"
-	workspace         = "your-company.getcaitlyn.ai"
+	workspace         = "your-company.caitlyn.ai"
 	// resource is the audience: it comes from the workspace, never from the endpoint override these cases use.
-	resource    = "https://your-company.getcaitlyn.ai/api"
+	resource    = "https://your-company.caitlyn.ai/api"
 	redirectURI = "https://app.example.com/callback"
 )
 
@@ -264,15 +264,15 @@ var authCases = map[string]func(t *testing.T, m mock){
 	"auth.workspace": func(t *testing.T, m mock) {
 		signInRequired(t, m)
 		// A workspace given as a URL is reduced to its hostname.
-		mustRead(t, signedIn(t, m, cc(), "https://your-company.getcaitlyn.ai/"))
+		mustRead(t, signedIn(t, m, cc(), "https://your-company.caitlyn.ai/"))
 		forms := tokenRequests(t, m)
 		if len(forms) != 1 || forms[0].Get("resource") != resource || len(m.api(t)) != 1 {
 			t.Fatalf("token requests %v, %d API requests", forms, len(m.api(t)))
 		}
 		// Without an endpoint override, the workspace sets the endpoint and the audience alike.
-		c, err := caitlyn.NewClient("https://your-company.getcaitlyn.ai/", cc())
-		if err != nil || c.Endpoint() != "https://your-company.getcaitlyn.ai/api" || c.Auth().Resource() != resource ||
-			c.Auth().TokenEndpoint() != "https://your-company.getcaitlyn.ai/api/oauth/token" {
+		c, err := caitlyn.NewClient("https://your-company.caitlyn.ai/", cc())
+		if err != nil || c.Endpoint() != "https://your-company.caitlyn.ai/api" || c.Auth().Resource() != resource ||
+			c.Auth().TokenEndpoint() != "https://your-company.caitlyn.ai/api/oauth/token" {
 			t.Fatalf("endpoint %q audience %q err %v", c.Endpoint(), c.Auth().Resource(), err)
 		}
 	},
@@ -553,7 +553,7 @@ var authCases = map[string]func(t *testing.T, m mock){
 		if a := m.api(t)[0].Headers["authorization"]; asked != 1 || !strings.HasPrefix(a, "Bearer cai_x_oidc_") {
 			t.Fatalf("asked %d times, authorization %q", asked, a)
 		}
-		_, err := read(signedIn(t, m, workload(func() string { return mockOIDCToken("https://other.getcaitlyn.ai/api") })))
+		_, err := read(signedIn(t, m, workload(func() string { return mockOIDCToken("https://other.caitlyn.ai/api") })))
 		if e := authError(t, err); e.Code != "invalid_grant" {
 			t.Fatalf("a token for another workspace: got %+v", e)
 		}

@@ -1,0 +1,19 @@
+claude mcp add --transport http caitlyn https://your-company.caitlyn.ai/api/mcp
+{"changed":true,"file":".vscode/mcp.json"}
+{
+  "servers": {
+    "caitlyn": {
+      "type": "http",
+      "url": "https://your-company.caitlyn.ai/api/mcp"
+    }
+  }
+}
+{
+  "written": [
+    "<tmp>"
+  ]
+}
+## Caitlyn CLI
+
+This project manages Caitlyn with the `caitlyn` CLI (workspace: your-company.caitlyn.ai).
+[exit 0]

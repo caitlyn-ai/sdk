@@ -1,0 +1,15 @@
+Hashing: 0 of 2
+Hashing: 2 of 2
+Planned: 2 of 2
+✓ Planned: 2 new
+  Estimate: 2 documents, 28 seconds to 52 seconds, US$0.01
+Uploading: 2 of 2
+Succeeded: 2 of 2
+✓ The knowledge base is in step with the folder.
+Hashing: 0 of 2
+Hashing: 2 of 2
+Planned: 2 of 2
+Queued: 2 of 2
+Succeeded: 2 of 2
+{"Batch":{"id":"<uuid>","knowledgeBaseId":"KB4T7YQ2WL","status":"succeeded","start":"manual","awaitMoreItems":false,"policy":{"onConflict":{"default":"ask"}},"itemCount":2,"counts":{"byOutcome":{"unchanged":2},"byStatus":{"skipped":2}},"planExpiresAt":"<time>","createdBy":{"displayName":"Mock caller"},"createdAt":"2026-11-06T08:58:00Z","updatedAt":"2026-11-06T08:58:00Z","startedAt":"2026-11-06T08:58:00Z","endedAt":"2026-11-06T08:58:00Z","etag":"\"batch-5\""},"Items":[{"path":"/handbook/leave.md","externalId":"leave.md","sha256":"RNtPSNVCGIrkZtWGtux3Qsi+V/xSR4r1XNQAWB5gA0s=","byteSize":34,"contentType":"text/markdown","id":"item-00001","outcome":"unchanged","matches":[{"documentId":"<document-id>","path":"/handbook/leave.md","version":1,"sha256":"RNtPSNVCGIrkZtWGtux3Qsi+V/xSR4r1XNQAWB5gA0s="}],"resolution":"skip","status":"skipped","etag":"\"item-00001-2\""},{"path":"/handbook/pay.md","externalId":"pay.md","sha256":"QWWS0OgFr2z9djsSAuaWTqpoibmGyA230KP9BKwS+Xc=","byteSize":25,"contentType":"text/markdown","id":"item-00002","outcome":"unchanged","matches":[{"documentId":"<document-id>","path":"/handbook/pay.md","version":1,"sha256":"QWWS0OgFr2z9djsSAuaWTqpoibmGyA230KP9BKwS+Xc="}],"resolution":"skip","status":"skipped","etag":"\"item-00002-2\""}]}
+[exit 0]

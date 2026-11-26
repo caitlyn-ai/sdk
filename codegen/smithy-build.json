@@ -13,7 +13,8 @@
       "ai.caitlyn:typescript:0.0.1",
       "ai.caitlyn:python:0.0.1",
       "ai.caitlyn:go:0.0.1",
-      "ai.caitlyn:rust:0.0.1"
+      "ai.caitlyn:rust:0.0.1",
+      "ai.caitlyn:cli:0.0.1"
     ]
   },
   "projections": {
@@ -61,6 +62,14 @@
           "coreVersion": "0.11.0",
           "corePath": "../caitlyn-sdk-core",
           "repository": "https://github.com/caitlyn-ai/sdk"
+        }
+      }
+    },
+    "cli": {
+      "plugins": {
+        "caitlyn-cli-codegen": {
+          "service": "ai.caitlyn.v3#Caitlyn",
+          "version": "0.11.0"
         }
       }
     }

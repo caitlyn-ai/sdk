@@ -186,14 +186,14 @@ var (
 	workspaceHostRE = regexp.MustCompile(`^[a-zA-Z0-9.-]+(:[0-9]+)?$`)
 )
 
-// ParseWorkspace reduces a workspace given as a hostname (your-company.getcaitlyn.ai) or as its URL
-// (https://your-company.getcaitlyn.ai, with or without a trailing slash) to its bare hostname in lower case. Anything
+// ParseWorkspace reduces a workspace given as a hostname (your-company.caitlyn.ai) or as its URL
+// (https://your-company.caitlyn.ai, with or without a trailing slash) to its bare hostname in lower case. Anything
 // else (another scheme, a path, a query string, a fragment, user information, an empty value) is an error that names
 // the expected form (PROTOCOL.md 12.1). NewClient calls it.
 func ParseWorkspace(workspace string) (string, error) {
 	given := strings.TrimSpace(workspace)
 	refuse := func(what string) (string, error) {
-		return "", fmt.Errorf("caitlyn: workspace must be a hostname such as your-company.getcaitlyn.ai or https://your-company.getcaitlyn.ai; %q %s. Use caitlyn.WithEndpoint for a proxy or a local server", given, what)
+		return "", fmt.Errorf("caitlyn: workspace must be a hostname such as your-company.caitlyn.ai or https://your-company.caitlyn.ai; %q %s. Use caitlyn.WithEndpoint for a proxy or a local server", given, what)
 	}
 	if given == "" {
 		return refuse("is empty")
