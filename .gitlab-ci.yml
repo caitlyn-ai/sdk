@@ -42,8 +42,9 @@
 #   release:go and model:main use it), RELEASES_ENABLED, GO_TAG (release:go only),
 #   for the CLI's release (protected, so only protected v* tags see them): CLI_RELEASE_ROLE_ARN,
 #   CLI_MINISIGN_SECRET_ID, CLI_DISTRIBUTION_ID, CAITLYN_MINISIGN_PUBLIC_KEY, CLI_SIGNING_ROLE_ARN (the role that may
-#   sign with the KMS release key) and CAITLYN_COSIGN_PUBLIC_KEY (that key's public half, one line of base64 DER), CAITLYN_TELEMETRY_ENDPOINT (unset until
-#   the endpoint exists), HOMEBREW_TAP_TOKEN and SCOOP_BUCKET_TOKEN (masked), and GHCR_USERNAME and GHCR_TOKEN
+#   sign with the KMS release key) and CAITLYN_COSIGN_PUBLIC_KEY (that key's public half, one line of base64 DER), CAITLYN_TELEMETRY_ENDPOINT (an override
+#   only: release builds send usage data to https://telemetry.caitlyn.ai/cli by default) and CLI_TELEMETRY_OFF (1 builds
+#   with no usage-data endpoint), HOMEBREW_TAP_TOKEN and SCOOP_BUCKET_TOKEN (masked), and GHCR_USERNAME and GHCR_TOKEN
 #   (masked) for ghcr.io/caitlyn-ai/caitlyn.
 
 include:

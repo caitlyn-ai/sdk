@@ -14,7 +14,9 @@
 # from the linux archives and signs it (scripts/release-image.sh).
 #
 # Build-time values, from the release job's environment:
-#   CAITLYN_TELEMETRY_ENDPOINT    the telemetry endpoint; empty until it exists (17.3), and then nothing is sent
+#   CAITLYN_TELEMETRY_ENDPOINT    overrides the usage-data endpoint, https://telemetry.caitlyn.ai/cli by default: release
+#                                 and snapshot builds send usage data for Caitlyn there when a person turns it on
+#   CLI_TELEMETRY_OFF             1 builds with no usage-data endpoint at all, so nothing is ever queued or sent
 #   CAITLYN_MINISIGN_PUBLIC_KEY   the manifest signing key's public half; unset keeps the placeholder, which
 #                                 refuses every update
 #   CAITLYN_COSIGN_PUBLIC_KEY     the release signing key's public half (KMS alias/caitlyn-cli-release), as one line
@@ -48,7 +50,7 @@ builds:
     ldflags:
       - -s -w
       - -X github.com/caitlyn-ai/sdk/cli/internal/commands/root.Version={{ .Version }}
-      - -X github.com/caitlyn-ai/sdk/cli/internal/telemetry.Endpoint={{ envOrDefault "CAITLYN_TELEMETRY_ENDPOINT" "" }}
+      - -X github.com/caitlyn-ai/sdk/cli/internal/telemetry.Endpoint={{ if eq (envOrDefault "CLI_TELEMETRY_OFF" "") "1" }}{{ else }}{{ envOrDefault "CAITLYN_TELEMETRY_ENDPOINT" "https://telemetry.caitlyn.ai/cli" }}{{ end }}
       - -X github.com/caitlyn-ai/sdk/cli/internal/update.PublicKey={{ envOrDefault "CAITLYN_MINISIGN_PUBLIC_KEY" "REPLACE_AT_RELEASE_minisign_public_key" }}
       - -X github.com/caitlyn-ai/sdk/cli/internal/update.CosignPublicKey={{ envOrDefault "CAITLYN_COSIGN_PUBLIC_KEY" "REPLACE_AT_RELEASE_cosign_public_key" }}
 

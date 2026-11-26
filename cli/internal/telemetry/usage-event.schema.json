@@ -1,16 +1,21 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Usage data for Caitlyn: the Caitlyn CLI's usage batch",
-  "description": "What the CLI sends when usage data for Caitlyn is on: a batch of events, one per command run, each with exactly these fields. A test keeps this file equal to the CLI's event and to the docs' example.",
+  "title": "Usage data for Caitlyn: the Caitlyn CLI's usage batch, version 1",
+  "description": "What the CLI sends when usage data for Caitlyn is on: one request of at most 100 events and 64 KB, each event one command run with exactly these fields. A test keeps this file equal to the CLI's event and to the docs' example.",
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "schema",
     "events"
   ],
   "properties": {
+    "schema": {
+      "const": "caitlyn-cli-usage/1"
+    },
     "events": {
       "type": "array",
-      "maxItems": 500,
+      "minItems": 1,
+      "maxItems": 100,
       "items": {
         "$ref": "#/$defs/event"
       }
@@ -43,7 +48,8 @@
         },
         "time": {
           "type": "string",
-          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:00:00Z$"
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+          "description": "When the run started, in UTC, to the millisecond. It ended duration_ms later."
         },
         "install_id": {
           "type": "string",
@@ -70,10 +76,12 @@
         "duration_ms": {
           "type": "integer",
           "minimum": 0,
+          "maximum": 86400000,
           "multipleOf": 10
         },
         "version": {
           "type": "string",
+          "pattern": "^([0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?|unknown)$",
           "maxLength": 64
         },
         "channel": {

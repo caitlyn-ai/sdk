@@ -1,4 +1,4 @@
-// Package telemetry is "usage data for Caitlyn", the CLI's anonymous product telemetry (the CLI design, 9.1),
+// Package telemetry is "usage data for Caitlyn", the CLI's product telemetry with a random install ID (the CLI design, 9.1),
 // sent to Caitlyn. It is not "your own traces" (package traces, OpenTelemetry to your own collector): neither reads
 // the other's settings. One small event per command run,
 // holding only the fields in Event, queued locally and sent in the background by a detached `caitlyn telemetry
@@ -11,17 +11,23 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
 
-// Endpoint is where events are sent. Empty until the telemetry endpoint exists: with no endpoint nothing is queued
-// or sent. The release build sets it with
+// Endpoint is where usage data for Caitlyn is sent, when a person turns it on. Release and snapshot builds
+// (GoReleaser, .goreleaser.yaml) set it to https://telemetry.caitlyn.ai/cli, the intake that speaks this package's
+// protocol (the schema, the request caps, the body hash and the answer classes), with
 //
 //	-ldflags "-X github.com/caitlyn-ai/sdk/cli/internal/telemetry.Endpoint=https://telemetry.caitlyn.ai/cli"
 //
-// CAITLYN_TELEMETRY_ENDPOINT overrides it (tests, and checking a new endpoint).
+// A `go build` from source with no ldflags leaves it empty: with no endpoint nothing is queued or sent.
+// CAITLYN_TELEMETRY_ENDPOINT overrides it at run time (tests, and checking a new endpoint).
 var Endpoint = ""
+
+// ReleaseEndpoint is the intake release and snapshot builds send to. A test holds .goreleaser.yaml's ldflags to it.
+const ReleaseEndpoint = "https://telemetry.caitlyn.ai/cli"
 
 // EndpointEnv overrides Endpoint.
 const EndpointEnv = "CAITLYN_TELEMETRY_ENDPOINT"
@@ -31,8 +37,8 @@ const DocsURL = "https://build.caitlyn.ai/cli/telemetry"
 
 // Notice is printed once on stderr, before the first interactive run's output (9.1). Telemetry is off until the
 // person turns it on, so the notice asks; it never says anything is being collected.
-const Notice = `Usage data for Caitlyn. Help improve the Caitlyn CLI by sending Caitlyn anonymous usage
-data: which commands and flags run, how long they take and whether they succeed. Never
+const Notice = `Usage data for Caitlyn. Help improve the Caitlyn CLI by sending Caitlyn usage data:
+which commands and flags run, how long they take and whether they succeed. Never
 arguments, IDs, content or anything about you or your workspace. It's off unless you
 turn it on: caitlyn telemetry on
 More: ` + DocsURL + "\n"
@@ -40,9 +46,11 @@ More: ` + DocsURL + "\n"
 // Event is everything sent about one run, and nothing else. Its fields are the list in 9.1; a test fails if one is
 // added without the list changing.
 type Event struct {
-	// EventID de-duplicates retries.
+	// EventID lets the receiver count a retried event once: the intake removes repeats within one request, and a
+	// repeat across requests is stored again with the same ID.
 	EventID string `json:"event_id"`
-	// Time is when the run ended, rounded down to the hour, in UTC.
+	// Time is when the run started, exactly: RFC 3339 in UTC, to the millisecond (FormatTime). The run ended
+	// DurationMS later.
 	Time string `json:"time"`
 	// InstallID is a random UUID made on first use, unrelated to the machine, the person or the workspace.
 	InstallID string `json:"install_id"`
@@ -73,11 +81,23 @@ type Event struct {
 // Fields is the payload's field list (9.1), in order.
 var Fields = []string{"event_id", "time", "install_id", "command", "flags", "exit_code", "duration_ms", "version", "channel", "os", "arch", "ci", "ci_provider", "agent", "agent_name", "tty"}
 
-// RoundDuration rounds a run's duration to 10 ms, in milliseconds.
-func RoundDuration(d time.Duration) int64 { return d.Round(10 * time.Millisecond).Milliseconds() }
+// MaxDurationMS is the longest duration an event carries (a day; usage-event.schema.json's maximum): a longer run is
+// sent as a day.
+const MaxDurationMS = 24 * 60 * 60 * 1000
 
-// RoundTime rounds a time down to the hour, in UTC (RFC 3339).
-func RoundTime(t time.Time) string { return t.UTC().Truncate(time.Hour).Format(time.RFC3339) }
+// RoundDuration rounds a run's duration to 10 ms, in milliseconds, at most MaxDurationMS.
+func RoundDuration(d time.Duration) int64 {
+	return min(d.Round(10*time.Millisecond).Milliseconds(), MaxDurationMS)
+}
+
+// versionPattern is a release version (0.12.0, 0.13.0-beta.2), as usage-event.schema.json's version pattern.
+var versionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`)
+
+// EventVersion is the CLI version an event carries: the version, or "unknown" when it isn't a release's.
+func EventVersion(v string) string { return userAgentVersion(v) }
+
+// FormatTime is an event's time: RFC 3339 in UTC, to the millisecond (2026-11-25T09:47:12.005Z).
+func FormatTime(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000Z") }
 
 // NewUUID is a random UUID version 4.
 func NewUUID() string {

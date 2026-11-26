@@ -421,3 +421,46 @@ func TestUsageEventCarriesTheUserAgentsValues(t *testing.T) {
 		t.Errorf("an agent name with nothing valid is %q, want unknown", e.AgentName)
 	}
 }
+
+// An event carries the exact time its run started, in UTC to the millisecond: no rounding and no offset (Sam,
+// November 2026). It ended duration_ms later.
+func TestUsageEventCarriesTheExactStartTime(t *testing.T) {
+	end := time.Date(2026, 11, 26, 9, 47, 12, 345_000_000, time.FixedZone("NZDT", 13*3600))
+	f := &cmdutil.Factory{Version: "0.12.0", Globals: &cmdutil.Globals{}, Now: func() time.Time { return end },
+		IO: &iostreams.IOStreams{Environ: []string{}}, Home: t.TempDir(), WorkDir: t.TempDir()}
+	e := telemetry.BuildEvent(f, &cobra.Command{Use: "version"}, 0, 2*time.Second+100*time.Millisecond, telemetry.NewUUID(), false)
+	if e.Time != "2026-11-25T20:47:10.245Z" || e.DurationMS != 2100 {
+		t.Fatalf("time %s, duration %d: want the start, 2026-11-25T20:47:10.245Z, and 2100", e.Time, e.DurationMS)
+	}
+}
+
+// caitlyn telemetry status shows a 410 stop and a Retry-After wait for this version and endpoint, and caitlyn
+// telemetry on clears both.
+func TestStatusShowsAStopAndOnClearsIt(t *testing.T) {
+	setup(t)
+	home := t.TempDir()
+	e := map[string]string{telemetry.EndpointEnv: endpoint, "CAITLYN_TELEMETRY": "1"}
+	var ver struct {
+		Version string `json:"version"`
+	}
+	_ = json.Unmarshal([]byte(cli(t, home, e, false, "version", "--json").stdout), &ver)
+	q := telemetry.Queue{Dir: filepath.Join(home, ".caitlyn", "telemetry"), Version: ver.Version}
+	st := q.LoadState()
+	st.Stopped = &telemetry.Stop{Version: ver.Version, Endpoint: endpoint, At: time.Now().UTC()}
+	st.RetryAfter = map[string]time.Time{endpoint: time.Now().Add(30 * time.Minute)}
+	if err := q.SaveState(st); err != nil {
+		t.Fatal(err)
+	}
+	r := cli(t, home, e, false, "telemetry", "status", "-o", "json")
+	if !strings.Contains(r.stdout, `"stoppedByEndpoint"`) || !strings.Contains(r.stdout, `"waitingUntil"`) || !strings.Contains(r.stdout, `"collecting":false`) {
+		t.Fatalf("status doesn't show the stop and the wait (%d):\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+	r = cli(t, home, e, false, "telemetry", "status", "-o", "text")
+	if !strings.Contains(r.stdout, "answered 410") || !strings.Contains(r.stdout, "Retry-After") {
+		t.Fatalf("status text:\n%s", r.stdout)
+	}
+	cli(t, home, e, false, "telemetry", "on")
+	if q.Gone(endpoint) || !q.WaitUntil(endpoint).IsZero() {
+		t.Fatal("caitlyn telemetry on doesn't clear the stop and the wait")
+	}
+}
