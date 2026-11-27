@@ -23,7 +23,8 @@
 #
 # The registry is the generic package caitlyn-v3-model in the app project (custom-d/caitlyn/platform/caitlyn,
 # project 653), which every app release publishes to (smithy/scripts/publish.sh in the app). In CI the job
-# token reads it; locally set GITLAB_TOKEN to a personal access token with read_api.
+# token reads it; locally, GITLAB_TOKEN (a personal access token with read_api) or the developer glab is signed in
+# as, as scripts/model-latest.sh reads it.
 # Run `make generate` afterwards; the generated code is committed with the new snapshot.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -37,17 +38,33 @@ changes_dir="$root/model/changes"
 previous="$(node -p "require('$root/model/model.lock.json').version ?? ''" 2>/dev/null || true)"
 mkdir -p "$tmp/changes"
 
-auth_header() {
-  if [ -n "${CI_JOB_TOKEN:-}" ]; then echo "JOB-TOKEN: ${CI_JOB_TOKEN}"
-  elif [ -n "${GITLAB_TOKEN:-}" ]; then echo "PRIVATE-TOKEN: ${GITLAB_TOKEN}"
-  else echo "Set GITLAB_TOKEN (a personal access token with read_api) to read the package registry." >&2; exit 1
+# Reads an API path into a file and prints its HTTP status: with the job token in CI or GITLAB_TOKEN by curl, or
+# else as the developer glab is signed in as (its OAuth token is not a PRIVATE-TOKEN). Fails when it can't ask.
+get() {
+  local path="$1" out="$2" header=""
+  if [ -n "${CI_JOB_TOKEN:-}" ]; then header="JOB-TOKEN: ${CI_JOB_TOKEN}"
+  elif [ -n "${GITLAB_TOKEN:-}" ]; then header="PRIVATE-TOKEN: ${GITLAB_TOKEN}"
+  elif command -v glab > /dev/null; then
+    if GITLAB_HOST="${CI_SERVER_HOST:-git.customd.com}" glab api "$path" > "$out" 2> "$tmp/glab.err"; then echo 200
+    elif grep -q '404' "$tmp/glab.err"; then echo 404
+    else echo "Could not read ${path} with glab: sign in with glab auth login, or set GITLAB_TOKEN (read_api)." >&2; return 1
+    fi
+    return 0
+  else echo "Set GITLAB_TOKEN (a personal access token with read_api), or sign in with glab, to read the package registry." >&2; return 1
   fi
+  curl -sS --retry 3 -o "$out" -w '%{http_code}' --header "$header" "${api}/${path}" || { echo "Could not reach the package registry." >&2; return 1; }
+}
+
+# Reads a path that must be there
+need() {
+  local status
+  status="$(get "$1" "$2")" || exit 1
+  [ "$status" = 200 ] || { echo "Could not read ${1} (HTTP ${status})." >&2; exit 1; }
 }
 
 fetch() {
   local version="$1" name="$2"
-  curl -fsS --retry 3 --header "$(auth_header)" -o "$tmp/$name" \
-    "${api}/projects/${project}/packages/generic/${package}/${version}/${name}"
+  need "projects/${project}/packages/generic/${package}/${version}/${name}" "$tmp/$name"
 }
 
 # Every page of the registry's listing of the package, as one JSON array in $tmp/listing.json
@@ -55,8 +72,7 @@ list_versions() {
   local page=1 count
   echo '[]' > "$tmp/listing.json"
   while :; do
-    curl -fsS --retry 3 --header "$(auth_header)" -o "$tmp/page.json" \
-      "${api}/projects/${project}/packages?package_type=generic&package_name=${package}&per_page=100&page=${page}"
+    need "projects/${project}/packages?package_type=generic&package_name=${package}&per_page=100&page=${page}" "$tmp/page.json"
     count="$(node -e "
       const fs = require('fs'); const all = JSON.parse(fs.readFileSync('$tmp/listing.json', 'utf8')); const page = JSON.parse(fs.readFileSync('$tmp/page.json', 'utf8'));
       fs.writeFileSync('$tmp/listing.json', JSON.stringify(all.concat(page))); process.stdout.write(String(page.length));
@@ -70,9 +86,7 @@ list_versions() {
 # existed has none, and is skipped with a note. Any other failure stops the pull.
 fetch_changes() {
   local v="$1" status
-  status=$(curl -sS --retry 3 --header "$(auth_header)" -o "$tmp/changes/$v.json" -w '%{http_code}' \
-    "${api}/projects/${project}/packages/generic/${package}/${v}/changes.json") \
-    || { echo "Could not reach the package registry for ${package}/${v}/changes.json." >&2; exit 1; }
+  status="$(get "projects/${project}/packages/generic/${package}/${v}/changes.json" "$tmp/changes/$v.json")" || exit 1
   case "$status" in
     200)
       node -e "const c = require('$tmp/changes/$v.json'); if (c.version !== '$v' || !Array.isArray(c.changes)) { console.error('${package}/${v}/changes.json names version ' + c.version + ', or lists no changes.'); process.exit(1); }"
@@ -116,13 +130,16 @@ else
   fetch "$requested" openapi.json
   fetch "$requested" caitlyn-v3-model.tar.gz
   tar -xzf "$tmp/caitlyn-v3-model.tar.gz" -C "$tmp" PROTOCOL.md
-  # `latest` is copied from a numbered version; record which one, from the highest @since it carries.
-  version="\"$(node -e "
-    const s = require('$tmp/model.json').shapes; let v = '0.0.0';
-    const cmp = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
-    for (const sh of Object.values(s)) for (const t of [sh.traits, ...Object.values(sh.members ?? {}).map((m) => m.traits)]) { const x = t?.['ai.caitlyn.traits#since']; if (x && x !== 'next' && cmp(x, v) > 0) v = x; }
-    process.stdout.write('$requested' === 'latest' ? v : '$requested');
-  ")\""
+  # `latest` is copied from a numbered version: record which one, from the version.txt published beside it (the
+  # model's highest @since is only the newest release that changed the API, not the release it was published with)
+  if [ "$requested" = latest ]; then
+    fetch latest version.txt
+    version="$(tr -d '[:space:]' < "$tmp/version.txt")"
+    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "${package}/latest/version.txt names no release (\"${version}\")." >&2; exit 1; }
+    version="\"${version}\""
+  else
+    version="\"${requested}\""
+  fi
   source="package registry ${package}/${requested}"
   # The changes.json of every published version after the previous lock's, up to and including this one
   list_versions

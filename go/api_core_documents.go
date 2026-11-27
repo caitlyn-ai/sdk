@@ -26,7 +26,7 @@ func newCoreDocuments(c *Client) *CoreDocuments {
 // or with `curl -L`. A browser script cannot read a redirect's address: it calls
 // GetDocumentDownload, which answers with the address as JSON, as the SDKs' `doc.download()` does.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *CoreDocuments) Content(ctx context.Context, knowledgeBaseID string, documentID string, in *GetDocumentContentInput, opts ...CallOption) (*DocumentContent, error) {
 	p := &getDocumentContentParams{}
 	if in != nil {
@@ -55,7 +55,7 @@ type getDocumentContentParams struct {
 var opGetDocumentContent = &core.Operation{
 	Name:      "GetDocumentContent",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Redirect:  302,
 	Retryable: []int{503, 429},

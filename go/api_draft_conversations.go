@@ -31,7 +31,7 @@ func newDraftConversations(c *Client, agentID string) *DraftConversations {
 //
 // It returns the new conversation's scope, with the response as Result.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *DraftConversations) Create(ctx context.Context, in *CreateConversationInput, opts ...CallOption) (*CreatedConversation, error) {
 	p := &createConversationParams{}
 	if in != nil {
@@ -63,7 +63,7 @@ type createConversationParams struct {
 var opCreateConversation = &core.Operation{
 	Name:              "CreateConversation",
 	Method:            "POST",
-	Since:             "5.144.0",
+	Since:             "5.149.0",
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},

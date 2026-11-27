@@ -38,7 +38,7 @@ func (s *DocumentVersionScope) Version() string { return s.version }
 // `version` is a number, `current` (the version search uses) or `latest` (the newest, whatever its
 // state). A caller who may not add versions can read only the current version.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *DocumentVersionScope) Get(ctx context.Context, opts ...CallOption) (*DocumentVersion, error) {
 	p := &getDocumentVersionParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -62,7 +62,7 @@ func (s *DocumentVersionScope) Get(ctx context.Context, opts ...CallOption) (*Do
 // `VALIDATION_FAILED`, because the version they name changes after each delete, so a retried
 // request could delete a second version.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *DocumentVersionScope) Delete(ctx context.Context, opts ...CallOption) (*DeleteDocumentVersionResult, error) {
 	p := &deleteDocumentVersionParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -81,7 +81,7 @@ type deleteDocumentVersionParams struct {
 var opDeleteDocumentVersion = &core.Operation{
 	Name:      "DeleteDocumentVersion",
 	Method:    "DELETE",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -132,7 +132,7 @@ type getDocumentVersionParams struct {
 var opGetDocumentVersion = &core.Operation{
 	Name:      "GetDocumentVersion",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,

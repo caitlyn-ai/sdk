@@ -32,7 +32,7 @@ func (s *FieldScope) Key() string { return s.fieldKey }
 
 // Get gets one metadata field, with how much work it still needs.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *FieldScope) Get(ctx context.Context, opts ...CallOption) (*Field, error) {
 	p := &getFieldParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -50,7 +50,7 @@ func (s *FieldScope) Get(ctx context.Context, opts ...CallOption) (*Field, error
 // it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
 // yourself: no helper fills it in.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *FieldScope) Update(ctx context.Context, in *UpdateFieldInput, opts ...CallOption) (*Field, error) {
 	p := &updateFieldParams{}
 	if in != nil {
@@ -75,7 +75,7 @@ func (s *FieldScope) Update(ctx context.Context, in *UpdateFieldInput, opts ...C
 //
 // Deleting cannot be undone. Agents and searches stop using the field at once.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *FieldScope) Delete(ctx context.Context, opts ...CallOption) (*DeleteFieldResult, error) {
 	p := &deleteFieldParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -92,7 +92,7 @@ type deleteFieldParams struct {
 var opDeleteField = &core.Operation{
 	Name:      "DeleteField",
 	Method:    "DELETE",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -139,7 +139,7 @@ type getFieldParams struct {
 var opGetField = &core.Operation{
 	Name:      "GetField",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -226,7 +226,7 @@ type updateFieldParams struct {
 var opUpdateField = &core.Operation{
 	Name:      "UpdateField",
 	Method:    "PATCH",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,

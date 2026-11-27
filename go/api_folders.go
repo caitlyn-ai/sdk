@@ -35,7 +35,7 @@ func newFolders(c *Client, knowledgeBaseID string) *Folders {
 // It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
 // one.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *Folders) List(ctx context.Context, in *ListFoldersInput, opts ...CallOption) iter.Seq2[Folder, error] {
 	return core.Items(s.ListPages(ctx, in, opts...), func(p *ListFoldersPage) []Folder { return p.Items })
 }
@@ -68,7 +68,7 @@ func (s *Folders) ListPage(ctx context.Context, in *ListFoldersInput, opts ...Ca
 // It returns the new folder's scope, with the response as Result. Wait follows the work the call
 // started.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *Folders) Create(ctx context.Context, in *CreateFolderInput, opts ...CallOption) (*CreatedFolder, error) {
 	p := &createFolderParams{}
 	if in != nil {
@@ -98,7 +98,7 @@ type createFolderParams struct {
 var opCreateFolder = &core.Operation{
 	Name:              "CreateFolder",
 	Method:            "POST",
-	Since:             "5.144.0",
+	Since:             "5.149.0",
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},
@@ -173,7 +173,7 @@ type listFoldersParams struct {
 var opListFolders = &core.Operation{
 	Name:      "ListFolders",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{

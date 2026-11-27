@@ -38,7 +38,7 @@ func (s *HistoryEntryScope) ID() string { return s.historyEntryID }
 // agent's version access grant, gets the entry without it. It is also absent when that version was
 // deleted through an older API that does not protect versions named in live history.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *HistoryEntryScope) Get(ctx context.Context, opts ...CallOption) (*HistoryEntry, error) {
 	p := &getHistoryEntryParams{}
 	p.AgentID = s.agentID
@@ -55,7 +55,7 @@ type getHistoryEntryParams struct {
 var opGetHistoryEntry = &core.Operation{
 	Name:      "GetHistoryEntry",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,

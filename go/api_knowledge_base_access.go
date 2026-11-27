@@ -40,7 +40,7 @@ func newKnowledgeBaseAccess(c *Client, knowledgeBaseID string) *KnowledgeBaseAcc
 // adds is the access on its own, with the ETag that SetAccess's `If-Match` takes, and the root
 // folder's readers; reading it needs the files permissions list permission.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *KnowledgeBaseAccess) Get(ctx context.Context, opts ...CallOption) (*Access, error) {
 	p := &getAccessParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -74,7 +74,7 @@ func (s *KnowledgeBaseAccess) Get(ctx context.Context, opts ...CallOption) (*Acc
 // it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
 // yourself: no helper fills it in.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *KnowledgeBaseAccess) Set(ctx context.Context, in *PutAccessInput, opts ...CallOption) (*Access, error) {
 	p := &putAccessParams{}
 	if in != nil {
@@ -95,7 +95,7 @@ type getAccessParams struct {
 var opGetAccess = &core.Operation{
 	Name:      "GetAccess",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -160,7 +160,7 @@ type putAccessParams struct {
 var opPutAccess = &core.Operation{
 	Name:      "PutAccess",
 	Method:    "PUT",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,

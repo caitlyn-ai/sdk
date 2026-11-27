@@ -42,7 +42,7 @@ func newDraftScope(c *Client, agentID string) *DraftScope {
 // it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
 // yourself: no helper fills it in.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *DraftScope) Replace(ctx context.Context, in *ReplaceDraftVersionInput, opts ...CallOption) (*AgentVersion, error) {
 	p := &replaceDraftVersionParams{}
 	if in != nil {
@@ -77,7 +77,7 @@ func (s *DraftScope) Replace(ctx context.Context, in *ReplaceDraftVersionInput, 
 // with an input error before anything is sent. WithIfMatch("*") (any version) is sent only when you
 // pass it yourself: no helper fills it in.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *DraftScope) Reset(ctx context.Context, in *ResetDraftVersionInput, opts ...CallOption) (*AgentVersion, error) {
 	p := &resetDraftVersionParams{}
 	if in != nil {
@@ -97,7 +97,7 @@ func (s *DraftScope) Reset(ctx context.Context, in *ResetDraftVersionInput, opts
 // it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
 // yourself: no helper fills it in.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *DraftScope) Save(ctx context.Context, in *SaveDraftVersionInput, opts ...CallOption) (*AgentVersion, error) {
 	p := &saveDraftVersionParams{}
 	if in != nil {
@@ -120,7 +120,7 @@ func (s *DraftScope) Save(ctx context.Context, in *SaveDraftVersionInput, opts .
 // it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
 // yourself: no helper fills it in.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *DraftScope) Update(ctx context.Context, in *UpdateDraftVersionInput, opts ...CallOption) (*AgentVersion, error) {
 	p := &updateDraftVersionParams{}
 	if in != nil {
@@ -154,7 +154,7 @@ func (s *DraftScope) Update(ctx context.Context, in *UpdateDraftVersionInput, op
 // access grant, and anyone else gets 404. An agent with no live version, because none has been
 // published or chosen yet, answers `live` with 404 `NO_LIVE_VERSION`.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *DraftScope) Get(ctx context.Context, opts ...CallOption) (*AgentVersion, error) {
 	p := &getAgentVersionParams{}
 	p.AgentID = s.agentID
@@ -169,7 +169,7 @@ func (s *DraftScope) Get(ctx context.Context, opts ...CallOption) (*AgentVersion
 // compared by their items' keys, so a path reads `workflow.phases[intake].transitions`. Both versions
 // need the same access as reading them.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *DraftScope) Compare(ctx context.Context, in *CompareAgentVersionsInput, opts ...CallOption) (*CompareAgentVersionsResult, error) {
 	p := &compareAgentVersionsParams{}
 	if in != nil {
@@ -198,7 +198,7 @@ func (s *DraftScope) Compare(ctx context.Context, in *CompareAgentVersionsInput,
 // it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
 // yourself: no helper fills it in.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *DraftScope) Publish(ctx context.Context, in *PublishAgentVersionInput, opts ...CallOption) (*PublishAgentVersionResult, error) {
 	p := &publishAgentVersionParams{}
 	if in != nil {
@@ -229,7 +229,7 @@ type compareAgentVersionsParams struct {
 var opCompareAgentVersions = &core.Operation{
 	Name:      "CompareAgentVersions",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -279,7 +279,7 @@ type getAgentVersionParams struct {
 var opGetAgentVersion = &core.Operation{
 	Name:      "GetAgentVersion",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -347,7 +347,7 @@ type publishAgentVersionParams struct {
 var opPublishAgentVersion = &core.Operation{
 	Name:              "PublishAgentVersion",
 	Method:            "POST",
-	Since:             "5.144.0",
+	Since:             "5.149.0",
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},
@@ -460,7 +460,7 @@ type replaceDraftVersionParams struct {
 var opReplaceDraftVersion = &core.Operation{
 	Name:      "ReplaceDraftVersion",
 	Method:    "PUT",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{
@@ -575,7 +575,7 @@ type resetDraftVersionParams struct {
 var opResetDraftVersion = &core.Operation{
 	Name:              "ResetDraftVersion",
 	Method:            "POST",
-	Since:             "5.144.0",
+	Since:             "5.149.0",
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	IfMatchRequired:   true,
@@ -639,7 +639,7 @@ type saveDraftVersionParams struct {
 var opSaveDraftVersion = &core.Operation{
 	Name:              "SaveDraftVersion",
 	Method:            "POST",
-	Since:             "5.144.0",
+	Since:             "5.149.0",
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},
@@ -752,7 +752,7 @@ type updateDraftVersionParams struct {
 var opUpdateDraftVersion = &core.Operation{
 	Name:      "UpdateDraftVersion",
 	Method:    "PATCH",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{

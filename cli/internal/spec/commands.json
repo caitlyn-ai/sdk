@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "version": "0.11.0",
-  "modelVersion": "5.144.0",
+  "modelVersion": "5.149.0",
   "service": "Caitlyn",
   "permissions": {
     "agent.native.connectorprobe": "agents:write",
@@ -2543,7 +2543,7 @@
       "stability": "beta",
       "title": "Add items to a batch",
       "documentation": "Adds up to 10,000 more items to a batch that is still `draft`, with a result for each.\n\nA batch takes at most 100,000 items, at most 1,000 of them with `fetchUrl`. The call returns 200\neven when every item fails: `results` has one entry per item, in request order, each `created` with\nthe item, or `failed` with a problem (for example 422 `BATCH_ITEM_CONTENT_AMBIGUOUS`). One bad\nitem never refuses the rest. A batch that is not `draft` is refused with 409 `CONFLICT`.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "retrySafe": false,
       "input": [
         {
@@ -2809,7 +2809,7 @@
       "stability": "beta",
       "title": "Delete many documents",
       "documentation": "Deletes up to 100 documents in one call, with a result for each.\n\nEach document is deleted as DeleteDocument deletes one. The call returns 200 even when every\nitem fails: `results` has one entry per identifier, always in request order, each either\n`accepted` (the document is now `deleting`, or already was) or `failed` with a code: `NOT_FOUND`\nfor a document that is gone or that the caller may not see, or `SERVICE_UNAVAILABLE` when it could\nnot be marked for deletion; try that one again. A document still being processed is deleted like\nany other. One failed item never stops the others. More than 100\nidentifiers, none, or the same identifier twice is refused with 400 `VALIDATION_FAILED` for the\nwhole call. Safe to repeat: a repeat gives the same results, apart from `NOT_FOUND` for documents\nthat finished deleting in between.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "retrySafe": true,
       "input": [
@@ -3019,7 +3019,7 @@
       "stability": "beta",
       "title": "Stop processing a document",
       "documentation": "Stops the work running on a document: its ingestion, a fill-in or reprocessing.\n\nA stopped first version removes the document; a stopped new version leaves the current one\nserving. Until stopping running work is built, every call is refused with 409 `CONFLICT` (\"This\ndocument's processing can't be stopped yet\"), so callers can build against it now.\n\nNeeds the files update permission. Stopping a first version removes the document, so it also\nneeds the files delete permission, and a caller without it is refused with 403\n`PERMISSION_DENIED`. The server checks this, because the permission trait follows input members,\nnot the document's state.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "retrySafe": true,
       "input": [
@@ -3250,7 +3250,7 @@
       "stability": "beta",
       "title": "Cancel an ingestion batch",
       "documentation": "Cancels an ingestion batch.\n\nItems not yet uploaded are stopped, and their reserved documents released. With `stopRunning`,\nitems already being ingested are stopped too: a stopped new document is removed, and a stopped new\nversion leaves the current one serving. Otherwise, work already being ingested finishes. Returns\n202 with the batch, which becomes `cancelled` once nothing is left running. A final batch is\nrefused with 409 `CONFLICT`.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "retrySafe": true,
       "input": [
@@ -3497,7 +3497,7 @@
       "stability": "beta",
       "title": "Cancel a batch item",
       "documentation": "Cancels one item of a running batch that is still waiting for its upload.\n\nThe item becomes `cancelled`, and the document the batch reserved for it is released: a new\ndocument's placeholder is removed, and an existing document is no longer held for a new version.\nBytes already uploaded for it are never ingested. The rest of the batch carries on; if this was the\nlast item not yet finished, the batch ends. An item that is not `awaiting_upload` (being ingested,\nalready finished, or in a batch not yet started) is refused with 409 `CONFLICT`. Needs the same\npermission as cancelling the batch, and the caller must be able to see the item's folder (404\notherwise).",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "ifMatch": {
         "member": "ifMatch",
@@ -3766,7 +3766,7 @@
       "stability": "beta",
       "title": "Cancel an operation",
       "documentation": "Cancels an Operation's work.\n\nWork not started yet is dropped; work running is stopped. Only `document_ingestion` can be\ncancelled today: a cancelled first version removes the document, and a cancelled new version\nleaves the current one serving. Any other kind is refused with 409 `OPERATION_NOT_CANCELLABLE`,\nand a final Operation with 409 `CONFLICT`. Returns the Operation, which becomes `cancelled` once\nthe work has stopped.\n\nNeeds the files update permission. For `document_ingestion` the server also checks, on the\ndocument the Operation reads, the permission that started it (`files.create` for a new document,\n`files.update` for a new version or a retry) and the document's readers. A caller without it\ngets 404, as for an Operation it may not see.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "retrySafe": true,
       "input": [
@@ -3977,7 +3977,7 @@
       "stability": "beta",
       "title": "Compare versions",
       "documentation": "Compares two versions of an agent, member by member.\n\nReturns one change per member that differs, from `version` to `with`, each with its value before\nand after; `before` is absent for a member `with` added, and `after` for one it removed. Lists are\ncompared by their items' keys, so a path reads `workflow.phases[intake].transitions`. Both versions\nneed the same access as reading them.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -4199,7 +4199,7 @@
       "stability": "beta",
       "title": "Report finished uploads",
       "documentation": "Reports that items' bytes are in place, so they can be ingested.\n\nTakes 1 to 100 item identifiers, each awaiting upload. For each, the server checks that the\nuploaded object's stored SHA-256 and size match the item's, and that the caller may still write to\nthe item's folder, then starts its ingestion. Returns 200 with a result for each item, in request\norder: `accepted`, or `failed` with `CHECKSUM_MISMATCH` (the object is deleted; upload it again),\n`NOT_FOUND` (nothing was uploaded to the item's key), `PERMISSION_DENIED`, `UPLOAD_EXPIRED` or\n`CONFLICT` (the item is not awaiting upload). One failed item never stops the others. The SDKs\nalways call this for you. An upload nobody reports is found by the server within about a minute,\nwhile the batch has items awaiting upload, and goes through the same checks; only an item whose\nbytes are still missing when its reservation ends fails, with `UPLOAD_EXPIRED`.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "retrySafe": true,
       "input": [
@@ -4430,7 +4430,7 @@
       "stability": "beta",
       "title": "Create an agent",
       "documentation": "Creates an agent with a draft; it has no live version until the draft is published.\n\nThe draft starts with `configuration`, or the default configuration without one; change it with\nUpdateDraftVersion or ReplaceDraftVersion, then publish it with PublishAgentVersion. Returns the\nagent, and `Location` names it.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotencyHeader": "Idempotency-Key",
       "retrySafe": true,
       "input": [
@@ -4714,7 +4714,7 @@
       "stability": "beta",
       "title": "Start a conversation",
       "documentation": "Starts a conversation with one version of an agent: `live`, `draft` or a version name.\n\nThe version in the path is the one that answers, for the whole conversation. Send messages to it\nwith SendMessage, and watch it with WatchConversation. The conversation belongs to the caller that\ncreated it: the person, or the API client's own credential.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotencyHeader": "Idempotency-Key",
       "retrySafe": true,
       "input": [
@@ -4981,7 +4981,7 @@
       "stability": "beta",
       "title": "Add a document",
       "documentation": "Creates a document from an upload; ingestion continues after the response.\n\nReturns 202 with the document in its initial state and the Operation that tracks ingestion, and\n`Location` names the document: read it with GetDocument, or wait for it with the SDKs'\n`wait()`. Metadata sent here is written with the document before ingestion starts, so\neven the first ingestion keeps it. Needs the files permission, read access to the knowledge base\nand access to the folder; it does not need update access to the knowledge base, which is for the\nknowledge base's own configuration.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotencyHeader": "Idempotency-Key",
       "retrySafe": true,
       "input": [
@@ -5402,7 +5402,7 @@
       "stability": "beta",
       "title": "Replace a document's file",
       "documentation": "Adds new bytes to a document as a new version; ingestion continues after the response.\n\nThe new version becomes the current one once it is indexed; until then the current version keeps\nserving search. The bytes must be the same file type as the document's: another type is refused\nwith 400 `VALIDATION_FAILED`, because a new type is a new document. While a version is still\nprocessing, another is refused with 409 `DOCUMENT_INGESTION_IN_PROGRESS` and `Retry-After`. Bytes\nthe same as the current version's make no new version (`result: unchanged`); bytes the same as an\nearlier version's bring that version back (`result: restored`).",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotencyHeader": "Idempotency-Key",
       "ifMatch": {
         "member": "ifMatch",
@@ -5752,7 +5752,7 @@
       "stability": "beta",
       "title": "Create a field",
       "documentation": "Adds a metadata field to a knowledge base.\n\nExisting documents have no value for it until a fill-in fills them (`kb.fields.fillIn([key])`).\nA key the knowledge base already defines is refused with 409 `ALREADY_EXISTS`.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotencyHeader": "Idempotency-Key",
       "retrySafe": true,
       "input": [
@@ -6172,7 +6172,7 @@
       "stability": "beta",
       "title": "Create a folder",
       "documentation": "Creates a folder; it appears once the work finishes, after the response.\n\nReturns 202 with the Operation that tracks it, and `Location` names the Operation. A folder that\nalready exists is refused with 409 `ALREADY_EXISTS`.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotencyHeader": "Idempotency-Key",
       "retrySafe": true,
       "input": [
@@ -6427,7 +6427,7 @@
       "stability": "beta",
       "title": "Create an ingestion batch",
       "documentation": "Makes an ingestion batch for one knowledge base, and plans it unless more items will follow.\n\nTakes up to 10,000 items; add more with BatchCreateIngestionBatchItems while `awaitMoreItems` is\ntrue. Returns 202 with the batch, and `Location` names it; wait for the plan with the SDKs'\n`batch.planned()`. Needs the ingestion create permission and read access to the knowledge base,\nas v2's ingestion route does. A batch that needs bytes uploaded also needs the files create\npermission to be started with StartIngestionBatch, which hands out the upload policy; a batch that\nneeds none runs without that call under `start: when_planned`. A `fetchUrl` item needs the files\ncreate permission when it is added, which the server checks, because the trait cannot follow an\nitem's member.\n\nEach item that removes a document (`remove`, or an overwrite) is checked by the server for the\nfiles delete permission, and each item that moves one, or adds a new version of one, for the files\nupdate permission, and the token's scope covers it too. An item that fails the check is marked\n`failed` with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts\nthrough StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked\nper item, not once on the call.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotencyHeader": "Idempotency-Key",
       "retrySafe": true,
       "input": [
@@ -6530,7 +6530,7 @@
             "min": 60,
             "max": 3600
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         }
       ],
       "output": [
@@ -6785,7 +6785,7 @@
       "stability": "beta",
       "title": "Get the upload policy",
       "documentation": "Renews a running batch's upload policy before it expires.\n\nReturns a new policy for the same key prefix while the batch is `running` and has items awaiting\nupload; anything else is refused with 409 `CONFLICT`. Each renewal also extends how long the\nbatch's new documents stay reserved. A renewed policy lasts the batch's `uploadWindowSeconds`, as the\nfirst did. The SDKs renew when less than 5 minutes, or half the policy's lifetime when that is\nshorter, are left.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotencyHeader": "Idempotency-Key",
       "retrySafe": true,
       "input": [
@@ -7044,7 +7044,7 @@
       "stability": "beta",
       "title": "Create a knowledge base",
       "documentation": "Creates a knowledge base; setting it up continues after the response.\n\nReturns 202 with the knowledge base in `creating`, and `Location` names it; documents can be added\nonce it is `ready`. Where its documents are stored is decided by Caitlyn and never exposed.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotencyHeader": "Idempotency-Key",
       "retrySafe": true,
       "input": [
@@ -7334,7 +7334,7 @@
       "stability": "beta",
       "title": "Reserve an upload",
       "documentation": "Reserves a short-lived slot for a file's bytes and returns a presigned URL bound to their\nchecksum.\n\nSend the bytes with `uploadMethod` to `uploadUrl`, with every header in `requiredHeaders`,\nbefore `expiresAt`; then pass the upload's `id` to the operation that uses it. Files can be at\nmost 2 GB. For an attachment, name the conversation in `purpose`: the conversation's attachment\nsettings are checked here, before the bytes travel. The SDKs' `core.uploads.send(file)` does all of\nthis, and their document and attachment helpers call it for you. Many files at once go through an\ningestion batch instead, which signs one upload policy for them all.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotencyHeader": "Idempotency-Key",
       "retrySafe": true,
       "input": [
@@ -7417,7 +7417,7 @@
             "type": "ref",
             "ref": "UploadPurpose"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "expiresInSeconds",
@@ -7432,7 +7432,7 @@
             "min": 60,
             "max": 3600
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         }
       ],
       "output": [
@@ -7734,7 +7734,7 @@
       "stability": "beta",
       "title": "Delete an agent",
       "documentation": "Deletes an agent, its draft and every version.\n\nConversations with the agent are kept. Caitlyn's built-in agents (`native`) are defined by the\nplatform and refused with 403 `PERMISSION_DENIED`. Deleting cannot be undone, and is audited.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "retrySafe": true,
       "input": [
@@ -7889,7 +7889,7 @@
       "stability": "beta",
       "title": "Delete a version",
       "documentation": "Deletes a named version that live does not point at and live history does not name.\n\nVersions serve as the record of what live was, so these are refused: `draft` and `live`, which\nevery agent keeps, with 400 `VERSION_NOT_DELETABLE`; the version live points at, with 409\n`VERSION_IN_USE` (point live at another version first); and any version a live history entry names,\nwith 409 `VERSION_IN_HISTORY`. A saved version that was never live can be deleted. Like every\nchange, it is audited.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "retrySafe": true,
       "input": [
@@ -8115,7 +8115,7 @@
       "stability": "beta",
       "title": "Delete a document",
       "documentation": "Deletes a document; removing it from search continues after the response.\n\nReturns 202 with the document in `deleting`; in the SDKs, `.wait()` on the result waits until it is\ngone. Repeating the call while the document is still `deleting` returns 202 again;\nonce it is gone, 404, as for any record that does not exist.\n\nA document still being processed (`pending` or `processing`) is deleted too: its processing stops,\nand it does not come back.\n\nNeeds the files delete permission, read access to the knowledge base and access to the\ndocument's folder.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "retrySafe": true,
       "input": [
@@ -8330,7 +8330,7 @@
       "stability": "beta",
       "title": "Delete a document version",
       "documentation": "Deletes one version of a document that is neither current nor processing.\n\nThe version, its passages and its renders are removed; its bytes are kept while another version\nor document has the same ones. The current version and a version still processing are refused with\n409 `CONFLICT`; to remove the current version, delete the document. Like every change, it is\naudited.\n\nA version's number is its place in upload order, so deleting by number needs the document's\nversions to be numbered already: until they are, a number is refused with 409\n`VERSIONS_NOT_NUMBERED`, because deleting would shift every later number; try again later.\n\nOnly a version number is accepted: `latest` and `current` are refused with 400\n`VALIDATION_FAILED`, because the version they name changes after each delete, so a retried\nrequest could delete a second version.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "retrySafe": true,
       "input": [
@@ -8555,7 +8555,7 @@
       "stability": "beta",
       "title": "Delete a field",
       "documentation": "Removes a metadata field, with every value documents hold for it and every lock on those values.\n\nDeleting cannot be undone. Agents and searches stop using the field at once.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "retrySafe": true,
       "input": [
@@ -8727,7 +8727,7 @@
       "stability": "beta",
       "title": "Delete a folder",
       "documentation": "Deletes a folder and everything in it; the work continues after the response.\n\nReturns 202 with the Operation that tracks it. A folder holding documents still being processed is\ndeleted too; their processing stops.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "retrySafe": true,
       "input": [
@@ -8951,7 +8951,7 @@
       "stability": "beta",
       "title": "Delete a knowledge base",
       "documentation": "Deletes a knowledge base and every document in it; the work continues after the response.\n\nReturns 202 with the Operation that tracks it. The knowledge base reads as `deleting` until it is\ngone, then 404. Deleting cannot be undone.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "retrySafe": true,
       "input": [
@@ -9141,7 +9141,7 @@
       "stability": "beta",
       "title": "Enable layout-aware search",
       "documentation": "Switches a knowledge base to layout-aware search; rebuilding its passages continues after the\nresponse.\n\nReturns 202 with the Operation that rebuilds the search vectors of every indexed document. Searches\ncarry on while it runs, and the knowledge base's watch reports it as a job, from the rebuild's own\nrecord. Read what it will cost first with EstimateLayoutAwareSearch. Calling it\nagain resumes a rebuild that failed; while a rebuild is running it is refused with 409 `CONFLICT`.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "retrySafe": false,
       "input": [
         {
@@ -9353,7 +9353,7 @@
       "stability": "beta",
       "title": "Estimate replacing the file",
       "documentation": "Estimates what replacing a document's file would take and cost, before anything is uploaded.\n\nTakes CreateDocumentVersion's arguments, with the file described in place of the upload.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "retrySafe": true,
       "input": [
@@ -9654,7 +9654,7 @@
       "stability": "beta",
       "title": "Estimate a fill-in",
       "documentation": "Estimates what filling in metadata fields would do, take and cost, without starting it.\n\nTakes the same arguments as FillInFields. `details` says how many passages would be read and how\nmany search vectors made again.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "retrySafe": true,
       "input": [
@@ -9929,7 +9929,7 @@
       "stability": "beta",
       "title": "Estimate adding documents",
       "documentation": "Estimates what adding documents would take and cost, before anything is uploaded.\n\nDescribe each file (its name, type and size, with any hints the client could read). The SDKs call\nthis for `kb.documents.create.estimate(file)` and `kb.ingestion.sync.estimate(…)`.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "retrySafe": true,
       "input": [
@@ -10212,7 +10212,7 @@
       "stability": "beta",
       "title": "Estimate layout-aware search",
       "documentation": "Estimates what switching a knowledge base to layout-aware search would rebuild, take and cost.\n\n`details.searchType` says how the knowledge base searches now.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -10468,7 +10468,7 @@
       "stability": "beta",
       "title": "Estimate reprocessing",
       "documentation": "Estimates what processing documents again would take and cost, and what it would improve.\n\nTakes the same arguments as ReprocessDocuments. `details` lists the improvements the newest\nprocessing brings.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "retrySafe": true,
       "input": [
@@ -10749,7 +10749,7 @@
       "stability": "beta",
       "title": "Fill in fields",
       "documentation": "Fills in metadata fields for the documents that still need them; the work continues after the\nresponse.\n\nFor each field named, every document with no value yet gets one, and the search index and vectors\nare brought up to date. Values someone set by hand are kept. Returns 202 with the job, which the\nknowledge base's watch follows; estimate it first with EstimateFillInFields. It is charged for: see\nthe estimate's `cost`, in the form the organisation sees it.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotencyHeader": "Idempotency-Key",
       "retrySafe": true,
       "input": [
@@ -10990,7 +10990,7 @@
       "stability": "beta",
       "title": "Get access",
       "documentation": "Gets who may use a knowledge base, or who may read a folder or a document in it.\n\nWithout `folder` or `document`, the knowledge base's role grants (`roles`). With `folder`, that\nfolder's `readers`; with `document`, that document's. `inheritedFrom` names the folder whose readers\napply when they are inherited. A folder or document the caller may not see is 404. The root\nfolder (`folder=/`, `kb.folders('/').access`) holds the readers every folder falls back to; its\nreaders are never inherited.\n\nFor a folder or document, the `readers` also come back on ListFolders, ListDocuments and\nGetDocument too, with `inheritedFrom`, under the files list and read permissions. What GetAccess\nadds is the access on its own, with the ETag that SetAccess's `If-Match` takes, and the root\nfolder's readers; reading it needs the files permissions list permission.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -11276,7 +11276,7 @@
       "stability": "beta",
       "title": "Get an agent",
       "documentation": "Gets one agent: its name, description, avatar and the version live points at.\n\nAn agent the caller may not see is 404, as one that does not exist is. Its configuration is in\nits versions: read them with GetAgentVersion.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -11473,7 +11473,7 @@
       "stability": "beta",
       "title": "Get a version",
       "documentation": "Gets one version of an agent, with its full configuration and its ETag.\n\n`version` is `draft`, `live` or the name of a saved or published version. Live is the version the\nagent's live pointer names, read as `live`; it is readable by everyone with access to the agent.\nThe draft and named versions are readable only by the people and groups on the agent's version\naccess grant, and anyone else gets 404. An agent with no live version, because none has been\npublished or chosen yet, answers `live` with 404 `NO_LIVE_VERSION`.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -11742,7 +11742,7 @@
       "stability": "beta",
       "title": "Who am I",
       "documentation": "Describes the caller: who the credential belongs to, what kind of credential it is, its scopes\nand its organisation.\n\nAny valid credential may call it, with no particular scope, so an integration can check its\ncredential before doing anything else. It only describes the credential that made the request;\nit never reads another person's or client's record.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [],
@@ -11971,7 +11971,7 @@
       "stability": "beta",
       "title": "Get a conversation",
       "documentation": "Gets a conversation: its agent and version, its title and whether it is answering.\n\nRead its messages with ListMessages, and follow it with WatchConversation. A conversation the\ncaller may not see is 404, as one that does not exist is.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -12151,7 +12151,7 @@
       "stability": "beta",
       "title": "Get a document",
       "documentation": "Gets one document in a knowledge base, with its status.\n\n`status` says where the current version is in its lifecycle; `indexed`, `partially_indexed` and\n`failed` are final. A document in a folder the caller may not see is 404, as one that does not\nexist is. `processing` says how far the work on it has got; follow it with the scope's `watch()`, or\n`wait()` until it is done.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -12402,7 +12402,7 @@
       "stability": "beta",
       "title": "Link to a document's bytes",
       "documentation": "Redirects to a short-lived address for a document's bytes, for links and command-line tools.\n\nAnswers 302, with `Location` the address, which works for 15 minutes and needs no credential, so\ntreat it as a secret. Without `version`, the current version's bytes. Use it as a link's target,\nor with `curl -L`. A browser script cannot read a redirect's address: it calls\nGetDocumentDownload, which answers with the address as JSON, as the SDKs' `doc.download()` does.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -12630,7 +12630,7 @@
       "stability": "beta",
       "title": "Download a document",
       "documentation": "Gets a short-lived address for a document's bytes, as JSON.\n\nAnswers 200 with `url`, which works for 15 minutes and needs no credential, so treat it as a\nsecret, and `expiresAt`. Without `version`, the current version's bytes. Unlike\nGetDocumentContent it never redirects, so a browser script can read the address. The SDKs'\n`doc.download()` calls it.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -12843,7 +12843,7 @@
       "stability": "beta",
       "title": "Get a document version",
       "documentation": "Gets one version of a document.\n\n`version` is a number, `current` (the version search uses) or `latest` (the newest, whatever its\nstate). A caller who may not add versions can read only the current version.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -13054,7 +13054,7 @@
       "stability": "beta",
       "title": "Get a field",
       "documentation": "Gets one metadata field, with how much work it still needs.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -13275,7 +13275,7 @@
       "stability": "beta",
       "title": "Get a live history entry",
       "documentation": "Gets one live history entry, with the configuration live had after the change.\n\nThe configuration is that of the entry's `version`, which never changes. Reading the entry (who\nchanged live, when, and to which version) needs agent read; its `configuration` needs what\nreading that version needs, so a caller without the permission to read versions, or without the\nagent's version access grant, gets the entry without it. It is also absent when that version was\ndeleted through an older API that does not protect versions named in live history.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -13483,7 +13483,7 @@
       "stability": "beta",
       "title": "Get an ingestion batch",
       "documentation": "Gets one ingestion batch, with its counts and ETag.\n\nIn the SDKs, `batch.planned()` waits until every item has an outcome, and `batch.wait()` until every\nitem has finished, both through the knowledge base's watch.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -13705,7 +13705,7 @@
       "stability": "beta",
       "title": "Get a batch item",
       "documentation": "Gets one item of an ingestion batch.\n\nReturns its outcome, its resolution and its status, and once it is done the document and version\nit made or changed.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -13930,7 +13930,7 @@
       "stability": "beta",
       "title": "Get a knowledge base",
       "documentation": "Gets one knowledge base, with its settings and ETag.\n\n`agentDescription` and `engine` are shown only to callers who may change the knowledge base. A\nknowledge base the caller may not see is 404, as one that does not exist is.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -14148,7 +14148,7 @@
       "stability": "beta",
       "title": "Get an operation",
       "documentation": "Gets one Operation: where its work is, how far it has got, and how it ended.\n\nThe caller needs the access it would need to read the Operation's target; anyone else gets 404.\nEveryday code waits through the scope the work is on (`doc.wait()`, `kb.wait()`) instead.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -14353,7 +14353,7 @@
       "stability": "beta",
       "title": "Get an upload",
       "documentation": "Gets an upload's status and when its upload URL expires.\n\nUse it to check that the bytes arrived before passing the upload's `id` to the operation that\nuses it. Only the person or client that reserved the upload can read it; anyone else gets 404.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -14525,7 +14525,7 @@
       "stability": "beta",
       "title": "List versions",
       "documentation": "Lists an agent's named versions in the order they were made, oldest first.\n\nEach entry says how the version was made, who made it, whether live points at it, and which\nmembers differ from the version it was made from. The draft and live are not entries: read them\nwith `draft` and `live`. Needs the agent's version access grant, as reading any version, `live`\nincluded, does.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -14776,7 +14776,7 @@
       "stability": "beta",
       "title": "List agents",
       "documentation": "Lists the agents the caller may see, one page at a time.\n\nEach agent says which version live points at; read a version's configuration with\nGetAgentVersion.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -14985,7 +14985,7 @@
       "stability": "beta",
       "title": "List an agent's conversations",
       "documentation": "Lists the caller's conversations with one agent, newest first, across its versions.\n\nEach says which version it is with. Only the caller's own conversations, and those shared with\nit, are listed.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -15217,7 +15217,7 @@
       "stability": "beta",
       "title": "List a document's versions",
       "documentation": "Lists a document's versions, newest first.\n\nEach version says whether it is the current one (the one search uses) and whether it is the\nlatest. A caller who may not add versions sees only the current version.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -15475,7 +15475,7 @@
       "stability": "beta",
       "title": "List documents",
       "documentation": "Lists the documents in a knowledge base, one page at a time.\n\nDocuments are returned in a stable order that does not change between pages. Filters combine\nwith AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. With `filter[folder][eq]`,\nthe documents directly in that folder; with `deep` as well, every document below it. `q` keeps\ndocuments whose name contains the text. The list can be sorted by `folder`, `name`, `updatedAt`\n(when the document last changed) and `byteSize`. With no `sort`, documents come by folder, then\nname.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -15900,7 +15900,7 @@
       "stability": "beta",
       "title": "List fields",
       "documentation": "Lists a knowledge base's metadata fields, each with how much work it still needs.\n\n`needsWork` says how many documents still need a value, an index write or new search vectors for\nthe field; `fillIn` does that work.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -16145,7 +16145,7 @@
       "stability": "beta",
       "title": "List folders",
       "documentation": "Lists the folders in a knowledge base, one page at a time.\n\nFolders come back in a stable order that does not change between pages; the server decides the\ndefault order, which is not yet recorded here. With `filter[parent][eq]`, the folders directly in that folder; with `deep` as well, every folder\nbelow it. `q` keeps folders whose name contains the text. List the documents in a folder with\nListDocuments.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -16421,7 +16421,7 @@
       "stability": "beta",
       "title": "List guardrails",
       "documentation": "Lists the guardrails an agent version can screen attached documents with.\n\nThe list holds the platform default and the guardrails available to the workspace. An agent's\n`contentSafety.guardrail` names one of these by its `id`, or says `default` or `none`. Guardrails\nare created and changed outside Caitlyn.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -16622,7 +16622,7 @@
       "stability": "beta",
       "title": "List live history",
       "documentation": "Lists an agent's live history, newest first: every time live moved to another version.\n\nEach entry names the version live pointed at after the change and before it, what kind of change\nit was, who made it and when, and which members differ between the two versions. Read the\nconfiguration live had with GetHistoryEntry. Entries are never edited or deleted.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -16858,7 +16858,7 @@
       "stability": "beta",
       "title": "List a batch's items",
       "documentation": "Lists a batch's items, in the order they were added.\n\nFilter by action, outcome, status or resolution: for example `filter[status][eq]=awaiting_upload`\nfor the items to upload after Start, or `filter[resolution][eq]=unresolved` for those that need a\ndecision.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -17204,7 +17204,7 @@
       "stability": "beta",
       "title": "List ingestion batches",
       "documentation": "Lists one knowledge base's ingestion batches, newest first.\n\nNarrow the list by status.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -17475,7 +17475,7 @@
       "stability": "beta",
       "title": "List knowledge bases",
       "documentation": "Lists the knowledge bases the caller may see, in every state, in a stable order that does not\nchange between pages. The server decides the default order; it is not yet recorded here.\n\nKnowledge bases still being created, being moved, that failed or that are being deleted are\nlisted too, each with its `status`. Document operations on a knowledge base that is not `ready`\nare refused with 409 `CONFLICT`.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -17703,7 +17703,7 @@
       "stability": "beta",
       "title": "List memory stores",
       "documentation": "Lists the memory stores an agent can remember people in.\n\nAn agent's `memory.memoryStoreId` names one of these.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -17898,7 +17898,7 @@
       "stability": "beta",
       "title": "List messages",
       "documentation": "Lists a conversation's messages, oldest first: the caller's and the agent's.\n\nAn answer still being written is not listed until it ends; follow it with WatchConversation.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -18136,7 +18136,7 @@
       "stability": "beta",
       "title": "List models",
       "documentation": "Lists the models an agent can use, with the settings each one accepts.\n\nEach model says whether it reasons, which reasoning effort levels it offers, which sampling\nsettings it accepts and how many tokens it can write, so an editor shows only the settings that\napply. An agent configuration that names a model or setting this list does not offer is refused\nwith 400 `VALIDATION_FAILED`.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -18344,7 +18344,7 @@
       "stability": "beta",
       "title": "List operations",
       "documentation": "Lists the Operations on one knowledge base, or one thing in it, newest first.\n\nThe caller needs read access to the knowledge base. Narrow the list with the target, the kind and\nthe status. Rows are filtered to the Operations a direct GetOperation would return for this\ncaller: an Operation whose target the caller could not read is left out, not shown with its\ndetails removed.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -18658,7 +18658,7 @@
       "stability": "beta",
       "title": "List tools",
       "documentation": "Lists Caitlyn's own tools, which an agent's phases can use.\n\nA phase names one of these tools with `tools[].name`. Tools on an MCP server are not in this list.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -18856,7 +18856,7 @@
       "stability": "beta",
       "title": "List voices",
       "documentation": "Lists the cloud voices an agent can speak its answers in.\n\nAn agent's `voice.voiceId` names one of these when `voice.provider` is `cloud`.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -19059,7 +19059,7 @@
       "stability": "beta",
       "title": "Publish a version",
       "documentation": "Publishes a version: live then points at it.\n\nCalled on `draft`, it first keeps the draft as a new version named `name`, then points live at it,\nso live always names a version. The publish permission alone is enough for both: publishing the\ndraft needs no permission to create versions, which SaveDraftVersion needs to keep a version\nwithout making it live. Called on a named version, it points live at that version, which\nrolls back when live pointed at it before: nothing is copied, and the history entry's `kind` is\n`rollback`. Versions never change once made, so live answers exactly as the version it names.\n\nTwo publishes cannot silently overwrite each other when the caller says what it expects live to\nbe: `expectedLive` names the version (or `none` before the first publish), or `If-Match` carries\nlive's ETag. Either, when stale, is refused with 412; with neither, the publish applies to live as\nit is. Returns live, the version published, and the history entry the publish wrote.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotencyHeader": "Idempotency-Key",
       "ifMatch": {
         "member": "ifMatch",
@@ -19479,7 +19479,7 @@
       "stability": "beta",
       "title": "Set access",
       "documentation": "Sets who may use a knowledge base, or who may read a folder or a document in it.\n\n`If-Match` is optional. Without it the write is unconditional and the last writer wins, which is\nsafe because the caller sends the whole list. With it, access that changed since is refused with\n412.\n\nWithout `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or\n`document`, send `readers`; `kind: inherit` makes it follow its folder again. The knowledge base's\nrole grants are set only without a target, under the knowledge base's own permission, as v2's\nknowledge base permissions route sets them, so `roles` with `folder` or `document`, `readers`\nwithout one, and both `folder` and `document` are refused with 400 `VALIDATION_FAILED`. The root folder\n(`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there\nwith 400 `VALIDATION_FAILED`. Applying readers to\nthe passages a folder or document holds continues after the response; the returned access says\nwhat is set, and the knowledge base's watch shows the work.\n\nSetting `roles` is refused in two cases, as in v2. A caller may give a role only a grant it\ncould make itself: any other is refused with 403 `PERMISSION_DENIED`. And a grant that is not\nsafe for guests, given to a role that guests or anonymous visitors use, is refused with 422\n`RBAC_NOT_GUEST_SAFE`. Only the grants being added are judged, so a grant the role already holds\nnever blocks an unrelated change. Both checks are made by the server on the roles sent.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "ifMatch": {
         "member": "ifMatch",
@@ -19846,7 +19846,7 @@
       "stability": "beta",
       "title": "Replace the draft",
       "documentation": "Replaces the draft with a whole configuration; `If-Match` is optional.\n\nThe draft becomes exactly the configuration sent, with defaults for every absent member: this is\nhow configuration kept as code is applied. Every reference is checked as UpdateDraftVersion checks\nit, and a configuration over 256 KiB is refused with 400 `CONFIGURATION_TOO_LARGE`. Returns the\ndraft and its new ETag.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "ifMatch": {
         "member": "ifMatch",
@@ -20294,7 +20294,7 @@
       "stability": "beta",
       "title": "Reprocess documents",
       "documentation": "Processes documents again the newest way; the work continues after the response.\n\nGive `outOfDate: true` for every document processed in an older way than the newest, or\n`documentIds` for particular documents. Each document's current version keeps serving until its\nnew processing is indexed. Returns 202 with the job, which the knowledge base's watch follows;\nestimate it first with EstimateReprocessDocuments. It is charged for: see the estimate's `cost`, in\nthe form the organisation sees it.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotencyHeader": "Idempotency-Key",
       "retrySafe": true,
       "input": [
@@ -20539,7 +20539,7 @@
       "stability": "beta",
       "title": "Reset the draft",
       "documentation": "Resets the draft to another version; `If-Match` is required.\n\nThe draft's configuration becomes the configuration of `from`, which is a version name or `live`.\nNothing else changes: `from` is kept as it is, and live is untouched. Returns the draft and its\nnew ETag.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotencyHeader": "Idempotency-Key",
       "ifMatch": {
         "member": "ifMatch",
@@ -20821,7 +20821,7 @@
       "stability": "beta",
       "title": "Retry a document",
       "documentation": "Processes a failed document again; ingestion continues after the response.\n\nReturns 202 with the document and the Operation that tracks ingestion. A document that is not\n`failed` is refused with 409 `CONFLICT`.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "retrySafe": false,
       "input": [
         {
@@ -21067,7 +21067,7 @@
       "stability": "beta",
       "title": "Save the draft as a version",
       "documentation": "Saves the draft as a new named version, without changing live.\n\nLive does not change, and the draft carries on as before. Versions never change once made. Send\nthe draft's ETag as `If-Match` to save only the draft you tested; without it, the draft is saved as\nit is now. Returns the new version, and `Location` names it.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotencyHeader": "Idempotency-Key",
       "ifMatch": {
         "member": "ifMatch",
@@ -21392,7 +21392,7 @@
       "stability": "beta",
       "title": "Send a message",
       "documentation": "Sends a message and streams the answer as server-sent events.\n\nThe message is sent when the call is made, whether or not anyone reads the stream. The stream ends\nwith exactly one `message.completed` or `message.failed`. If the connection drops, the SDK\nre-attaches with `WatchConversation` and `Last-Event-ID`, so no event is lost or repeated. Not retried automatically: a send that fails before the stream starts is\nreported to the caller.\n\nA message may carry documents in `attachments`, each named by an upload reserved for this\nconversation. The SDKs also take files there: each file is uploaded for the conversation first,\nand the message is sent once every upload has arrived.\n\nOnly a participant may send: whoever started the conversation, or someone it is shared with for\nwriting (the update grant), who may still see the conversation's agent and holds that agent's\nversion access grant (the conversation's version may be `live`). A caller without any of\nthese gets 404, so revoking someone's access to the agent stops them chatting in conversations\nthey already started.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "retrySafe": false,
       "input": [
         {
@@ -21718,7 +21718,7 @@
       "stability": "beta",
       "title": "Start an ingestion batch",
       "documentation": "Starts a planned ingestion batch, and returns the upload policy for the items that need bytes.\n\n`If-Match` is optional. Without it, the batch starts as it stands; with it, a batch that changed\nsince that ETag is refused with 412. A stale plan is planned again first. Each item's write is then checked and\nclaimed: a new document is reserved at its path, and an existing one is protected by its own\nversion, so a document that changed since the plan becomes a `changed_since_plan` conflict. An item\nthe caller may not write is marked `failed` with `PERMISSION_DENIED`, and the rest carry on; the\ncall still answers 202. Refused with 409\n`INGESTION_BATCH_UNRESOLVED` while any item is `unresolved`. Returns 202 with the batch and one\nupload policy: list the items to upload with `filter[status][eq]=awaiting_upload`, upload each to\nits `objectKey`, then report them with CompleteIngestionBatchUploads.\n\nEach item that removes a document (`remove`, or an overwrite) is checked by the server for the\nfiles delete permission, and each item that moves one, or adds a new version of one, for the files\nupdate permission, and the token's scope covers it too. An item that fails the check is marked\n`failed` with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts\nthrough StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked\nper item, not once on the call.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "ifMatch": {
         "member": "ifMatch",
         "required": false,
@@ -22008,7 +22008,7 @@
       "stability": "beta",
       "title": "Update an agent",
       "documentation": "Changes an agent's name, description or avatar; `If-Match` is required.\n\nThese belong to the agent, not to its versions, so the change shows at once everywhere and makes\nno new version. Members that are absent stay unchanged; name `description` or `avatar` in `clear`\nto remove it.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "ifMatch": {
         "member": "ifMatch",
@@ -22296,7 +22296,7 @@
       "stability": "beta",
       "title": "Update a document's details",
       "documentation": "Changes a document's name, folder, citation address, key or metadata; `If-Match` is required.\n\nMembers that are absent stay unchanged. `metadata` and `extraMetadata` merge key by key; to remove\none key, name it in `clear` as `metadata.<key>` or `extraMetadata.<key>`, which also lets\nprocessing fill a defined field again. A change that needs processing (a new name or folder, or\nmetadata that search reads) is applied after the response, by the Operation returned. Returns the\ndocument and its new ETag.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "ifMatch": {
         "member": "ifMatch",
@@ -22709,7 +22709,7 @@
       "stability": "beta",
       "title": "Update the draft",
       "documentation": "Edits the draft with a partial update of its configuration.\n\nMembers that are absent stay unchanged, nested objects are merged and lists are replaced whole,\neach item taken as sent with defaults for its absent members. To return a member to its default,\nname it in `clear`; naming a member that is not clearable, or one the same request also sets, is\nrefused with 400 `VALIDATION_FAILED`. A draft whose configuration would pass 256 KiB is refused\nwith 400 `CONFIGURATION_TOO_LARGE`. Returns the whole draft and its new ETag.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "ifMatch": {
         "member": "ifMatch",
@@ -23189,7 +23189,7 @@
       "stability": "beta",
       "title": "Update a field",
       "documentation": "Changes a metadata field's settings.\n\nMembers that are absent stay unchanged. Saving never fills values in again by itself: run a\nfill-in for that. The change is made to the field alone, so it never undoes a change someone made\nto another field at the same time.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "ifMatch": {
         "member": "ifMatch",
@@ -23550,7 +23550,7 @@
       "stability": "beta",
       "title": "Rename or move a folder",
       "documentation": "Renames or moves a folder, with everything in it; the work continues after the response.\n\n`If-Match` is required. Give `name` to rename it, `parent` to move it, or both. Returns 202 with the\nOperation that tracks the change. Documents keep their identifiers, versions and history. A path\nthat is taken is refused with 409 `ALREADY_EXISTS`.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "ifMatch": {
         "member": "ifMatch",
@@ -23857,7 +23857,7 @@
       "stability": "beta",
       "title": "Change a batch's rules",
       "documentation": "Changes an ingestion batch's rules, or ends its `draft`; `If-Match` is required.\n\n`policy` can change while the batch is `draft` or `planned`, and applies to every item not resolved\nby hand. A batch past `planned` is refused with 409 `CONFLICT`. The last items, which end the\n`draft`, are added with BatchCreateIngestionBatchItems and `last: true`.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "ifMatch": {
         "member": "ifMatch",
@@ -24141,7 +24141,7 @@
       "stability": "beta",
       "title": "Resolve a batch item",
       "documentation": "Resolves one item of a planned batch by hand.\n\nOnly `resolution` can change, and only while the batch is `planned`; anything else is refused with\n409 `CONFLICT`. A resolution that does not fit the outcome (for example `move` for a `new` item) is\nrefused with 400 `VALIDATION_FAILED`.\n\nResolving to `remove`, an overwrite or `move` does not check the permission now: each item that\nremoves a document (`remove`, or an overwrite) is checked by the server for the files delete\npermission, and each item that moves one, or adds a new version of one, for the files update\npermission, and the token's scope covers it too. An item that fails the check is marked `failed`\nwith `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts through\nStartIngestionBatch or by itself under `start: when_planned`, so the permission is checked per\nitem, not once on the call.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "ifMatch": {
         "member": "ifMatch",
@@ -24432,7 +24432,7 @@
       "stability": "beta",
       "title": "Update a knowledge base",
       "documentation": "Changes a knowledge base's settings; `If-Match` is required.\n\nMembers that are absent stay unchanged, nested objects are merged and lists are replaced whole.\nName a member in `clear` to return it to its default. Metadata fields are changed one at a\ntime, with the field operations. Returns the knowledge base and its new ETag.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "idempotent": true,
       "ifMatch": {
         "member": "ifMatch",
@@ -24735,7 +24735,7 @@
       "stability": "beta",
       "title": "Watch a conversation",
       "documentation": "Watches a conversation: the answer being written, if any, then every answer after it, until the\ncaller closes the stream. An answer whose stream ended moments before the watch opened may still\nbe delivered, from its `message.started` event; match answers on your own message ID.\n\nOpened without `Last-Event-ID` while an answer is being written, the watch replays that answer\nfrom its start, so it shows the answer so far. An answer too long for the replay buffer cannot be\nreplayed: the watch sends `stream.reset` instead, then the answers after it. Read the turn with\nListMessages once it ends.\n\nWith `Last-Event-ID`, it resumes from the event after that one, so a dropped connection loses\nnothing; the SDKs use this to re-attach to `SendMessage`, and to reconnect a dropped watch. When\nthe answer that event belongs to has ended, or can no longer be replayed, the watch sends\n`stream.reset` with a new cursor instead, then carries on. Each answer ends with\n`message.completed` or `message.failed`, which end that answer but not the stream, so\nhelpers watch for the event they need and then close.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -24938,7 +24938,7 @@
       "stability": "beta",
       "title": "Watch a knowledge base",
       "documentation": "Watches a knowledge base, or one document, folder or batch in it: a snapshot first, then each\nchange.\n\nEvery connection starts with `snapshot`: the thing watched as it stands, its running and recently\nfinished jobs, and the progress of each document being processed. Then one event per change. A\nreconnect needs no cursor, because it starts with a snapshot again; nothing is replayed and\nnothing is lost. The SDKs build every scope's `watch()` and `wait()` on this: `wait()` returns once\nno job on the thing is running, or raises the error of the job that failed. Events name a document\nonly to callers who may read it. The server ends the stream after at most an hour, and the SDKs\nreconnect.\n\nWhat the caller needs depends on what it watches. The whole knowledge base needs the knowledge\nbase read permission and the files list permission, because the snapshot returns the knowledge\nbase and the documents' progress. One document or folder needs the files list permission. One\nbatch needs the ingestion list permission, because the snapshot returns the batch.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -25205,7 +25205,7 @@
       "stability": "beta",
       "title": "Watch an operation",
       "documentation": "Watches an Operation: the whole Operation each time it changes, ending when it is final.\n\nThe stream sends `operation.updated` on each change and ends with `operation.finished`. With\n`Last-Event-ID`, a dropped connection resumes without losing a change.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -25412,7 +25412,7 @@
       "stability": "beta",
       "title": "Watch the workspace",
       "documentation": "Streams the workspace's events the caller asks for, from a cursor or from now.\n\nA stream listens to what it names and nothing else: give `type`, `conversationId`, or both.\nEvery event is about a subject (a conversation, for now), and the caller receives it only when\nit may read that subject, decided per event as a read of the subject would be: the same\npermission and, for a token, the same scope. An answer, a tool call or an input request needs\nwhat `WatchConversation` needs; a token whose scopes leave out conversation transcripts receives\nnone of them.\n\nEach event's `id` is a cursor. Send it back as `after` (or `Last-Event-ID` on a reconnect) to\ncarry on from it without missing or repeating an event; without either, the stream starts now.\nA cursor the stream cannot carry on from is answered with `stream.reset` and a new cursor, not\nan error. To wait for something your own call will cause, open the stream first, then make the\ncall.\n\nCatching up after a cursor covers activity through the v3 API. A conversation event comes\nwith its content, in the same structures as the conversation's own stream.",
-      "since": "5.144.0",
+      "since": "5.149.0",
       "readonly": true,
       "retrySafe": true,
       "input": [
@@ -27869,7 +27869,7 @@
           "range": {
             "min": 1
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "versionCount",
@@ -27882,7 +27882,7 @@
           "range": {
             "min": 0
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "latestVersion",
@@ -27893,7 +27893,7 @@
             "type": "ref",
             "ref": "LatestVersion"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "superseded",
@@ -27903,7 +27903,7 @@
           "type": {
             "type": "boolean"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "sourceUrl",
@@ -27918,7 +27918,7 @@
             "max": 2048
           },
           "pattern": "^https://[^ ]+$",
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "externalId",
@@ -27932,7 +27932,7 @@
             "min": 1,
             "max": 128
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "metadata",
@@ -27948,7 +27948,7 @@
           "length": {
             "max": 100
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "extraMetadata",
@@ -27964,7 +27964,7 @@
           "length": {
             "max": 50
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "readers",
@@ -27975,7 +27975,7 @@
             "type": "ref",
             "ref": "Readers"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "inheritedFrom",
@@ -27990,7 +27990,7 @@
             "max": 1024
           },
           "pattern": "^/([^/]+/)*$",
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "outOfDate",
@@ -28000,7 +28000,7 @@
           "type": {
             "type": "boolean"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "pageCount",
@@ -28013,7 +28013,7 @@
           "range": {
             "min": 0
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "durationSeconds",
@@ -28026,7 +28026,7 @@
           "range": {
             "min": 0
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "processing",
@@ -28037,7 +28037,7 @@
             "type": "ref",
             "ref": "DocumentProcessing"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "createdAt",
@@ -28084,7 +28084,7 @@
             "type": "ref",
             "ref": "DocumentFailure"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "etag",
@@ -28160,7 +28160,7 @@
           "range": {
             "min": 0
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         }
       ]
     },
@@ -29746,7 +29746,7 @@
             "min": 0,
             "max": 100
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "eta",
@@ -29757,7 +29757,7 @@
             "type": "ref",
             "ref": "Eta"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "planExpiresAt",
@@ -29776,7 +29776,7 @@
           "type": {
             "type": "timestamp"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "createdBy",
@@ -29835,7 +29835,7 @@
             "type": "ref",
             "ref": "IngestionBatchFailure"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "uploadWindowSeconds",
@@ -29849,7 +29849,7 @@
             "min": 60,
             "max": 3600
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "etag",
@@ -30812,7 +30812,7 @@
             "type": "ref",
             "ref": "OperationTarget"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "progress",
@@ -30823,7 +30823,7 @@
             "type": "ref",
             "ref": "OperationProgress"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "percent",
@@ -30837,7 +30837,7 @@
             "min": 0,
             "max": 100
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "eta",
@@ -30848,7 +30848,7 @@
             "type": "ref",
             "ref": "Eta"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "costSoFar",
@@ -30859,7 +30859,7 @@
             "type": "ref",
             "ref": "Cost"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "createdAt",
@@ -30879,7 +30879,7 @@
           "type": {
             "type": "timestamp"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "updatedAt",
@@ -30889,7 +30889,7 @@
           "type": {
             "type": "timestamp"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "endedAt",
@@ -30899,7 +30899,7 @@
           "type": {
             "type": "timestamp"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "createdBy",
@@ -30910,7 +30910,7 @@
             "type": "ref",
             "ref": "Actor"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "error",
@@ -30921,7 +30921,7 @@
             "type": "ref",
             "ref": "OperationError"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "partialFailures",
@@ -30938,7 +30938,7 @@
           "length": {
             "max": 100
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         }
       ]
     },
@@ -32981,7 +32981,7 @@
             "type": "ref",
             "ref": "OperationTarget"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "progress",
@@ -32992,7 +32992,7 @@
             "type": "ref",
             "ref": "OperationProgress"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "percent",
@@ -33006,7 +33006,7 @@
             "min": 0,
             "max": 100
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "eta",
@@ -33017,7 +33017,7 @@
             "type": "ref",
             "ref": "Eta"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "costSoFar",
@@ -33028,7 +33028,7 @@
             "type": "ref",
             "ref": "Cost"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "createdAt",
@@ -33048,7 +33048,7 @@
           "type": {
             "type": "timestamp"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "updatedAt",
@@ -33058,7 +33058,7 @@
           "type": {
             "type": "timestamp"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "endedAt",
@@ -33068,7 +33068,7 @@
           "type": {
             "type": "timestamp"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "createdBy",
@@ -33079,7 +33079,7 @@
             "type": "ref",
             "ref": "Actor"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "error",
@@ -33090,7 +33090,7 @@
             "type": "ref",
             "ref": "OperationError"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "partialFailures",
@@ -33107,7 +33107,7 @@
           "length": {
             "max": 100
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         }
       ]
     },
@@ -35460,7 +35460,7 @@
           "type": {
             "type": "boolean"
           },
-          "since": "5.144.0"
+          "since": "5.149.0"
         },
         {
           "name": "conversationId",

@@ -37,7 +37,7 @@ func (s *OperationScope) ID() string { return s.operationID }
 // The caller needs the access it would need to read the Operation's target; anyone else gets 404.
 // Everyday code waits through the scope the work is on (`doc.wait()`, `kb.wait()`) instead.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *OperationScope) Get(ctx context.Context, opts ...CallOption) (*Operation, error) {
 	p := &getOperationParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -58,7 +58,7 @@ func (s *OperationScope) Get(ctx context.Context, opts ...CallOption) (*Operatio
 // `files.update` for a new version or a retry) and the document's readers. A caller without it
 // gets 404, as for an Operation it may not see.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *OperationScope) Cancel(ctx context.Context, opts ...CallOption) (*Operation, error) {
 	p := &cancelOperationParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -75,7 +75,7 @@ func (s *OperationScope) Cancel(ctx context.Context, opts ...CallOption) (*Opera
 // request is returned at once; errors during the stream (an error event, a connection that could not
 // be resumed, cancellation) end Events with that error.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *OperationScope) Watch(ctx context.Context, in *WatchOperationInput, opts ...CallOption) (*OperationEventStream, error) {
 	p := &watchOperationParams{}
 	if in != nil {
@@ -95,7 +95,7 @@ type cancelOperationParams struct {
 var opCancelOperation = &core.Operation{
 	Name:      "CancelOperation",
 	Method:    "POST",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -142,7 +142,7 @@ type getOperationParams struct {
 var opGetOperation = &core.Operation{
 	Name:      "GetOperation",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -198,7 +198,7 @@ type watchOperationParams struct {
 var opWatchOperation = &core.Operation{
 	Name:      "WatchOperation",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	SSE:       true,
 	Retryable: []int{503, 429},

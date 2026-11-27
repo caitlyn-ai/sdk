@@ -38,7 +38,7 @@ func newLiveScope(c *Client, agentID string) *LiveScope {
 // access grant, and anyone else gets 404. An agent with no live version, because none has been
 // published or chosen yet, answers `live` with 404 `NO_LIVE_VERSION`.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *LiveScope) Get(ctx context.Context, opts ...CallOption) (*AgentVersion, error) {
 	p := &getAgentVersionParams{}
 	p.AgentID = s.agentID
@@ -53,7 +53,7 @@ func (s *LiveScope) Get(ctx context.Context, opts ...CallOption) (*AgentVersion,
 // compared by their items' keys, so a path reads `workflow.phases[intake].transitions`. Both versions
 // need the same access as reading them.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *LiveScope) Compare(ctx context.Context, in *CompareAgentVersionsInput, opts ...CallOption) (*CompareAgentVersionsResult, error) {
 	p := &compareAgentVersionsParams{}
 	if in != nil {

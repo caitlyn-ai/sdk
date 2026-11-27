@@ -44,7 +44,7 @@ func newEvents(c *Client) *Events {
 // request is returned at once; errors during the stream (an error event, a connection that could not
 // be resumed, cancellation) end Events with that error.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *Events) Watch(ctx context.Context, in *WatchWorkspaceEventsInput, opts ...CallOption) (*WorkspaceEventStream, error) {
 	p := &watchWorkspaceEventsParams{}
 	if in != nil {
@@ -84,7 +84,7 @@ type watchWorkspaceEventsParams struct {
 var opWatchWorkspaceEvents = &core.Operation{
 	Name:      "WatchWorkspaceEvents",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	SSE:       true,
 	Retryable: []int{503, 429},

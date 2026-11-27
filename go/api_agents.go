@@ -33,7 +33,7 @@ func newAgents(c *Client) *Agents {
 // It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
 // one.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *Agents) List(ctx context.Context, in *ListAgentsInput, opts ...CallOption) iter.Seq2[Agent, error] {
 	return core.Items(s.ListPages(ctx, in, opts...), func(p *ListAgentsPage) []Agent { return p.Items })
 }
@@ -62,7 +62,7 @@ func (s *Agents) ListPage(ctx context.Context, in *ListAgentsInput, opts ...Call
 //
 // It returns the new agent's scope, with the response as Result.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *Agents) Create(ctx context.Context, in *CreateAgentInput, opts ...CallOption) (*CreatedAgent, error) {
 	p := &createAgentParams{}
 	if in != nil {
@@ -115,7 +115,7 @@ type createAgentParams struct {
 var opCreateAgent = &core.Operation{
 	Name:              "CreateAgent",
 	Method:            "POST",
-	Since:             "5.144.0",
+	Since:             "5.149.0",
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},
@@ -231,7 +231,7 @@ type listAgentsParams struct {
 var opListAgents = &core.Operation{
 	Name:      "ListAgents",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{

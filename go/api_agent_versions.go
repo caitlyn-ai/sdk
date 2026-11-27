@@ -34,7 +34,7 @@ func newAgentVersions(c *Client, agentID string) *AgentVersions {
 // It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
 // one.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *AgentVersions) List(ctx context.Context, in *ListAgentVersionsInput, opts ...CallOption) iter.Seq2[AgentVersion, error] {
 	return core.Items(s.ListPages(ctx, in, opts...), func(p *ListAgentVersionsPage) []AgentVersion { return p.Items })
 }
@@ -77,7 +77,7 @@ type listAgentVersionsParams struct {
 var opListAgentVersions = &core.Operation{
 	Name:      "ListAgentVersions",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{

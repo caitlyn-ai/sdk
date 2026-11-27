@@ -30,7 +30,7 @@ func newMessages(c *Client, conversationID string) *Messages {
 // It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
 // one.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *Messages) List(ctx context.Context, in *ListMessagesInput, opts ...CallOption) iter.Seq2[Message, error] {
 	return core.Items(s.ListPages(ctx, in, opts...), func(p *ListMessagesPage) []Message { return p.Items })
 }
@@ -73,7 +73,7 @@ type listMessagesParams struct {
 var opListMessages = &core.Operation{
 	Name:      "ListMessages",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{

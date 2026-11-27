@@ -47,7 +47,7 @@ func (s *FolderScope) Path() string { return s.folderPath }
 // with an input error before anything is sent. WithIfMatch("*") (any version) is sent only when you
 // pass it yourself: no helper fills it in.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *FolderScope) Update(ctx context.Context, in *UpdateFolderInput, opts ...CallOption) (*UpdateFolderStarted, error) {
 	p := &updateFolderParams{}
 	if in != nil {
@@ -94,7 +94,7 @@ func (r *UpdateFolderStarted) Wait(ctx context.Context, opts ...WaitOption) (*Fo
 // It returns the response, as Result, with Wait, which follows the work the call started until the
 // thing is gone.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *FolderScope) Delete(ctx context.Context, opts ...CallOption) (*DeleteFolderStarted, error) {
 	p := &deleteFolderParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -167,7 +167,7 @@ type deleteFolderParams struct {
 var opDeleteFolder = &core.Operation{
 	Name:      "DeleteFolder",
 	Method:    "DELETE",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -228,7 +228,7 @@ type updateFolderParams struct {
 var opUpdateFolder = &core.Operation{
 	Name:            "UpdateFolder",
 	Method:          "PATCH",
-	Since:           "5.144.0",
+	Since:           "5.149.0",
 	RetrySafe:       true,
 	IfMatchRequired: true,
 	Retryable:       []int{503, 429},

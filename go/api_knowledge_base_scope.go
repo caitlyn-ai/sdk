@@ -64,7 +64,7 @@ func (s *KnowledgeBaseScope) Folder(folderPath string) *FolderScope {
 // `agentDescription` and `engine` are shown only to callers who may change the knowledge base. A
 // knowledge base the caller may not see is 404, as one that does not exist is.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *KnowledgeBaseScope) Get(ctx context.Context, opts ...CallOption) (*KnowledgeBase, error) {
 	p := &getKnowledgeBaseParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -81,7 +81,7 @@ func (s *KnowledgeBaseScope) Get(ctx context.Context, opts ...CallOption) (*Know
 // with an input error before anything is sent. WithIfMatch("*") (any version) is sent only when you
 // pass it yourself: no helper fills it in.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *KnowledgeBaseScope) Update(ctx context.Context, in *UpdateKnowledgeBaseInput, opts ...CallOption) (*KnowledgeBase, error) {
 	p := &updateKnowledgeBaseParams{}
 	if in != nil {
@@ -104,7 +104,7 @@ func (s *KnowledgeBaseScope) Update(ctx context.Context, in *UpdateKnowledgeBase
 // It returns the response, as Result, with Wait, which follows the work the call started until the
 // thing is gone.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *KnowledgeBaseScope) Delete(ctx context.Context, opts ...CallOption) (*DeleteKnowledgeBaseStarted, error) {
 	p := &deleteKnowledgeBaseParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -159,7 +159,7 @@ func (r *DeleteKnowledgeBaseStarted) Wait(ctx context.Context, opts ...WaitOptio
 // request is returned at once; errors during the stream (an error event, a connection that could not
 // be resumed, cancellation) end Events with that error.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *KnowledgeBaseScope) Watch(ctx context.Context, opts ...CallOption) (*KnowledgeBaseEventStream, error) {
 	p := &watchKnowledgeBaseParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -192,7 +192,7 @@ type deleteKnowledgeBaseParams struct {
 var opDeleteKnowledgeBase = &core.Operation{
 	Name:      "DeleteKnowledgeBase",
 	Method:    "DELETE",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -238,7 +238,7 @@ type getKnowledgeBaseParams struct {
 var opGetKnowledgeBase = &core.Operation{
 	Name:      "GetKnowledgeBase",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -307,7 +307,7 @@ type updateKnowledgeBaseParams struct {
 var opUpdateKnowledgeBase = &core.Operation{
 	Name:            "UpdateKnowledgeBase",
 	Method:          "PATCH",
-	Since:           "5.144.0",
+	Since:           "5.149.0",
 	RetrySafe:       true,
 	IfMatchRequired: true,
 	Retryable:       []int{503, 429},
@@ -366,7 +366,7 @@ type watchKnowledgeBaseParams struct {
 var opWatchKnowledgeBase = &core.Operation{
 	Name:      "WatchKnowledgeBase",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	SSE:       true,
 	Retryable: []int{503, 429},
