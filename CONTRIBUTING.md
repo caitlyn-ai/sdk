@@ -36,8 +36,8 @@ make generate
    `build/model/model.json`, without the app's lint-rule metadata (those rules run in the app's model build)
    and with any `@since("next")` stamped as the lock's `stampNext`. Only a model built from a branch of the app
    (pre-release, as v3 is now) has `"next"`; one built from the app's `main` has every `@since` as a released
-   version. While it has `"next"`, the docs say "Not available yet: arrives in Caitlyn <stampNext>" on those
-   operations (docs/README.md, "Since, and Not available yet").
+   version. The docs decide availability from the latest published model, not from these stamps (docs/README.md,
+   "Since, and Not available yet").
 2. `scripts/gen-example-cases.mjs`: writes `conformance/cases/examples.json` from the model's `@examples`.
 3. `gradle test publish` in `codegen/`: compiles and tests the generators and writes them to
    `codegen/build/repo`, a file repository. Nothing is published anywhere else.
@@ -196,6 +196,16 @@ version that build's server reports in `Caitlyn-Api-Version` (its `package.json`
 SDK's version check (PROTOCOL.md section 9) passes on that app build's own server and refuses, sending nothing, on an
 older one. The lock records `"prerelease": {"appVersion", "appCommit"}`. `--from-build` copies the same files but
 keeps the previous lock's `stampNext` unless `STAMP_NEXT` is set. A published model never contains `"next"`.
+
+The `model:version-check` job (`scripts/model-check.sh`, deciding in `scripts/model-check.mjs`) says whether the SDKs
+may be released from the snapshot. It fails when the snapshot is:
+
+- **behind:** a published model that isn't the latest published one;
+- **hand-pulled:** an unpublished build with no `prerelease` record, one `model:main` didn't make;
+- **a stale pre-release:** a `model:main` pre-release whose `stampNext` isn't later than the latest published release.
+
+It passes for the latest published model (or one identical to it), and for a `model:main` pre-release ahead of the
+latest release. In a merge request it's a warning; on `main` and `v*` tags it fails, and `docs:publish` needs it.
 
 ## How a model change reaches the SDK
 

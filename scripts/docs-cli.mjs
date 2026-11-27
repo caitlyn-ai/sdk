@@ -17,7 +17,7 @@
 // The hand-written CLI pages are in docs/cli/ and are read with every other hand-written page (scripts/docs-guides.mjs).
 import fs from 'node:fs';
 import path from 'node:path';
-import { kebab, root } from './docs-model.mjs';
+import { kebab, publishedModel, root } from './docs-model.mjs';
 import { sinceVersion } from './docs-metadata.mjs';
 
 export const SITE = 'https://build.caitlyn.ai';
@@ -72,7 +72,7 @@ const resourcesFor = (operations, manifest) => {
 };
 
 const sinceOf = (operations, manifest) => {
-  const versions = (operations ?? []).map((o) => manifest.operations[o]?.since).filter((v) => /^\d+\.\d+\.\d+$/.test(v ?? ''));
+  const versions = (operations ?? []).map((o) => publishedModel()?.since.get(o) ?? manifest.operations[o]?.since).filter((v) => /^\d+\.\d+\.\d+$/.test(v ?? ''));
   return versions.length ? Math.min(...versions.map(sinceVersion)) : 0;
 };
 
