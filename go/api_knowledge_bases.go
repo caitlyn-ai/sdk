@@ -22,7 +22,8 @@ func newKnowledgeBases(c *Client) *KnowledgeBases {
 	}
 }
 
-// List lists the knowledge bases the caller may see, in every state.
+// List lists the knowledge bases the caller may see, in every state, in a stable order that does not
+// change between pages. The server decides the default order; it is not yet recorded here.
 //
 // Knowledge bases still being created, being moved, that failed or that are being deleted are
 // listed too, each with its `status`. Document operations on a knowledge base that is not `ready`
@@ -31,7 +32,7 @@ func newKnowledgeBases(c *Client) *KnowledgeBases {
 // It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
 // one.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *KnowledgeBases) List(ctx context.Context, in *ListKnowledgeBasesInput, opts ...CallOption) iter.Seq2[KnowledgeBase, error] {
 	return core.Items(s.ListPages(ctx, in, opts...), func(p *ListKnowledgeBasesPage) []KnowledgeBase { return p.Items })
 }
@@ -61,7 +62,7 @@ func (s *KnowledgeBases) ListPage(ctx context.Context, in *ListKnowledgeBasesInp
 // It returns the new knowledge base's scope, with the response as Result. Wait follows the work the
 // call started.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *KnowledgeBases) Create(ctx context.Context, in *CreateKnowledgeBaseInput, opts ...CallOption) (*CreatedKnowledgeBase, error) {
 	p := &createKnowledgeBaseParams{}
 	if in != nil {
@@ -105,7 +106,7 @@ type createKnowledgeBaseParams struct {
 var opCreateKnowledgeBase = &core.Operation{
 	Name:              "CreateKnowledgeBase",
 	Method:            "POST",
-	Since:             "5.115.0",
+	Since:             "5.144.0",
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},
@@ -174,7 +175,7 @@ type listKnowledgeBasesParams struct {
 var opListKnowledgeBases = &core.Operation{
 	Name:      "ListKnowledgeBases",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{

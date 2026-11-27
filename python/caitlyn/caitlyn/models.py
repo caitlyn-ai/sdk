@@ -240,7 +240,9 @@ class ConnectorBinding(CaitlynModel):
     """One of the workspace's connectors an agent version may use."""
 
     connector_id: str
-    """Which of the workspace's connectors the version may use."""
+    """Which of the workspace's connectors the version may use. The caller must be able to read the
+    connector; one it cannot read is refused with 404 `NOT_FOUND`.
+    """
 
 
 class ContentSafety(CaitlynModel):
@@ -248,7 +250,8 @@ class ContentSafety(CaitlynModel):
 
     guardrail: str | None = None
     """The ID of an entry in `GET /v3/guardrails`, `default` (the platform default, also used when
-    absent) or `none`.
+    absent) or `none`. The caller must be able to read the entry; one it cannot read is refused
+    with 404 `NOT_FOUND`.
     """
 
 
@@ -525,11 +528,15 @@ class LiveAvatarSettings(CaitlynModel):
     provider: LiveAvatarProvider | None = None
     """Which company's service runs the avatar. Defaults to `heygen`, the only one."""
     secret_id: str
-    """The stored secret holding the provider's key. Exported as a template variable."""
+    """The stored secret holding the provider's key. Exported as a template variable. The secret must
+    belong to this workspace, and the caller must be allowed to update the agent's integrations,
+    the permission v2 asks for when it stores the key.
+    """
     answer_version: str | None = None
-    """The version of this agent that answers for the avatar. Absent means this version. `draft` and
-    `live` follow their moving target: edits to the draft, and each publish, take effect without
-    this setting changing. A saved version's name never moves.
+    """The version of this agent that answers for the avatar: `live`, or a saved version's name.
+    Absent means this version. `live` follows its moving target, so each publish takes effect
+    without this setting changing; a saved version's name never moves. `draft` is not accepted:
+    saving a configuration that names it is refused with 400 `VALIDATION_FAILED`.
     """
     trigger_phrases: list[str]
     """Phrases that hand the conversation to the answering version when the avatar says one, at
@@ -569,7 +576,9 @@ class MemorySettings(CaitlynModel):
     enabled: bool | None = None
     """Whether the agent remembers. Defaults to false."""
     memory_store_id: str | None = None
-    """The memory store, from `GET /v3/memory-stores`. Required when `enabled`."""
+    """The memory store, from `GET /v3/memory-stores`. Required when `enabled`. The caller must be
+    able to read the store.
+    """
     minimum_relevance: float | None = None
     """The lowest relevance a memory needs to be recalled, from 0 to 1. Defaults to 0.4."""
     max_results: int | None = None
@@ -637,7 +646,11 @@ class PolicyBinding(CaitlynModel):
     """One policy an agent version uses."""
 
     policy_id: str
-    """Which policy the version may review documents against."""
+    """Which policy the version may review documents against.
+    The caller must be able to read the policy. This is checked for every policy id sent, not only
+    new ones, because the rules go into the cached prompt. A policy the caller cannot read is
+    refused with 404 `NOT_FOUND`.
+    """
 
 
 class RunAs(CaitlynModel):
@@ -920,7 +933,11 @@ class PolicyReviewSettings(CaitlynModel):
     """The policy a `policy_review` phase reviews against."""
 
     policy_id: str
-    """Which policy the phase reviews against. It must be in `policies`."""
+    """Which policy the phase reviews against. It must be in `policies`.
+    The caller must be able to read the policy. This is checked for every policy id sent, not only
+    new ones, because the rules go into the cached prompt. A policy the caller cannot read is
+    refused with 404 `NOT_FOUND`.
+    """
     rule_ids: list[str] | None = None
     """The rules to check. Absent means every rule in the policy, read again each time a review
     starts.
@@ -971,9 +988,10 @@ class ToolSearchSettings(CaitlynModel):
     modes: list[SearchMode]
     """The search modes the agent may choose from, at least one."""
     version: str
-    """The version of this agent whose knowledge bases and search settings the tool uses. `draft` and
-    `live` follow their moving target: edits to the draft, and each publish, take effect without
-    this setting changing. A saved version's name never moves.
+    """The version of this agent whose knowledge bases and search settings the tool uses: `live`, or
+    a saved version's name. `live` follows its moving target, so each publish takes effect without
+    this setting changing; a saved version's name never moves. `draft` is not accepted: saving a
+    configuration that names it is refused with 400 `VALIDATION_FAILED`.
     """
 
 
@@ -999,7 +1017,7 @@ class PhaseTool(CaitlynModel):
     mcp_server_id: str | None = None
     """An MCP server whose tools the phase may use. Exactly one of `name` and `mcpServerId`. With no
     `tools`, every tool on the server, including tools it adds later; otherwise only those
-    listed. Exported as a template variable.
+    listed. Exported as a template variable. The caller must be able to read the server.
     """
     tools: list[str] | None = None
     """With `mcpServerId`: only these of the server's tools."""
@@ -1144,7 +1162,8 @@ class Phase(CaitlynModel):
     """For `take_action`: the action the phase takes."""
     policy_rules: list[str] | None = None
     """For `take_action`: the policy rules this phase checks, as `<policyId>/<ruleId>`. Each policy
-    must be in `policies`.
+    must be in `policies`. The caller must be able to read each policy, checked on every save as
+    for `policies`; one it cannot read is refused with 404 `NOT_FOUND`.
     """
     review: PolicyReviewSettings | None = None
     """For `policy_review`: the policy the phase reviews against, and which of its rules."""
@@ -1387,8 +1406,8 @@ class HistoryEntry(CaitlynModel):
     """
     configuration: AgentConfiguration | None = None
     """The configuration of `version`. Present only when the caller may read that version, as
-    GetAgentVersion checks: the permission to read versions, and the agent grant if it is live now
-    or the agent's version access grant if it is not. Absent otherwise, in a list, and when that
+    GetAgentVersion checks: the permission to read versions, and the agent grant and the agent's
+    version access grant. Absent otherwise, in a list, and when that
     version no longer exists.
     """
 
@@ -1577,8 +1596,8 @@ class ListAgentVersionsPage(CaitlynPage):
 
     Each entry says how the version was made, who made it, whether live points at it, and which
     members differ from the version it was made from. The draft and live are not entries: read them
-    with `draft` and `live`. Needs the agent's version access grant, as reading any version other than
-    live does.
+    with `draft` and `live`. Needs the agent's version access grant, as reading any version, `live`
+    included, does.
     """
 
     items: list[AgentVersion]
@@ -1692,7 +1711,9 @@ class IngestionItemInput(CaitlynModel):
     item is added.
     """
     source_url: str | None = None
-    """The address a citation of the document links to. Defaults to `fetchUrl`."""
+    """The address a citation of the document links to. Defaults to `fetchUrl` when that is an `https`
+    address; with an `http` `fetchUrl` and no `sourceUrl`, the document has none.
+    """
     metadata: dict[str, JsonValue] | None = None
     """Values for the metadata fields the knowledge base defines, checked as CreateDocument checks
     them, and kept as sent.
@@ -1751,8 +1772,9 @@ class IngestionItemReason(OpenEnum):
     """
 
     PATH_TAKEN = "path_taken"
-    """The path and the `externalId` name different documents, or the path holds one the caller may
-    not read.
+    """The path and the `externalId` name different documents. Never used for a path held by a
+    document the caller may not read: that item is `failed` with `PERMISSION_DENIED`, and its
+    detail says only that the path cannot be written, so the document is not revealed.
     """
     AMBIGUOUS_CONTENT = "ambiguous_content"
     """No `externalId`, and several current documents have these bytes; all are in `matches`. No
@@ -1874,7 +1896,9 @@ class IngestionBatchItem(CaitlynModel):
     item is added.
     """
     source_url: str | None = None
-    """The address a citation of the document links to. Defaults to `fetchUrl`."""
+    """The address a citation of the document links to. Defaults to `fetchUrl` when that is an `https`
+    address; with an `http` `fetchUrl` and no `sourceUrl`, the document has none.
+    """
     metadata: dict[str, JsonValue] | None = None
     """Values for the metadata fields the knowledge base defines, checked as CreateDocument checks
     them, and kept as sent.
@@ -2230,7 +2254,7 @@ class DocumentCounts(CaitlynModel):
     failed: int
     """Documents whose latest attempt failed."""
     out_of_date: int | None = None
-    """Documents processed in an older way than the newest, which `ReprocessDocuments` would update. Added in Caitlyn 5.115.0."""
+    """Documents processed in an older way than the newest, which `ReprocessDocuments` would update. Added in Caitlyn 5.144.0."""
 
 
 class EngineInput(OpenEnum):
@@ -2309,7 +2333,7 @@ class KnowledgeBase(CaitlynModel):
     """Where the knowledge base is in its lifecycle."""
     document_counts: DocumentCounts | None = None
     """How many documents are processing, and how many failed, counting each document's latest
-    attempt.
+    attempt. Totals for the whole knowledge base, including documents the caller cannot read.
     """
     retrieval: RetrievalDefaults | None = None
     """The search settings an agent uses unless its binding says otherwise."""
@@ -2502,33 +2526,33 @@ class Operation(CaitlynModel):
     status: OperationStatus
     """Where the work is."""
     target: OperationTarget | None = None
-    """What the work is on. Added in Caitlyn 5.115.0."""
+    """What the work is on. Added in Caitlyn 5.144.0."""
     progress: OperationProgress | None = None
-    """How far the work has got, where it can say. Added in Caitlyn 5.115.0."""
+    """How far the work has got, where it can say. Added in Caitlyn 5.144.0."""
     percent: int | None = None
     """How far the work has got, from 0 to 100, weighted by how long each part takes; never moves
     back.
 
-    Added in Caitlyn 5.115.0.
+    Added in Caitlyn 5.144.0.
     """
     eta: Eta | None = None
-    """How long is left, once the work has run long enough to say. Added in Caitlyn 5.115.0."""
+    """How long is left, once the work has run long enough to say. Added in Caitlyn 5.144.0."""
     cost_so_far: Cost | None = None
-    """What the work has cost so far. Present only for callers who may see cost. Added in Caitlyn 5.115.0."""
+    """What the work has cost so far. Present only for callers who may see cost. Added in Caitlyn 5.144.0."""
     created_at: datetime
     """When the work was requested."""
     started_at: datetime | None = None
-    """When the work started. Added in Caitlyn 5.115.0."""
+    """When the work started. Added in Caitlyn 5.144.0."""
     updated_at: datetime | None = None
-    """When the Operation last changed. Added in Caitlyn 5.115.0."""
+    """When the Operation last changed. Added in Caitlyn 5.144.0."""
     ended_at: datetime | None = None
-    """When the work ended. Present once `status` is final. Added in Caitlyn 5.115.0."""
+    """When the work ended. Present once `status` is final. Added in Caitlyn 5.144.0."""
     created_by: Actor | None = None
-    """Who asked for the work. Added in Caitlyn 5.115.0."""
+    """Who asked for the work. Added in Caitlyn 5.144.0."""
     error: OperationError | None = None
-    """Why the work failed. Present only when `status` is `failed`. Added in Caitlyn 5.115.0."""
+    """Why the work failed. Present only when `status` is `failed`. Added in Caitlyn 5.144.0."""
     partial_failures: list[PartialFailure] | None = None
-    """Parts of the work that did not complete, at most the first 100. They never fail the whole. Added in Caitlyn 5.115.0."""
+    """Parts of the work that did not complete, at most the first 100. They never fail the whole. Added in Caitlyn 5.144.0."""
 
 
 class DeleteKnowledgeBaseResult(CaitlynResult):
@@ -2732,56 +2756,56 @@ class Document(CaitlynModel):
     sha256: str | None = None
     """The base64-encoded SHA-256 of the current bytes."""
     version: int | None = None
-    """The current version's number. Absent until the first version is indexed. Added in Caitlyn 5.115.0."""
+    """The current version's number. Absent until the first version is indexed. Added in Caitlyn 5.144.0."""
     version_count: int | None = None
-    """How many versions the document has. Added in Caitlyn 5.115.0."""
+    """How many versions the document has. Added in Caitlyn 5.144.0."""
     latest_version: LatestVersion | None = None
     """The newest version, when it is not the current one: uploading, processing or failed. Shown only
     to callers who may add versions.
 
-    Added in Caitlyn 5.115.0.
+    Added in Caitlyn 5.144.0.
     """
     superseded: bool | None = None
     """True when a newer version than the current one exists. Shown only to callers who may add
     versions.
 
-    Added in Caitlyn 5.115.0.
+    Added in Caitlyn 5.144.0.
     """
     source_url: str | None = None
-    """The address a citation of this document links to. Added in Caitlyn 5.115.0."""
+    """The address a citation of this document links to. Added in Caitlyn 5.144.0."""
     external_id: str | None = None
-    """The caller's own key for the document, unique within the knowledge base. Added in Caitlyn 5.115.0."""
+    """The caller's own key for the document, unique within the knowledge base. Added in Caitlyn 5.144.0."""
     metadata: dict[str, JsonValue] | None = None
     """Values for the metadata fields the knowledge base defines, including `title`, `summary`,
     `keywords`, `author` and `publishedDate`.
 
-    Added in Caitlyn 5.115.0.
+    Added in Caitlyn 5.144.0.
     """
     extra_metadata: dict[str, JsonValue] | None = None
     """Keys the knowledge base does not define. Stored and returned, but never searched on or given to
     an agent.
 
-    Added in Caitlyn 5.115.0.
+    Added in Caitlyn 5.144.0.
     """
     readers: Readers | None = None
-    """Who may read the document. Added in Caitlyn 5.115.0."""
+    """Who may read the document. Added in Caitlyn 5.144.0."""
     inherited_from: str | None = None
-    """When `readers` is `inherit`: the folder whose readers apply. Added in Caitlyn 5.115.0."""
+    """When `readers` is `inherit`: the folder whose readers apply. Added in Caitlyn 5.144.0."""
     out_of_date: bool | None = None
     """True when a newer way of processing documents is available, and processing the document again
     would use it.
 
-    Added in Caitlyn 5.115.0.
+    Added in Caitlyn 5.144.0.
     """
     page_count: int | None = None
-    """The number of pages, for a paged document. Added in Caitlyn 5.115.0."""
+    """The number of pages, for a paged document. Added in Caitlyn 5.144.0."""
     duration_seconds: float | None = None
-    """How long it plays, in seconds, for audio and video. Added in Caitlyn 5.115.0."""
+    """How long it plays, in seconds, for audio and video. Added in Caitlyn 5.144.0."""
     processing: DocumentProcessing | None = None
     """The work running on the document, while there is some: what kind, which stage, how far it has
     got and how long is left. Absent when nothing is running.
 
-    Added in Caitlyn 5.115.0.
+    Added in Caitlyn 5.144.0.
     """
     created_at: datetime
     """When the document was created."""
@@ -2795,7 +2819,7 @@ class Document(CaitlynModel):
     """Why the document could not be made searchable. Present only when `status` is `failed`; a
     document that is searchable with gaps lists them in `partialFailures` instead.
 
-    Added in Caitlyn 5.115.0.
+    Added in Caitlyn 5.144.0.
     """
     etag: str
     """The document's ETag; send it as `If-Match` to change it."""
@@ -2920,8 +2944,11 @@ class DeleteDocumentVersionResult(CaitlynResult):
 
     A version's number is its place in upload order, so deleting by number needs the document's
     versions to be numbered already: until they are, a number is refused with 409
-    `VERSIONS_NOT_NUMBERED`, because deleting would shift every later number. Try again later, or
-    delete `latest`, which works either way.
+    `VERSIONS_NOT_NUMBERED`, because deleting would shift every later number; try again later.
+
+    Only a version number is accepted: `latest` and `current` are refused with 400
+    `VALIDATION_FAILED`, because the version they name changes after each delete, so a retried
+    request could delete a second version.
     """
 
     request_id: str | None = None
@@ -3134,8 +3161,9 @@ class ListDocumentsPage(CaitlynPage):
     Documents are returned in a stable order that does not change between pages. Filters combine
     with AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. With `filter[folder][eq]`,
     the documents directly in that folder; with `deep` as well, every document below it. `q` keeps
-    documents whose name contains the text. The list can be sorted by `name`, `updatedAt` (when the
-    document last changed) and `byteSize`.
+    documents whose name contains the text. The list can be sorted by `folder`, `name`, `updatedAt`
+    (when the document last changed) and `byteSize`. With no `sort`, documents come by folder, then
+    name.
     """
 
     items: list[Document]
@@ -3172,33 +3200,33 @@ class Job(CaitlynModel):
     status: OperationStatus
     """Where the work is."""
     target: OperationTarget | None = None
-    """What the work is on. Added in Caitlyn 5.115.0."""
+    """What the work is on. Added in Caitlyn 5.144.0."""
     progress: OperationProgress | None = None
-    """How far the work has got, where it can say. Added in Caitlyn 5.115.0."""
+    """How far the work has got, where it can say. Added in Caitlyn 5.144.0."""
     percent: int | None = None
     """How far the work has got, from 0 to 100, weighted by how long each part takes; never moves
     back.
 
-    Added in Caitlyn 5.115.0.
+    Added in Caitlyn 5.144.0.
     """
     eta: Eta | None = None
-    """How long is left, once the work has run long enough to say. Added in Caitlyn 5.115.0."""
+    """How long is left, once the work has run long enough to say. Added in Caitlyn 5.144.0."""
     cost_so_far: Cost | None = None
-    """What the work has cost so far. Present only for callers who may see cost. Added in Caitlyn 5.115.0."""
+    """What the work has cost so far. Present only for callers who may see cost. Added in Caitlyn 5.144.0."""
     created_at: datetime
     """When the work was requested."""
     started_at: datetime | None = None
-    """When the work started. Added in Caitlyn 5.115.0."""
+    """When the work started. Added in Caitlyn 5.144.0."""
     updated_at: datetime | None = None
-    """When the Operation last changed. Added in Caitlyn 5.115.0."""
+    """When the Operation last changed. Added in Caitlyn 5.144.0."""
     ended_at: datetime | None = None
-    """When the work ended. Present once `status` is final. Added in Caitlyn 5.115.0."""
+    """When the work ended. Present once `status` is final. Added in Caitlyn 5.144.0."""
     created_by: Actor | None = None
-    """Who asked for the work. Added in Caitlyn 5.115.0."""
+    """Who asked for the work. Added in Caitlyn 5.144.0."""
     error: OperationError | None = None
-    """Why the work failed. Present only when `status` is `failed`. Added in Caitlyn 5.115.0."""
+    """Why the work failed. Present only when `status` is `failed`. Added in Caitlyn 5.144.0."""
     partial_failures: list[PartialFailure] | None = None
-    """Parts of the work that did not complete, at most the first 100. They never fail the whole. Added in Caitlyn 5.115.0."""
+    """Parts of the work that did not complete, at most the first 100. They never fail the whole. Added in Caitlyn 5.144.0."""
 
 
 class ReprocessDocumentsResult(CaitlynResult):
@@ -3704,7 +3732,8 @@ class Folder(CaitlynModel):
 class ListFoldersPage(CaitlynPage):
     """One page of results. Lists the folders in a knowledge base, one page at a time.
 
-    With `filter[parent][eq]`, the folders directly in that folder; with `deep` as well, every folder
+    Folders come back in a stable order that does not change between pages; the server decides the
+    default order, which is not yet recorded here. With `filter[parent][eq]`, the folders directly in that folder; with `deep` as well, every folder
     below it. `q` keeps folders whose name contains the text. List the documents in a folder with
     ListDocuments.
     """
@@ -3827,8 +3856,9 @@ class ConflictRules(CaitlynModel):
     default: ConflictRule | None = None
     """The rule for a kind of conflict with no rule of its own. Defaults to `ask`."""
     path_taken: ConflictRule | None = None
-    """The path and the `externalId` name different documents, or the path holds one the caller may
-    not read.
+    """The path and the `externalId` name different documents. A path held by a document the caller
+    may not read is not a conflict: the item fails as in any write the caller may not make, so
+    this rule never reveals that document.
     """
     ambiguous_content: ConflictRule | None = None
     """No `externalId`, and several current documents have these bytes."""
@@ -3977,10 +4007,10 @@ class IngestionBatch(CaitlynModel):
     """How far the batch has got, from 0 to 100: its documents' progress, weighted by how long each
     is expected to take. Never moves back.
 
-    Added in Caitlyn 5.115.0.
+    Added in Caitlyn 5.144.0.
     """
     eta: Eta | None = None
-    """How long is left: the longest of its documents' times left. Added in Caitlyn 5.115.0."""
+    """How long is left: the longest of its documents' times left. Added in Caitlyn 5.144.0."""
     plan_expires_at: datetime | None = None
     """When the plan goes stale, 5 minutes after planning. A stale plan does not end the batch:
     StartIngestionBatch on a stale plan plans again first.
@@ -3993,7 +4023,7 @@ class IngestionBatch(CaitlynModel):
     time to see which items failed. Renewing the upload policy moves it later. Absent when no item
     is awaiting upload.
 
-    Added in Caitlyn 5.115.0.
+    Added in Caitlyn 5.144.0.
     """
     created_by: Actor | None = None
     """Who made the batch."""
@@ -4009,13 +4039,13 @@ class IngestionBatch(CaitlynModel):
     """Why the batch failed, as a stable code and a fixed message. Present only when `status` is
     `failed`.
 
-    Added in Caitlyn 5.115.0.
+    Added in Caitlyn 5.144.0.
     """
     upload_window_seconds: int | None = None
     """How long each upload policy the batch hands out lasts, renewals included, as set when the
     batch was made.
 
-    Added in Caitlyn 5.115.0.
+    Added in Caitlyn 5.144.0.
     """
     etag: str
     """The batch's ETag."""
@@ -4192,6 +4222,13 @@ class StartIngestionBatchResult(CaitlynResult):
     `INGESTION_BATCH_UNRESOLVED` while any item is `unresolved`. Returns 202 with the batch and one
     upload policy: list the items to upload with `filter[status][eq]=awaiting_upload`, upload each to
     its `objectKey`, then report them with CompleteIngestionBatchUploads.
+
+    Each item that removes a document (`remove`, or an overwrite) is checked by the server for the
+    files delete permission, and each item that moves one, or adds a new version of one, for the files
+    update permission, and the token's scope covers it too. An item that fails the check is marked
+    `failed` with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts
+    through StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked
+    per item, not once on the call.
     """
 
     batch: IngestionBatch
@@ -4215,7 +4252,8 @@ class StartIngestionBatchResult(CaitlynResult):
 
 
 class ListKnowledgeBasesPage(CaitlynPage):
-    """One page of results. Lists the knowledge bases the caller may see, in every state.
+    """One page of results. Lists the knowledge bases the caller may see, in every state, in a stable order that does not
+    change between pages. The server decides the default order; it is not yet recorded here.
 
     Knowledge bases still being created, being moved, that failed or that are being deleted are
     listed too, each with its `status`. Document operations on a knowledge base that is not `ready`
@@ -4244,7 +4282,9 @@ class ListOperationsPage(CaitlynPage):
     """One page of results. Lists the Operations on one knowledge base, or one thing in it, newest first.
 
     The caller needs read access to the knowledge base. Narrow the list with the target, the kind and
-    the status.
+    the status. Rows are filtered to the Operations a direct GetOperation would return for this
+    caller: an Operation whose target the caller could not read is left out, not shown with its
+    details removed.
     """
 
     items: list[Operation]
@@ -4490,7 +4530,7 @@ class UploadPurpose(CaitlynModel):
     checked when the upload is reserved. Use the upload as `avatar.mark.pictureUploadId` on
     CreateAgent or UpdateAgent.
 
-    Added in Caitlyn 5.115.0.
+    Added in Caitlyn 5.144.0.
     """
     conversation_id: str | None = None
     """The conversation the file will be attached to. The caller must be able to send to it (its

@@ -886,12 +886,12 @@
                     {
                         "name": "If-Match",
                         "in": "header",
-                        "description": "The agent's current ETag. A stale value is refused with 412; a missing one with 428.",
+                        "description": "The agent's current ETag. A stale value is refused with 412. The SDKs will not send a call\nwithout it; a raw HTTP request that leaves it out is refused with 428.",
                         "schema": {
                             "type": "string",
                             "maxLength": 256,
                             "minLength": 1,
-                            "description": "The agent's current ETag. A stale value is refused with 412; a missing one with 428."
+                            "description": "The agent's current ETag. A stale value is refused with 412. The SDKs will not send a call\nwithout it; a raw HTTP request that leaves it out is refused with 428."
                         },
                         "required": true,
                         "examples": {
@@ -1549,7 +1549,7 @@
         },
         "/v3/agents/{agentId}/history/{historyEntryId}": {
             "get": {
-                "description": "Gets one live history entry, with the configuration live had after the change.\n\nThe configuration is that of the entry's `version`, which never changes. Reading the entry (who\nchanged live, when, and to which version) needs agent read; its `configuration` needs what\nreading that version needs, so a caller without the permission to read versions, or without the\nagent's version access grant for a version that is not live now, gets the entry without it. It is also absent when that version was deleted\nthrough an older API that does not protect versions named in live history.",
+                "description": "Gets one live history entry, with the configuration live had after the change.\n\nThe configuration is that of the entry's `version`, which never changes. Reading the entry (who\nchanged live, when, and to which version) needs agent read; its `configuration` needs what\nreading that version needs, so a caller without the permission to read versions, or without the\nagent's version access grant, gets the entry without it. It is also absent when that version was\ndeleted through an older API that does not protect versions named in live history.",
                 "operationId": "GetHistoryEntry",
                 "parameters": [
                     {
@@ -1772,7 +1772,7 @@
         },
         "/v3/agents/{agentId}/versions": {
             "get": {
-                "description": "Lists an agent's named versions in the order they were made, oldest first.\n\nEach entry says how the version was made, who made it, whether live points at it, and which\nmembers differ from the version it was made from. The draft and live are not entries: read them\nwith `draft` and `live`. Needs the agent's version access grant, as reading any version other than\nlive does.",
+                "description": "Lists an agent's named versions in the order they were made, oldest first.\n\nEach entry says how the version was made, who made it, whether live points at it, and which\nmembers differ from the version it was made from. The draft and live are not entries: read them\nwith `draft` and `live`. Needs the agent's version access grant, as reading any version, `live`\nincluded, does.",
                 "operationId": "ListAgentVersions",
                 "parameters": [
                     {
@@ -2682,14 +2682,25 @@
                         }
                     },
                     {
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "description": "Makes the request safe to retry. The SDKs generate one per call when the caller does not\nsupply one.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "description": "Makes the request safe to retry. The SDKs generate one per call when the caller does not\nsupply one."
+                        }
+                    },
+                    {
                         "name": "If-Match",
                         "in": "header",
-                        "description": "The draft's current ETag. A stale value is refused with 412; a missing one with 428.",
+                        "description": "The draft's current ETag. A stale value is refused with 412. The SDKs will not send a call\nwithout it; a raw HTTP request that leaves it out is refused with 428.",
                         "schema": {
                             "type": "string",
                             "maxLength": 256,
                             "minLength": 1,
-                            "description": "The draft's current ETag. A stale value is refused with 412; a missing one with 428."
+                            "description": "The draft's current ETag. A stale value is refused with 412. The SDKs will not send a call\nwithout it; a raw HTTP request that leaves it out is refused with 428."
                         },
                         "required": true,
                         "examples": {
@@ -2840,6 +2851,16 @@
                                             "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B73"
                                         }
                                     }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "UnprocessableContentError 422 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnprocessableContentErrorResponseContent"
                                 }
                             }
                         }
@@ -3495,7 +3516,7 @@
                 }
             },
             "get": {
-                "description": "Gets one version of an agent, with its full configuration and its ETag.\n\n`version` is `draft`, `live` or the name of a saved or published version. Live is the version the\nagent's live pointer names, read as `live`; it is readable by everyone with access to the agent.\nThe draft and named versions are readable only by the people and groups on the agent's version\naccess grant, and anyone else gets 404, as for an agent with no live version yet.",
+                "description": "Gets one version of an agent, with its full configuration and its ETag.\n\n`version` is `draft`, `live` or the name of a saved or published version. Live is the version the\nagent's live pointer names, read as `live`; it is readable by everyone with access to the agent.\nThe draft and named versions are readable only by the people and groups on the agent's version\naccess grant, and anyone else gets 404. An agent with no live version, because none has been\npublished or chosen yet, answers `live` with 404 `NO_LIVE_VERSION`.",
                 "operationId": "GetAgentVersion",
                 "parameters": [
                     {
@@ -4421,6 +4442,17 @@
                         }
                     },
                     {
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "description": "Makes the request safe to retry. The SDKs generate one per call when the caller does not\nsupply one.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "description": "Makes the request safe to retry. The SDKs generate one per call when the caller does not\nsupply one."
+                        }
+                    },
+                    {
                         "name": "If-Match",
                         "in": "header",
                         "description": "Live's current ETag. When given and stale, the publish is refused with 412. `*` matches\nonly when live already points at a version, so a first publish that sends it is refused\nwith 412; guard a first publish with `expectedLive: none` instead.",
@@ -4651,6 +4683,16 @@
                                             "requestId": "01JC9Q2W7R4M0H2T6N1S8V3B69"
                                         }
                                     }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "UnprocessableContentError 422 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnprocessableContentErrorResponseContent"
                                 }
                             }
                         }
@@ -5105,7 +5147,7 @@
                 }
             },
             "post": {
-                "description": "Sends a message and streams the answer as server-sent events.\n\nThe message is sent when the call is made, whether or not anyone reads the stream. The stream ends\nwith exactly one `message.completed` or `message.failed`. If the connection drops, the SDK\nre-attaches with `WatchConversation` and `Last-Event-ID`, so no event is lost or repeated. Not retried automatically: a send that fails before the stream starts is\nreported to the caller.\n\nA message may carry documents in `attachments`, each named by an upload reserved for this\nconversation. The SDKs also take files there: each file is uploaded for the conversation first,\nand the message is sent once every upload has arrived.\n\nOnly a participant may send: whoever started the conversation, or someone it is shared with for\nwriting (the update grant), who may still see the conversation's agent, and, when it was started\non a version other than live, holds that agent's version access grant. A caller without any of\nthese gets 404, so revoking someone's access to the agent stops them chatting in conversations\nthey already started.",
+                "description": "Sends a message and streams the answer as server-sent events.\n\nThe message is sent when the call is made, whether or not anyone reads the stream. The stream ends\nwith exactly one `message.completed` or `message.failed`. If the connection drops, the SDK\nre-attaches with `WatchConversation` and `Last-Event-ID`, so no event is lost or repeated. Not retried automatically: a send that fails before the stream starts is\nreported to the caller.\n\nA message may carry documents in `attachments`, each named by an upload reserved for this\nconversation. The SDKs also take files there: each file is uploaded for the conversation first,\nand the message is sent once every upload has arrived.\n\nOnly a participant may send: whoever started the conversation, or someone it is shared with for\nwriting (the update grant), who may still see the conversation's agent and holds that agent's\nversion access grant (the conversation's version may be `live`). A caller without any of\nthese gets 404, so revoking someone's access to the agent stops them chatting in conversations\nthey already started.",
                 "operationId": "SendMessage",
                 "requestBody": {
                     "content": {
@@ -6005,7 +6047,7 @@
         },
         "/v3/knowledge-bases": {
             "get": {
-                "description": "Lists the knowledge bases the caller may see, in every state.\n\nKnowledge bases still being created, being moved, that failed or that are being deleted are\nlisted too, each with its `status`. Document operations on a knowledge base that is not `ready`\nare refused with 409 `CONFLICT`.",
+                "description": "Lists the knowledge bases the caller may see, in every state, in a stable order that does not\nchange between pages. The server decides the default order; it is not yet recorded here.\n\nKnowledge bases still being created, being moved, that failed or that are being deleted are\nlisted too, each with its `status`. Document operations on a knowledge base that is not `ready`\nare refused with 409 `CONFLICT`.",
                 "operationId": "ListKnowledgeBases",
                 "parameters": [
                     {
@@ -6934,12 +6976,12 @@
                     {
                         "name": "If-Match",
                         "in": "header",
-                        "description": "The knowledge base's current ETag. A stale value is refused with 412; a missing one with\n428.",
+                        "description": "The knowledge base's current ETag. A stale value is refused with 412. The SDKs will not\nsend a call without it; a raw HTTP request that leaves it out is refused with 428.",
                         "schema": {
                             "type": "string",
                             "maxLength": 256,
                             "minLength": 1,
-                            "description": "The knowledge base's current ETag. A stale value is refused with 412; a missing one with\n428."
+                            "description": "The knowledge base's current ETag. A stale value is refused with 412. The SDKs will not\nsend a call without it; a raw HTTP request that leaves it out is refused with 428."
                         },
                         "required": true,
                         "examples": {
@@ -7147,7 +7189,7 @@
         },
         "/v3/knowledge-bases/{knowledgeBaseId}/access": {
             "get": {
-                "description": "Gets who may use a knowledge base, or who may read a folder or a document in it.\n\nWithout `folder` or `document`, the knowledge base's role grants (`roles`). With `folder`, that\nfolder's `readers`; with `document`, that document's. `inheritedFrom` names the folder whose readers\napply when they are inherited. A folder or document the caller may not see is 404. The root\nfolder (`folder=/`, `kb.folders('/').access`) holds the readers every folder falls back to; its\nreaders are never inherited.",
+                "description": "Gets who may use a knowledge base, or who may read a folder or a document in it.\n\nWithout `folder` or `document`, the knowledge base's role grants (`roles`). With `folder`, that\nfolder's `readers`; with `document`, that document's. `inheritedFrom` names the folder whose readers\napply when they are inherited. A folder or document the caller may not see is 404. The root\nfolder (`folder=/`, `kb.folders('/').access`) holds the readers every folder falls back to; its\nreaders are never inherited.\n\nFor a folder or document, the `readers` also come back on ListFolders, ListDocuments and\nGetDocument too, with `inheritedFrom`, under the files list and read permissions. What GetAccess\nadds is the access on its own, with the ETag that SetAccess's `If-Match` takes, and the root\nfolder's readers; reading it needs the files permissions list permission.",
                 "operationId": "GetAccess",
                 "parameters": [
                     {
@@ -7442,7 +7484,7 @@
                 }
             },
             "put": {
-                "description": "Sets who may use a knowledge base, or who may read a folder or a document in it.\n\n`If-Match` is optional. Without it the write is unconditional and the last writer wins, which is\nsafe because the caller sends the whole list. With it, access that changed since is refused with\n412.\n\nWithout `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or\n`document`, send `readers`; `kind: inherit` makes it follow its folder again. The knowledge base's\nrole grants are set only without a target, under the knowledge base's own permission, as v2's\nknowledge base permissions route sets them, so `roles` with `folder` or `document`, `readers`\nwithout one, and both `folder` and `document` are refused with 400 `VALIDATION_FAILED`. The root folder\n(`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there\nwith 400 `VALIDATION_FAILED`. Applying readers to\nthe passages a folder or document holds continues after the response; the returned access says\nwhat is set, and the knowledge base's watch shows the work.",
+                "description": "Sets who may use a knowledge base, or who may read a folder or a document in it.\n\n`If-Match` is optional. Without it the write is unconditional and the last writer wins, which is\nsafe because the caller sends the whole list. With it, access that changed since is refused with\n412.\n\nWithout `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or\n`document`, send `readers`; `kind: inherit` makes it follow its folder again. The knowledge base's\nrole grants are set only without a target, under the knowledge base's own permission, as v2's\nknowledge base permissions route sets them, so `roles` with `folder` or `document`, `readers`\nwithout one, and both `folder` and `document` are refused with 400 `VALIDATION_FAILED`. The root folder\n(`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there\nwith 400 `VALIDATION_FAILED`. Applying readers to\nthe passages a folder or document holds continues after the response; the returned access says\nwhat is set, and the knowledge base's watch shows the work.\n\nSetting `roles` is refused in two cases, as in v2. A caller may give a role only a grant it\ncould make itself: any other is refused with 403 `PERMISSION_DENIED`. And a grant that is not\nsafe for guests, given to a role that guests or anonymous visitors use, is refused with 422\n`RBAC_NOT_GUEST_SAFE`. Only the grants being added are judged, so a grant the role already holds\nnever blocks an unrelated change. Both checks are made by the server on the roles sent.",
                 "operationId": "PutAccess",
                 "requestBody": {
                     "content": {
@@ -7763,6 +7805,16 @@
                             }
                         }
                     },
+                    "422": {
+                        "description": "UnprocessableContentError 422 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnprocessableContentErrorResponseContent"
+                                }
+                            }
+                        }
+                    },
                     "429": {
                         "description": "TooManyRequestsError 429 response",
                         "headers": {
@@ -7818,7 +7870,7 @@
         },
         "/v3/knowledge-bases/{knowledgeBaseId}/documents": {
             "get": {
-                "description": "Lists the documents in a knowledge base, one page at a time.\n\nDocuments are returned in a stable order that does not change between pages. Filters combine\nwith AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. With `filter[folder][eq]`,\nthe documents directly in that folder; with `deep` as well, every document below it. `q` keeps\ndocuments whose name contains the text. The list can be sorted by `name`, `updatedAt` (when the\ndocument last changed) and `byteSize`.",
+                "description": "Lists the documents in a knowledge base, one page at a time.\n\nDocuments are returned in a stable order that does not change between pages. Filters combine\nwith AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. With `filter[folder][eq]`,\nthe documents directly in that folder; with `deep` as well, every document below it. `q` keeps\ndocuments whose name contains the text. The list can be sorted by `folder`, `name`, `updatedAt`\n(when the document last changed) and `byteSize`. With no `sort`, documents come by folder, then\nname.",
                 "operationId": "ListDocuments",
                 "parameters": [
                     {
@@ -7883,12 +7935,12 @@
                     {
                         "name": "sort",
                         "in": "query",
-                        "description": "The order: `name`, `updatedAt` or `byteSize`, comma-separated, with a leading `-` for\ndescending (for example `-updatedAt`). Any other field is refused with 400 `UNKNOWN_SORT`.",
+                        "description": "The order: `folder`, `name`, `updatedAt` or `byteSize`, comma-separated, with a leading `-`\nfor descending (for example `-updatedAt`). Defaults to `folder,name`. Any other field is\nrefused with 400 `UNKNOWN_SORT`.",
                         "schema": {
                             "type": "string",
                             "maxLength": 256,
                             "minLength": 1,
-                            "description": "The order: `name`, `updatedAt` or `byteSize`, comma-separated, with a leading `-` for\ndescending (for example `-updatedAt`). Any other field is refused with 400 `UNKNOWN_SORT`."
+                            "description": "The order: `folder`, `name`, `updatedAt` or `byteSize`, comma-separated, with a leading `-`\nfor descending (for example `-updatedAt`). Defaults to `folder,name`. Any other field is\nrefused with 400 `UNKNOWN_SORT`."
                         }
                     },
                     {
@@ -7988,13 +8040,13 @@
                     {
                         "name": "filter[sha256][eq]",
                         "in": "query",
-                        "description": "Only documents whose current bytes have this base64-encoded SHA-256.",
+                        "description": "Only documents whose current bytes have this base64-encoded SHA-256. Percent-encode the\nvalue in the query string: `+` as `%2B`, `/` as `%2F` and `=` as `%3D`.",
                         "schema": {
                             "type": "string",
                             "maxLength": 44,
                             "minLength": 44,
                             "pattern": "^[A-Za-z0-9+/]{43}=$",
-                            "description": "Only documents whose current bytes have this base64-encoded SHA-256."
+                            "description": "Only documents whose current bytes have this base64-encoded SHA-256. Percent-encode the\nvalue in the query string: `+` as `%2B`, `/` as `%2F` and `=` as `%3D`."
                         }
                     },
                     {
@@ -9129,12 +9181,12 @@
                     {
                         "name": "If-Match",
                         "in": "header",
-                        "description": "The document's current ETag. A stale value is refused with 412; a missing one with 428.",
+                        "description": "The document's current ETag. A stale value is refused with 412. The SDKs will not send a call\nwithout it; a raw HTTP request that leaves it out is refused with 428.",
                         "schema": {
                             "type": "string",
                             "maxLength": 256,
                             "minLength": 1,
-                            "description": "The document's current ETag. A stale value is refused with 412; a missing one with 428."
+                            "description": "The document's current ETag. A stale value is refused with 412. The SDKs will not send a call\nwithout it; a raw HTTP request that leaves it out is refused with 428."
                         },
                         "required": true,
                         "examples": {
@@ -9386,7 +9438,7 @@
         },
         "/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/cancel-processing": {
             "post": {
-                "description": "Stops the work running on a document: its ingestion, a fill-in or reprocessing.\n\nA stopped first version removes the document; a stopped new version leaves the current one\nserving. Until stopping running work is built, every call is refused with 409 `CONFLICT` (\"This\ndocument's processing can't be stopped yet\"), so callers can build against it now.",
+                "description": "Stops the work running on a document: its ingestion, a fill-in or reprocessing.\n\nA stopped first version removes the document; a stopped new version leaves the current one\nserving. Until stopping running work is built, every call is refused with 409 `CONFLICT` (\"This\ndocument's processing can't be stopped yet\"), so callers can build against it now.\n\nNeeds the files update permission. Stopping a first version removes the document, so it also\nneeds the files delete permission, and a caller without it is refused with 403\n`PERMISSION_DENIED`. The server checks this, because the permission trait follows input members,\nnot the document's state.",
                 "operationId": "CancelDocumentProcessing",
                 "parameters": [
                     {
@@ -10913,7 +10965,7 @@
         },
         "/v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{version}": {
             "delete": {
-                "description": "Deletes one version of a document that is neither current nor processing.\n\nThe version, its passages and its renders are removed; its bytes are kept while another version\nor document has the same ones. The current version and a version still processing are refused with\n409 `CONFLICT`; to remove the current version, delete the document. Like every change, it is\naudited.\n\nA version's number is its place in upload order, so deleting by number needs the document's\nversions to be numbered already: until they are, a number is refused with 409\n`VERSIONS_NOT_NUMBERED`, because deleting would shift every later number. Try again later, or\ndelete `latest`, which works either way.",
+                "description": "Deletes one version of a document that is neither current nor processing.\n\nThe version, its passages and its renders are removed; its bytes are kept while another version\nor document has the same ones. The current version and a version still processing are refused with\n409 `CONFLICT`; to remove the current version, delete the document. Like every change, it is\naudited.\n\nA version's number is its place in upload order, so deleting by number needs the document's\nversions to be numbered already: until they are, a number is refused with 409\n`VERSIONS_NOT_NUMBERED`, because deleting would shift every later number; try again later.\n\nOnly a version number is accepted: `latest` and `current` are refused with 400\n`VALIDATION_FAILED`, because the version they name changes after each delete, so a retried\nrequest could delete a second version.",
                 "operationId": "DeleteDocumentVersion",
                 "parameters": [
                     {
@@ -10934,7 +10986,7 @@
                                 "value": "KB4T7YQ2WL"
                             },
                             "DeleteDocumentVersion_example2": {
-                                "summary": "The current version",
+                                "summary": "The current version, by its number",
                                 "description": "",
                                 "value": "KB4T7YQ2WL"
                             },
@@ -10963,7 +11015,7 @@
                                 "value": "doc-3b7f9e21"
                             },
                             "DeleteDocumentVersion_example2": {
-                                "summary": "The current version",
+                                "summary": "The current version, by its number",
                                 "description": "",
                                 "value": "doc-3b7f9e21"
                             },
@@ -10977,13 +11029,13 @@
                     {
                         "name": "version",
                         "in": "path",
-                        "description": "The version to delete: its number, or `current` or `latest` as GetDocumentVersion takes them.\nThe current version itself is refused, as above.",
+                        "description": "The number of the version to delete. `current` and `latest` are refused with 400\n`VALIDATION_FAILED`. The current version itself is refused, as above.",
                         "schema": {
                             "type": "string",
                             "maxLength": 10,
                             "minLength": 1,
                             "pattern": "^([1-9][0-9]{0,8}|current|latest)$",
-                            "description": "The version to delete: its number, or `current` or `latest` as GetDocumentVersion takes them.\nThe current version itself is refused, as above."
+                            "description": "The number of the version to delete. `current` and `latest` are refused with 400\n`VALIDATION_FAILED`. The current version itself is refused, as above."
                         },
                         "required": true,
                         "examples": {
@@ -10993,9 +11045,9 @@
                                 "value": "1"
                             },
                             "DeleteDocumentVersion_example2": {
-                                "summary": "The current version",
+                                "summary": "The current version, by its number",
                                 "description": "",
-                                "value": "current"
+                                "value": "2"
                             },
                             "DeleteDocumentVersion_example3": {
                                 "summary": "A version number before the document's versions are numbered",
@@ -11089,7 +11141,7 @@
                                 },
                                 "examples": {
                                     "DeleteDocumentVersion_example2": {
-                                        "summary": "The current version",
+                                        "summary": "The current version, by its number",
                                         "description": "",
                                         "value": {
                                             "type": "https://build.caitlyn.ai/errors/CONFLICT",
@@ -11108,7 +11160,7 @@
                                             "title": "Versions not numbered",
                                             "status": 409,
                                             "code": "VERSIONS_NOT_NUMBERED",
-                                            "detail": "Document doc-3b7f9e21's versions are not numbered yet. Try again later, or delete latest.",
+                                            "detail": "Document doc-3b7f9e21's versions are not numbered yet. Try again later.",
                                             "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BD5"
                                         }
                                     }
@@ -12548,7 +12600,7 @@
         },
         "/v3/knowledge-bases/{knowledgeBaseId}/events": {
             "get": {
-                "description": "Watches a knowledge base, or one document, folder or batch in it: a snapshot first, then each\nchange.\n\nEvery connection starts with `snapshot`: the thing watched as it stands, its running and recently\nfinished jobs, and the progress of each document being processed. Then one event per change. A\nreconnect needs no cursor, because it starts with a snapshot again; nothing is replayed and\nnothing is lost. The SDKs build every scope's `watch()` and `wait()` on this: `wait()` returns once\nno job on the thing is running, or raises the error of the job that failed. Events name a document\nonly to callers who may read it. The server ends the stream after at most an hour, and the SDKs\nreconnect.",
+                "description": "Watches a knowledge base, or one document, folder or batch in it: a snapshot first, then each\nchange.\n\nEvery connection starts with `snapshot`: the thing watched as it stands, its running and recently\nfinished jobs, and the progress of each document being processed. Then one event per change. A\nreconnect needs no cursor, because it starts with a snapshot again; nothing is replayed and\nnothing is lost. The SDKs build every scope's `watch()` and `wait()` on this: `wait()` returns once\nno job on the thing is running, or raises the error of the job that failed. Events name a document\nonly to callers who may read it. The server ends the stream after at most an hour, and the SDKs\nreconnect.\n\nWhat the caller needs depends on what it watches. The whole knowledge base needs the knowledge\nbase read permission and the files list permission, because the snapshot returns the knowledge\nbase and the documents' progress. One document or folder needs the files list permission. One\nbatch needs the ingestion list permission, because the snapshot returns the batch.",
                 "operationId": "WatchKnowledgeBase",
                 "parameters": [
                     {
@@ -14466,7 +14518,7 @@
         },
         "/v3/knowledge-bases/{knowledgeBaseId}/folders": {
             "get": {
-                "description": "Lists the folders in a knowledge base, one page at a time.\n\nWith `filter[parent][eq]`, the folders directly in that folder; with `deep` as well, every folder\nbelow it. `q` keeps folders whose name contains the text. List the documents in a folder with\nListDocuments.",
+                "description": "Lists the folders in a knowledge base, one page at a time.\n\nFolders come back in a stable order that does not change between pages; the server decides the\ndefault order, which is not yet recorded here. With `filter[parent][eq]`, the folders directly in that folder; with `deep` as well, every folder\nbelow it. `q` keeps folders whose name contains the text. List the documents in a folder with\nListDocuments.",
                 "operationId": "ListFolders",
                 "parameters": [
                     {
@@ -15315,12 +15367,12 @@
                     {
                         "name": "If-Match",
                         "in": "header",
-                        "description": "The folder's current ETag. A stale value is refused with 412; a missing one with 428.",
+                        "description": "The folder's current ETag. A stale value is refused with 412. The SDKs will not send a call\nwithout it; a raw HTTP request that leaves it out is refused with 428.",
                         "schema": {
                             "type": "string",
                             "maxLength": 256,
                             "minLength": 1,
-                            "description": "The folder's current ETag. A stale value is refused with 412; a missing one with 428."
+                            "description": "The folder's current ETag. A stale value is refused with 412. The SDKs will not send a call\nwithout it; a raw HTTP request that leaves it out is refused with 428."
                         },
                         "required": true,
                         "examples": {
@@ -15803,7 +15855,7 @@
                 }
             },
             "post": {
-                "description": "Makes an ingestion batch for one knowledge base, and plans it unless more items will follow.\n\nTakes up to 10,000 items; add more with BatchCreateIngestionBatchItems while `awaitMoreItems` is\ntrue. Returns 202 with the batch, and `Location` names it; wait for the plan with the SDKs'\n`batch.planned()`. Needs the ingestion create permission and read access to the knowledge base,\nas v2's ingestion route does; starting the batch, which hands out an upload policy, also needs the\nfiles create permission. A `fetchUrl` item needs the files create permission when it is added,\nwhich the server checks, because the trait cannot follow an item's member.",
+                "description": "Makes an ingestion batch for one knowledge base, and plans it unless more items will follow.\n\nTakes up to 10,000 items; add more with BatchCreateIngestionBatchItems while `awaitMoreItems` is\ntrue. Returns 202 with the batch, and `Location` names it; wait for the plan with the SDKs'\n`batch.planned()`. Needs the ingestion create permission and read access to the knowledge base,\nas v2's ingestion route does. A batch that needs bytes uploaded also needs the files create\npermission to be started with StartIngestionBatch, which hands out the upload policy; a batch that\nneeds none runs without that call under `start: when_planned`. A `fetchUrl` item needs the files\ncreate permission when it is added, which the server checks, because the trait cannot follow an\nitem's member.\n\nEach item that removes a document (`remove`, or an overwrite) is checked by the server for the\nfiles delete permission, and each item that moves one, or adds a new version of one, for the files\nupdate permission, and the token's scope covers it too. An item that fails the check is marked\n`failed` with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts\nthrough StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked\nper item, not once on the call.",
                 "operationId": "CreateIngestionBatch",
                 "requestBody": {
                     "content": {
@@ -16445,12 +16497,12 @@
                     {
                         "name": "If-Match",
                         "in": "header",
-                        "description": "The batch's current ETag. A stale value is refused with 412; a missing one with 428.",
+                        "description": "The batch's current ETag. A stale value is refused with 412. The SDKs will not send a call\nwithout it; a raw HTTP request that leaves it out is refused with 428.",
                         "schema": {
                             "type": "string",
                             "maxLength": 256,
                             "minLength": 1,
-                            "description": "The batch's current ETag. A stale value is refused with 412; a missing one with 428."
+                            "description": "The batch's current ETag. A stale value is refused with 412. The SDKs will not send a call\nwithout it; a raw HTTP request that leaves it out is refused with 428."
                         },
                         "required": true,
                         "examples": {
@@ -17739,7 +17791,7 @@
                 }
             },
             "patch": {
-                "description": "Resolves one item of a planned batch by hand.\n\nOnly `resolution` can change, and only while the batch is `planned`; anything else is refused with\n409 `CONFLICT`. A resolution that does not fit the outcome (for example `move` for a `new` item) is\nrefused with 400 `VALIDATION_FAILED`.",
+                "description": "Resolves one item of a planned batch by hand.\n\nOnly `resolution` can change, and only while the batch is `planned`; anything else is refused with\n409 `CONFLICT`. A resolution that does not fit the outcome (for example `move` for a `new` item) is\nrefused with 400 `VALIDATION_FAILED`.\n\nResolving to `remove`, an overwrite or `move` does not check the permission now: each item that\nremoves a document (`remove`, or an overwrite) is checked by the server for the files delete\npermission, and each item that moves one, or adds a new version of one, for the files update\npermission, and the token's scope covers it too. An item that fails the check is marked `failed`\nwith `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts through\nStartIngestionBatch or by itself under `start: when_planned`, so the permission is checked per\nitem, not once on the call.",
                 "operationId": "UpdateIngestionBatchItem",
                 "requestBody": {
                     "content": {
@@ -18641,7 +18693,7 @@
         },
         "/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/start": {
             "post": {
-                "description": "Starts a planned ingestion batch, and returns the upload policy for the items that need bytes.\n\n`If-Match` is optional. Without it, the batch starts as it stands; with it, a batch that changed\nsince that ETag is refused with 412. A stale plan is planned again first. Each item's write is then checked and\nclaimed: a new document is reserved at its path, and an existing one is protected by its own\nversion, so a document that changed since the plan becomes a `changed_since_plan` conflict. An item\nthe caller may not write is marked `failed` with `PERMISSION_DENIED`, and the rest carry on; the\ncall still answers 202. Refused with 409\n`INGESTION_BATCH_UNRESOLVED` while any item is `unresolved`. Returns 202 with the batch and one\nupload policy: list the items to upload with `filter[status][eq]=awaiting_upload`, upload each to\nits `objectKey`, then report them with CompleteIngestionBatchUploads.",
+                "description": "Starts a planned ingestion batch, and returns the upload policy for the items that need bytes.\n\n`If-Match` is optional. Without it, the batch starts as it stands; with it, a batch that changed\nsince that ETag is refused with 412. A stale plan is planned again first. Each item's write is then checked and\nclaimed: a new document is reserved at its path, and an existing one is protected by its own\nversion, so a document that changed since the plan becomes a `changed_since_plan` conflict. An item\nthe caller may not write is marked `failed` with `PERMISSION_DENIED`, and the rest carry on; the\ncall still answers 202. Refused with 409\n`INGESTION_BATCH_UNRESOLVED` while any item is `unresolved`. Returns 202 with the batch and one\nupload policy: list the items to upload with `filter[status][eq]=awaiting_upload`, upload each to\nits `objectKey`, then report them with CompleteIngestionBatchUploads.\n\nEach item that removes a document (`remove`, or an overwrite) is checked by the server for the\nfiles delete permission, and each item that moves one, or adds a new version of one, for the files\nupdate permission, and the token's scope covers it too. An item that fails the check is marked\n`failed` with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts\nthrough StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked\nper item, not once on the call.",
                 "operationId": "StartIngestionBatch",
                 "parameters": [
                     {
@@ -19634,7 +19686,7 @@
         },
         "/v3/knowledge-bases/{knowledgeBaseId}/operations": {
             "get": {
-                "description": "Lists the Operations on one knowledge base, or one thing in it, newest first.\n\nThe caller needs read access to the knowledge base. Narrow the list with the target, the kind and\nthe status.",
+                "description": "Lists the Operations on one knowledge base, or one thing in it, newest first.\n\nThe caller needs read access to the knowledge base. Narrow the list with the target, the kind and\nthe status. Rows are filtered to the Operations a direct GetOperation would return for this\ncaller: an Operation whose target the caller could not read is left out, not shown with its\ndetails removed.",
                 "operationId": "ListOperations",
                 "parameters": [
                     {
@@ -20112,7 +20164,7 @@
         },
         "/v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}/cancel": {
             "post": {
-                "description": "Cancels an Operation's work.\n\nWork not started yet is dropped; work running is stopped where its kind allows. Only\n`document_ingestion` can be cancelled today: a cancelled first version removes the document, and a\ncancelled new version leaves the current one serving. Any other kind is refused with 409\n`OPERATION_NOT_CANCELLABLE`, and a final Operation with 409 `CONFLICT`. Returns the Operation, which\nbecomes `cancelled` once the work has stopped.\n\nCancelling needs what starting that kind of work needs, on the same record, which the server\nreads from the Operation and checks per kind before it acts: for `document_ingestion`, the\npermission that started it (`files.create` for a new document, `files.update` for a new version\nor a retry) and the document's readers; for `document_update`, `files.update` and its readers; for\n`fill_in`, `reprocess` and `layout_aware_search`, `knowledge-bases.update` and\n`knowledge-bases.ingestions.update`; for a `folder_change`, the permission of the change\n(`files.create`, `files.update` or `files.delete`) and the folder's readers; for\n`permissions_change`, `files.permissions.update` and the record's readers; for\n`knowledge_base_deletion`, `knowledge-bases.delete`. A caller without it gets 404, as for an\nOperation it may not see. No one permission is common to every kind, so the operation declares\nonly what reading an Operation needs (`files.read`, as GetOperation), and the per-kind check does\nthe rest.",
+                "description": "Cancels an Operation's work.\n\nWork not started yet is dropped; work running is stopped. Only `document_ingestion` can be\ncancelled today: a cancelled first version removes the document, and a cancelled new version\nleaves the current one serving. Any other kind is refused with 409 `OPERATION_NOT_CANCELLABLE`,\nand a final Operation with 409 `CONFLICT`. Returns the Operation, which becomes `cancelled` once\nthe work has stopped.\n\nNeeds the files update permission. For `document_ingestion` the server also checks, on the\ndocument the Operation reads, the permission that started it (`files.create` for a new document,\n`files.update` for a new version or a retry) and the document's readers. A caller without it\ngets 404, as for an Operation it may not see.",
                 "operationId": "CancelOperation",
                 "parameters": [
                     {
@@ -21373,7 +21425,8 @@
                                             "uploadUrl": "https://uploads.example.com/0193a6f2-1111-7a2b-8c3d-4e5f60718293?signature=abc",
                                             "uploadMethod": "PUT",
                                             "requiredHeaders": {
-                                                "Content-Type": "application/pdf"
+                                                "Content-Type": "application/pdf",
+                                                "x-amz-checksum-sha256": "n4bQgYhMfWWaL+qgxVrQFaO/TxsrC4Is0V1sFbDwCgg="
                                             },
                                             "expiresAt": "2026-11-10T01:17:03.000Z",
                                             "status": "awaiting_bytes"
@@ -22942,7 +22995,7 @@
                         "type": "string",
                         "maxLength": 128,
                         "minLength": 1,
-                        "description": "Which of the workspace's connectors the version may use."
+                        "description": "Which of the workspace's connectors the version may use. The caller must be able to read the\nconnector; one it cannot read is refused with 404 `NOT_FOUND`."
                     }
                 },
                 "required": [
@@ -22957,7 +23010,7 @@
                         "type": "string",
                         "maxLength": 128,
                         "minLength": 1,
-                        "description": "The ID of an entry in `GET /v3/guardrails`, `default` (the platform default, also used when\nabsent) or `none`."
+                        "description": "The ID of an entry in `GET /v3/guardrails`, `default` (the platform default, also used when\nabsent) or `none`. The caller must be able to read the entry; one it cannot read is refused\nwith 404 `NOT_FOUND`."
                     }
                 }
             },
@@ -25101,7 +25154,7 @@
                         "maxLength": 2048,
                         "minLength": 9,
                         "pattern": "^https://[^ ]+$",
-                        "description": "The address a citation of the document links to. Defaults to `fetchUrl`."
+                        "description": "The address a citation of the document links to. Defaults to `fetchUrl` when that is an `https`\naddress; with an `http` `fetchUrl` and no `sourceUrl`, the document has none."
                     },
                     "metadata": {
                         "$ref": "#/components/schemas/DocumentMetadata"
@@ -25315,7 +25368,7 @@
                         "maxLength": 2048,
                         "minLength": 9,
                         "pattern": "^https://[^ ]+$",
-                        "description": "The address a citation of the document links to. Defaults to `fetchUrl`."
+                        "description": "The address a citation of the document links to. Defaults to `fetchUrl` when that is an `https`\naddress; with an `http` `fetchUrl` and no `sourceUrl`, the document has none."
                     },
                     "metadata": {
                         "$ref": "#/components/schemas/DocumentMetadata"
@@ -26302,14 +26355,14 @@
                         "type": "string",
                         "maxLength": 128,
                         "minLength": 1,
-                        "description": "The stored secret holding the provider's key. Exported as a template variable."
+                        "description": "The stored secret holding the provider's key. Exported as a template variable. The secret must\nbelong to this workspace, and the caller must be allowed to update the agent's integrations,\nthe permission v2 asks for when it stores the key."
                     },
                     "answerVersion": {
                         "type": "string",
                         "maxLength": 63,
                         "minLength": 1,
                         "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$",
-                        "description": "The version of this agent that answers for the avatar. Absent means this version. `draft` and\n`live` follow their moving target: edits to the draft, and each publish, take effect without\nthis setting changing. A saved version's name never moves."
+                        "description": "The version of this agent that answers for the avatar: `live`, or a saved version's name.\nAbsent means this version. `live` follows its moving target, so each publish takes effect\nwithout this setting changing; a saved version's name never moves. `draft` is not accepted:\nsaving a configuration that names it is refused with 400 `VALIDATION_FAILED`."
                     },
                     "triggerPhrases": {
                         "type": "array",
@@ -26439,7 +26492,7 @@
                         "type": "string",
                         "maxLength": 128,
                         "minLength": 1,
-                        "description": "The memory store, from `GET /v3/memory-stores`. Required when `enabled`."
+                        "description": "The memory store, from `GET /v3/memory-stores`. Required when `enabled`. The caller must be\nable to read the store."
                     },
                     "minimumRelevance": {
                         "type": "number",
@@ -27314,7 +27367,7 @@
                             "description": "A policy rule, as `<policyId>/<ruleId>`."
                         },
                         "maxItems": 200,
-                        "description": "For `take_action`: the policy rules this phase checks, as `<policyId>/<ruleId>`. Each policy\nmust be in `policies`."
+                        "description": "For `take_action`: the policy rules this phase checks, as `<policyId>/<ruleId>`. Each policy\nmust be in `policies`. The caller must be able to read each policy, checked on every save as\nfor `policies`; one it cannot read is refused with 404 `NOT_FOUND`."
                     },
                     "review": {
                         "$ref": "#/components/schemas/PolicyReviewSettings"
@@ -27551,7 +27604,7 @@
                         "type": "string",
                         "maxLength": 128,
                         "minLength": 1,
-                        "description": "An MCP server whose tools the phase may use. Exactly one of `name` and `mcpServerId`. With no\n`tools`, every tool on the server, including tools it adds later; otherwise only those\nlisted. Exported as a template variable."
+                        "description": "An MCP server whose tools the phase may use. Exactly one of `name` and `mcpServerId`. With no\n`tools`, every tool on the server, including tools it adds later; otherwise only those\nlisted. Exported as a template variable. The caller must be able to read the server."
                     },
                     "tools": {
                         "type": "array",
@@ -27676,7 +27729,7 @@
                         "type": "string",
                         "maxLength": 128,
                         "minLength": 1,
-                        "description": "Which policy the version may review documents against."
+                        "description": "Which policy the version may review documents against.\nThe caller must be able to read the policy. This is checked for every policy id sent, not only\nnew ones, because the rules go into the cached prompt. A policy the caller cannot read is\nrefused with 404 `NOT_FOUND`."
                     }
                 },
                 "required": [
@@ -27691,7 +27744,7 @@
                         "type": "string",
                         "maxLength": 128,
                         "minLength": 1,
-                        "description": "Which policy the phase reviews against. It must be in `policies`."
+                        "description": "Which policy the phase reviews against. It must be in `policies`.\nThe caller must be able to read the policy. This is checked for every policy id sent, not only\nnew ones, because the rules go into the cached prompt. A policy the caller cannot read is\nrefused with 404 `NOT_FOUND`."
                     },
                     "ruleIds": {
                         "type": "array",
@@ -28550,7 +28603,7 @@
                         "maxLength": 63,
                         "minLength": 1,
                         "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$",
-                        "description": "The version of this agent whose knowledge bases and search settings the tool uses. `draft` and\n`live` follow their moving target: edits to the draft, and each publish, take effect without\nthis setting changing. A saved version's name never moves."
+                        "description": "The version of this agent whose knowledge bases and search settings the tool uses: `live`, or\na saved version's name. `live` follows its moving target, so each publish takes effect without\nthis setting changing; a saved version's name never moves. `draft` is not accepted: saving a\nconfiguration that names it is refused with 400 `VALIDATION_FAILED`."
                     }
                 },
                 "required": [
@@ -28706,7 +28759,7 @@
             },
             "UnprocessableContentErrorResponseContent": {
                 "type": "object",
-                "description": "The idempotency key was already used with a different request body; supplied metadata does not\nfit the knowledge base's field definitions or limits (`METADATA_FIELD_UNDEFINED`,\n`METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one\nentry per field in `errors`; an ingestion batch item gives both or neither of its content's\ndescription and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused\na file (`CONTENT_REJECTED`).",
+                "description": "The idempotency key was already used with a different request body; supplied metadata does not\nfit the knowledge base's field definitions or limits (`METADATA_FIELD_UNDEFINED`,\n`METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one\nentry per field in `errors`; an ingestion batch item gives both or neither of its content's\ndescription and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused\na file (`CONTENT_REJECTED`); or a grant of a knowledge base to a role that guests or anonymous\nvisitors use is not safe for them (`RBAC_NOT_GUEST_SAFE`), refused for what the grant is, not\nfor what the caller lacks.",
                 "properties": {
                     "type": {
                         "type": "string",

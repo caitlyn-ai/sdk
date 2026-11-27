@@ -25,24 +25,16 @@ export interface CancelOperationCommandOutput extends CancelOperationOutput, __M
 /**
  * Cancels an Operation's work.
  *
- * Work not started yet is dropped; work running is stopped where its kind allows. Only
- * `document_ingestion` can be cancelled today: a cancelled first version removes the document, and a
- * cancelled new version leaves the current one serving. Any other kind is refused with 409
- * `OPERATION_NOT_CANCELLABLE`, and a final Operation with 409 `CONFLICT`. Returns the Operation, which
- * becomes `cancelled` once the work has stopped.
+ * Work not started yet is dropped; work running is stopped. Only `document_ingestion` can be
+ * cancelled today: a cancelled first version removes the document, and a cancelled new version
+ * leaves the current one serving. Any other kind is refused with 409 `OPERATION_NOT_CANCELLABLE`,
+ * and a final Operation with 409 `CONFLICT`. Returns the Operation, which becomes `cancelled` once
+ * the work has stopped.
  *
- * Cancelling needs what starting that kind of work needs, on the same record, which the server
- * reads from the Operation and checks per kind before it acts: for `document_ingestion`, the
- * permission that started it (`files.create` for a new document, `files.update` for a new version
- * or a retry) and the document's readers; for `document_update`, `files.update` and its readers; for
- * `fill_in`, `reprocess` and `layout_aware_search`, `knowledge-bases.update` and
- * `knowledge-bases.ingestions.update`; for a `folder_change`, the permission of the change
- * (`files.create`, `files.update` or `files.delete`) and the folder's readers; for
- * `permissions_change`, `files.permissions.update` and the record's readers; for
- * `knowledge_base_deletion`, `knowledge-bases.delete`. A caller without it gets 404, as for an
- * Operation it may not see. No one permission is common to every kind, so the operation declares
- * only what reading an Operation needs (`files.read`, as GetOperation), and the per-kind check does
- * the rest.
+ * Needs the files update permission. For `document_ingestion` the server also checks, on the
+ * document the Operation reads, the permission that started it (`files.create` for a new document,
+ * `files.update` for a new version or a retry) and the document's readers. A caller without it
+ * gets 404, as for an Operation it may not see.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript

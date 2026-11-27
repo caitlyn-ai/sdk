@@ -162,7 +162,12 @@ export function batchDeleteDocuments(client: CaitlynClient, input: BatchDeleteDo
  * 
  * A stopped first version removes the document; a stopped new version leaves the current one
  * serving. Until stopping running work is built, every call is refused with 409 `CONFLICT` ("This
- * document's processing can't be stopped yet"), so callers can build against it now. */
+ * document's processing can't be stopped yet"), so callers can build against it now.
+ * 
+ * Needs the files update permission. Stopping a first version removes the document, so it also
+ * needs the files delete permission, and a caller without it is refused with 403
+ * `PERMISSION_DENIED`. The server checks this, because the permission trait follows input members,
+ * not the document's state. */
 export function cancelDocumentProcessing(client: CaitlynClient, input: CancelDocumentProcessingInput, options: CallOptions = {}): Promise<WithRaw<Document & __MetadataBearer>> {
   const { signal, ...rest } = options;
   return client.send(new CancelDocumentProcessingCommand({ ...input, ...rest }), { abortSignal: signal }).then((out) => thingOf<WithRaw<Document & __MetadataBearer>>(out, "document")) as Promise<WithRaw<Document & __MetadataBearer>>;
@@ -196,24 +201,16 @@ export function cancelIngestionBatchItem(client: CaitlynClient, input: Omit<Canc
 
 /** Cancels an Operation's work.
  * 
- * Work not started yet is dropped; work running is stopped where its kind allows. Only
- * `document_ingestion` can be cancelled today: a cancelled first version removes the document, and a
- * cancelled new version leaves the current one serving. Any other kind is refused with 409
- * `OPERATION_NOT_CANCELLABLE`, and a final Operation with 409 `CONFLICT`. Returns the Operation, which
- * becomes `cancelled` once the work has stopped.
+ * Work not started yet is dropped; work running is stopped. Only `document_ingestion` can be
+ * cancelled today: a cancelled first version removes the document, and a cancelled new version
+ * leaves the current one serving. Any other kind is refused with 409 `OPERATION_NOT_CANCELLABLE`,
+ * and a final Operation with 409 `CONFLICT`. Returns the Operation, which becomes `cancelled` once
+ * the work has stopped.
  * 
- * Cancelling needs what starting that kind of work needs, on the same record, which the server
- * reads from the Operation and checks per kind before it acts: for `document_ingestion`, the
- * permission that started it (`files.create` for a new document, `files.update` for a new version
- * or a retry) and the document's readers; for `document_update`, `files.update` and its readers; for
- * `fill_in`, `reprocess` and `layout_aware_search`, `knowledge-bases.update` and
- * `knowledge-bases.ingestions.update`; for a `folder_change`, the permission of the change
- * (`files.create`, `files.update` or `files.delete`) and the folder's readers; for
- * `permissions_change`, `files.permissions.update` and the record's readers; for
- * `knowledge_base_deletion`, `knowledge-bases.delete`. A caller without it gets 404, as for an
- * Operation it may not see. No one permission is common to every kind, so the operation declares
- * only what reading an Operation needs (`files.read`, as GetOperation), and the per-kind check does
- * the rest. */
+ * Needs the files update permission. For `document_ingestion` the server also checks, on the
+ * document the Operation reads, the permission that started it (`files.create` for a new document,
+ * `files.update` for a new version or a retry) and the document's readers. A caller without it
+ * gets 404, as for an Operation it may not see. */
 export function cancelOperation(client: CaitlynClient, input: CancelOperationInput, options: CallOptions = {}): Promise<WithRaw<Operation & __MetadataBearer>> {
   const { signal, ...rest } = options;
   return client.send(new CancelOperationCommand({ ...input, ...rest }), { abortSignal: signal }).then((out) => thingOf<WithRaw<Operation & __MetadataBearer>>(out, "operation")) as Promise<WithRaw<Operation & __MetadataBearer>>;
@@ -318,9 +315,18 @@ export function createFolder(client: CaitlynClient, input: Omit<CreateFolderInpu
  * Takes up to 10,000 items; add more with BatchCreateIngestionBatchItems while `awaitMoreItems` is
  * true. Returns 202 with the batch, and `Location` names it; wait for the plan with the SDKs'
  * `batch.planned()`. Needs the ingestion create permission and read access to the knowledge base,
- * as v2's ingestion route does; starting the batch, which hands out an upload policy, also needs the
- * files create permission. A `fetchUrl` item needs the files create permission when it is added,
- * which the server checks, because the trait cannot follow an item's member. */
+ * as v2's ingestion route does. A batch that needs bytes uploaded also needs the files create
+ * permission to be started with StartIngestionBatch, which hands out the upload policy; a batch that
+ * needs none runs without that call under `start: when_planned`. A `fetchUrl` item needs the files
+ * create permission when it is added, which the server checks, because the trait cannot follow an
+ * item's member.
+ * 
+ * Each item that removes a document (`remove`, or an overwrite) is checked by the server for the
+ * files delete permission, and each item that moves one, or adds a new version of one, for the files
+ * update permission, and the token's scope covers it too. An item that fails the check is marked
+ * `failed` with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts
+ * through StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked
+ * per item, not once on the call. */
 export function createIngestionBatch(client: CaitlynClient, input: Omit<CreateIngestionBatchInput, "idempotencyKey">, options: CallOptions & { idempotencyKey?: string } = {}): Promise<WithRaw<IngestionBatch & __MetadataBearer>> {
   const { signal, ...rest } = options;
   return client.send(new CreateIngestionBatchCommand({ ...input, ...rest }), { abortSignal: signal }).then((out) => thingOf<WithRaw<IngestionBatch & __MetadataBearer>>(out, "batch")) as Promise<WithRaw<IngestionBatch & __MetadataBearer>>;
@@ -407,8 +413,11 @@ export function deleteDocument(client: CaitlynClient, input: DeleteDocumentInput
  * 
  * A version's number is its place in upload order, so deleting by number needs the document's
  * versions to be numbered already: until they are, a number is refused with 409
- * `VERSIONS_NOT_NUMBERED`, because deleting would shift every later number. Try again later, or
- * delete `latest`, which works either way. */
+ * `VERSIONS_NOT_NUMBERED`, because deleting would shift every later number; try again later.
+ * 
+ * Only a version number is accepted: `latest` and `current` are refused with 400
+ * `VALIDATION_FAILED`, because the version they name changes after each delete, so a retried
+ * request could delete a second version. */
 export function deleteDocumentVersion(client: CaitlynClient, input: DeleteDocumentVersionInput, options: CallOptions = {}): Promise<WithRaw<DeleteDocumentVersionResult & __MetadataBearer>> {
   const { signal, ...rest } = options;
   return client.send(new DeleteDocumentVersionCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<DeleteDocumentVersionResult & __MetadataBearer>>;
@@ -513,7 +522,12 @@ export function fillInFields(client: CaitlynClient, input: Omit<FillInFieldsInpu
  * folder's `readers`; with `document`, that document's. `inheritedFrom` names the folder whose readers
  * apply when they are inherited. A folder or document the caller may not see is 404. The root
  * folder (`folder=/`, `kb.folders('/').access`) holds the readers every folder falls back to; its
- * readers are never inherited. */
+ * readers are never inherited.
+ * 
+ * For a folder or document, the `readers` also come back on ListFolders, ListDocuments and
+ * GetDocument too, with `inheritedFrom`, under the files list and read permissions. What GetAccess
+ * adds is the access on its own, with the ETag that SetAccess's `If-Match` takes, and the root
+ * folder's readers; reading it needs the files permissions list permission. */
 export function getAccess(client: CaitlynClient, input: GetAccessInput, options: CallOptions = {}): Promise<WithRaw<Access & __MetadataBearer>> {
   const { signal, ...rest } = options;
   return client.send(new GetAccessCommand({ ...input, ...rest }), { abortSignal: signal }).then((out) => thingOf<WithRaw<Access & __MetadataBearer>>(out, "access")) as Promise<WithRaw<Access & __MetadataBearer>>;
@@ -533,7 +547,8 @@ export function getAgent(client: CaitlynClient, input: GetAgentInput, options: C
  * `version` is `draft`, `live` or the name of a saved or published version. Live is the version the
  * agent's live pointer names, read as `live`; it is readable by everyone with access to the agent.
  * The draft and named versions are readable only by the people and groups on the agent's version
- * access grant, and anyone else gets 404, as for an agent with no live version yet. */
+ * access grant, and anyone else gets 404. An agent with no live version, because none has been
+ * published or chosen yet, answers `live` with 404 `NO_LIVE_VERSION`. */
 export function getAgentVersion(client: CaitlynClient, input: GetAgentVersionInput, options: CallOptions = {}): Promise<WithRaw<AgentVersion & __MetadataBearer>> {
   const { signal, ...rest } = options;
   return client.send(new GetAgentVersionCommand({ ...input, ...rest }), { abortSignal: signal }).then((out) => thingOf<WithRaw<AgentVersion & __MetadataBearer>>(out, "version")) as Promise<WithRaw<AgentVersion & __MetadataBearer>>;
@@ -612,8 +627,8 @@ export function getField(client: CaitlynClient, input: GetFieldInput, options: C
  * The configuration is that of the entry's `version`, which never changes. Reading the entry (who
  * changed live, when, and to which version) needs agent read; its `configuration` needs what
  * reading that version needs, so a caller without the permission to read versions, or without the
- * agent's version access grant for a version that is not live now, gets the entry without it. It is also absent when that version was deleted
- * through an older API that does not protect versions named in live history. */
+ * agent's version access grant, gets the entry without it. It is also absent when that version was
+ * deleted through an older API that does not protect versions named in live history. */
 export function getHistoryEntry(client: CaitlynClient, input: GetHistoryEntryInput, options: CallOptions = {}): Promise<WithRaw<HistoryEntry & __MetadataBearer>> {
   const { signal, ...rest } = options;
   return client.send(new GetHistoryEntryCommand({ ...input, ...rest }), { abortSignal: signal }).then((out) => thingOf<WithRaw<HistoryEntry & __MetadataBearer>>(out, "historyEntry")) as Promise<WithRaw<HistoryEntry & __MetadataBearer>>;
@@ -668,8 +683,8 @@ export function getUpload(client: CaitlynClient, input: GetUploadInput, options:
  * 
  * Each entry says how the version was made, who made it, whether live points at it, and which
  * members differ from the version it was made from. The draft and live are not entries: read them
- * with `draft` and `live`. Needs the agent's version access grant, as reading any version other than
- * live does. */
+ * with `draft` and `live`. Needs the agent's version access grant, as reading any version, `live`
+ * included, does. */
 export function listAgentVersions(client: CaitlynClient, input: ListAgentVersionsInput, options: CallOptions = {}): Paginated<WithRaw<ListAgentVersionsOutput & __MetadataBearer>, WithRaw<AgentVersion>> {
   const { signal, ...rest } = options;
   return paginated(
@@ -723,8 +738,9 @@ export function listDocumentVersions(client: CaitlynClient, input: ListDocumentV
  * Documents are returned in a stable order that does not change between pages. Filters combine
  * with AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. With `filter[folder][eq]`,
  * the documents directly in that folder; with `deep` as well, every document below it. `q` keeps
- * documents whose name contains the text. The list can be sorted by `name`, `updatedAt` (when the
- * document last changed) and `byteSize`. */
+ * documents whose name contains the text. The list can be sorted by `folder`, `name`, `updatedAt`
+ * (when the document last changed) and `byteSize`. With no `sort`, documents come by folder, then
+ * name. */
 export function listDocuments(client: CaitlynClient, input: ListDocumentsInput, options: CallOptions = {}): Paginated<WithRaw<ListDocumentsOutput & __MetadataBearer>, WithRaw<Document>> {
   const { signal, ...rest } = options;
   return paginated(
@@ -749,7 +765,8 @@ export function listFields(client: CaitlynClient, input: ListFieldsInput, option
 
 /** Lists the folders in a knowledge base, one page at a time.
  * 
- * With `filter[parent][eq]`, the folders directly in that folder; with `deep` as well, every folder
+ * Folders come back in a stable order that does not change between pages; the server decides the
+ * default order, which is not yet recorded here. With `filter[parent][eq]`, the folders directly in that folder; with `deep` as well, every folder
  * below it. `q` keeps folders whose name contains the text. List the documents in a folder with
  * ListDocuments. */
 export function listFolders(client: CaitlynClient, input: ListFoldersInput, options: CallOptions = {}): Paginated<WithRaw<ListFoldersOutput & __MetadataBearer>, WithRaw<Folder>> {
@@ -815,7 +832,8 @@ export function listIngestionBatches(client: CaitlynClient, input: ListIngestion
   );
 }
 
-/** Lists the knowledge bases the caller may see, in every state.
+/** Lists the knowledge bases the caller may see, in every state, in a stable order that does not
+ * change between pages. The server decides the default order; it is not yet recorded here.
  * 
  * Knowledge bases still being created, being moved, that failed or that are being deleted are
  * listed too, each with its `status`. Document operations on a knowledge base that is not `ready`
@@ -871,7 +889,9 @@ export function listModels(client: CaitlynClient, input: ListModelsInput, option
 /** Lists the Operations on one knowledge base, or one thing in it, newest first.
  * 
  * The caller needs read access to the knowledge base. Narrow the list with the target, the kind and
- * the status. */
+ * the status. Rows are filtered to the Operations a direct GetOperation would return for this
+ * caller: an Operation whose target the caller could not read is left out, not shown with its
+ * details removed. */
 export function listOperations(client: CaitlynClient, input: ListOperationsInput, options: CallOptions = {}): Paginated<WithRaw<ListOperationsOutput & __MetadataBearer>, WithRaw<Operation>> {
   const { signal, ...rest } = options;
   return paginated(
@@ -918,7 +938,7 @@ export function listVoices(client: CaitlynClient, input: ListVoicesInput, option
  * be: `expectedLive` names the version (or `none` before the first publish), or `If-Match` carries
  * live's ETag. Either, when stale, is refused with 412; with neither, the publish applies to live as
  * it is. Returns live, the version published, and the history entry the publish wrote. */
-export function publishAgentVersion(client: CaitlynClient, input: Omit<PublishAgentVersionInput, "ifMatch">, options: CallOptions & { ifMatch?: string } = {}): Promise<WithRaw<PublishAgentVersionResult & __MetadataBearer>> {
+export function publishAgentVersion(client: CaitlynClient, input: Omit<PublishAgentVersionInput, "idempotencyKey" | "ifMatch">, options: CallOptions & { idempotencyKey?: string; ifMatch?: string } = {}): Promise<WithRaw<PublishAgentVersionResult & __MetadataBearer>> {
   const { signal, ...rest } = options;
   return client.send(new PublishAgentVersionCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<PublishAgentVersionResult & __MetadataBearer>>;
 }
@@ -937,7 +957,13 @@ export function publishAgentVersion(client: CaitlynClient, input: Omit<PublishAg
  * (`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there
  * with 400 `VALIDATION_FAILED`. Applying readers to
  * the passages a folder or document holds continues after the response; the returned access says
- * what is set, and the knowledge base's watch shows the work. */
+ * what is set, and the knowledge base's watch shows the work.
+ * 
+ * Setting `roles` is refused in two cases, as in v2. A caller may give a role only a grant it
+ * could make itself: any other is refused with 403 `PERMISSION_DENIED`. And a grant that is not
+ * safe for guests, given to a role that guests or anonymous visitors use, is refused with 422
+ * `RBAC_NOT_GUEST_SAFE`. Only the grants being added are judged, so a grant the role already holds
+ * never blocks an unrelated change. Both checks are made by the server on the roles sent. */
 export function putAccess(client: CaitlynClient, input: Omit<PutAccessInput, "ifMatch">, options: CallOptions & { ifMatch?: string } = {}): Promise<WithRaw<Access & __MetadataBearer>> {
   const { signal, ...rest } = options;
   return client.send(new PutAccessCommand({ ...input, ...rest }), { abortSignal: signal }).then((out) => thingOf<WithRaw<Access & __MetadataBearer>>(out, "access")) as Promise<WithRaw<Access & __MetadataBearer>>;
@@ -971,7 +997,7 @@ export function reprocessDocuments(client: CaitlynClient, input: Omit<ReprocessD
  * The draft's configuration becomes the configuration of `from`, which is a version name or `live`.
  * Nothing else changes: `from` is kept as it is, and live is untouched. Returns the draft and its
  * new ETag. */
-export function resetDraftVersion(client: CaitlynClient, input: Omit<ResetDraftVersionInput, "ifMatch">, options: CallOptions & { ifMatch: string }): Promise<WithRaw<AgentVersion & __MetadataBearer>> {
+export function resetDraftVersion(client: CaitlynClient, input: Omit<ResetDraftVersionInput, "idempotencyKey" | "ifMatch">, options: CallOptions & { idempotencyKey?: string; ifMatch: string }): Promise<WithRaw<AgentVersion & __MetadataBearer>> {
   const { signal, ...rest } = options;
   return client.send(new ResetDraftVersionCommand({ ...input, ...rest }), { abortSignal: signal }).then((out) => thingOf<WithRaw<AgentVersion & __MetadataBearer>>(out, "version")) as Promise<WithRaw<AgentVersion & __MetadataBearer>>;
 }
@@ -1007,8 +1033,8 @@ export function saveDraftVersion(client: CaitlynClient, input: Omit<SaveDraftVer
  * and the message is sent once every upload has arrived.
  * 
  * Only a participant may send: whoever started the conversation, or someone it is shared with for
- * writing (the update grant), who may still see the conversation's agent, and, when it was started
- * on a version other than live, holds that agent's version access grant. A caller without any of
+ * writing (the update grant), who may still see the conversation's agent and holds that agent's
+ * version access grant (the conversation's version may be `live`). A caller without any of
  * these gets 404, so revoking someone's access to the agent stops them chatting in conversations
  * they already started. */
 export function sendMessage(client: CaitlynClient, input: Omit<SendMessageInput, "attachments"> & { attachments?: AttachmentInput[] }, options: CallOptions = {}): SseStream<ConversationEvent, Message> & AsyncDisposableStream {
@@ -1032,7 +1058,14 @@ export function sendMessage(client: CaitlynClient, input: Omit<SendMessageInput,
  * call still answers 202. Refused with 409
  * `INGESTION_BATCH_UNRESOLVED` while any item is `unresolved`. Returns 202 with the batch and one
  * upload policy: list the items to upload with `filter[status][eq]=awaiting_upload`, upload each to
- * its `objectKey`, then report them with CompleteIngestionBatchUploads. */
+ * its `objectKey`, then report them with CompleteIngestionBatchUploads.
+ * 
+ * Each item that removes a document (`remove`, or an overwrite) is checked by the server for the
+ * files delete permission, and each item that moves one, or adds a new version of one, for the files
+ * update permission, and the token's scope covers it too. An item that fails the check is marked
+ * `failed` with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts
+ * through StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked
+ * per item, not once on the call. */
 export function startIngestionBatch(client: CaitlynClient, input: Omit<StartIngestionBatchInput, "ifMatch">, options: CallOptions & { ifMatch?: string } = {}): Promise<WithRaw<StartIngestionBatchResult & __MetadataBearer>> {
   const { signal, ...rest } = options;
   return client.send(new StartIngestionBatchCommand({ ...input, ...rest }), { abortSignal: signal }) as Promise<WithRaw<StartIngestionBatchResult & __MetadataBearer>>;
@@ -1107,7 +1140,15 @@ export function updateIngestionBatch(client: CaitlynClient, input: Omit<UpdateIn
  * 
  * Only `resolution` can change, and only while the batch is `planned`; anything else is refused with
  * 409 `CONFLICT`. A resolution that does not fit the outcome (for example `move` for a `new` item) is
- * refused with 400 `VALIDATION_FAILED`. */
+ * refused with 400 `VALIDATION_FAILED`.
+ * 
+ * Resolving to `remove`, an overwrite or `move` does not check the permission now: each item that
+ * removes a document (`remove`, or an overwrite) is checked by the server for the files delete
+ * permission, and each item that moves one, or adds a new version of one, for the files update
+ * permission, and the token's scope covers it too. An item that fails the check is marked `failed`
+ * with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts through
+ * StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked per
+ * item, not once on the call. */
 export function updateIngestionBatchItem(client: CaitlynClient, input: Omit<UpdateIngestionBatchItemInput, "ifMatch">, options: CallOptions & { ifMatch?: string } = {}): Promise<WithRaw<IngestionBatchItem & __MetadataBearer>> {
   const { signal, ...rest } = options;
   return client.send(new UpdateIngestionBatchItemCommand({ ...input, ...rest }), { abortSignal: signal }).then((out) => thingOf<WithRaw<IngestionBatchItem & __MetadataBearer>>(out, "item")) as Promise<WithRaw<IngestionBatchItem & __MetadataBearer>>;
@@ -1158,7 +1199,12 @@ export function watchConversation(client: CaitlynClient, input: WatchConversatio
  * nothing is lost. The SDKs build every scope's `watch()` and `wait()` on this: `wait()` returns once
  * no job on the thing is running, or raises the error of the job that failed. Events name a document
  * only to callers who may read it. The server ends the stream after at most an hour, and the SDKs
- * reconnect. */
+ * reconnect.
+ * 
+ * What the caller needs depends on what it watches. The whole knowledge base needs the knowledge
+ * base read permission and the files list permission, because the snapshot returns the knowledge
+ * base and the documents' progress. One document or folder needs the files list permission. One
+ * batch needs the ingestion list permission, because the snapshot returns the batch. */
 export function watchKnowledgeBase(client: CaitlynClient, input: WatchKnowledgeBaseInput, options: CallOptions = {}): SseStream<(KnowledgeBaseEvent & KnowledgeBaseWatchAccessor), never> & AsyncDisposableStream {
   const { signal, ...rest } = options;
   return new SseStream<(KnowledgeBaseEvent & KnowledgeBaseWatchAccessor), never>(

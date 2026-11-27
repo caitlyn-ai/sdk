@@ -23,7 +23,8 @@ export interface ListKnowledgeBasesCommandInput extends ListKnowledgeBasesInput 
 export interface ListKnowledgeBasesCommandOutput extends ListKnowledgeBasesOutput, __MetadataBearer {}
 
 /**
- * Lists the knowledge bases the caller may see, in every state.
+ * Lists the knowledge bases the caller may see, in every state, in a stable order that does not
+ * change between pages. The server decides the default order; it is not yet recorded here.
  *
  * Knowledge bases still being created, being moved, that failed or that are being deleted are
  * listed too, each with its `status`. Document operations on a knowledge base that is not `ready`

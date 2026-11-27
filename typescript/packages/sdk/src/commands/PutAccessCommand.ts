@@ -38,6 +38,12 @@ export interface PutAccessCommandOutput extends PutAccessOutput, __MetadataBeare
  * with 400 `VALIDATION_FAILED`. Applying readers to
  * the passages a folder or document holds continues after the response; the returned access says
  * what is set, and the knowledge base's watch shows the work.
+ *
+ * Setting `roles` is refused in two cases, as in v2. A caller may give a role only a grant it
+ * could make itself: any other is refused with 403 `PERMISSION_DENIED`. And a grant that is not
+ * safe for guests, given to a role that guests or anonymous visitors use, is refused with 422
+ * `RBAC_NOT_GUEST_SAFE`. Only the grants being added are judged, so a grant the role already holds
+ * never blocks an unrelated change. Both checks are made by the server on the roles sent.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript
@@ -112,16 +118,26 @@ export interface PutAccessCommandOutput extends PutAccessOutput, __MetadataBeare
  *  The record does not exist, or the caller may not see it. The two are deliberately the same, so
  * identifiers cannot be probed.
  *
- * @throws {@link PreconditionFailedError} (client fault)
- *  `If-Match` does not match the resource's current ETag: it changed since the caller read it.
- *
- * @throws {@link InternalError} (server fault)
- *  An unexpected server failure. Not retried by the SDKs.
- *
  * @throws {@link PermissionDeniedError} (client fault)
  *  The caller may not call this operation: it lacks the permission, its credential type may not
  * call it, or the operation is served only on the organisation's primary workspace. Decided before
  * any record is read. A record the caller may not see is 404 instead.
+ *
+ * @throws {@link PreconditionFailedError} (client fault)
+ *  `If-Match` does not match the resource's current ETag: it changed since the caller read it.
+ *
+ * @throws {@link UnprocessableContentError} (client fault)
+ *  The idempotency key was already used with a different request body; supplied metadata does not
+ * fit the knowledge base's field definitions or limits (`METADATA_FIELD_UNDEFINED`,
+ * `METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one
+ * entry per field in `errors`; an ingestion batch item gives both or neither of its content's
+ * description and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused
+ * a file (`CONTENT_REJECTED`); or a grant of a knowledge base to a role that guests or anonymous
+ * visitors use is not safe for them (`RBAC_NOT_GUEST_SAFE`), refused for what the grant is, not
+ * for what the caller lacks.
+ *
+ * @throws {@link InternalError} (server fault)
+ *  An unexpected server failure. Not retried by the SDKs.
  *
  * @throws {@link ServiceUnavailableError} (server fault)
  *  A dependency is briefly unavailable, or the request's audit event could not be recorded; wait for

@@ -39,7 +39,7 @@ func (s *ConversationScope) ID() string { return s.conversationID }
 // Read its messages with ListMessages, and follow it with WatchConversation. A conversation the
 // caller may not see is 404, as one that does not exist is.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *ConversationScope) Get(ctx context.Context, opts ...CallOption) (*Conversation, error) {
 	p := &getConversationParams{}
 	p.ConversationID = s.conversationID
@@ -59,8 +59,8 @@ func (s *ConversationScope) Get(ctx context.Context, opts ...CallOption) (*Conve
 // and the message is sent once every upload has arrived.
 //
 // Only a participant may send: whoever started the conversation, or someone it is shared with for
-// writing (the update grant), who may still see the conversation's agent, and, when it was started
-// on a version other than live, holds that agent's version access grant. A caller without any of
+// writing (the update grant), who may still see the conversation's agent and holds that agent's
+// version access grant (the conversation's version may be `live`). A caller without any of
 // these gets 404, so revoking someone's access to the agent stops them chatting in conversations
 // they already started.
 //
@@ -68,7 +68,7 @@ func (s *ConversationScope) Get(ctx context.Context, opts ...CallOption) (*Conve
 // request is returned at once; errors during the stream (an error event, a connection that could not
 // be resumed, cancellation) end Events with that error.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *ConversationScope) send(ctx context.Context, in *SendMessageInput, opts ...CallOption) (*ConversationEventStream, error) {
 	p := &sendMessageParams{}
 	if in != nil {
@@ -101,7 +101,7 @@ func (s *ConversationScope) send(ctx context.Context, in *SendMessageInput, opts
 // request is returned at once; errors during the stream (an error event, a connection that could not
 // be resumed, cancellation) end Events with that error.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *ConversationScope) Watch(ctx context.Context, in *WatchConversationInput, opts ...CallOption) (*WatchConversationStream, error) {
 	p := &watchConversationParams{}
 	if in != nil {
@@ -119,7 +119,7 @@ type getConversationParams struct {
 var opGetConversation = &core.Operation{
 	Name:      "GetConversation",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -184,7 +184,7 @@ type sendMessageParams struct {
 var opSendMessage = &core.Operation{
 	Name:      "SendMessage",
 	Method:    "POST",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	SSE:       true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -257,7 +257,7 @@ type watchConversationParams struct {
 var opWatchConversation = &core.Operation{
 	Name:      "WatchConversation",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	SSE:       true,
 	Retryable: []int{503, 429},

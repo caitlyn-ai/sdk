@@ -36,7 +36,7 @@ func newItems(c *Client, knowledgeBaseID, ingestionBatchID string) *Items {
 // It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
 // one.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *Items) List(ctx context.Context, in *ListIngestionBatchItemsInput, opts ...CallOption) iter.Seq2[IngestionBatchItem, error] {
 	return core.Items(s.ListPages(ctx, in, opts...), func(p *ListIngestionBatchItemsPage) []IngestionBatchItem { return p.Items })
 }
@@ -101,7 +101,7 @@ type listIngestionBatchItemsParams struct {
 var opListIngestionBatchItems = &core.Operation{
 	Name:      "ListIngestionBatchItems",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{

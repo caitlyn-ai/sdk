@@ -57,6 +57,8 @@ export const ErrorCode = {
   PRIMARY_WORKSPACE_REQUIRED: "PRIMARY_WORKSPACE_REQUIRED",
   /** `RATE_LIMITED`: raised as TooManyRequestsError (429). */
   RATE_LIMITED: "RATE_LIMITED",
+  /** `RBAC_NOT_GUEST_SAFE`: raised as UnprocessableContentError (422). */
+  RBAC_NOT_GUEST_SAFE: "RBAC_NOT_GUEST_SAFE",
   /** `SERVICE_UNAVAILABLE`: raised as ServiceUnavailableError (503). */
   SERVICE_UNAVAILABLE: "SERVICE_UNAVAILABLE",
   /** `TARGET_IN_USE`: raised as ConflictError (409). */

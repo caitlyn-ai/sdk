@@ -549,7 +549,8 @@ export interface AttachmentSettings {
  */
 export interface ConnectorBinding {
   /**
-   * Which of the workspace's connectors the version may use.
+   * Which of the workspace's connectors the version may use. The caller must be able to read the
+   * connector; one it cannot read is refused with 404 `NOT_FOUND`.
    * @public
    */
   connectorId: string;
@@ -562,7 +563,8 @@ export interface ConnectorBinding {
 export interface ContentSafety {
   /**
    * The ID of an entry in `GET /v3/guardrails`, `default` (the platform default, also used when
-   * absent) or `none`.
+   * absent) or `none`. The caller must be able to read the entry; one it cannot read is refused
+   * with 404 `NOT_FOUND`.
    * @public
    */
   guardrail?: string | undefined;
@@ -993,15 +995,18 @@ export interface LiveAvatarSettings {
   provider?: LiveAvatarProvider | undefined;
 
   /**
-   * The stored secret holding the provider's key. Exported as a template variable.
+   * The stored secret holding the provider's key. Exported as a template variable. The secret must
+   * belong to this workspace, and the caller must be allowed to update the agent's integrations,
+   * the permission v2 asks for when it stores the key.
    * @public
    */
   secretId: string;
 
   /**
-   * The version of this agent that answers for the avatar. Absent means this version. `draft` and
-   * `live` follow their moving target: edits to the draft, and each publish, take effect without
-   * this setting changing. A saved version's name never moves.
+   * The version of this agent that answers for the avatar: `live`, or a saved version's name.
+   * Absent means this version. `live` follows its moving target, so each publish takes effect
+   * without this setting changing; a saved version's name never moves. `draft` is not accepted:
+   * saving a configuration that names it is refused with 400 `VALIDATION_FAILED`.
    * @public
    */
   answerVersion?: string | undefined;
@@ -1094,7 +1099,8 @@ export interface MemorySettings {
   enabled?: boolean | undefined;
 
   /**
-   * The memory store, from `GET /v3/memory-stores`. Required when `enabled`.
+   * The memory store, from `GET /v3/memory-stores`. Required when `enabled`. The caller must be
+   * able to read the store.
    * @public
    */
   memoryStoreId?: string | undefined;
@@ -1253,6 +1259,9 @@ export interface AgentModels {
 export interface PolicyBinding {
   /**
    * Which policy the version may review documents against.
+   * The caller must be able to read the policy. This is checked for every policy id sent, not only
+   * new ones, because the rules go into the cached prompt. A policy the caller cannot read is
+   * refused with 404 `NOT_FOUND`.
    * @public
    */
   policyId: string;
@@ -1590,6 +1599,9 @@ export interface PhaseResponse {
 export interface PolicyReviewSettings {
   /**
    * Which policy the phase reviews against. It must be in `policies`.
+   * The caller must be able to read the policy. This is checked for every policy id sent, not only
+   * new ones, because the rules go into the cached prompt. A policy the caller cannot read is
+   * refused with 404 `NOT_FOUND`.
    * @public
    */
   policyId: string;
@@ -1669,9 +1681,10 @@ export interface ToolSearchSettings {
   modes: SearchMode[];
 
   /**
-   * The version of this agent whose knowledge bases and search settings the tool uses. `draft` and
-   * `live` follow their moving target: edits to the draft, and each publish, take effect without
-   * this setting changing. A saved version's name never moves.
+   * The version of this agent whose knowledge bases and search settings the tool uses: `live`, or
+   * a saved version's name. `live` follows its moving target, so each publish takes effect without
+   * this setting changing; a saved version's name never moves. `draft` is not accepted: saving a
+   * configuration that names it is refused with 400 `VALIDATION_FAILED`.
    * @public
    */
   version: string;
@@ -1691,7 +1704,7 @@ export interface PhaseTool {
   /**
    * An MCP server whose tools the phase may use. Exactly one of `name` and `mcpServerId`. With no
    * `tools`, every tool on the server, including tools it adds later; otherwise only those
-   * listed. Exported as a template variable.
+   * listed. Exported as a template variable. The caller must be able to read the server.
    * @public
    */
   mcpServerId?: string | undefined;
@@ -1961,7 +1974,8 @@ export interface Phase {
 
   /**
    * For `take_action`: the policy rules this phase checks, as `<policyId>/<ruleId>`. Each policy
-   * must be in `policies`.
+   * must be in `policies`. The caller must be able to read each policy, checked on every save as
+   * for `policies`; one it cannot read is refused with 404 `NOT_FOUND`.
    * @public
    */
   policyRules?: string[] | undefined;
@@ -2475,7 +2489,15 @@ export interface ResetDraftVersionInput {
   agentId: string;
 
   /**
-   * The draft's current ETag. A stale value is refused with 412; a missing one with 428.
+   * Makes the request safe to retry. The SDKs generate one per call when the caller does not
+   * supply one.
+   * @public
+   */
+  idempotencyKey?: string | undefined;
+
+  /**
+   * The draft's current ETag. A stale value is refused with 412. The SDKs will not send a call
+   * without it; a raw HTTP request that leaves it out is refused with 428.
    * @public
    */
   ifMatch: string;
@@ -2873,8 +2895,8 @@ export interface HistoryEntry {
 
   /**
    * The configuration of `version`. Present only when the caller may read that version, as
-   * GetAgentVersion checks: the permission to read versions, and the agent grant if it is live now
-   * or the agent's version access grant if it is not. Absent otherwise, in a list, and when that
+   * GetAgentVersion checks: the permission to read versions, and the agent grant and the agent's
+   * version access grant. Absent otherwise, in a list, and when that
    * version no longer exists.
    * @public
    */
@@ -3122,7 +3144,8 @@ export interface UpdateAgentInput {
   agentId: string;
 
   /**
-   * The agent's current ETag. A stale value is refused with 412; a missing one with 428.
+   * The agent's current ETag. A stale value is refused with 412. The SDKs will not send a call
+   * without it; a raw HTTP request that leaves it out is refused with 428.
    * @public
    */
   ifMatch: string;
@@ -3471,6 +3494,13 @@ export interface PublishAgentVersionInput {
   version: string;
 
   /**
+   * Makes the request safe to retry. The SDKs generate one per call when the caller does not
+   * supply one.
+   * @public
+   */
+  idempotencyKey?: string | undefined;
+
+  /**
    * Live's current ETag. When given and stale, the publish is refused with 412. `*` matches
    * only when live already points at a version, so a first publish that sends it is refused
    * with 412; guard a first publish with `expectedLive: none` instead.
@@ -3631,7 +3661,8 @@ export interface IngestionItemInput {
   fetchUrl?: string | undefined;
 
   /**
-   * The address a citation of the document links to. Defaults to `fetchUrl`.
+   * The address a citation of the document links to. Defaults to `fetchUrl` when that is an `https`
+   * address; with an `http` `fetchUrl` and no `sourceUrl`, the document has none.
    * @public
    */
   sourceUrl?: string | undefined;
@@ -3768,7 +3799,8 @@ export interface IngestionBatchItem {
   fetchUrl?: string | undefined;
 
   /**
-   * The address a citation of the document links to. Defaults to `fetchUrl`.
+   * The address a citation of the document links to. Defaults to `fetchUrl` when that is an `https`
+   * address; with an `http` `fetchUrl` and no `sourceUrl`, the document has none.
    * @public
    */
   sourceUrl?: string | undefined;
@@ -4684,7 +4716,7 @@ export interface KnowledgeBase {
 
   /**
    * How many documents are processing, and how many failed, counting each document's latest
-   * attempt.
+   * attempt. Totals for the whole knowledge base, including documents the caller cannot read.
    * @public
    */
   documentCounts?: DocumentCounts | undefined;
@@ -5759,8 +5791,8 @@ export interface DeleteDocumentVersionInput {
   documentId: string;
 
   /**
-   * The version to delete: its number, or `current` or `latest` as GetDocumentVersion takes them.
-   * The current version itself is refused, as above.
+   * The number of the version to delete. `current` and `latest` are refused with 400
+   * `VALIDATION_FAILED`. The current version itself is refused, as above.
    * @public
    */
   version: string;
@@ -6334,8 +6366,9 @@ export interface ListDocumentsInput {
   cursor?: string | undefined;
 
   /**
-   * The order: `name`, `updatedAt` or `byteSize`, comma-separated, with a leading `-` for
-   * descending (for example `-updatedAt`). Any other field is refused with 400 `UNKNOWN_SORT`.
+   * The order: `folder`, `name`, `updatedAt` or `byteSize`, comma-separated, with a leading `-`
+   * for descending (for example `-updatedAt`). Defaults to `folder,name`. Any other field is
+   * refused with 400 `UNKNOWN_SORT`.
    * @public
    */
   sort?: string | undefined;
@@ -6384,7 +6417,8 @@ export interface ListDocumentsInput {
   contentTypePrefix?: string | undefined;
 
   /**
-   * Only documents whose current bytes have this base64-encoded SHA-256.
+   * Only documents whose current bytes have this base64-encoded SHA-256. Percent-encode the
+   * value in the query string: `+` as `%2B`, `/` as `%2F` and `=` as `%3D`.
    * @public
    */
   sha256?: string | undefined;
@@ -6688,7 +6722,8 @@ export interface UpdateDocumentInput {
   documentId: string;
 
   /**
-   * The document's current ETag. A stale value is refused with 412; a missing one with 428.
+   * The document's current ETag. A stale value is refused with 412. The SDKs will not send a call
+   * without it; a raw HTTP request that leaves it out is refused with 428.
    * @public
    */
   ifMatch: string;
@@ -7860,7 +7895,8 @@ export interface UpdateFolderInput {
   folderPath: string;
 
   /**
-   * The folder's current ETag. A stale value is refused with 412; a missing one with 428.
+   * The folder's current ETag. A stale value is refused with 412. The SDKs will not send a call
+   * without it; a raw HTTP request that leaves it out is refused with 428.
    * @public
    */
   ifMatch: string;
@@ -8029,8 +8065,9 @@ export interface ConflictRules {
   default?: ConflictRule | undefined;
 
   /**
-   * The path and the `externalId` name different documents, or the path holds one the caller may
-   * not read.
+   * The path and the `externalId` name different documents. A path held by a document the caller
+   * may not read is not a conflict: the item fails as in any write the caller may not make, so
+   * this rule never reveals that document.
    * @public
    */
   pathTaken?: ConflictRule | undefined;
@@ -9003,7 +9040,8 @@ export interface UpdateIngestionBatchInput {
   ingestionBatchId: string;
 
   /**
-   * The batch's current ETag. A stale value is refused with 412; a missing one with 428.
+   * The batch's current ETag. A stale value is refused with 412. The SDKs will not send a call
+   * without it; a raw HTTP request that leaves it out is refused with 428.
    * @public
    */
   ifMatch: string;
@@ -9352,8 +9390,8 @@ export interface UpdateKnowledgeBaseInput {
   knowledgeBaseId: string;
 
   /**
-   * The knowledge base's current ETag. A stale value is refused with 412; a missing one with
-   * 428.
+   * The knowledge base's current ETag. A stale value is refused with 412. The SDKs will not
+   * send a call without it; a raw HTTP request that leaves it out is refused with 428.
    * @public
    */
   ifMatch: string;

@@ -35,6 +35,11 @@ export interface WatchKnowledgeBaseCommandOutput extends Omit<WatchKnowledgeBase
  * no job on the thing is running, or raises the error of the job that failed. Events name a document
  * only to callers who may read it. The server ends the stream after at most an hour, and the SDKs
  * reconnect.
+ *
+ * What the caller needs depends on what it watches. The whole knowledge base needs the knowledge
+ * base read permission and the files list permission, because the snapshot returns the knowledge
+ * base and the documents' progress. One document or folder needs the files list permission. One
+ * batch needs the ingestion list permission, because the snapshot returns the batch.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript

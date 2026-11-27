@@ -33,7 +33,7 @@ func newHistory(c *Client, agentID string) *History {
 // It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
 // one.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *History) List(ctx context.Context, in *ListHistoryEntriesInput, opts ...CallOption) iter.Seq2[HistoryEntry, error] {
 	return core.Items(s.ListPages(ctx, in, opts...), func(p *ListHistoryEntriesPage) []HistoryEntry { return p.Items })
 }
@@ -76,7 +76,7 @@ type listHistoryEntriesParams struct {
 var opListHistoryEntries = &core.Operation{
 	Name:      "ListHistoryEntries",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{

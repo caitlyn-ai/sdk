@@ -52,7 +52,7 @@ func (s *BatchScope) Item(itemID string) *ItemScope {
 // In the SDKs, `batch.planned()` waits until every item has an outcome, and `batch.wait()` until every
 // item has finished, both through the knowledge base's watch.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *BatchScope) Get(ctx context.Context, opts ...CallOption) (*IngestionBatch, error) {
 	p := &getIngestionBatchParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -70,7 +70,7 @@ func (s *BatchScope) Get(ctx context.Context, opts ...CallOption) (*IngestionBat
 // with an input error before anything is sent. WithIfMatch("*") (any version) is sent only when you
 // pass it yourself: no helper fills it in.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *BatchScope) Update(ctx context.Context, in *UpdateIngestionBatchInput, opts ...CallOption) (*IngestionBatch, error) {
 	p := &updateIngestionBatchParams{}
 	if in != nil {
@@ -91,7 +91,7 @@ func (s *BatchScope) Update(ctx context.Context, in *UpdateIngestionBatchInput, 
 //
 // It returns the response, as Result, with Wait, which follows the work the call started.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *BatchScope) Cancel(ctx context.Context, in *CancelIngestionBatchInput, opts ...CallOption) (*CancelIngestionBatchStarted, error) {
 	p := &cancelIngestionBatchParams{}
 	if in != nil {
@@ -143,13 +143,20 @@ func (r *CancelIngestionBatchStarted) Wait(ctx context.Context, opts ...WaitOpti
 // upload policy: list the items to upload with `filter[status][eq]=awaiting_upload`, upload each to
 // its `objectKey`, then report them with CompleteIngestionBatchUploads.
 //
+// Each item that removes a document (`remove`, or an overwrite) is checked by the server for the
+// files delete permission, and each item that moves one, or adds a new version of one, for the files
+// update permission, and the token's scope covers it too. An item that fails the check is marked
+// `failed` with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts
+// through StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked
+// per item, not once on the call.
+//
 // It returns the response, as Result, with Wait, which follows the work the call started.
 //
 // caitlyn.WithIfMatch(etag) is optional: without it the change applies to the thing as it stands; with
 // it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
 // yourself: no helper fills it in.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *BatchScope) Start(ctx context.Context, opts ...CallOption) (*StartIngestionBatchStarted, error) {
 	p := &startIngestionBatchParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -235,7 +242,7 @@ type cancelIngestionBatchParams struct {
 var opCancelIngestionBatch = &core.Operation{
 	Name:      "CancelIngestionBatch",
 	Method:    "POST",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -288,7 +295,7 @@ type getIngestionBatchParams struct {
 var opGetIngestionBatch = &core.Operation{
 	Name:      "GetIngestionBatch",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -338,7 +345,7 @@ type startIngestionBatchParams struct {
 var opStartIngestionBatch = &core.Operation{
 	Name:      "StartIngestionBatch",
 	Method:    "POST",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
 }
@@ -395,7 +402,7 @@ type updateIngestionBatchParams struct {
 var opUpdateIngestionBatch = &core.Operation{
 	Name:            "UpdateIngestionBatch",
 	Method:          "PATCH",
-	Since:           "5.115.0",
+	Since:           "5.144.0",
 	RetrySafe:       true,
 	IfMatchRequired: true,
 	Retryable:       []int{503, 429},

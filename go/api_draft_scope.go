@@ -42,7 +42,7 @@ func newDraftScope(c *Client, agentID string) *DraftScope {
 // it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
 // yourself: no helper fills it in.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *DraftScope) Replace(ctx context.Context, in *ReplaceDraftVersionInput, opts ...CallOption) (*AgentVersion, error) {
 	p := &replaceDraftVersionParams{}
 	if in != nil {
@@ -77,7 +77,7 @@ func (s *DraftScope) Replace(ctx context.Context, in *ReplaceDraftVersionInput, 
 // with an input error before anything is sent. WithIfMatch("*") (any version) is sent only when you
 // pass it yourself: no helper fills it in.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *DraftScope) Reset(ctx context.Context, in *ResetDraftVersionInput, opts ...CallOption) (*AgentVersion, error) {
 	p := &resetDraftVersionParams{}
 	if in != nil {
@@ -97,7 +97,7 @@ func (s *DraftScope) Reset(ctx context.Context, in *ResetDraftVersionInput, opts
 // it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
 // yourself: no helper fills it in.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *DraftScope) Save(ctx context.Context, in *SaveDraftVersionInput, opts ...CallOption) (*AgentVersion, error) {
 	p := &saveDraftVersionParams{}
 	if in != nil {
@@ -120,7 +120,7 @@ func (s *DraftScope) Save(ctx context.Context, in *SaveDraftVersionInput, opts .
 // it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
 // yourself: no helper fills it in.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *DraftScope) Update(ctx context.Context, in *UpdateDraftVersionInput, opts ...CallOption) (*AgentVersion, error) {
 	p := &updateDraftVersionParams{}
 	if in != nil {
@@ -151,9 +151,10 @@ func (s *DraftScope) Update(ctx context.Context, in *UpdateDraftVersionInput, op
 // `version` is `draft`, `live` or the name of a saved or published version. Live is the version the
 // agent's live pointer names, read as `live`; it is readable by everyone with access to the agent.
 // The draft and named versions are readable only by the people and groups on the agent's version
-// access grant, and anyone else gets 404, as for an agent with no live version yet.
+// access grant, and anyone else gets 404. An agent with no live version, because none has been
+// published or chosen yet, answers `live` with 404 `NO_LIVE_VERSION`.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *DraftScope) Get(ctx context.Context, opts ...CallOption) (*AgentVersion, error) {
 	p := &getAgentVersionParams{}
 	p.AgentID = s.agentID
@@ -168,7 +169,7 @@ func (s *DraftScope) Get(ctx context.Context, opts ...CallOption) (*AgentVersion
 // compared by their items' keys, so a path reads `workflow.phases[intake].transitions`. Both versions
 // need the same access as reading them.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *DraftScope) Compare(ctx context.Context, in *CompareAgentVersionsInput, opts ...CallOption) (*CompareAgentVersionsResult, error) {
 	p := &compareAgentVersionsParams{}
 	if in != nil {
@@ -197,7 +198,7 @@ func (s *DraftScope) Compare(ctx context.Context, in *CompareAgentVersionsInput,
 // it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
 // yourself: no helper fills it in.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *DraftScope) Publish(ctx context.Context, in *PublishAgentVersionInput, opts ...CallOption) (*PublishAgentVersionResult, error) {
 	p := &publishAgentVersionParams{}
 	if in != nil {
@@ -228,7 +229,7 @@ type compareAgentVersionsParams struct {
 var opCompareAgentVersions = &core.Operation{
 	Name:      "CompareAgentVersions",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -278,7 +279,7 @@ type getAgentVersionParams struct {
 var opGetAgentVersion = &core.Operation{
 	Name:      "GetAgentVersion",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -320,7 +321,8 @@ func (c *Client) callGetAgentVersion(ctx context.Context, p *getAgentVersionPara
 }
 
 // PublishAgentVersionInput is what the caller gives PublishAgentVersion; the scope it is called on
-// fills the identifiers. If-Match is the call option WithIfMatch (optional).
+// fills the identifiers. If-Match is the call option WithIfMatch (optional). The idempotency key is
+// generated, or set with WithIdempotencyKey.
 type PublishAgentVersionInput struct {
 	// The version the caller expects live to point at now, or `none` before the agent's first
 	// publish. When live points elsewhere, the publish is refused with 412.
@@ -343,11 +345,13 @@ type publishAgentVersionParams struct {
 }
 
 var opPublishAgentVersion = &core.Operation{
-	Name:      "PublishAgentVersion",
-	Method:    "POST",
-	Since:     "5.115.0",
-	Retryable: []int{503, 429},
-	Errors:    errorForStatus,
+	Name:              "PublishAgentVersion",
+	Method:            "POST",
+	Since:             "5.144.0",
+	RetrySafe:         true,
+	IdempotencyHeader: "Idempotency-Key",
+	Retryable:         []int{503, 429},
+	Errors:            errorForStatus,
 }
 
 func buildPublishAgentVersion(in *publishAgentVersionParams) (*core.Request, error) {
@@ -456,7 +460,7 @@ type replaceDraftVersionParams struct {
 var opReplaceDraftVersion = &core.Operation{
 	Name:      "ReplaceDraftVersion",
 	Method:    "PUT",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{
@@ -555,7 +559,8 @@ func (c *Client) callReplaceDraftVersion(ctx context.Context, p *replaceDraftVer
 }
 
 // ResetDraftVersionInput is what the caller gives ResetDraftVersion; the scope it is called on fills
-// the identifiers. If-Match is the call option WithIfMatch (required).
+// the identifiers. If-Match is the call option WithIfMatch (required). The idempotency key is
+// generated, or set with WithIdempotencyKey.
 type ResetDraftVersionInput struct {
 	// The version to reset the draft to: a version name, or `live`.
 	From string `json:"from"`
@@ -568,12 +573,14 @@ type resetDraftVersionParams struct {
 }
 
 var opResetDraftVersion = &core.Operation{
-	Name:            "ResetDraftVersion",
-	Method:          "POST",
-	Since:           "5.115.0",
-	IfMatchRequired: true,
-	Retryable:       []int{503, 429},
-	Errors:          errorForStatus,
+	Name:              "ResetDraftVersion",
+	Method:            "POST",
+	Since:             "5.144.0",
+	RetrySafe:         true,
+	IdempotencyHeader: "Idempotency-Key",
+	IfMatchRequired:   true,
+	Retryable:         []int{503, 429},
+	Errors:            errorForStatus,
 }
 
 func buildResetDraftVersion(in *resetDraftVersionParams) (*core.Request, error) {
@@ -632,7 +639,7 @@ type saveDraftVersionParams struct {
 var opSaveDraftVersion = &core.Operation{
 	Name:              "SaveDraftVersion",
 	Method:            "POST",
-	Since:             "5.115.0",
+	Since:             "5.144.0",
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},
@@ -745,7 +752,7 @@ type updateDraftVersionParams struct {
 var opUpdateDraftVersion = &core.Operation{
 	Name:      "UpdateDraftVersion",
 	Method:    "PATCH",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{

@@ -50,4 +50,4 @@ pub mod auth {
 pub const SDK_VERSION: &str = "0.11.0";
 
 /// The Caitlyn release the SDK was generated from (the highest `@since` in the model), sent as `Caitlyn-Sdk-Model`.
-pub const MODEL_VERSION: &str = "5.115.0";
+pub const MODEL_VERSION: &str = "5.144.0";

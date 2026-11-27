@@ -37,7 +37,7 @@ func (s *OperationScope) ID() string { return s.operationID }
 // The caller needs the access it would need to read the Operation's target; anyone else gets 404.
 // Everyday code waits through the scope the work is on (`doc.wait()`, `kb.wait()`) instead.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *OperationScope) Get(ctx context.Context, opts ...CallOption) (*Operation, error) {
 	p := &getOperationParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -47,26 +47,18 @@ func (s *OperationScope) Get(ctx context.Context, opts ...CallOption) (*Operatio
 
 // Cancel cancels an Operation's work.
 //
-// Work not started yet is dropped; work running is stopped where its kind allows. Only
-// `document_ingestion` can be cancelled today: a cancelled first version removes the document, and a
-// cancelled new version leaves the current one serving. Any other kind is refused with 409
-// `OPERATION_NOT_CANCELLABLE`, and a final Operation with 409 `CONFLICT`. Returns the Operation, which
-// becomes `cancelled` once the work has stopped.
+// Work not started yet is dropped; work running is stopped. Only `document_ingestion` can be
+// cancelled today: a cancelled first version removes the document, and a cancelled new version
+// leaves the current one serving. Any other kind is refused with 409 `OPERATION_NOT_CANCELLABLE`,
+// and a final Operation with 409 `CONFLICT`. Returns the Operation, which becomes `cancelled` once
+// the work has stopped.
 //
-// Cancelling needs what starting that kind of work needs, on the same record, which the server
-// reads from the Operation and checks per kind before it acts: for `document_ingestion`, the
-// permission that started it (`files.create` for a new document, `files.update` for a new version
-// or a retry) and the document's readers; for `document_update`, `files.update` and its readers; for
-// `fill_in`, `reprocess` and `layout_aware_search`, `knowledge-bases.update` and
-// `knowledge-bases.ingestions.update`; for a `folder_change`, the permission of the change
-// (`files.create`, `files.update` or `files.delete`) and the folder's readers; for
-// `permissions_change`, `files.permissions.update` and the record's readers; for
-// `knowledge_base_deletion`, `knowledge-bases.delete`. A caller without it gets 404, as for an
-// Operation it may not see. No one permission is common to every kind, so the operation declares
-// only what reading an Operation needs (`files.read`, as GetOperation), and the per-kind check does
-// the rest.
+// Needs the files update permission. For `document_ingestion` the server also checks, on the
+// document the Operation reads, the permission that started it (`files.create` for a new document,
+// `files.update` for a new version or a retry) and the document's readers. A caller without it
+// gets 404, as for an Operation it may not see.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *OperationScope) Cancel(ctx context.Context, opts ...CallOption) (*Operation, error) {
 	p := &cancelOperationParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -83,7 +75,7 @@ func (s *OperationScope) Cancel(ctx context.Context, opts ...CallOption) (*Opera
 // request is returned at once; errors during the stream (an error event, a connection that could not
 // be resumed, cancellation) end Events with that error.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *OperationScope) Watch(ctx context.Context, in *WatchOperationInput, opts ...CallOption) (*OperationEventStream, error) {
 	p := &watchOperationParams{}
 	if in != nil {
@@ -103,7 +95,7 @@ type cancelOperationParams struct {
 var opCancelOperation = &core.Operation{
 	Name:      "CancelOperation",
 	Method:    "POST",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -150,7 +142,7 @@ type getOperationParams struct {
 var opGetOperation = &core.Operation{
 	Name:      "GetOperation",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -206,7 +198,7 @@ type watchOperationParams struct {
 var opWatchOperation = &core.Operation{
 	Name:      "WatchOperation",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	SSE:       true,
 	Retryable: []int{503, 429},

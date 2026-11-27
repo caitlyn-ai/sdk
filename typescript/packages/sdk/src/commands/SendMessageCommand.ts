@@ -37,8 +37,8 @@ export interface SendMessageCommandOutput extends Omit<SendMessageOutput, "event
  * and the message is sent once every upload has arrived.
  *
  * Only a participant may send: whoever started the conversation, or someone it is shared with for
- * writing (the update grant), who may still see the conversation's agent, and, when it was started
- * on a version other than live, holds that agent's version access grant. A caller without any of
+ * writing (the update grant), who may still see the conversation's agent and holds that agent's
+ * version access grant (the conversation's version may be `live`). A caller without any of
  * these gets 404, so revoking someone's access to the agent stops them chatting in conversations
  * they already started.
  * @example

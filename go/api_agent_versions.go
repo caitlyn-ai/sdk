@@ -28,13 +28,13 @@ func newAgentVersions(c *Client, agentID string) *AgentVersions {
 //
 // Each entry says how the version was made, who made it, whether live points at it, and which
 // members differ from the version it was made from. The draft and live are not entries: read them
-// with `draft` and `live`. Needs the agent's version access grant, as reading any version other than
-// live does.
+// with `draft` and `live`. Needs the agent's version access grant, as reading any version, `live`
+// included, does.
 //
 // It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
 // one.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *AgentVersions) List(ctx context.Context, in *ListAgentVersionsInput, opts ...CallOption) iter.Seq2[AgentVersion, error] {
 	return core.Items(s.ListPages(ctx, in, opts...), func(p *ListAgentVersionsPage) []AgentVersion { return p.Items })
 }
@@ -77,7 +77,7 @@ type listAgentVersionsParams struct {
 var opListAgentVersions = &core.Operation{
 	Name:      "ListAgentVersions",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{

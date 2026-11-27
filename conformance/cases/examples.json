@@ -3193,7 +3193,8 @@
           "uploadUrl": "https://uploads.example.com/0193a6f2-1111-7a2b-8c3d-4e5f60718293?signature=abc",
           "uploadMethod": "PUT",
           "requiredHeaders": {
-            "Content-Type": "application/pdf"
+            "Content-Type": "application/pdf",
+            "x-amz-checksum-sha256": "n4bQgYhMfWWaL+qgxVrQFaO/TxsrC4Is0V1sFbDwCgg="
           },
           "expiresAt": "2026-11-10T01:17:03.000Z",
           "status": "awaiting_bytes"
@@ -3206,7 +3207,8 @@
           "uploadUrl": "https://uploads.example.com/0193a6f2-1111-7a2b-8c3d-4e5f60718293?signature=abc",
           "uploadMethod": "PUT",
           "requiredHeaders": {
-            "Content-Type": "application/pdf"
+            "Content-Type": "application/pdf",
+            "x-amz-checksum-sha256": "n4bQgYhMfWWaL+qgxVrQFaO/TxsrC4Is0V1sFbDwCgg="
           },
           "expiresAt": "2026-11-10T01:17:03.000Z",
           "status": "awaiting_bytes"
@@ -3797,16 +3799,16 @@
       }
     },
     {
-      "id": "DeleteDocumentVersion: The current version",
+      "id": "DeleteDocumentVersion: The current version, by its number",
       "operation": "DeleteDocumentVersion",
       "input": {
         "knowledgeBaseId": "KB4T7YQ2WL",
         "documentId": "doc-3b7f9e21",
-        "version": "current"
+        "version": "2"
       },
       "request": {
         "method": "DELETE",
-        "path": "/v3/knowledge-bases/KB4T7YQ2WL/documents/doc-3b7f9e21/versions/current",
+        "path": "/v3/knowledge-bases/KB4T7YQ2WL/documents/doc-3b7f9e21/versions/2",
         "query": {},
         "headers": {}
       },
@@ -3857,7 +3859,7 @@
           "title": "Versions not numbered",
           "status": 409,
           "code": "VERSIONS_NOT_NUMBERED",
-          "detail": "Document doc-3b7f9e21's versions are not numbered yet. Try again later, or delete latest.",
+          "detail": "Document doc-3b7f9e21's versions are not numbered yet. Try again later.",
           "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BD5"
         }
       },
@@ -10112,7 +10114,9 @@
         "method": "POST",
         "path": "/v3/agents/GHT7YRWXPL/versions/draft/publish",
         "query": {},
-        "headers": {},
+        "headers": {
+          "idempotency-key": "*"
+        },
         "body": {
           "expectedLive": "october-release",
           "name": "november-release",
@@ -10227,7 +10231,9 @@
         "method": "POST",
         "path": "/v3/agents/GHT7YRWXPL/versions/october-release/publish",
         "query": {},
-        "headers": {},
+        "headers": {
+          "idempotency-key": "*"
+        },
         "body": {
           "note": "The November wording confused casual staff."
         }
@@ -10318,7 +10324,9 @@
         "method": "POST",
         "path": "/v3/agents/GHT7YRWXPL/versions/october-release/publish",
         "query": {},
-        "headers": {},
+        "headers": {
+          "idempotency-key": "*"
+        },
         "body": {
           "expectedLive": "september-release"
         }
@@ -10361,7 +10369,9 @@
         "method": "POST",
         "path": "/v3/agents/GHT7YRWXPL/versions/draft/publish",
         "query": {},
-        "headers": {},
+        "headers": {
+          "idempotency-key": "*"
+        },
         "body": {
           "expectedLive": "october-release",
           "name": "november-release",
@@ -10406,7 +10416,9 @@
         "method": "POST",
         "path": "/v3/agents/GHT7YRWXPL/versions/draft/publish",
         "query": {},
-        "headers": {},
+        "headers": {
+          "idempotency-key": "*"
+        },
         "body": {
           "expectedLive": "october-release",
           "name": "november-release",
@@ -11299,6 +11311,7 @@
         "path": "/v3/agents/GHT7YRWXPL/versions/draft/reset",
         "query": {},
         "headers": {
+          "idempotency-key": "*",
           "if-match": "\"draft-ZmeDr4VIILFpik5n\""
         },
         "body": {
@@ -11366,6 +11379,7 @@
         "path": "/v3/agents/GHT7YRWXPL/versions/draft/reset",
         "query": {},
         "headers": {
+          "idempotency-key": "*",
           "if-match": "\"draft-UyTfLfEiNQC6RTIF\""
         },
         "body": {
@@ -11409,6 +11423,7 @@
         "path": "/v3/agents/GHT7YRWXPL/versions/draft/reset",
         "query": {},
         "headers": {
+          "idempotency-key": "*",
           "if-match": "\"draft-ZmeDr4VIILFpik5n\""
         },
         "body": {
@@ -11452,6 +11467,7 @@
         "path": "/v3/agents/GHT7YRWXPL/versions/draft/reset",
         "query": {},
         "headers": {
+          "idempotency-key": "*",
           "if-match": "\"draft-ZmeDr4VIILFpik5n\""
         },
         "body": {

@@ -11,10 +11,11 @@ import { test } from 'node:test';
 
 const server = path.join(import.meta.dirname, '../conformance/mock-server/server.mjs');
 
-/** The Caitlyn-Api-Version the mock answers with when the model lock stamps "next" as `stampNext`. */
-async function reported(stampNext, port) {
+/** The Caitlyn-Api-Version the mock answers with when the model lock stamps "next" as `stampNext` (or, for a published
+ *  model, names its `version` and no stampNext). */
+async function reported(stampNext, port, version = null) {
   const lock = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mock-version-')), 'model.lock.json');
-  fs.writeFileSync(lock, JSON.stringify({ stampNext }));
+  fs.writeFileSync(lock, JSON.stringify({ stampNext, version }));
   const mock = spawn(process.execPath, [server], { env: { ...process.env, PORT: String(port), MOCK_MODEL_LOCK: lock }, stdio: ['ignore', 'pipe', 'inherit'] });
   try {
     await new Promise((resolve, reject) => {
@@ -39,4 +40,9 @@ test('a model stamped at or before 5.120.0 is served at 5.120.0', async () => {
   assert.equal(await reported('5.115.0', 4194), '5.120.0');
   assert.equal(await reported('5.120.0', 4195), '5.120.0');
   assert.equal(await reported('4.200.0', 4196), '5.120.0');
+});
+
+test('a published model is served at its release', async () => {
+  assert.equal(await reported(null, 4196, '5.156.0'), '5.156.0');
+  assert.equal(await reported(null, 4197, '5.110.0'), '5.120.0');
 });

@@ -135,6 +135,10 @@ export const ERROR_CODES = {
     meaning: "The metadata is over a limit: too many fields, or a value or the whole too large.",
     action: "Send less: drop fields you do not need, or shorten long values. `errors` points at what is over.",
   },
+  RBAC_NOT_GUEST_SAFE: {
+    meaning: "A knowledge base's access gives a role that guests or anonymous visitors use a grant that isn't safe for them. It's refused for what the grant is, not for what you can do.",
+    action: "Give that role only grants that are safe for guests, or give the access to a role guests don't use. Only the grants you're adding are judged, so the role's existing grants don't block other changes.",
+  },
   BATCH_ITEM_CONTENT_AMBIGUOUS: {
     meaning: "An ingestion batch item says both what its content is (its checksum, size and type) and where to fetch it from, or neither.",
     action: "Give each item exactly one: the file's description, for a file you upload, or a `fetchUrl`, for one Caitlyn fetches.",

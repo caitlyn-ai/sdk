@@ -93,7 +93,9 @@ export interface CreateIngestionBatchUploadPolicyCommandOutput extends CreateIng
  * `METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one
  * entry per field in `errors`; an ingestion batch item gives both or neither of its content's
  * description and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused
- * a file (`CONTENT_REJECTED`).
+ * a file (`CONTENT_REJECTED`); or a grant of a knowledge base to a role that guests or anonymous
+ * visitors use is not safe for them (`RBAC_NOT_GUEST_SAFE`), refused for what the grant is, not
+ * for what the caller lacks.
  *
  * @throws {@link InternalError} (server fault)
  *  An unexpected server failure. Not retried by the SDKs.

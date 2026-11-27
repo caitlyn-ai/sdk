@@ -78,6 +78,21 @@ type PreconditionFailedError struct{ *core.APIError }
 // Unwrap returns the embedded *Error.
 func (e *PreconditionFailedError) Unwrap() error { return e.APIError }
 
+// UnprocessableContentError is returned for HTTP 422 (UnprocessableContentError in the model). The
+// idempotency key was already used with a different request body; supplied metadata does not
+// fit the knowledge base's field definitions or limits (`METADATA_FIELD_UNDEFINED`,
+// `METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one
+// entry per field in `errors`; an ingestion batch item gives both or neither of its content's
+// description and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused
+// a file (`CONTENT_REJECTED`); or a grant of a knowledge base to a role that guests or anonymous
+// visitors use is not safe for them (`RBAC_NOT_GUEST_SAFE`), refused for what the grant is, not
+// for what the caller lacks. It embeds *Error, so errors.As works with either type, and its fields
+// (Status, Code, RequestID…) read directly.
+type UnprocessableContentError struct{ *core.APIError }
+
+// Unwrap returns the embedded *Error.
+func (e *UnprocessableContentError) Unwrap() error { return e.APIError }
+
 // ConflictError is returned for HTTP 409 (ConflictError in the model). The resource's state does not
 // allow the request, a unique name is taken, or a request with the
 // same idempotency key is still in progress. An agent version that live points at
@@ -97,19 +112,6 @@ type ConflictError struct{ *core.APIError }
 
 // Unwrap returns the embedded *Error.
 func (e *ConflictError) Unwrap() error { return e.APIError }
-
-// UnprocessableContentError is returned for HTTP 422 (UnprocessableContentError in the model). The
-// idempotency key was already used with a different request body; supplied metadata does not
-// fit the knowledge base's field definitions or limits (`METADATA_FIELD_UNDEFINED`,
-// `METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one
-// entry per field in `errors`; an ingestion batch item gives both or neither of its content's
-// description and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused
-// a file (`CONTENT_REJECTED`). It embeds *Error, so errors.As works with either type, and its fields
-// (Status, Code, RequestID…) read directly.
-type UnprocessableContentError struct{ *core.APIError }
-
-// Unwrap returns the embedded *Error.
-func (e *UnprocessableContentError) Unwrap() error { return e.APIError }
 
 // PreconditionRequiredError is returned for HTTP 428 (PreconditionRequiredError in the model). The
 // update sent no `If-Match` header; read the resource and send its ETag. It embeds *Error, so

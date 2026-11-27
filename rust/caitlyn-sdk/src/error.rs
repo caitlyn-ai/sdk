@@ -57,7 +57,9 @@ pub enum Error {
     /// `METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one
     /// entry per field in `errors`; an ingestion batch item gives both or neither of its content's
     /// description and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused
-    /// a file (`CONTENT_REJECTED`).
+    /// a file (`CONTENT_REJECTED`); or a grant of a knowledge base to a role that guests or anonymous
+    /// visitors use is not safe for them (`RBAC_NOT_GUEST_SAFE`), refused for what the grant is, not
+    /// for what the caller lacks.
     UnprocessableContent(Box<rt::ApiError>),
     /// HTTP 428 (`PreconditionRequiredError` in the model). The update sent no `If-Match` header; read the
     /// resource and send its ETag.
@@ -273,6 +275,7 @@ pub(crate) const ERROR_CODES: &[(&str, u16)] = &[
     ("METADATA_LIMIT_EXCEEDED", 422),
     ("BATCH_ITEM_CONTENT_AMBIGUOUS", 422),
     ("CONTENT_REJECTED", 422),
+    ("RBAC_NOT_GUEST_SAFE", 422),
     ("PRECONDITION_REQUIRED", 428),
     ("RATE_LIMITED", 429),
     ("INTERNAL", 500),
@@ -337,6 +340,8 @@ impl ErrorCode {
     pub const PRIMARY_WORKSPACE_REQUIRED: &'static str = "PRIMARY_WORKSPACE_REQUIRED";
     /// `RATE_LIMITED`: raised as [`Error::TooManyRequests`] (429).
     pub const RATE_LIMITED: &'static str = "RATE_LIMITED";
+    /// `RBAC_NOT_GUEST_SAFE`: raised as [`Error::UnprocessableContent`] (422).
+    pub const RBAC_NOT_GUEST_SAFE: &'static str = "RBAC_NOT_GUEST_SAFE";
     /// `SERVICE_UNAVAILABLE`: raised as [`Error::ServiceUnavailable`] (503).
     pub const SERVICE_UNAVAILABLE: &'static str = "SERVICE_UNAVAILABLE";
     /// `TARGET_IN_USE`: raised as [`Error::Conflict`] (409).

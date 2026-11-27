@@ -35,9 +35,10 @@ func newLiveScope(c *Client, agentID string) *LiveScope {
 // `version` is `draft`, `live` or the name of a saved or published version. Live is the version the
 // agent's live pointer names, read as `live`; it is readable by everyone with access to the agent.
 // The draft and named versions are readable only by the people and groups on the agent's version
-// access grant, and anyone else gets 404, as for an agent with no live version yet.
+// access grant, and anyone else gets 404. An agent with no live version, because none has been
+// published or chosen yet, answers `live` with 404 `NO_LIVE_VERSION`.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *LiveScope) Get(ctx context.Context, opts ...CallOption) (*AgentVersion, error) {
 	p := &getAgentVersionParams{}
 	p.AgentID = s.agentID
@@ -52,7 +53,7 @@ func (s *LiveScope) Get(ctx context.Context, opts ...CallOption) (*AgentVersion,
 // compared by their items' keys, so a path reads `workflow.phases[intake].transitions`. Both versions
 // need the same access as reading them.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *LiveScope) Compare(ctx context.Context, in *CompareAgentVersionsInput, opts ...CallOption) (*CompareAgentVersionsResult, error) {
 	p := &compareAgentVersionsParams{}
 	if in != nil {

@@ -74,9 +74,28 @@ from opentelemetry.trace import StatusCode
 
 SDK_VERSION: str = (ROOT / "VERSION").read_text().strip()
 """The version in VERSION, which every SDK sends in its user agent."""
-SDK_MODEL: str = json.loads((ROOT / "model" / "model.lock.json").read_text())["stampNext"]
-# The version the mock reports: 5.120.0, or the model's @since("next") stamp when that is later.
-SERVER_VERSION: str = max("5.120.0", SDK_MODEL or "0", key=lambda v: tuple(int(n) for n in v.split(".")))
+MODEL_LOCK = json.loads((ROOT / "model" / "model.lock.json").read_text())
+
+
+def _highest_since() -> str:
+    """A published model has no "next": the SDK's model version is its highest @since."""
+    shapes: dict[str, Any] = json.loads((ROOT / "model" / "model.json").read_text())["shapes"]
+    found: list[str] = []
+    for shape in shapes.values():
+        traits: list[dict[str, Any]] = [shape.get("traits") or {}]
+        members: dict[str, dict[str, Any]] = shape.get("members") or {}
+        traits += [(m.get("traits") or {}) for m in members.values()]
+        for t in traits:
+            since = t.get("ai.caitlyn.traits#since")
+            if isinstance(since, str) and since != "next":
+                found.append(since)
+    return max(found, key=lambda v: tuple(int(n) for n in v.split(".")), default="")
+
+
+SDK_MODEL: str = MODEL_LOCK["stampNext"] or _highest_since()
+# The version the mock reports: 5.120.0, or the model's release when that is later (the lock's stampNext for an app
+# branch build, its version for a published model).
+SERVER_VERSION: str = max("5.120.0", MODEL_LOCK["stampNext"] or MODEL_LOCK.get("version") or "0", key=lambda v: tuple(int(n) for n in v.split(".")))
 # GetAgentVersion's @since, as the SDK reads it: the model's release, or SDK_MODEL where the model says "next".
 _GAV_SINCE = json.loads((ROOT / "model" / "model.json").read_text())["shapes"]["ai.caitlyn.v3#GetAgentVersion"].get("traits", {}).get("ai.caitlyn.traits#since")
 GET_AGENT_VERSION_SINCE: str = SDK_MODEL if _GAV_SINCE in (None, "next") else _GAV_SINCE

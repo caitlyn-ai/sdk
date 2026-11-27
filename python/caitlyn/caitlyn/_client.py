@@ -209,7 +209,7 @@ class AgentsCollection:
         Each agent says which version live points at; read a version's configuration with
         GetAgentVersion.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents` (ListAgents).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents` (ListAgents).
 
         Args:
             limit: The most agents to return, from 1 to 100. Defaults to 20.
@@ -249,7 +249,7 @@ class AgentsCollection:
         UpdateDraftVersion or ReplaceDraftVersion, then publish it with PublishAgentVersion. Returns the
         agent, and `Location` names it.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents` (CreateAgent).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/agents` (CreateAgent).
 
         Args:
             name: The agent's name, 1 to 128 characters.
@@ -305,7 +305,7 @@ class OptionsNamespace:
         `contentSafety.guardrail` names one of these by its `id`, or says `default` or `none`. Guardrails
         are created and changed outside Caitlyn.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/guardrails` (ListGuardrails).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/guardrails` (ListGuardrails).
 
         Args:
             limit: The most guardrails to return, from 1 to 100. Defaults to 20.
@@ -340,7 +340,7 @@ class OptionsNamespace:
 
         An agent's `memory.memoryStoreId` names one of these.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/memory-stores` (ListMemoryStores).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/memory-stores` (ListMemoryStores).
 
         Args:
             limit: The most memory stores to return, from 1 to 100. Defaults to 20.
@@ -378,7 +378,7 @@ class OptionsNamespace:
         apply. An agent configuration that names a model or setting this list does not offer is refused
         with 400 `VALIDATION_FAILED`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/models` (ListModels).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/models` (ListModels).
 
         Args:
             limit: The most models to return, from 1 to 100. Defaults to 20.
@@ -413,7 +413,7 @@ class OptionsNamespace:
 
         A phase names one of these tools with `tools[].name`. Tools on an MCP server are not in this list.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/tools` (ListTools).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/tools` (ListTools).
 
         Args:
             limit: The most tools to return, from 1 to 100. Defaults to 20.
@@ -448,7 +448,7 @@ class OptionsNamespace:
 
         An agent's `voice.voiceId` names one of these when `voice.provider` is `cloud`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/voices` (ListVoices).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/voices` (ListVoices).
 
         Args:
             limit: The most voices to return, from 1 to 100. Defaults to 20.
@@ -511,7 +511,7 @@ class AgentScope:
         An agent the caller may not see is 404, as one that does not exist is. Its configuration is in
         its versions: read them with GetAgentVersion.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}` (GetAgent).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}` (GetAgent).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -540,10 +540,11 @@ class AgentScope:
         no new version. Members that are absent stay unchanged; name `description` or `avatar` in `clear`
         to remove it.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PATCH /v3/agents/{agentId}` (UpdateAgent).
+        Added in Caitlyn 5.144.0. Stability: beta. `PATCH /v3/agents/{agentId}` (UpdateAgent).
 
         Args:
-            if_match: The agent's current ETag. A stale value is refused with 412; a missing one with 428.
+            if_match: The agent's current ETag. A stale value is refused with 412. The SDKs will not send a call
+                without it; a raw HTTP request that leaves it out is refused with 428.
             name: The agent's new name, 1 to 128 characters.
             description: What the agent is for.
             avatar: How the agent looks. Replaces the whole avatar.
@@ -579,7 +580,7 @@ class AgentScope:
         Conversations with the agent are kept. Caitlyn's built-in agents (`native`) are defined by the
         platform and refused with 403 `PERMISSION_DENIED`. Deleting cannot be undone, and is audited.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/agents/{agentId}` (DeleteAgent).
+        Added in Caitlyn 5.144.0. Stability: beta. `DELETE /v3/agents/{agentId}` (DeleteAgent).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -664,7 +665,7 @@ class AgentConversationsNamespace:
         Each says which version it is with. Only the caller's own conversations, and those shared with
         it, are listed.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/conversations` (ListConversations).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/conversations` (ListConversations).
 
         Args:
             limit: The most conversations to return, from 1 to 100. Defaults to 20.
@@ -742,7 +743,7 @@ class DraftScope:
         it, and a configuration over 256 KiB is refused with 400 `CONFIGURATION_TOO_LARGE`. Returns the
         draft and its new ETag.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PUT /v3/agents/{agentId}/versions/draft` (ReplaceDraftVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `PUT /v3/agents/{agentId}/versions/draft` (ReplaceDraftVersion).
 
         Args:
             guidance: Who the agent is and how it behaves, and the text it follows at particular points in an
@@ -792,23 +793,27 @@ class DraftScope:
             AgentVersion,
         )
 
-    def reset(self, from_: str, *, if_match: str) -> AgentVersion:
+    def reset(self, from_: str, *, if_match: str, idempotency_key: str | None = None) -> AgentVersion:
         """Resets the draft to another version; `If-Match` is required.
 
         The draft's configuration becomes the configuration of `from`, which is a version name or `live`.
         Nothing else changes: `from` is kept as it is, and live is untouched. Returns the draft and its
         new ETag.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/draft/reset` (ResetDraftVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/agents/{agentId}/versions/draft/reset` (ResetDraftVersion).
 
         Args:
-            if_match: The draft's current ETag. A stale value is refused with 412; a missing one with 428.
+            if_match: The draft's current ETag. A stale value is refused with 412. The SDKs will not send a call
+                without it; a raw HTTP request that leaves it out is refused with 428.
             from_: The version to reset the draft to: a version name, or `live`.
+            idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
+                supply one.
 
         Raises:
             NotFoundError: HTTP 404.
             PreconditionFailedError: HTTP 412.
             PreconditionRequiredError: HTTP 428.
+            UnprocessableContentError: HTTP 422.
             InternalError: HTTP 500.
             PermissionDeniedError: HTTP 403.
             ServiceUnavailableError: HTTP 503.
@@ -821,7 +826,7 @@ class DraftScope:
         """
         return self._core.request(
             _operations.RESET_DRAFT_VERSION,
-            {"agent_id": self._ids["agentId"], "if_match": if_match, "from_": from_},
+            {"agent_id": self._ids["agentId"], "if_match": if_match, "from_": from_, "idempotency_key": idempotency_key},
             AgentVersion,
         )
 
@@ -839,7 +844,7 @@ class DraftScope:
         the draft's ETag as `If-Match` to save only the draft you tested; without it, the draft is saved as
         it is now. Returns the new version, and `Location` names it.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/draft/save` (SaveDraftVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/agents/{agentId}/versions/draft/save` (SaveDraftVersion).
 
         Args:
             name: The new version's name, unique within the agent, and never `draft`, `live`, `latest` or `none`. A
@@ -902,7 +907,7 @@ class DraftScope:
         refused with 400 `VALIDATION_FAILED`. A draft whose configuration would pass 256 KiB is refused
         with 400 `CONFIGURATION_TOO_LARGE`. Returns the whole draft and its new ETag.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PATCH /v3/agents/{agentId}/versions/draft` (UpdateDraftVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `PATCH /v3/agents/{agentId}/versions/draft` (UpdateDraftVersion).
 
         Args:
             guidance: Who the agent is and how it behaves, and the text it follows at particular points in an
@@ -959,9 +964,10 @@ class DraftScope:
         `version` is `draft`, `live` or the name of a saved or published version. Live is the version the
         agent's live pointer names, read as `live`; it is readable by everyone with access to the agent.
         The draft and named versions are readable only by the people and groups on the agent's version
-        access grant, and anyone else gets 404, as for an agent with no live version yet.
+        access grant, and anyone else gets 404. An agent with no live version, because none has been
+        published or chosen yet, answers `live` with 404 `NO_LIVE_VERSION`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}` (GetAgentVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}` (GetAgentVersion).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -987,7 +993,7 @@ class DraftScope:
         compared by their items' keys, so a path reads `workflow.phases[intake].transitions`. Both versions
         need the same access as reading them.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}/compare` (CompareAgentVersions).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}/compare` (CompareAgentVersions).
 
         Args:
             with_version: The version compared to: `draft`, `live` or a version name.
@@ -1011,6 +1017,7 @@ class DraftScope:
     def publish(
         self,
         *,
+        idempotency_key: str | None = None,
         if_match: str | None = None,
         expected_live: str | None = None,
         name: str | None = None,
@@ -1030,9 +1037,11 @@ class DraftScope:
         live's ETag. Either, when stale, is refused with 412; with neither, the publish applies to live as
         it is. Returns live, the version published, and the history entry the publish wrote.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/publish` (PublishAgentVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/publish` (PublishAgentVersion).
 
         Args:
+            idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
+                supply one.
             if_match: Live's current ETag. When given and stale, the publish is refused with 412. `*` matches
                 only when live already points at a version, so a first publish that sends it is refused
                 with 412; guard a first publish with `expectedLive: none` instead.
@@ -1047,6 +1056,7 @@ class DraftScope:
             ConflictError: HTTP 409.
             NotFoundError: HTTP 404.
             PreconditionFailedError: HTTP 412.
+            UnprocessableContentError: HTTP 422.
             InternalError: HTTP 500.
             PermissionDeniedError: HTTP 403.
             ServiceUnavailableError: HTTP 503.
@@ -1061,7 +1071,7 @@ class DraftScope:
         """
         return self._core.request(
             _operations.PUBLISH_AGENT_VERSION,
-            {"agent_id": self._ids["agentId"], "version": self._ids["version"], "if_match": if_match, "expected_live": expected_live, "name": name, "note": note},
+            {"agent_id": self._ids["agentId"], "version": self._ids["version"], "idempotency_key": idempotency_key, "if_match": if_match, "expected_live": expected_live, "name": name, "note": note},
             PublishAgentVersionResult,
         )
 
@@ -1081,7 +1091,7 @@ class DraftConversationsNamespace:
         with SendMessage, and watch it with WatchConversation. The conversation belongs to the caller that
         created it: the person, or the API client's own credential.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/conversations` (CreateConversation).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/conversations` (CreateConversation).
 
         Args:
             idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
@@ -1134,7 +1144,7 @@ class HistoryCollection:
         it was, who made it and when, and which members differ between the two versions. Read the
         configuration live had with GetHistoryEntry. Entries are never edited or deleted.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/history` (ListHistoryEntries).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/history` (ListHistoryEntries).
 
         Args:
             limit: The most entries to return, from 1 to 100. Defaults to 20.
@@ -1193,10 +1203,10 @@ class HistoryEntryScope:
         The configuration is that of the entry's `version`, which never changes. Reading the entry (who
         changed live, when, and to which version) needs agent read; its `configuration` needs what
         reading that version needs, so a caller without the permission to read versions, or without the
-        agent's version access grant for a version that is not live now, gets the entry without it. It is also absent when that version was deleted
-        through an older API that does not protect versions named in live history.
+        agent's version access grant, gets the entry without it. It is also absent when that version was
+        deleted through an older API that does not protect versions named in live history.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/history/{historyEntryId}` (GetHistoryEntry).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/history/{historyEntryId}` (GetHistoryEntry).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -1237,10 +1247,10 @@ class AgentVersionsCollection:
 
         Each entry says how the version was made, who made it, whether live points at it, and which
         members differ from the version it was made from. The draft and live are not entries: read them
-        with `draft` and `live`. Needs the agent's version access grant, as reading any version other than
-        live does.
+        with `draft` and `live`. Needs the agent's version access grant, as reading any version, `live`
+        included, does.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/versions` (ListAgentVersions).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/versions` (ListAgentVersions).
 
         Args:
             limit: The most versions to return, from 1 to 100. Defaults to 20.
@@ -1301,9 +1311,10 @@ class AgentVersionScope:
         `version` is `draft`, `live` or the name of a saved or published version. Live is the version the
         agent's live pointer names, read as `live`; it is readable by everyone with access to the agent.
         The draft and named versions are readable only by the people and groups on the agent's version
-        access grant, and anyone else gets 404, as for an agent with no live version yet.
+        access grant, and anyone else gets 404. An agent with no live version, because none has been
+        published or chosen yet, answers `live` with 404 `NO_LIVE_VERSION`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}` (GetAgentVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}` (GetAgentVersion).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -1330,7 +1341,7 @@ class AgentVersionScope:
         with 409 `VERSION_IN_HISTORY`. A saved version that was never live can be deleted. Like every
         change, it is audited.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/agents/{agentId}/versions/{version}` (DeleteAgentVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `DELETE /v3/agents/{agentId}/versions/{version}` (DeleteAgentVersion).
 
         Raises:
             ConflictError: HTTP 409.
@@ -1357,7 +1368,7 @@ class AgentVersionScope:
         compared by their items' keys, so a path reads `workflow.phases[intake].transitions`. Both versions
         need the same access as reading them.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}/compare` (CompareAgentVersions).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}/compare` (CompareAgentVersions).
 
         Args:
             with_version: The version compared to: `draft`, `live` or a version name.
@@ -1381,6 +1392,7 @@ class AgentVersionScope:
     def publish(
         self,
         *,
+        idempotency_key: str | None = None,
         if_match: str | None = None,
         expected_live: str | None = None,
         name: str | None = None,
@@ -1400,9 +1412,11 @@ class AgentVersionScope:
         live's ETag. Either, when stale, is refused with 412; with neither, the publish applies to live as
         it is. Returns live, the version published, and the history entry the publish wrote.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/publish` (PublishAgentVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/publish` (PublishAgentVersion).
 
         Args:
+            idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
+                supply one.
             if_match: Live's current ETag. When given and stale, the publish is refused with 412. `*` matches
                 only when live already points at a version, so a first publish that sends it is refused
                 with 412; guard a first publish with `expectedLive: none` instead.
@@ -1417,6 +1431,7 @@ class AgentVersionScope:
             ConflictError: HTTP 409.
             NotFoundError: HTTP 404.
             PreconditionFailedError: HTTP 412.
+            UnprocessableContentError: HTTP 422.
             InternalError: HTTP 500.
             PermissionDeniedError: HTTP 403.
             ServiceUnavailableError: HTTP 503.
@@ -1431,7 +1446,7 @@ class AgentVersionScope:
         """
         return self._core.request(
             _operations.PUBLISH_AGENT_VERSION,
-            {"agent_id": self._ids["agentId"], "version": self._ids["version"], "if_match": if_match, "expected_live": expected_live, "name": name, "note": note},
+            {"agent_id": self._ids["agentId"], "version": self._ids["version"], "idempotency_key": idempotency_key, "if_match": if_match, "expected_live": expected_live, "name": name, "note": note},
             PublishAgentVersionResult,
         )
 
@@ -1451,7 +1466,7 @@ class VersionConversationsNamespace:
         with SendMessage, and watch it with WatchConversation. The conversation belongs to the caller that
         created it: the person, or the API client's own credential.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/conversations` (CreateConversation).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/conversations` (CreateConversation).
 
         Args:
             idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
@@ -1514,9 +1529,10 @@ class LiveScope:
         `version` is `draft`, `live` or the name of a saved or published version. Live is the version the
         agent's live pointer names, read as `live`; it is readable by everyone with access to the agent.
         The draft and named versions are readable only by the people and groups on the agent's version
-        access grant, and anyone else gets 404, as for an agent with no live version yet.
+        access grant, and anyone else gets 404. An agent with no live version, because none has been
+        published or chosen yet, answers `live` with 404 `NO_LIVE_VERSION`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}` (GetAgentVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}` (GetAgentVersion).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -1542,7 +1558,7 @@ class LiveScope:
         compared by their items' keys, so a path reads `workflow.phases[intake].transitions`. Both versions
         need the same access as reading them.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}/compare` (CompareAgentVersions).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}/compare` (CompareAgentVersions).
 
         Args:
             with_version: The version compared to: `draft`, `live` or a version name.
@@ -1579,7 +1595,7 @@ class LiveConversationsNamespace:
         with SendMessage, and watch it with WatchConversation. The conversation belongs to the caller that
         created it: the person, or the API client's own credential.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/conversations` (CreateConversation).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/conversations` (CreateConversation).
 
         Args:
             idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
@@ -1650,7 +1666,7 @@ class ConversationScope:
         Read its messages with ListMessages, and follow it with WatchConversation. A conversation the
         caller may not see is 404, as one that does not exist is.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/conversations/{conversationId}` (GetConversation).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/conversations/{conversationId}` (GetConversation).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -1687,12 +1703,12 @@ class ConversationScope:
         and the message is sent once every upload has arrived.
 
         Only a participant may send: whoever started the conversation, or someone it is shared with for
-        writing (the update grant), who may still see the conversation's agent, and, when it was started
-        on a version other than live, holds that agent's version access grant. A caller without any of
+        writing (the update grant), who may still see the conversation's agent and holds that agent's
+        version access grant (the conversation's version may be `live`). A caller without any of
         these gets 404, so revoking someone's access to the agent stops them chatting in conversations
         they already started.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/conversations/{conversationId}/messages` (SendMessage).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/conversations/{conversationId}/messages` (SendMessage).
 
         Args:
             message: The message, at most 32,000 characters.
@@ -1751,7 +1767,7 @@ class ConversationScope:
         `message.completed` or `message.failed`, which end that answer but not the stream, so
         helpers watch for the event they need and then close.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/conversations/{conversationId}/stream` (WatchConversation).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/conversations/{conversationId}/stream` (WatchConversation).
 
         Args:
             last_event_id: The `id` of the last event received. Absent means from the start of the answer.
@@ -1839,7 +1855,7 @@ class MessagesCollection:
 
         An answer still being written is not listed until it ends; follow it with WatchConversation.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/conversations/{conversationId}/messages` (ListMessages).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/conversations/{conversationId}/messages` (ListMessages).
 
         Args:
             limit: The most messages to return, from 1 to 100. Defaults to 50.
@@ -1930,7 +1946,7 @@ class EventsScope:
         Catching up after a cursor covers activity through the v3 API. A conversation event comes
         with its content, in the same structures as the conversation's own stream.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/events/stream` (WatchWorkspaceEvents).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/events/stream` (WatchWorkspaceEvents).
 
         Args:
             types: The event types to receive.
@@ -1978,13 +1994,14 @@ class KnowledgeBasesCollection:
         cursor: str | None = None,
         status: Literal["creating", "ready", "moving", "failed", "deleting"] | KnowledgeBaseStatus | None = None,
     ) -> Paginator[ListKnowledgeBasesPage, KnowledgeBase]:
-        """Lists the knowledge bases the caller may see, in every state.
+        """Lists the knowledge bases the caller may see, in every state, in a stable order that does not
+        change between pages. The server decides the default order; it is not yet recorded here.
 
         Knowledge bases still being created, being moved, that failed or that are being deleted are
         listed too, each with its `status`. Document operations on a knowledge base that is not `ready`
         are refused with 409 `CONFLICT`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases` (ListKnowledgeBases).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases` (ListKnowledgeBases).
 
         Args:
             limit: The most knowledge bases to return, from 1 to 100. Defaults to 20.
@@ -2025,7 +2042,7 @@ class KnowledgeBasesCollection:
         Returns 202 with the knowledge base in `creating`, and `Location` names it; documents can be added
         once it is `ready`. Where its documents are stored is decided by Caitlyn and never exposed.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases` (CreateKnowledgeBase).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases` (CreateKnowledgeBase).
 
         Args:
             name: The knowledge base's name, 1 to 128 characters.
@@ -2096,7 +2113,7 @@ class KnowledgeBaseScope:
         `agentDescription` and `engine` are shown only to callers who may change the knowledge base. A
         knowledge base the caller may not see is 404, as one that does not exist is.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}` (GetKnowledgeBase).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}` (GetKnowledgeBase).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -2131,11 +2148,11 @@ class KnowledgeBaseScope:
         Name a member in `clear` to return it to its default. Metadata fields are changed one at a
         time, with the field operations. Returns the knowledge base and its new ETag.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}` (UpdateKnowledgeBase).
+        Added in Caitlyn 5.144.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}` (UpdateKnowledgeBase).
 
         Args:
-            if_match: The knowledge base's current ETag. A stale value is refused with 412; a missing one with
-                428.
+            if_match: The knowledge base's current ETag. A stale value is refused with 412. The SDKs will not
+                send a call without it; a raw HTTP request that leaves it out is refused with 428.
             name: The knowledge base's name, 1 to 128 characters.
             description: What the knowledge base holds, in words for the people who use it.
             agent_description: What the knowledge base holds, in the words an agent reads to decide when to search it.
@@ -2169,7 +2186,7 @@ class KnowledgeBaseScope:
         Returns 202 with the Operation that tracks it. The knowledge base reads as `deleting` until it is
         gone, then 404. Deleting cannot be undone.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}` (DeleteKnowledgeBase).
+        Added in Caitlyn 5.144.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}` (DeleteKnowledgeBase).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -2209,7 +2226,12 @@ class KnowledgeBaseScope:
         only to callers who may read it. The server ends the stream after at most an hour, and the SDKs
         reconnect.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/events` (WatchKnowledgeBase).
+        What the caller needs depends on what it watches. The whole knowledge base needs the knowledge
+        base read permission and the files list permission, because the snapshot returns the knowledge
+        base and the documents' progress. One document or folder needs the files list permission. One
+        batch needs the ingestion list permission, because the snapshot returns the batch.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/events` (WatchKnowledgeBase).
 
         Args:
             document: Only this document's events.
@@ -2290,7 +2312,7 @@ class CreatedKnowledgeBaseScope(KnowledgeBaseScope):
     @property
     def document_counts(self) -> DocumentCounts | None:
         """How many documents are processing, and how many failed, counting each document's latest
-        attempt.
+        attempt. Totals for the whole knowledge base, including documents the caller cannot read.
         """
         return self.result.document_counts
 
@@ -2362,7 +2384,7 @@ class LayoutAwareSearchEnableMethod:
         record. Read what it will cost first with EstimateLayoutAwareSearch. Calling it
         again resumes a rebuild that failed; while a rebuild is running it is refused with 409 `CONFLICT`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/enable-layout-aware-search` (EnableLayoutAwareSearch).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/enable-layout-aware-search` (EnableLayoutAwareSearch).
 
         Raises:
             ConflictError: HTTP 409.
@@ -2390,7 +2412,7 @@ class LayoutAwareSearchEnableMethod:
 
         `details.searchType` says how the knowledge base searches now.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/layout-aware-search-estimate` (EstimateLayoutAwareSearch).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/layout-aware-search-estimate` (EstimateLayoutAwareSearch).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -2441,7 +2463,12 @@ class AccessScope:
         folder (`folder=/`, `kb.folders('/').access`) holds the readers every folder falls back to; its
         readers are never inherited.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/access` (GetAccess).
+        For a folder or document, the `readers` also come back on ListFolders, ListDocuments and
+        GetDocument too, with `inheritedFrom`, under the files list and read permissions. What GetAccess
+        adds is the access on its own, with the ETag that SetAccess's `If-Match` takes, and the root
+        folder's readers; reading it needs the files permissions list permission.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/access` (GetAccess).
 
         Args:
             folder: A folder in it, for example `/hr/investigations/`. Filled from `kb.folders(path)`.
@@ -2488,7 +2515,13 @@ class AccessScope:
         the passages a folder or document holds continues after the response; the returned access says
         what is set, and the knowledge base's watch shows the work.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PUT /v3/knowledge-bases/{knowledgeBaseId}/access` (PutAccess).
+        Setting `roles` is refused in two cases, as in v2. A caller may give a role only a grant it
+        could make itself: any other is refused with 403 `PERMISSION_DENIED`. And a grant that is not
+        safe for guests, given to a role that guests or anonymous visitors use, is refused with 422
+        `RBAC_NOT_GUEST_SAFE`. Only the grants being added are judged, so a grant the role already holds
+        never blocks an unrelated change. Both checks are made by the server on the roles sent.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `PUT /v3/knowledge-bases/{knowledgeBaseId}/access` (PutAccess).
 
         Args:
             roles: For the knowledge base: each role's grants. A role left out has none.
@@ -2500,9 +2533,10 @@ class AccessScope:
 
         Raises:
             NotFoundError: HTTP 404.
-            PreconditionFailedError: HTTP 412.
-            InternalError: HTTP 500.
             PermissionDeniedError: HTTP 403.
+            PreconditionFailedError: HTTP 412.
+            UnprocessableContentError: HTTP 422.
+            InternalError: HTTP 500.
             ServiceUnavailableError: HTTP 503.
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
@@ -2557,16 +2591,18 @@ class DocumentsCollection:
         Documents are returned in a stable order that does not change between pages. Filters combine
         with AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. With `filter[folder][eq]`,
         the documents directly in that folder; with `deep` as well, every document below it. `q` keeps
-        documents whose name contains the text. The list can be sorted by `name`, `updatedAt` (when the
-        document last changed) and `byteSize`.
+        documents whose name contains the text. The list can be sorted by `folder`, `name`, `updatedAt`
+        (when the document last changed) and `byteSize`. With no `sort`, documents come by folder, then
+        name.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents` (ListDocuments).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents` (ListDocuments).
 
         Args:
             limit: The most documents to return, from 1 to 100. Defaults to 20.
             cursor: The `nextCursor` from the previous page. Absent for the first page.
-            sort: The order: `name`, `updatedAt` or `byteSize`, comma-separated, with a leading `-` for
-                descending (for example `-updatedAt`). Any other field is refused with 400 `UNKNOWN_SORT`.
+            sort: The order: `folder`, `name`, `updatedAt` or `byteSize`, comma-separated, with a leading `-`
+                for descending (for example `-updatedAt`). Defaults to `folder,name`. Any other field is
+                refused with 400 `UNKNOWN_SORT`.
             folder: Only documents directly in this folder, or below it with `deep`.
             deep: When true, with `filter[folder][eq]`, every document below the folder, not only those
                 directly in it. Defaults to false.
@@ -2575,7 +2611,8 @@ class DocumentsCollection:
             name_prefix: Only documents whose name starts with this text.
             external_id: Only the document with this `externalId`.
             content_type_prefix: Only documents whose media type starts with this text, for example `audio/`.
-            sha256: Only documents whose current bytes have this base64-encoded SHA-256.
+            sha256: Only documents whose current bytes have this base64-encoded SHA-256. Percent-encode the
+                value in the query string: `+` as `%2B`, `/` as `%2F` and `=` as `%3D`.
             out_of_date: Only documents that are (`true`) or are not (`false`) processed in an older way than the
                 newest.
 
@@ -2612,7 +2649,7 @@ class DocumentsCollection:
         whole call. Safe to repeat: a repeat gives the same results, apart from `NOT_FOUND` for documents
         that finished deleting in between.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents:batch-delete` (BatchDeleteDocuments).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents:batch-delete` (BatchDeleteDocuments).
 
         Args:
             document_ids: The documents to delete: 1 to 100 identifiers, each at most once.
@@ -2695,7 +2732,7 @@ class DocumentsCreateMethod:
         and access to the folder; it does not need update access to the knowledge base, which is for the
         knowledge base's own configuration.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents` (CreateDocument).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents` (CreateDocument).
 
         Args:
             file: the file, an `UploadFile` (`from_path`, `from_bytes`, `from_stream`) or a path. Or pass `upload_id`, an upload already sent.
@@ -2751,7 +2788,7 @@ class DocumentsCreateMethod:
         Describe each file (its name, type and size, with any hints the client could read). The SDKs call
         this for `kb.documents.create.estimate(file)` and `kb.ingestion.sync.estimate(…)`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestions:estimate` (EstimateIngestion).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestions:estimate` (EstimateIngestion).
 
         Args:
             file: the file, an `UploadFile` (`from_path`, `from_bytes`, `from_stream`) or a path.
@@ -2799,7 +2836,7 @@ class DocumentsReprocessMethod:
         estimate it first with EstimateReprocessDocuments. It is charged for: see the estimate's `cost`, in
         the form the organisation sees it.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents:reprocess` (ReprocessDocuments).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents:reprocess` (ReprocessDocuments).
 
         Args:
             idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
@@ -2840,7 +2877,7 @@ class DocumentsReprocessMethod:
         Takes the same arguments as ReprocessDocuments. `details` lists the improvements the newest
         processing brings.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents:estimate-reprocess` (EstimateReprocessDocuments).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents:estimate-reprocess` (EstimateReprocessDocuments).
 
         Args:
             out_of_date: True for every document processed in an older way than the newest.
@@ -2905,7 +2942,7 @@ class DocumentScope:
         exist is. `processing` says how far the work on it has got; follow it with the scope's `watch()`, or
         `wait()` until it is done.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}` (GetDocument).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}` (GetDocument).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -2943,10 +2980,11 @@ class DocumentScope:
         metadata that search reads) is applied after the response, by the Operation returned. Returns the
         document and its new ETag.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}` (UpdateDocument).
+        Added in Caitlyn 5.144.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}` (UpdateDocument).
 
         Args:
-            if_match: The document's current ETag. A stale value is refused with 412; a missing one with 428.
+            if_match: The document's current ETag. A stale value is refused with 412. The SDKs will not send a call
+                without it; a raw HTTP request that leaves it out is refused with 428.
             source_url: The address a citation of this document links to: `https`, at most 2,048 characters. Changing
                 it needs no processing.
             external_id: The caller's own key for the document, unique within the knowledge base. A key another document
@@ -3001,7 +3039,7 @@ class DocumentScope:
         Needs the files delete permission, read access to the knowledge base and access to the
         document's folder.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}` (DeleteDocument).
+        Added in Caitlyn 5.144.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}` (DeleteDocument).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -3030,7 +3068,12 @@ class DocumentScope:
         serving. Until stopping running work is built, every call is refused with 409 `CONFLICT` ("This
         document's processing can't be stopped yet"), so callers can build against it now.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/cancel-processing` (CancelDocumentProcessing).
+        Needs the files update permission. Stopping a first version removes the document, so it also
+        needs the files delete permission, and a caller without it is refused with 403
+        `PERMISSION_DENIED`. The server checks this, because the permission trait follows input members,
+        not the document's state.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/cancel-processing` (CancelDocumentProcessing).
 
         Raises:
             ConflictError: HTTP 409.
@@ -3061,7 +3104,7 @@ class DocumentScope:
         GetDocumentContent it never redirects, so a browser script can read the address. The SDKs'
         `doc.download()` calls it.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/download` (GetDocumentDownload).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/download` (GetDocumentDownload).
 
         Args:
             version: The version to download: a number, `current` (the default) or `latest`.
@@ -3088,7 +3131,7 @@ class DocumentScope:
         Returns 202 with the document and the Operation that tracks ingestion. A document that is not
         `failed` is refused with 409 `CONFLICT`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/retry` (RetryDocument).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/retry` (RetryDocument).
 
         Raises:
             ConflictError: HTTP 409.
@@ -3218,7 +3261,7 @@ class DocumentReplaceMethod:
         the same as the current version's make no new version (`result: unchanged`); bytes the same as an
         earlier version's bring that version back (`result: restored`).
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions` (CreateDocumentVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions` (CreateDocumentVersion).
 
         Args:
             file: the file, an `UploadFile` (`from_path`, `from_bytes`, `from_stream`) or a path. Or pass `upload_id`, an upload already sent.
@@ -3264,7 +3307,7 @@ class DocumentReplaceMethod:
 
         Takes CreateDocumentVersion's arguments, with the file described in place of the upload.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions:estimate` (EstimateDocumentVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions:estimate` (EstimateDocumentVersion).
 
         Args:
             file: the file, an `UploadFile` (`from_path`, `from_bytes`, `from_stream`) or a path.
@@ -3318,7 +3361,7 @@ class DocumentVersionsCollection:
         Each version says whether it is the current one (the one search uses) and whether it is the
         latest. A caller who may not add versions sees only the current version.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions` (ListDocumentVersions).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions` (ListDocumentVersions).
 
         Args:
             limit: The most versions to return, from 1 to 100. Defaults to 20.
@@ -3382,7 +3425,7 @@ class DocumentVersionScope:
         `version` is a number, `current` (the version search uses) or `latest` (the newest, whatever its
         state). A caller who may not add versions can read only the current version.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{version}` (GetDocumentVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{version}` (GetDocumentVersion).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -3410,10 +3453,13 @@ class DocumentVersionScope:
 
         A version's number is its place in upload order, so deleting by number needs the document's
         versions to be numbered already: until they are, a number is refused with 409
-        `VERSIONS_NOT_NUMBERED`, because deleting would shift every later number. Try again later, or
-        delete `latest`, which works either way.
+        `VERSIONS_NOT_NUMBERED`, because deleting would shift every later number; try again later.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{version}` (DeleteDocumentVersion).
+        Only a version number is accepted: `latest` and `current` are refused with 400
+        `VALIDATION_FAILED`, because the version they name changes after each delete, so a retried
+        request could delete a second version.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{version}` (DeleteDocumentVersion).
 
         Raises:
             ConflictError: HTTP 409.
@@ -3450,7 +3496,12 @@ class DocumentAccessNamespace:
         folder (`folder=/`, `kb.folders('/').access`) holds the readers every folder falls back to; its
         readers are never inherited.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/access` (GetAccess).
+        For a folder or document, the `readers` also come back on ListFolders, ListDocuments and
+        GetDocument too, with `inheritedFrom`, under the files list and read permissions. What GetAccess
+        adds is the access on its own, with the ETag that SetAccess's `If-Match` takes, and the root
+        folder's readers; reading it needs the files permissions list permission.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/access` (GetAccess).
 
         Args:
             folder: A folder in it, for example `/hr/investigations/`. Filled from `kb.folders(path)`.
@@ -3495,7 +3546,13 @@ class DocumentAccessNamespace:
         the passages a folder or document holds continues after the response; the returned access says
         what is set, and the knowledge base's watch shows the work.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PUT /v3/knowledge-bases/{knowledgeBaseId}/access` (PutAccess).
+        Setting `roles` is refused in two cases, as in v2. A caller may give a role only a grant it
+        could make itself: any other is refused with 403 `PERMISSION_DENIED`. And a grant that is not
+        safe for guests, given to a role that guests or anonymous visitors use, is refused with 422
+        `RBAC_NOT_GUEST_SAFE`. Only the grants being added are judged, so a grant the role already holds
+        never blocks an unrelated change. Both checks are made by the server on the roles sent.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `PUT /v3/knowledge-bases/{knowledgeBaseId}/access` (PutAccess).
 
         Args:
             roles: For the knowledge base: each role's grants. A role left out has none.
@@ -3506,9 +3563,10 @@ class DocumentAccessNamespace:
 
         Raises:
             NotFoundError: HTTP 404.
-            PreconditionFailedError: HTTP 412.
-            InternalError: HTTP 500.
             PermissionDeniedError: HTTP 403.
+            PreconditionFailedError: HTTP 412.
+            UnprocessableContentError: HTTP 422.
+            InternalError: HTTP 500.
             ServiceUnavailableError: HTTP 503.
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
@@ -3546,7 +3604,7 @@ class FieldsCollection:
         `needsWork` says how many documents still need a value, an index write or new search vectors for
         the field; `fillIn` does that work.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/fields` (ListFields).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/fields` (ListFields).
 
         Args:
             limit: The most fields to return, from 1 to 100. Defaults to 100.
@@ -3593,7 +3651,7 @@ class FieldsCollection:
         Existing documents have no value for it until a fill-in fills them (`kb.fields.fillIn([key])`).
         A key the knowledge base already defines is refused with 409 `ALREADY_EXISTS`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/fields` (CreateField).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/fields` (CreateField).
 
         Args:
             name: The field's name, as people see it.
@@ -3658,7 +3716,7 @@ class FieldsFillInMethod:
         knowledge base's watch follows; estimate it first with EstimateFillInFields. It is charged for: see
         the estimate's `cost`, in the form the organisation sees it.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/fields:fill-in` (FillInFields).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/fields:fill-in` (FillInFields).
 
         Args:
             keys: The fields to fill in.
@@ -3692,7 +3750,7 @@ class FieldsFillInMethod:
         Takes the same arguments as FillInFields. `details` says how many passages would be read and how
         many search vectors made again.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/fields:estimate-fill-in` (EstimateFillInFields).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/fields:estimate-fill-in` (EstimateFillInFields).
 
         Args:
             keys: The fields to fill in.
@@ -3745,7 +3803,7 @@ class FieldScope:
     def get(self) -> Field:
         """Gets one metadata field, with how much work it still needs.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/fields/{fieldKey}` (GetField).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/fields/{fieldKey}` (GetField).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -3784,7 +3842,7 @@ class FieldScope:
         fill-in for that. The change is made to the field alone, so it never undoes a change someone made
         to another field at the same time.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/fields/{fieldKey}` (UpdateField).
+        Added in Caitlyn 5.144.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/fields/{fieldKey}` (UpdateField).
 
         Args:
             name: The field's name, as people see it.
@@ -3827,7 +3885,7 @@ class FieldScope:
 
         Deleting cannot be undone. Agents and searches stop using the field at once.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/fields/{fieldKey}` (DeleteField).
+        Added in Caitlyn 5.144.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/fields/{fieldKey}` (DeleteField).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -3954,11 +4012,12 @@ class FoldersCollection:
     ) -> Paginator[ListFoldersPage, Folder]:
         """Lists the folders in a knowledge base, one page at a time.
 
-        With `filter[parent][eq]`, the folders directly in that folder; with `deep` as well, every folder
+        Folders come back in a stable order that does not change between pages; the server decides the
+        default order, which is not yet recorded here. With `filter[parent][eq]`, the folders directly in that folder; with `deep` as well, every folder
         below it. `q` keeps folders whose name contains the text. List the documents in a folder with
         ListDocuments.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/folders` (ListFolders).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/folders` (ListFolders).
 
         Args:
             limit: The most folders to return, from 1 to 100. Defaults to 20.
@@ -3993,7 +4052,7 @@ class FoldersCollection:
         Returns 202 with the Operation that tracks it, and `Location` names the Operation. A folder that
         already exists is refused with 409 `ALREADY_EXISTS`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/folders` (CreateFolder).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/folders` (CreateFolder).
 
         Args:
             path: The new folder's path, for example `/hr/leave/`. Folders above it are created too.
@@ -4063,10 +4122,11 @@ class FolderScope:
         Operation that tracks the change. Documents keep their identifiers, versions and history. A path
         that is taken is refused with 409 `ALREADY_EXISTS`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/folders/{folderPath+}` (UpdateFolder).
+        Added in Caitlyn 5.144.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/folders/{folderPath+}` (UpdateFolder).
 
         Args:
-            if_match: The folder's current ETag. A stale value is refused with 412; a missing one with 428.
+            if_match: The folder's current ETag. A stale value is refused with 412. The SDKs will not send a call
+                without it; a raw HTTP request that leaves it out is refused with 428.
             name: The folder's new name, the last part of its path, for example `time-off`.
             parent: The folder to move it into, for example `/people/`.
 
@@ -4101,7 +4161,7 @@ class FolderScope:
         Returns 202 with the Operation that tracks it. A folder holding documents still being processed is
         deleted too; their processing stops.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/folders/{folderPath+}` (DeleteFolder).
+        Added in Caitlyn 5.144.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/folders/{folderPath+}` (DeleteFolder).
 
         Raises:
             ConflictError: HTTP 409.
@@ -4190,7 +4250,12 @@ class FolderAccessNamespace:
         folder (`folder=/`, `kb.folders('/').access`) holds the readers every folder falls back to; its
         readers are never inherited.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/access` (GetAccess).
+        For a folder or document, the `readers` also come back on ListFolders, ListDocuments and
+        GetDocument too, with `inheritedFrom`, under the files list and read permissions. What GetAccess
+        adds is the access on its own, with the ETag that SetAccess's `If-Match` takes, and the root
+        folder's readers; reading it needs the files permissions list permission.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/access` (GetAccess).
 
         Args:
             document: A document in it. Filled from `kb.documents(id)`.
@@ -4235,7 +4300,13 @@ class FolderAccessNamespace:
         the passages a folder or document holds continues after the response; the returned access says
         what is set, and the knowledge base's watch shows the work.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PUT /v3/knowledge-bases/{knowledgeBaseId}/access` (PutAccess).
+        Setting `roles` is refused in two cases, as in v2. A caller may give a role only a grant it
+        could make itself: any other is refused with 403 `PERMISSION_DENIED`. And a grant that is not
+        safe for guests, given to a role that guests or anonymous visitors use, is refused with 422
+        `RBAC_NOT_GUEST_SAFE`. Only the grants being added are judged, so a grant the role already holds
+        never blocks an unrelated change. Both checks are made by the server on the roles sent.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `PUT /v3/knowledge-bases/{knowledgeBaseId}/access` (PutAccess).
 
         Args:
             roles: For the knowledge base: each role's grants. A role left out has none.
@@ -4246,9 +4317,10 @@ class FolderAccessNamespace:
 
         Raises:
             NotFoundError: HTTP 404.
-            PreconditionFailedError: HTTP 412.
-            InternalError: HTTP 500.
             PermissionDeniedError: HTTP 403.
+            PreconditionFailedError: HTTP 412.
+            UnprocessableContentError: HTTP 422.
+            InternalError: HTTP 500.
             ServiceUnavailableError: HTTP 503.
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
@@ -4418,7 +4490,7 @@ class BatchesCollection:
 
         Narrow the list by status.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches` (ListIngestionBatches).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches` (ListIngestionBatches).
 
         Args:
             limit: The most batches to return, from 1 to 100. Defaults to 20.
@@ -4461,11 +4533,20 @@ class BatchesCollection:
         Takes up to 10,000 items; add more with BatchCreateIngestionBatchItems while `awaitMoreItems` is
         true. Returns 202 with the batch, and `Location` names it; wait for the plan with the SDKs'
         `batch.planned()`. Needs the ingestion create permission and read access to the knowledge base,
-        as v2's ingestion route does; starting the batch, which hands out an upload policy, also needs the
-        files create permission. A `fetchUrl` item needs the files create permission when it is added,
-        which the server checks, because the trait cannot follow an item's member.
+        as v2's ingestion route does. A batch that needs bytes uploaded also needs the files create
+        permission to be started with StartIngestionBatch, which hands out the upload policy; a batch that
+        needs none runs without that call under `start: when_planned`. A `fetchUrl` item needs the files
+        create permission when it is added, which the server checks, because the trait cannot follow an
+        item's member.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches` (CreateIngestionBatch).
+        Each item that removes a document (`remove`, or an overwrite) is checked by the server for the
+        files delete permission, and each item that moves one, or adds a new version of one, for the files
+        update permission, and the token's scope covers it too. An item that fails the check is marked
+        `failed` with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts
+        through StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked
+        per item, not once on the call.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches` (CreateIngestionBatch).
 
         Args:
             idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
@@ -4480,7 +4561,7 @@ class BatchesCollection:
                 an hour, and 30 minutes when absent. A short window lets a test reach the upload deadline,
                 and an expired policy, within seconds.
 
-                Added in Caitlyn 5.115.0.
+                Added in Caitlyn 5.144.0.
 
         Raises:
             ConflictError: HTTP 409.
@@ -4540,7 +4621,7 @@ class BatchScope:
         In the SDKs, `batch.planned()` waits until every item has an outcome, and `batch.wait()` until every
         item has finished, both through the knowledge base's watch.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}` (GetIngestionBatch).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}` (GetIngestionBatch).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -4570,10 +4651,11 @@ class BatchScope:
         by hand. A batch past `planned` is refused with 409 `CONFLICT`. The last items, which end the
         `draft`, are added with BatchCreateIngestionBatchItems and `last: true`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}` (UpdateIngestionBatch).
+        Added in Caitlyn 5.144.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}` (UpdateIngestionBatch).
 
         Args:
-            if_match: The batch's current ETag. A stale value is refused with 412; a missing one with 428.
+            if_match: The batch's current ETag. A stale value is refused with 412. The SDKs will not send a call
+                without it; a raw HTTP request that leaves it out is refused with 428.
             policy: The rules that resolve each item's outcome, replacing the batch's.
 
         Raises:
@@ -4606,7 +4688,7 @@ class BatchScope:
         202 with the batch, which becomes `cancelled` once nothing is left running. A final batch is
         refused with 409 `CONFLICT`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/cancel` (CancelIngestionBatch).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/cancel` (CancelIngestionBatch).
 
         Args:
             stop_running: True stops ingestion already running too; false (the default) lets it finish.
@@ -4645,7 +4727,14 @@ class BatchScope:
         upload policy: list the items to upload with `filter[status][eq]=awaiting_upload`, upload each to
         its `objectKey`, then report them with CompleteIngestionBatchUploads.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/start` (StartIngestionBatch).
+        Each item that removes a document (`remove`, or an overwrite) is checked by the server for the
+        files delete permission, and each item that moves one, or adds a new version of one, for the files
+        update permission, and the token's scope covers it too. An item that fails the check is marked
+        `failed` with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts
+        through StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked
+        per item, not once on the call.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/start` (StartIngestionBatch).
 
         Args:
             if_match: The batch's ETag, as read after planning. When given, a batch that changed since is
@@ -4753,13 +4842,13 @@ class CreatedBatchScope(BatchScope):
         """How far the batch has got, from 0 to 100: its documents' progress, weighted by how long each
         is expected to take. Never moves back.
 
-        Added in Caitlyn 5.115.0.
+        Added in Caitlyn 5.144.0.
         """
         return self.result.percent
 
     @property
     def eta(self) -> Eta | None:
-        """How long is left: the longest of its documents' times left. Added in Caitlyn 5.115.0."""
+        """How long is left: the longest of its documents' times left. Added in Caitlyn 5.144.0."""
         return self.result.eta
 
     @property
@@ -4778,7 +4867,7 @@ class CreatedBatchScope(BatchScope):
         time to see which items failed. Renewing the upload policy moves it later. Absent when no item
         is awaiting upload.
 
-        Added in Caitlyn 5.115.0.
+        Added in Caitlyn 5.144.0.
         """
         return self.result.uploads_expire_at
 
@@ -4812,7 +4901,7 @@ class CreatedBatchScope(BatchScope):
         """Why the batch failed, as a stable code and a fixed message. Present only when `status` is
         `failed`.
 
-        Added in Caitlyn 5.115.0.
+        Added in Caitlyn 5.144.0.
         """
         return self.result.failure
 
@@ -4821,7 +4910,7 @@ class CreatedBatchScope(BatchScope):
         """How long each upload policy the batch hands out lasts, renewals included, as set when the
         batch was made.
 
-        Added in Caitlyn 5.115.0.
+        Added in Caitlyn 5.144.0.
         """
         return self.result.upload_window_seconds
 
@@ -4939,7 +5028,7 @@ class ItemsCollection:
         for the items to upload after Start, or `filter[resolution][eq]=unresolved` for those that need a
         decision.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items` (ListIngestionBatchItems).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items` (ListIngestionBatchItems).
 
         Args:
             limit: The most items to return, from 1 to 1,000. Defaults to 100.
@@ -5007,7 +5096,7 @@ class ItemScope:
         Returns its outcome, its resolution and its status, and once it is done the document and version
         it made or changed.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}` (GetIngestionBatchItem).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}` (GetIngestionBatchItem).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -5037,7 +5126,15 @@ class ItemScope:
         409 `CONFLICT`. A resolution that does not fit the outcome (for example `move` for a `new` item) is
         refused with 400 `VALIDATION_FAILED`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}` (UpdateIngestionBatchItem).
+        Resolving to `remove`, an overwrite or `move` does not check the permission now: each item that
+        removes a document (`remove`, or an overwrite) is checked by the server for the files delete
+        permission, and each item that moves one, or adds a new version of one, for the files update
+        permission, and the token's scope covers it too. An item that fails the check is marked `failed`
+        with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts through
+        StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked per
+        item, not once on the call.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}` (UpdateIngestionBatchItem).
 
         Args:
             resolution: What to do with the item.
@@ -5076,7 +5173,7 @@ class ItemScope:
         permission as cancelling the batch, and the caller must be able to see the item's folder (404
         otherwise).
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}/cancel` (CancelIngestionBatchItem).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}/cancel` (CancelIngestionBatchItem).
 
         Args:
             if_match: The item's ETag. When given, an item that changed since is refused with 412.
@@ -5137,7 +5234,7 @@ class DocumentsNamespace:
         or with `curl -L`. A browser script cannot read a redirect's address: it calls
         GetDocumentDownload, which answers with the address as JSON, as the SDKs' `doc.download()` does.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/content` (GetDocumentContent).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/content` (GetDocumentContent).
 
         Args:
             version: The version to download: a number, `current` (the default) or `latest`.
@@ -5185,7 +5282,7 @@ class CoreIngestionNamespace:
         while the batch has items awaiting upload, and goes through the same checks; only an item whose
         bytes are still missing when its reservation ends fails, with `UPLOAD_EXPIRED`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/complete-uploads` (CompleteIngestionBatchUploads).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/complete-uploads` (CompleteIngestionBatchUploads).
 
         Args:
             item_ids: The items whose bytes are in place: 1 to 100, each at most once.
@@ -5221,7 +5318,7 @@ class CoreIngestionNamespace:
         first did. The SDKs renew when less than 5 minutes, or half the policy's lifetime when that is
         shorter, are left.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/upload-policies` (CreateIngestionBatchUploadPolicy).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/upload-policies` (CreateIngestionBatchUploadPolicy).
 
         Args:
             idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
@@ -5260,7 +5357,7 @@ class CoreIngestionNamespace:
         the item, or `failed` with a problem (for example 422 `BATCH_ITEM_CONTENT_AMBIGUOUS`). One bad
         item never refuses the rest. A batch that is not `draft` is refused with 409 `CONFLICT`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items:batch-create` (BatchCreateIngestionBatchItems).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items:batch-create` (BatchCreateIngestionBatchItems).
 
         Args:
             items: The items, at most 10,000.
@@ -5311,9 +5408,11 @@ class OperationsCollection:
         """Lists the Operations on one knowledge base, or one thing in it, newest first.
 
         The caller needs read access to the knowledge base. Narrow the list with the target, the kind and
-        the status.
+        the status. Rows are filtered to the Operations a direct GetOperation would return for this
+        caller: an Operation whose target the caller could not read is left out, not shown with its
+        details removed.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/operations` (ListOperations).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/operations` (ListOperations).
 
         Args:
             limit: The most Operations to return, from 1 to 100. Defaults to 20.
@@ -5376,7 +5475,7 @@ class OperationScope:
         The caller needs the access it would need to read the Operation's target; anyone else gets 404.
         Everyday code waits through the scope the work is on (`doc.wait()`, `kb.wait()`) instead.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}` (GetOperation).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}` (GetOperation).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -5397,26 +5496,18 @@ class OperationScope:
     def cancel(self) -> Operation:
         """Cancels an Operation's work.
 
-        Work not started yet is dropped; work running is stopped where its kind allows. Only
-        `document_ingestion` can be cancelled today: a cancelled first version removes the document, and a
-        cancelled new version leaves the current one serving. Any other kind is refused with 409
-        `OPERATION_NOT_CANCELLABLE`, and a final Operation with 409 `CONFLICT`. Returns the Operation, which
-        becomes `cancelled` once the work has stopped.
+        Work not started yet is dropped; work running is stopped. Only `document_ingestion` can be
+        cancelled today: a cancelled first version removes the document, and a cancelled new version
+        leaves the current one serving. Any other kind is refused with 409 `OPERATION_NOT_CANCELLABLE`,
+        and a final Operation with 409 `CONFLICT`. Returns the Operation, which becomes `cancelled` once
+        the work has stopped.
 
-        Cancelling needs what starting that kind of work needs, on the same record, which the server
-        reads from the Operation and checks per kind before it acts: for `document_ingestion`, the
-        permission that started it (`files.create` for a new document, `files.update` for a new version
-        or a retry) and the document's readers; for `document_update`, `files.update` and its readers; for
-        `fill_in`, `reprocess` and `layout_aware_search`, `knowledge-bases.update` and
-        `knowledge-bases.ingestions.update`; for a `folder_change`, the permission of the change
-        (`files.create`, `files.update` or `files.delete`) and the folder's readers; for
-        `permissions_change`, `files.permissions.update` and the record's readers; for
-        `knowledge_base_deletion`, `knowledge-bases.delete`. A caller without it gets 404, as for an
-        Operation it may not see. No one permission is common to every kind, so the operation declares
-        only what reading an Operation needs (`files.read`, as GetOperation), and the per-kind check does
-        the rest.
+        Needs the files update permission. For `document_ingestion` the server also checks, on the
+        document the Operation reads, the permission that started it (`files.create` for a new document,
+        `files.update` for a new version or a retry) and the document's readers. A caller without it
+        gets 404, as for an Operation it may not see.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}/cancel` (CancelOperation).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}/cancel` (CancelOperation).
 
         Raises:
             ConflictError: HTTP 409.
@@ -5441,7 +5532,7 @@ class OperationScope:
         The stream sends `operation.updated` on each change and ends with `operation.finished`. With
         `Last-Event-ID`, a dropped connection resumes without losing a change.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}/stream` (WatchOperation).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}/stream` (WatchOperation).
 
         Args:
             last_event_id: The `id` of the last event received. Absent means from the Operation as it is now.
@@ -5501,7 +5592,7 @@ class UploadsCollection:
         this, and their document and attachment helpers call it for you. Many files at once go through an
         ingestion batch instead, which signs one upload policy for them all.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/uploads` (CreateUpload).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/uploads` (CreateUpload).
 
         Args:
             file_name: The file's name on the caller's machine.
@@ -5511,11 +5602,11 @@ class UploadsCollection:
             sha256: The base64-encoded SHA-256 of the file's bytes. The upload URL accepts only these bytes.
             idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
                 supply one.
-            purpose: What the upload is for, when that decides whether it is accepted. Absent means a document. Added in Caitlyn 5.115.0.
+            purpose: What the upload is for, when that decides whether it is accepted. Absent means a document. Added in Caitlyn 5.144.0.
             expires_in_seconds: How long the upload URL works: from a minute to an hour, and 15 minutes when absent. A short
                 lifetime lets a test reach an expired upload within seconds.
 
-                Added in Caitlyn 5.115.0.
+                Added in Caitlyn 5.144.0.
 
         Raises:
             ConflictError: HTTP 409.
@@ -5594,7 +5685,7 @@ class UploadScope:
         Use it to check that the bytes arrived before passing the upload's `id` to the operation that
         uses it. Only the person or client that reserved the upload can read it; anyone else gets 404.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/uploads/{uploadId}` (GetUpload).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/uploads/{uploadId}` (GetUpload).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -5629,7 +5720,7 @@ class AsyncAgentsCollection:
         Each agent says which version live points at; read a version's configuration with
         GetAgentVersion.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents` (ListAgents).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents` (ListAgents).
 
         Args:
             limit: The most agents to return, from 1 to 100. Defaults to 20.
@@ -5669,7 +5760,7 @@ class AsyncAgentsCollection:
         UpdateDraftVersion or ReplaceDraftVersion, then publish it with PublishAgentVersion. Returns the
         agent, and `Location` names it.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents` (CreateAgent).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/agents` (CreateAgent).
 
         Args:
             name: The agent's name, 1 to 128 characters.
@@ -5725,7 +5816,7 @@ class AsyncOptionsNamespace:
         `contentSafety.guardrail` names one of these by its `id`, or says `default` or `none`. Guardrails
         are created and changed outside Caitlyn.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/guardrails` (ListGuardrails).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/guardrails` (ListGuardrails).
 
         Args:
             limit: The most guardrails to return, from 1 to 100. Defaults to 20.
@@ -5760,7 +5851,7 @@ class AsyncOptionsNamespace:
 
         An agent's `memory.memoryStoreId` names one of these.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/memory-stores` (ListMemoryStores).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/memory-stores` (ListMemoryStores).
 
         Args:
             limit: The most memory stores to return, from 1 to 100. Defaults to 20.
@@ -5798,7 +5889,7 @@ class AsyncOptionsNamespace:
         apply. An agent configuration that names a model or setting this list does not offer is refused
         with 400 `VALIDATION_FAILED`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/models` (ListModels).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/models` (ListModels).
 
         Args:
             limit: The most models to return, from 1 to 100. Defaults to 20.
@@ -5833,7 +5924,7 @@ class AsyncOptionsNamespace:
 
         A phase names one of these tools with `tools[].name`. Tools on an MCP server are not in this list.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/tools` (ListTools).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/tools` (ListTools).
 
         Args:
             limit: The most tools to return, from 1 to 100. Defaults to 20.
@@ -5868,7 +5959,7 @@ class AsyncOptionsNamespace:
 
         An agent's `voice.voiceId` names one of these when `voice.provider` is `cloud`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/voices` (ListVoices).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/voices` (ListVoices).
 
         Args:
             limit: The most voices to return, from 1 to 100. Defaults to 20.
@@ -5931,7 +6022,7 @@ class AsyncAgentScope:
         An agent the caller may not see is 404, as one that does not exist is. Its configuration is in
         its versions: read them with GetAgentVersion.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}` (GetAgent).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}` (GetAgent).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -5960,10 +6051,11 @@ class AsyncAgentScope:
         no new version. Members that are absent stay unchanged; name `description` or `avatar` in `clear`
         to remove it.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PATCH /v3/agents/{agentId}` (UpdateAgent).
+        Added in Caitlyn 5.144.0. Stability: beta. `PATCH /v3/agents/{agentId}` (UpdateAgent).
 
         Args:
-            if_match: The agent's current ETag. A stale value is refused with 412; a missing one with 428.
+            if_match: The agent's current ETag. A stale value is refused with 412. The SDKs will not send a call
+                without it; a raw HTTP request that leaves it out is refused with 428.
             name: The agent's new name, 1 to 128 characters.
             description: What the agent is for.
             avatar: How the agent looks. Replaces the whole avatar.
@@ -5999,7 +6091,7 @@ class AsyncAgentScope:
         Conversations with the agent are kept. Caitlyn's built-in agents (`native`) are defined by the
         platform and refused with 403 `PERMISSION_DENIED`. Deleting cannot be undone, and is audited.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/agents/{agentId}` (DeleteAgent).
+        Added in Caitlyn 5.144.0. Stability: beta. `DELETE /v3/agents/{agentId}` (DeleteAgent).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -6084,7 +6176,7 @@ class AsyncAgentConversationsNamespace:
         Each says which version it is with. Only the caller's own conversations, and those shared with
         it, are listed.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/conversations` (ListConversations).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/conversations` (ListConversations).
 
         Args:
             limit: The most conversations to return, from 1 to 100. Defaults to 20.
@@ -6162,7 +6254,7 @@ class AsyncDraftScope:
         it, and a configuration over 256 KiB is refused with 400 `CONFIGURATION_TOO_LARGE`. Returns the
         draft and its new ETag.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PUT /v3/agents/{agentId}/versions/draft` (ReplaceDraftVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `PUT /v3/agents/{agentId}/versions/draft` (ReplaceDraftVersion).
 
         Args:
             guidance: Who the agent is and how it behaves, and the text it follows at particular points in an
@@ -6212,23 +6304,27 @@ class AsyncDraftScope:
             AgentVersion,
         )
 
-    async def reset(self, from_: str, *, if_match: str) -> AgentVersion:
+    async def reset(self, from_: str, *, if_match: str, idempotency_key: str | None = None) -> AgentVersion:
         """Resets the draft to another version; `If-Match` is required.
 
         The draft's configuration becomes the configuration of `from`, which is a version name or `live`.
         Nothing else changes: `from` is kept as it is, and live is untouched. Returns the draft and its
         new ETag.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/draft/reset` (ResetDraftVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/agents/{agentId}/versions/draft/reset` (ResetDraftVersion).
 
         Args:
-            if_match: The draft's current ETag. A stale value is refused with 412; a missing one with 428.
+            if_match: The draft's current ETag. A stale value is refused with 412. The SDKs will not send a call
+                without it; a raw HTTP request that leaves it out is refused with 428.
             from_: The version to reset the draft to: a version name, or `live`.
+            idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
+                supply one.
 
         Raises:
             NotFoundError: HTTP 404.
             PreconditionFailedError: HTTP 412.
             PreconditionRequiredError: HTTP 428.
+            UnprocessableContentError: HTTP 422.
             InternalError: HTTP 500.
             PermissionDeniedError: HTTP 403.
             ServiceUnavailableError: HTTP 503.
@@ -6241,7 +6337,7 @@ class AsyncDraftScope:
         """
         return await self._core.request(
             _operations.RESET_DRAFT_VERSION,
-            {"agent_id": self._ids["agentId"], "if_match": if_match, "from_": from_},
+            {"agent_id": self._ids["agentId"], "if_match": if_match, "from_": from_, "idempotency_key": idempotency_key},
             AgentVersion,
         )
 
@@ -6259,7 +6355,7 @@ class AsyncDraftScope:
         the draft's ETag as `If-Match` to save only the draft you tested; without it, the draft is saved as
         it is now. Returns the new version, and `Location` names it.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/draft/save` (SaveDraftVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/agents/{agentId}/versions/draft/save` (SaveDraftVersion).
 
         Args:
             name: The new version's name, unique within the agent, and never `draft`, `live`, `latest` or `none`. A
@@ -6322,7 +6418,7 @@ class AsyncDraftScope:
         refused with 400 `VALIDATION_FAILED`. A draft whose configuration would pass 256 KiB is refused
         with 400 `CONFIGURATION_TOO_LARGE`. Returns the whole draft and its new ETag.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PATCH /v3/agents/{agentId}/versions/draft` (UpdateDraftVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `PATCH /v3/agents/{agentId}/versions/draft` (UpdateDraftVersion).
 
         Args:
             guidance: Who the agent is and how it behaves, and the text it follows at particular points in an
@@ -6379,9 +6475,10 @@ class AsyncDraftScope:
         `version` is `draft`, `live` or the name of a saved or published version. Live is the version the
         agent's live pointer names, read as `live`; it is readable by everyone with access to the agent.
         The draft and named versions are readable only by the people and groups on the agent's version
-        access grant, and anyone else gets 404, as for an agent with no live version yet.
+        access grant, and anyone else gets 404. An agent with no live version, because none has been
+        published or chosen yet, answers `live` with 404 `NO_LIVE_VERSION`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}` (GetAgentVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}` (GetAgentVersion).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -6407,7 +6504,7 @@ class AsyncDraftScope:
         compared by their items' keys, so a path reads `workflow.phases[intake].transitions`. Both versions
         need the same access as reading them.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}/compare` (CompareAgentVersions).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}/compare` (CompareAgentVersions).
 
         Args:
             with_version: The version compared to: `draft`, `live` or a version name.
@@ -6431,6 +6528,7 @@ class AsyncDraftScope:
     async def publish(
         self,
         *,
+        idempotency_key: str | None = None,
         if_match: str | None = None,
         expected_live: str | None = None,
         name: str | None = None,
@@ -6450,9 +6548,11 @@ class AsyncDraftScope:
         live's ETag. Either, when stale, is refused with 412; with neither, the publish applies to live as
         it is. Returns live, the version published, and the history entry the publish wrote.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/publish` (PublishAgentVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/publish` (PublishAgentVersion).
 
         Args:
+            idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
+                supply one.
             if_match: Live's current ETag. When given and stale, the publish is refused with 412. `*` matches
                 only when live already points at a version, so a first publish that sends it is refused
                 with 412; guard a first publish with `expectedLive: none` instead.
@@ -6467,6 +6567,7 @@ class AsyncDraftScope:
             ConflictError: HTTP 409.
             NotFoundError: HTTP 404.
             PreconditionFailedError: HTTP 412.
+            UnprocessableContentError: HTTP 422.
             InternalError: HTTP 500.
             PermissionDeniedError: HTTP 403.
             ServiceUnavailableError: HTTP 503.
@@ -6481,7 +6582,7 @@ class AsyncDraftScope:
         """
         return await self._core.request(
             _operations.PUBLISH_AGENT_VERSION,
-            {"agent_id": self._ids["agentId"], "version": self._ids["version"], "if_match": if_match, "expected_live": expected_live, "name": name, "note": note},
+            {"agent_id": self._ids["agentId"], "version": self._ids["version"], "idempotency_key": idempotency_key, "if_match": if_match, "expected_live": expected_live, "name": name, "note": note},
             PublishAgentVersionResult,
         )
 
@@ -6506,7 +6607,7 @@ class AsyncDraftConversationsNamespace:
         with SendMessage, and watch it with WatchConversation. The conversation belongs to the caller that
         created it: the person, or the API client's own credential.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/conversations` (CreateConversation).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/conversations` (CreateConversation).
 
         Args:
             idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
@@ -6559,7 +6660,7 @@ class AsyncHistoryCollection:
         it was, who made it and when, and which members differ between the two versions. Read the
         configuration live had with GetHistoryEntry. Entries are never edited or deleted.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/history` (ListHistoryEntries).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/history` (ListHistoryEntries).
 
         Args:
             limit: The most entries to return, from 1 to 100. Defaults to 20.
@@ -6618,10 +6719,10 @@ class AsyncHistoryEntryScope:
         The configuration is that of the entry's `version`, which never changes. Reading the entry (who
         changed live, when, and to which version) needs agent read; its `configuration` needs what
         reading that version needs, so a caller without the permission to read versions, or without the
-        agent's version access grant for a version that is not live now, gets the entry without it. It is also absent when that version was deleted
-        through an older API that does not protect versions named in live history.
+        agent's version access grant, gets the entry without it. It is also absent when that version was
+        deleted through an older API that does not protect versions named in live history.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/history/{historyEntryId}` (GetHistoryEntry).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/history/{historyEntryId}` (GetHistoryEntry).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -6662,10 +6763,10 @@ class AsyncAgentVersionsCollection:
 
         Each entry says how the version was made, who made it, whether live points at it, and which
         members differ from the version it was made from. The draft and live are not entries: read them
-        with `draft` and `live`. Needs the agent's version access grant, as reading any version other than
-        live does.
+        with `draft` and `live`. Needs the agent's version access grant, as reading any version, `live`
+        included, does.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/versions` (ListAgentVersions).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/versions` (ListAgentVersions).
 
         Args:
             limit: The most versions to return, from 1 to 100. Defaults to 20.
@@ -6726,9 +6827,10 @@ class AsyncAgentVersionScope:
         `version` is `draft`, `live` or the name of a saved or published version. Live is the version the
         agent's live pointer names, read as `live`; it is readable by everyone with access to the agent.
         The draft and named versions are readable only by the people and groups on the agent's version
-        access grant, and anyone else gets 404, as for an agent with no live version yet.
+        access grant, and anyone else gets 404. An agent with no live version, because none has been
+        published or chosen yet, answers `live` with 404 `NO_LIVE_VERSION`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}` (GetAgentVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}` (GetAgentVersion).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -6755,7 +6857,7 @@ class AsyncAgentVersionScope:
         with 409 `VERSION_IN_HISTORY`. A saved version that was never live can be deleted. Like every
         change, it is audited.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/agents/{agentId}/versions/{version}` (DeleteAgentVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `DELETE /v3/agents/{agentId}/versions/{version}` (DeleteAgentVersion).
 
         Raises:
             ConflictError: HTTP 409.
@@ -6782,7 +6884,7 @@ class AsyncAgentVersionScope:
         compared by their items' keys, so a path reads `workflow.phases[intake].transitions`. Both versions
         need the same access as reading them.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}/compare` (CompareAgentVersions).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}/compare` (CompareAgentVersions).
 
         Args:
             with_version: The version compared to: `draft`, `live` or a version name.
@@ -6806,6 +6908,7 @@ class AsyncAgentVersionScope:
     async def publish(
         self,
         *,
+        idempotency_key: str | None = None,
         if_match: str | None = None,
         expected_live: str | None = None,
         name: str | None = None,
@@ -6825,9 +6928,11 @@ class AsyncAgentVersionScope:
         live's ETag. Either, when stale, is refused with 412; with neither, the publish applies to live as
         it is. Returns live, the version published, and the history entry the publish wrote.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/publish` (PublishAgentVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/publish` (PublishAgentVersion).
 
         Args:
+            idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
+                supply one.
             if_match: Live's current ETag. When given and stale, the publish is refused with 412. `*` matches
                 only when live already points at a version, so a first publish that sends it is refused
                 with 412; guard a first publish with `expectedLive: none` instead.
@@ -6842,6 +6947,7 @@ class AsyncAgentVersionScope:
             ConflictError: HTTP 409.
             NotFoundError: HTTP 404.
             PreconditionFailedError: HTTP 412.
+            UnprocessableContentError: HTTP 422.
             InternalError: HTTP 500.
             PermissionDeniedError: HTTP 403.
             ServiceUnavailableError: HTTP 503.
@@ -6856,7 +6962,7 @@ class AsyncAgentVersionScope:
         """
         return await self._core.request(
             _operations.PUBLISH_AGENT_VERSION,
-            {"agent_id": self._ids["agentId"], "version": self._ids["version"], "if_match": if_match, "expected_live": expected_live, "name": name, "note": note},
+            {"agent_id": self._ids["agentId"], "version": self._ids["version"], "idempotency_key": idempotency_key, "if_match": if_match, "expected_live": expected_live, "name": name, "note": note},
             PublishAgentVersionResult,
         )
 
@@ -6881,7 +6987,7 @@ class AsyncVersionConversationsNamespace:
         with SendMessage, and watch it with WatchConversation. The conversation belongs to the caller that
         created it: the person, or the API client's own credential.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/conversations` (CreateConversation).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/conversations` (CreateConversation).
 
         Args:
             idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
@@ -6944,9 +7050,10 @@ class AsyncLiveScope:
         `version` is `draft`, `live` or the name of a saved or published version. Live is the version the
         agent's live pointer names, read as `live`; it is readable by everyone with access to the agent.
         The draft and named versions are readable only by the people and groups on the agent's version
-        access grant, and anyone else gets 404, as for an agent with no live version yet.
+        access grant, and anyone else gets 404. An agent with no live version, because none has been
+        published or chosen yet, answers `live` with 404 `NO_LIVE_VERSION`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}` (GetAgentVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}` (GetAgentVersion).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -6972,7 +7079,7 @@ class AsyncLiveScope:
         compared by their items' keys, so a path reads `workflow.phases[intake].transitions`. Both versions
         need the same access as reading them.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}/compare` (CompareAgentVersions).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/agents/{agentId}/versions/{version}/compare` (CompareAgentVersions).
 
         Args:
             with_version: The version compared to: `draft`, `live` or a version name.
@@ -7014,7 +7121,7 @@ class AsyncLiveConversationsNamespace:
         with SendMessage, and watch it with WatchConversation. The conversation belongs to the caller that
         created it: the person, or the API client's own credential.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/conversations` (CreateConversation).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/agents/{agentId}/versions/{version}/conversations` (CreateConversation).
 
         Args:
             idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
@@ -7085,7 +7192,7 @@ class AsyncConversationScope:
         Read its messages with ListMessages, and follow it with WatchConversation. A conversation the
         caller may not see is 404, as one that does not exist is.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/conversations/{conversationId}` (GetConversation).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/conversations/{conversationId}` (GetConversation).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -7122,12 +7229,12 @@ class AsyncConversationScope:
         and the message is sent once every upload has arrived.
 
         Only a participant may send: whoever started the conversation, or someone it is shared with for
-        writing (the update grant), who may still see the conversation's agent, and, when it was started
-        on a version other than live, holds that agent's version access grant. A caller without any of
+        writing (the update grant), who may still see the conversation's agent and holds that agent's
+        version access grant (the conversation's version may be `live`). A caller without any of
         these gets 404, so revoking someone's access to the agent stops them chatting in conversations
         they already started.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/conversations/{conversationId}/messages` (SendMessage).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/conversations/{conversationId}/messages` (SendMessage).
 
         Args:
             message: The message, at most 32,000 characters.
@@ -7186,7 +7293,7 @@ class AsyncConversationScope:
         `message.completed` or `message.failed`, which end that answer but not the stream, so
         helpers watch for the event they need and then close.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/conversations/{conversationId}/stream` (WatchConversation).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/conversations/{conversationId}/stream` (WatchConversation).
 
         Args:
             last_event_id: The `id` of the last event received. Absent means from the start of the answer.
@@ -7279,7 +7386,7 @@ class AsyncMessagesCollection:
 
         An answer still being written is not listed until it ends; follow it with WatchConversation.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/conversations/{conversationId}/messages` (ListMessages).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/conversations/{conversationId}/messages` (ListMessages).
 
         Args:
             limit: The most messages to return, from 1 to 100. Defaults to 50.
@@ -7370,7 +7477,7 @@ class AsyncEventsScope:
         Catching up after a cursor covers activity through the v3 API. A conversation event comes
         with its content, in the same structures as the conversation's own stream.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/events/stream` (WatchWorkspaceEvents).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/events/stream` (WatchWorkspaceEvents).
 
         Args:
             types: The event types to receive.
@@ -7418,13 +7525,14 @@ class AsyncKnowledgeBasesCollection:
         cursor: str | None = None,
         status: Literal["creating", "ready", "moving", "failed", "deleting"] | KnowledgeBaseStatus | None = None,
     ) -> AsyncPaginator[ListKnowledgeBasesPage, KnowledgeBase]:
-        """Lists the knowledge bases the caller may see, in every state.
+        """Lists the knowledge bases the caller may see, in every state, in a stable order that does not
+        change between pages. The server decides the default order; it is not yet recorded here.
 
         Knowledge bases still being created, being moved, that failed or that are being deleted are
         listed too, each with its `status`. Document operations on a knowledge base that is not `ready`
         are refused with 409 `CONFLICT`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases` (ListKnowledgeBases).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases` (ListKnowledgeBases).
 
         Args:
             limit: The most knowledge bases to return, from 1 to 100. Defaults to 20.
@@ -7465,7 +7573,7 @@ class AsyncKnowledgeBasesCollection:
         Returns 202 with the knowledge base in `creating`, and `Location` names it; documents can be added
         once it is `ready`. Where its documents are stored is decided by Caitlyn and never exposed.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases` (CreateKnowledgeBase).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases` (CreateKnowledgeBase).
 
         Args:
             name: The knowledge base's name, 1 to 128 characters.
@@ -7536,7 +7644,7 @@ class AsyncKnowledgeBaseScope:
         `agentDescription` and `engine` are shown only to callers who may change the knowledge base. A
         knowledge base the caller may not see is 404, as one that does not exist is.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}` (GetKnowledgeBase).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}` (GetKnowledgeBase).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -7571,11 +7679,11 @@ class AsyncKnowledgeBaseScope:
         Name a member in `clear` to return it to its default. Metadata fields are changed one at a
         time, with the field operations. Returns the knowledge base and its new ETag.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}` (UpdateKnowledgeBase).
+        Added in Caitlyn 5.144.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}` (UpdateKnowledgeBase).
 
         Args:
-            if_match: The knowledge base's current ETag. A stale value is refused with 412; a missing one with
-                428.
+            if_match: The knowledge base's current ETag. A stale value is refused with 412. The SDKs will not
+                send a call without it; a raw HTTP request that leaves it out is refused with 428.
             name: The knowledge base's name, 1 to 128 characters.
             description: What the knowledge base holds, in words for the people who use it.
             agent_description: What the knowledge base holds, in the words an agent reads to decide when to search it.
@@ -7609,7 +7717,7 @@ class AsyncKnowledgeBaseScope:
         Returns 202 with the Operation that tracks it. The knowledge base reads as `deleting` until it is
         gone, then 404. Deleting cannot be undone.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}` (DeleteKnowledgeBase).
+        Added in Caitlyn 5.144.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}` (DeleteKnowledgeBase).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -7649,7 +7757,12 @@ class AsyncKnowledgeBaseScope:
         only to callers who may read it. The server ends the stream after at most an hour, and the SDKs
         reconnect.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/events` (WatchKnowledgeBase).
+        What the caller needs depends on what it watches. The whole knowledge base needs the knowledge
+        base read permission and the files list permission, because the snapshot returns the knowledge
+        base and the documents' progress. One document or folder needs the files list permission. One
+        batch needs the ingestion list permission, because the snapshot returns the batch.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/events` (WatchKnowledgeBase).
 
         Args:
             document: Only this document's events.
@@ -7730,7 +7843,7 @@ class AsyncCreatedKnowledgeBaseScope(AsyncKnowledgeBaseScope):
     @property
     def document_counts(self) -> DocumentCounts | None:
         """How many documents are processing, and how many failed, counting each document's latest
-        attempt.
+        attempt. Totals for the whole knowledge base, including documents the caller cannot read.
         """
         return self.result.document_counts
 
@@ -7802,7 +7915,7 @@ class AsyncLayoutAwareSearchEnableMethod:
         record. Read what it will cost first with EstimateLayoutAwareSearch. Calling it
         again resumes a rebuild that failed; while a rebuild is running it is refused with 409 `CONFLICT`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/enable-layout-aware-search` (EnableLayoutAwareSearch).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/enable-layout-aware-search` (EnableLayoutAwareSearch).
 
         Raises:
             ConflictError: HTTP 409.
@@ -7830,7 +7943,7 @@ class AsyncLayoutAwareSearchEnableMethod:
 
         `details.searchType` says how the knowledge base searches now.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/layout-aware-search-estimate` (EstimateLayoutAwareSearch).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/layout-aware-search-estimate` (EstimateLayoutAwareSearch).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -7881,7 +7994,12 @@ class AsyncAccessScope:
         folder (`folder=/`, `kb.folders('/').access`) holds the readers every folder falls back to; its
         readers are never inherited.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/access` (GetAccess).
+        For a folder or document, the `readers` also come back on ListFolders, ListDocuments and
+        GetDocument too, with `inheritedFrom`, under the files list and read permissions. What GetAccess
+        adds is the access on its own, with the ETag that SetAccess's `If-Match` takes, and the root
+        folder's readers; reading it needs the files permissions list permission.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/access` (GetAccess).
 
         Args:
             folder: A folder in it, for example `/hr/investigations/`. Filled from `kb.folders(path)`.
@@ -7928,7 +8046,13 @@ class AsyncAccessScope:
         the passages a folder or document holds continues after the response; the returned access says
         what is set, and the knowledge base's watch shows the work.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PUT /v3/knowledge-bases/{knowledgeBaseId}/access` (PutAccess).
+        Setting `roles` is refused in two cases, as in v2. A caller may give a role only a grant it
+        could make itself: any other is refused with 403 `PERMISSION_DENIED`. And a grant that is not
+        safe for guests, given to a role that guests or anonymous visitors use, is refused with 422
+        `RBAC_NOT_GUEST_SAFE`. Only the grants being added are judged, so a grant the role already holds
+        never blocks an unrelated change. Both checks are made by the server on the roles sent.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `PUT /v3/knowledge-bases/{knowledgeBaseId}/access` (PutAccess).
 
         Args:
             roles: For the knowledge base: each role's grants. A role left out has none.
@@ -7940,9 +8064,10 @@ class AsyncAccessScope:
 
         Raises:
             NotFoundError: HTTP 404.
-            PreconditionFailedError: HTTP 412.
-            InternalError: HTTP 500.
             PermissionDeniedError: HTTP 403.
+            PreconditionFailedError: HTTP 412.
+            UnprocessableContentError: HTTP 422.
+            InternalError: HTTP 500.
             ServiceUnavailableError: HTTP 503.
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
@@ -7997,16 +8122,18 @@ class AsyncDocumentsCollection:
         Documents are returned in a stable order that does not change between pages. Filters combine
         with AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. With `filter[folder][eq]`,
         the documents directly in that folder; with `deep` as well, every document below it. `q` keeps
-        documents whose name contains the text. The list can be sorted by `name`, `updatedAt` (when the
-        document last changed) and `byteSize`.
+        documents whose name contains the text. The list can be sorted by `folder`, `name`, `updatedAt`
+        (when the document last changed) and `byteSize`. With no `sort`, documents come by folder, then
+        name.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents` (ListDocuments).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents` (ListDocuments).
 
         Args:
             limit: The most documents to return, from 1 to 100. Defaults to 20.
             cursor: The `nextCursor` from the previous page. Absent for the first page.
-            sort: The order: `name`, `updatedAt` or `byteSize`, comma-separated, with a leading `-` for
-                descending (for example `-updatedAt`). Any other field is refused with 400 `UNKNOWN_SORT`.
+            sort: The order: `folder`, `name`, `updatedAt` or `byteSize`, comma-separated, with a leading `-`
+                for descending (for example `-updatedAt`). Defaults to `folder,name`. Any other field is
+                refused with 400 `UNKNOWN_SORT`.
             folder: Only documents directly in this folder, or below it with `deep`.
             deep: When true, with `filter[folder][eq]`, every document below the folder, not only those
                 directly in it. Defaults to false.
@@ -8015,7 +8142,8 @@ class AsyncDocumentsCollection:
             name_prefix: Only documents whose name starts with this text.
             external_id: Only the document with this `externalId`.
             content_type_prefix: Only documents whose media type starts with this text, for example `audio/`.
-            sha256: Only documents whose current bytes have this base64-encoded SHA-256.
+            sha256: Only documents whose current bytes have this base64-encoded SHA-256. Percent-encode the
+                value in the query string: `+` as `%2B`, `/` as `%2F` and `=` as `%3D`.
             out_of_date: Only documents that are (`true`) or are not (`false`) processed in an older way than the
                 newest.
 
@@ -8052,7 +8180,7 @@ class AsyncDocumentsCollection:
         whole call. Safe to repeat: a repeat gives the same results, apart from `NOT_FOUND` for documents
         that finished deleting in between.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents:batch-delete` (BatchDeleteDocuments).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents:batch-delete` (BatchDeleteDocuments).
 
         Args:
             document_ids: The documents to delete: 1 to 100 identifiers, each at most once.
@@ -8135,7 +8263,7 @@ class AsyncDocumentsCreateMethod:
         and access to the folder; it does not need update access to the knowledge base, which is for the
         knowledge base's own configuration.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents` (CreateDocument).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents` (CreateDocument).
 
         Args:
             file: the file, an `UploadFile` (`from_path`, `from_bytes`, `from_stream`) or a path. Or pass `upload_id`, an upload already sent.
@@ -8191,7 +8319,7 @@ class AsyncDocumentsCreateMethod:
         Describe each file (its name, type and size, with any hints the client could read). The SDKs call
         this for `kb.documents.create.estimate(file)` and `kb.ingestion.sync.estimate(…)`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestions:estimate` (EstimateIngestion).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestions:estimate` (EstimateIngestion).
 
         Args:
             file: the file, an `UploadFile` (`from_path`, `from_bytes`, `from_stream`) or a path.
@@ -8239,7 +8367,7 @@ class AsyncDocumentsReprocessMethod:
         estimate it first with EstimateReprocessDocuments. It is charged for: see the estimate's `cost`, in
         the form the organisation sees it.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents:reprocess` (ReprocessDocuments).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents:reprocess` (ReprocessDocuments).
 
         Args:
             idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
@@ -8280,7 +8408,7 @@ class AsyncDocumentsReprocessMethod:
         Takes the same arguments as ReprocessDocuments. `details` lists the improvements the newest
         processing brings.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents:estimate-reprocess` (EstimateReprocessDocuments).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents:estimate-reprocess` (EstimateReprocessDocuments).
 
         Args:
             out_of_date: True for every document processed in an older way than the newest.
@@ -8345,7 +8473,7 @@ class AsyncDocumentScope:
         exist is. `processing` says how far the work on it has got; follow it with the scope's `watch()`, or
         `wait()` until it is done.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}` (GetDocument).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}` (GetDocument).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -8383,10 +8511,11 @@ class AsyncDocumentScope:
         metadata that search reads) is applied after the response, by the Operation returned. Returns the
         document and its new ETag.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}` (UpdateDocument).
+        Added in Caitlyn 5.144.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}` (UpdateDocument).
 
         Args:
-            if_match: The document's current ETag. A stale value is refused with 412; a missing one with 428.
+            if_match: The document's current ETag. A stale value is refused with 412. The SDKs will not send a call
+                without it; a raw HTTP request that leaves it out is refused with 428.
             source_url: The address a citation of this document links to: `https`, at most 2,048 characters. Changing
                 it needs no processing.
             external_id: The caller's own key for the document, unique within the knowledge base. A key another document
@@ -8441,7 +8570,7 @@ class AsyncDocumentScope:
         Needs the files delete permission, read access to the knowledge base and access to the
         document's folder.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}` (DeleteDocument).
+        Added in Caitlyn 5.144.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}` (DeleteDocument).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -8470,7 +8599,12 @@ class AsyncDocumentScope:
         serving. Until stopping running work is built, every call is refused with 409 `CONFLICT` ("This
         document's processing can't be stopped yet"), so callers can build against it now.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/cancel-processing` (CancelDocumentProcessing).
+        Needs the files update permission. Stopping a first version removes the document, so it also
+        needs the files delete permission, and a caller without it is refused with 403
+        `PERMISSION_DENIED`. The server checks this, because the permission trait follows input members,
+        not the document's state.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/cancel-processing` (CancelDocumentProcessing).
 
         Raises:
             ConflictError: HTTP 409.
@@ -8501,7 +8635,7 @@ class AsyncDocumentScope:
         GetDocumentContent it never redirects, so a browser script can read the address. The SDKs'
         `doc.download()` calls it.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/download` (GetDocumentDownload).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/download` (GetDocumentDownload).
 
         Args:
             version: The version to download: a number, `current` (the default) or `latest`.
@@ -8528,7 +8662,7 @@ class AsyncDocumentScope:
         Returns 202 with the document and the Operation that tracks ingestion. A document that is not
         `failed` is refused with 409 `CONFLICT`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/retry` (RetryDocument).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/retry` (RetryDocument).
 
         Raises:
             ConflictError: HTTP 409.
@@ -8658,7 +8792,7 @@ class AsyncDocumentReplaceMethod:
         the same as the current version's make no new version (`result: unchanged`); bytes the same as an
         earlier version's bring that version back (`result: restored`).
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions` (CreateDocumentVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions` (CreateDocumentVersion).
 
         Args:
             file: the file, an `UploadFile` (`from_path`, `from_bytes`, `from_stream`) or a path. Or pass `upload_id`, an upload already sent.
@@ -8704,7 +8838,7 @@ class AsyncDocumentReplaceMethod:
 
         Takes CreateDocumentVersion's arguments, with the file described in place of the upload.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions:estimate` (EstimateDocumentVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions:estimate` (EstimateDocumentVersion).
 
         Args:
             file: the file, an `UploadFile` (`from_path`, `from_bytes`, `from_stream`) or a path.
@@ -8758,7 +8892,7 @@ class AsyncDocumentVersionsCollection:
         Each version says whether it is the current one (the one search uses) and whether it is the
         latest. A caller who may not add versions sees only the current version.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions` (ListDocumentVersions).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions` (ListDocumentVersions).
 
         Args:
             limit: The most versions to return, from 1 to 100. Defaults to 20.
@@ -8822,7 +8956,7 @@ class AsyncDocumentVersionScope:
         `version` is a number, `current` (the version search uses) or `latest` (the newest, whatever its
         state). A caller who may not add versions can read only the current version.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{version}` (GetDocumentVersion).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{version}` (GetDocumentVersion).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -8850,10 +8984,13 @@ class AsyncDocumentVersionScope:
 
         A version's number is its place in upload order, so deleting by number needs the document's
         versions to be numbered already: until they are, a number is refused with 409
-        `VERSIONS_NOT_NUMBERED`, because deleting would shift every later number. Try again later, or
-        delete `latest`, which works either way.
+        `VERSIONS_NOT_NUMBERED`, because deleting would shift every later number; try again later.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{version}` (DeleteDocumentVersion).
+        Only a version number is accepted: `latest` and `current` are refused with 400
+        `VALIDATION_FAILED`, because the version they name changes after each delete, so a retried
+        request could delete a second version.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{version}` (DeleteDocumentVersion).
 
         Raises:
             ConflictError: HTTP 409.
@@ -8890,7 +9027,12 @@ class AsyncDocumentAccessNamespace:
         folder (`folder=/`, `kb.folders('/').access`) holds the readers every folder falls back to; its
         readers are never inherited.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/access` (GetAccess).
+        For a folder or document, the `readers` also come back on ListFolders, ListDocuments and
+        GetDocument too, with `inheritedFrom`, under the files list and read permissions. What GetAccess
+        adds is the access on its own, with the ETag that SetAccess's `If-Match` takes, and the root
+        folder's readers; reading it needs the files permissions list permission.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/access` (GetAccess).
 
         Args:
             folder: A folder in it, for example `/hr/investigations/`. Filled from `kb.folders(path)`.
@@ -8935,7 +9077,13 @@ class AsyncDocumentAccessNamespace:
         the passages a folder or document holds continues after the response; the returned access says
         what is set, and the knowledge base's watch shows the work.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PUT /v3/knowledge-bases/{knowledgeBaseId}/access` (PutAccess).
+        Setting `roles` is refused in two cases, as in v2. A caller may give a role only a grant it
+        could make itself: any other is refused with 403 `PERMISSION_DENIED`. And a grant that is not
+        safe for guests, given to a role that guests or anonymous visitors use, is refused with 422
+        `RBAC_NOT_GUEST_SAFE`. Only the grants being added are judged, so a grant the role already holds
+        never blocks an unrelated change. Both checks are made by the server on the roles sent.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `PUT /v3/knowledge-bases/{knowledgeBaseId}/access` (PutAccess).
 
         Args:
             roles: For the knowledge base: each role's grants. A role left out has none.
@@ -8946,9 +9094,10 @@ class AsyncDocumentAccessNamespace:
 
         Raises:
             NotFoundError: HTTP 404.
-            PreconditionFailedError: HTTP 412.
-            InternalError: HTTP 500.
             PermissionDeniedError: HTTP 403.
+            PreconditionFailedError: HTTP 412.
+            UnprocessableContentError: HTTP 422.
+            InternalError: HTTP 500.
             ServiceUnavailableError: HTTP 503.
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
@@ -8986,7 +9135,7 @@ class AsyncFieldsCollection:
         `needsWork` says how many documents still need a value, an index write or new search vectors for
         the field; `fillIn` does that work.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/fields` (ListFields).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/fields` (ListFields).
 
         Args:
             limit: The most fields to return, from 1 to 100. Defaults to 100.
@@ -9033,7 +9182,7 @@ class AsyncFieldsCollection:
         Existing documents have no value for it until a fill-in fills them (`kb.fields.fillIn([key])`).
         A key the knowledge base already defines is refused with 409 `ALREADY_EXISTS`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/fields` (CreateField).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/fields` (CreateField).
 
         Args:
             name: The field's name, as people see it.
@@ -9098,7 +9247,7 @@ class AsyncFieldsFillInMethod:
         knowledge base's watch follows; estimate it first with EstimateFillInFields. It is charged for: see
         the estimate's `cost`, in the form the organisation sees it.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/fields:fill-in` (FillInFields).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/fields:fill-in` (FillInFields).
 
         Args:
             keys: The fields to fill in.
@@ -9132,7 +9281,7 @@ class AsyncFieldsFillInMethod:
         Takes the same arguments as FillInFields. `details` says how many passages would be read and how
         many search vectors made again.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/fields:estimate-fill-in` (EstimateFillInFields).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/fields:estimate-fill-in` (EstimateFillInFields).
 
         Args:
             keys: The fields to fill in.
@@ -9185,7 +9334,7 @@ class AsyncFieldScope:
     async def get(self) -> Field:
         """Gets one metadata field, with how much work it still needs.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/fields/{fieldKey}` (GetField).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/fields/{fieldKey}` (GetField).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -9224,7 +9373,7 @@ class AsyncFieldScope:
         fill-in for that. The change is made to the field alone, so it never undoes a change someone made
         to another field at the same time.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/fields/{fieldKey}` (UpdateField).
+        Added in Caitlyn 5.144.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/fields/{fieldKey}` (UpdateField).
 
         Args:
             name: The field's name, as people see it.
@@ -9267,7 +9416,7 @@ class AsyncFieldScope:
 
         Deleting cannot be undone. Agents and searches stop using the field at once.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/fields/{fieldKey}` (DeleteField).
+        Added in Caitlyn 5.144.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/fields/{fieldKey}` (DeleteField).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -9394,11 +9543,12 @@ class AsyncFoldersCollection:
     ) -> AsyncPaginator[ListFoldersPage, Folder]:
         """Lists the folders in a knowledge base, one page at a time.
 
-        With `filter[parent][eq]`, the folders directly in that folder; with `deep` as well, every folder
+        Folders come back in a stable order that does not change between pages; the server decides the
+        default order, which is not yet recorded here. With `filter[parent][eq]`, the folders directly in that folder; with `deep` as well, every folder
         below it. `q` keeps folders whose name contains the text. List the documents in a folder with
         ListDocuments.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/folders` (ListFolders).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/folders` (ListFolders).
 
         Args:
             limit: The most folders to return, from 1 to 100. Defaults to 20.
@@ -9433,7 +9583,7 @@ class AsyncFoldersCollection:
         Returns 202 with the Operation that tracks it, and `Location` names the Operation. A folder that
         already exists is refused with 409 `ALREADY_EXISTS`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/folders` (CreateFolder).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/folders` (CreateFolder).
 
         Args:
             path: The new folder's path, for example `/hr/leave/`. Folders above it are created too.
@@ -9503,10 +9653,11 @@ class AsyncFolderScope:
         Operation that tracks the change. Documents keep their identifiers, versions and history. A path
         that is taken is refused with 409 `ALREADY_EXISTS`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/folders/{folderPath+}` (UpdateFolder).
+        Added in Caitlyn 5.144.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/folders/{folderPath+}` (UpdateFolder).
 
         Args:
-            if_match: The folder's current ETag. A stale value is refused with 412; a missing one with 428.
+            if_match: The folder's current ETag. A stale value is refused with 412. The SDKs will not send a call
+                without it; a raw HTTP request that leaves it out is refused with 428.
             name: The folder's new name, the last part of its path, for example `time-off`.
             parent: The folder to move it into, for example `/people/`.
 
@@ -9541,7 +9692,7 @@ class AsyncFolderScope:
         Returns 202 with the Operation that tracks it. A folder holding documents still being processed is
         deleted too; their processing stops.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/folders/{folderPath+}` (DeleteFolder).
+        Added in Caitlyn 5.144.0. Stability: beta. `DELETE /v3/knowledge-bases/{knowledgeBaseId}/folders/{folderPath+}` (DeleteFolder).
 
         Raises:
             ConflictError: HTTP 409.
@@ -9640,7 +9791,12 @@ class AsyncFolderAccessNamespace:
         folder (`folder=/`, `kb.folders('/').access`) holds the readers every folder falls back to; its
         readers are never inherited.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/access` (GetAccess).
+        For a folder or document, the `readers` also come back on ListFolders, ListDocuments and
+        GetDocument too, with `inheritedFrom`, under the files list and read permissions. What GetAccess
+        adds is the access on its own, with the ETag that SetAccess's `If-Match` takes, and the root
+        folder's readers; reading it needs the files permissions list permission.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/access` (GetAccess).
 
         Args:
             document: A document in it. Filled from `kb.documents(id)`.
@@ -9685,7 +9841,13 @@ class AsyncFolderAccessNamespace:
         the passages a folder or document holds continues after the response; the returned access says
         what is set, and the knowledge base's watch shows the work.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PUT /v3/knowledge-bases/{knowledgeBaseId}/access` (PutAccess).
+        Setting `roles` is refused in two cases, as in v2. A caller may give a role only a grant it
+        could make itself: any other is refused with 403 `PERMISSION_DENIED`. And a grant that is not
+        safe for guests, given to a role that guests or anonymous visitors use, is refused with 422
+        `RBAC_NOT_GUEST_SAFE`. Only the grants being added are judged, so a grant the role already holds
+        never blocks an unrelated change. Both checks are made by the server on the roles sent.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `PUT /v3/knowledge-bases/{knowledgeBaseId}/access` (PutAccess).
 
         Args:
             roles: For the knowledge base: each role's grants. A role left out has none.
@@ -9696,9 +9858,10 @@ class AsyncFolderAccessNamespace:
 
         Raises:
             NotFoundError: HTTP 404.
-            PreconditionFailedError: HTTP 412.
-            InternalError: HTTP 500.
             PermissionDeniedError: HTTP 403.
+            PreconditionFailedError: HTTP 412.
+            UnprocessableContentError: HTTP 422.
+            InternalError: HTTP 500.
             ServiceUnavailableError: HTTP 503.
             TooManyRequestsError: HTTP 429.
             UnauthenticatedError: HTTP 401.
@@ -9868,7 +10031,7 @@ class AsyncBatchesCollection:
 
         Narrow the list by status.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches` (ListIngestionBatches).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches` (ListIngestionBatches).
 
         Args:
             limit: The most batches to return, from 1 to 100. Defaults to 20.
@@ -9911,11 +10074,20 @@ class AsyncBatchesCollection:
         Takes up to 10,000 items; add more with BatchCreateIngestionBatchItems while `awaitMoreItems` is
         true. Returns 202 with the batch, and `Location` names it; wait for the plan with the SDKs'
         `batch.planned()`. Needs the ingestion create permission and read access to the knowledge base,
-        as v2's ingestion route does; starting the batch, which hands out an upload policy, also needs the
-        files create permission. A `fetchUrl` item needs the files create permission when it is added,
-        which the server checks, because the trait cannot follow an item's member.
+        as v2's ingestion route does. A batch that needs bytes uploaded also needs the files create
+        permission to be started with StartIngestionBatch, which hands out the upload policy; a batch that
+        needs none runs without that call under `start: when_planned`. A `fetchUrl` item needs the files
+        create permission when it is added, which the server checks, because the trait cannot follow an
+        item's member.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches` (CreateIngestionBatch).
+        Each item that removes a document (`remove`, or an overwrite) is checked by the server for the
+        files delete permission, and each item that moves one, or adds a new version of one, for the files
+        update permission, and the token's scope covers it too. An item that fails the check is marked
+        `failed` with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts
+        through StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked
+        per item, not once on the call.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches` (CreateIngestionBatch).
 
         Args:
             idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
@@ -9930,7 +10102,7 @@ class AsyncBatchesCollection:
                 an hour, and 30 minutes when absent. A short window lets a test reach the upload deadline,
                 and an expired policy, within seconds.
 
-                Added in Caitlyn 5.115.0.
+                Added in Caitlyn 5.144.0.
 
         Raises:
             ConflictError: HTTP 409.
@@ -9990,7 +10162,7 @@ class AsyncBatchScope:
         In the SDKs, `batch.planned()` waits until every item has an outcome, and `batch.wait()` until every
         item has finished, both through the knowledge base's watch.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}` (GetIngestionBatch).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}` (GetIngestionBatch).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -10020,10 +10192,11 @@ class AsyncBatchScope:
         by hand. A batch past `planned` is refused with 409 `CONFLICT`. The last items, which end the
         `draft`, are added with BatchCreateIngestionBatchItems and `last: true`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}` (UpdateIngestionBatch).
+        Added in Caitlyn 5.144.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}` (UpdateIngestionBatch).
 
         Args:
-            if_match: The batch's current ETag. A stale value is refused with 412; a missing one with 428.
+            if_match: The batch's current ETag. A stale value is refused with 412. The SDKs will not send a call
+                without it; a raw HTTP request that leaves it out is refused with 428.
             policy: The rules that resolve each item's outcome, replacing the batch's.
 
         Raises:
@@ -10056,7 +10229,7 @@ class AsyncBatchScope:
         202 with the batch, which becomes `cancelled` once nothing is left running. A final batch is
         refused with 409 `CONFLICT`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/cancel` (CancelIngestionBatch).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/cancel` (CancelIngestionBatch).
 
         Args:
             stop_running: True stops ingestion already running too; false (the default) lets it finish.
@@ -10099,7 +10272,14 @@ class AsyncBatchScope:
         upload policy: list the items to upload with `filter[status][eq]=awaiting_upload`, upload each to
         its `objectKey`, then report them with CompleteIngestionBatchUploads.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/start` (StartIngestionBatch).
+        Each item that removes a document (`remove`, or an overwrite) is checked by the server for the
+        files delete permission, and each item that moves one, or adds a new version of one, for the files
+        update permission, and the token's scope covers it too. An item that fails the check is marked
+        `failed` with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts
+        through StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked
+        per item, not once on the call.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/start` (StartIngestionBatch).
 
         Args:
             if_match: The batch's ETag, as read after planning. When given, a batch that changed since is
@@ -10207,13 +10387,13 @@ class AsyncCreatedBatchScope(AsyncBatchScope):
         """How far the batch has got, from 0 to 100: its documents' progress, weighted by how long each
         is expected to take. Never moves back.
 
-        Added in Caitlyn 5.115.0.
+        Added in Caitlyn 5.144.0.
         """
         return self.result.percent
 
     @property
     def eta(self) -> Eta | None:
-        """How long is left: the longest of its documents' times left. Added in Caitlyn 5.115.0."""
+        """How long is left: the longest of its documents' times left. Added in Caitlyn 5.144.0."""
         return self.result.eta
 
     @property
@@ -10232,7 +10412,7 @@ class AsyncCreatedBatchScope(AsyncBatchScope):
         time to see which items failed. Renewing the upload policy moves it later. Absent when no item
         is awaiting upload.
 
-        Added in Caitlyn 5.115.0.
+        Added in Caitlyn 5.144.0.
         """
         return self.result.uploads_expire_at
 
@@ -10266,7 +10446,7 @@ class AsyncCreatedBatchScope(AsyncBatchScope):
         """Why the batch failed, as a stable code and a fixed message. Present only when `status` is
         `failed`.
 
-        Added in Caitlyn 5.115.0.
+        Added in Caitlyn 5.144.0.
         """
         return self.result.failure
 
@@ -10275,7 +10455,7 @@ class AsyncCreatedBatchScope(AsyncBatchScope):
         """How long each upload policy the batch hands out lasts, renewals included, as set when the
         batch was made.
 
-        Added in Caitlyn 5.115.0.
+        Added in Caitlyn 5.144.0.
         """
         return self.result.upload_window_seconds
 
@@ -10393,7 +10573,7 @@ class AsyncItemsCollection:
         for the items to upload after Start, or `filter[resolution][eq]=unresolved` for those that need a
         decision.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items` (ListIngestionBatchItems).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items` (ListIngestionBatchItems).
 
         Args:
             limit: The most items to return, from 1 to 1,000. Defaults to 100.
@@ -10461,7 +10641,7 @@ class AsyncItemScope:
         Returns its outcome, its resolution and its status, and once it is done the document and version
         it made or changed.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}` (GetIngestionBatchItem).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}` (GetIngestionBatchItem).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -10491,7 +10671,15 @@ class AsyncItemScope:
         409 `CONFLICT`. A resolution that does not fit the outcome (for example `move` for a `new` item) is
         refused with 400 `VALIDATION_FAILED`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}` (UpdateIngestionBatchItem).
+        Resolving to `remove`, an overwrite or `move` does not check the permission now: each item that
+        removes a document (`remove`, or an overwrite) is checked by the server for the files delete
+        permission, and each item that moves one, or adds a new version of one, for the files update
+        permission, and the token's scope covers it too. An item that fails the check is marked `failed`
+        with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts through
+        StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked per
+        item, not once on the call.
+
+        Added in Caitlyn 5.144.0. Stability: beta. `PATCH /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}` (UpdateIngestionBatchItem).
 
         Args:
             resolution: What to do with the item.
@@ -10530,7 +10718,7 @@ class AsyncItemScope:
         permission as cancelling the batch, and the caller must be able to see the item's folder (404
         otherwise).
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}/cancel` (CancelIngestionBatchItem).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items/{itemId}/cancel` (CancelIngestionBatchItem).
 
         Args:
             if_match: The item's ETag. When given, an item that changed since is refused with 412.
@@ -10597,7 +10785,7 @@ class AsyncDocumentsNamespace:
         or with `curl -L`. A browser script cannot read a redirect's address: it calls
         GetDocumentDownload, which answers with the address as JSON, as the SDKs' `doc.download()` does.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/content` (GetDocumentContent).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/content` (GetDocumentContent).
 
         Args:
             version: The version to download: a number, `current` (the default) or `latest`.
@@ -10645,7 +10833,7 @@ class AsyncCoreIngestionNamespace:
         while the batch has items awaiting upload, and goes through the same checks; only an item whose
         bytes are still missing when its reservation ends fails, with `UPLOAD_EXPIRED`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/complete-uploads` (CompleteIngestionBatchUploads).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/complete-uploads` (CompleteIngestionBatchUploads).
 
         Args:
             item_ids: The items whose bytes are in place: 1 to 100, each at most once.
@@ -10681,7 +10869,7 @@ class AsyncCoreIngestionNamespace:
         first did. The SDKs renew when less than 5 minutes, or half the policy's lifetime when that is
         shorter, are left.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/upload-policies` (CreateIngestionBatchUploadPolicy).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/upload-policies` (CreateIngestionBatchUploadPolicy).
 
         Args:
             idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
@@ -10720,7 +10908,7 @@ class AsyncCoreIngestionNamespace:
         the item, or `failed` with a problem (for example 422 `BATCH_ITEM_CONTENT_AMBIGUOUS`). One bad
         item never refuses the rest. A batch that is not `draft` is refused with 409 `CONFLICT`.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items:batch-create` (BatchCreateIngestionBatchItems).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches/{ingestionBatchId}/items:batch-create` (BatchCreateIngestionBatchItems).
 
         Args:
             items: The items, at most 10,000.
@@ -10771,9 +10959,11 @@ class AsyncOperationsCollection:
         """Lists the Operations on one knowledge base, or one thing in it, newest first.
 
         The caller needs read access to the knowledge base. Narrow the list with the target, the kind and
-        the status.
+        the status. Rows are filtered to the Operations a direct GetOperation would return for this
+        caller: an Operation whose target the caller could not read is left out, not shown with its
+        details removed.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/operations` (ListOperations).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/operations` (ListOperations).
 
         Args:
             limit: The most Operations to return, from 1 to 100. Defaults to 20.
@@ -10836,7 +11026,7 @@ class AsyncOperationScope:
         The caller needs the access it would need to read the Operation's target; anyone else gets 404.
         Everyday code waits through the scope the work is on (`doc.wait()`, `kb.wait()`) instead.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}` (GetOperation).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}` (GetOperation).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -10857,26 +11047,18 @@ class AsyncOperationScope:
     async def cancel(self) -> Operation:
         """Cancels an Operation's work.
 
-        Work not started yet is dropped; work running is stopped where its kind allows. Only
-        `document_ingestion` can be cancelled today: a cancelled first version removes the document, and a
-        cancelled new version leaves the current one serving. Any other kind is refused with 409
-        `OPERATION_NOT_CANCELLABLE`, and a final Operation with 409 `CONFLICT`. Returns the Operation, which
-        becomes `cancelled` once the work has stopped.
+        Work not started yet is dropped; work running is stopped. Only `document_ingestion` can be
+        cancelled today: a cancelled first version removes the document, and a cancelled new version
+        leaves the current one serving. Any other kind is refused with 409 `OPERATION_NOT_CANCELLABLE`,
+        and a final Operation with 409 `CONFLICT`. Returns the Operation, which becomes `cancelled` once
+        the work has stopped.
 
-        Cancelling needs what starting that kind of work needs, on the same record, which the server
-        reads from the Operation and checks per kind before it acts: for `document_ingestion`, the
-        permission that started it (`files.create` for a new document, `files.update` for a new version
-        or a retry) and the document's readers; for `document_update`, `files.update` and its readers; for
-        `fill_in`, `reprocess` and `layout_aware_search`, `knowledge-bases.update` and
-        `knowledge-bases.ingestions.update`; for a `folder_change`, the permission of the change
-        (`files.create`, `files.update` or `files.delete`) and the folder's readers; for
-        `permissions_change`, `files.permissions.update` and the record's readers; for
-        `knowledge_base_deletion`, `knowledge-bases.delete`. A caller without it gets 404, as for an
-        Operation it may not see. No one permission is common to every kind, so the operation declares
-        only what reading an Operation needs (`files.read`, as GetOperation), and the per-kind check does
-        the rest.
+        Needs the files update permission. For `document_ingestion` the server also checks, on the
+        document the Operation reads, the permission that started it (`files.create` for a new document,
+        `files.update` for a new version or a retry) and the document's readers. A caller without it
+        gets 404, as for an Operation it may not see.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}/cancel` (CancelOperation).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}/cancel` (CancelOperation).
 
         Raises:
             ConflictError: HTTP 409.
@@ -10901,7 +11083,7 @@ class AsyncOperationScope:
         The stream sends `operation.updated` on each change and ends with `operation.finished`. With
         `Last-Event-ID`, a dropped connection resumes without losing a change.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}/stream` (WatchOperation).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/knowledge-bases/{knowledgeBaseId}/operations/{operationId}/stream` (WatchOperation).
 
         Args:
             last_event_id: The `id` of the last event received. Absent means from the Operation as it is now.
@@ -10961,7 +11143,7 @@ class AsyncUploadsCollection:
         this, and their document and attachment helpers call it for you. Many files at once go through an
         ingestion batch instead, which signs one upload policy for them all.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `POST /v3/uploads` (CreateUpload).
+        Added in Caitlyn 5.144.0. Stability: beta. `POST /v3/uploads` (CreateUpload).
 
         Args:
             file_name: The file's name on the caller's machine.
@@ -10971,11 +11153,11 @@ class AsyncUploadsCollection:
             sha256: The base64-encoded SHA-256 of the file's bytes. The upload URL accepts only these bytes.
             idempotency_key: Makes the request safe to retry. The SDKs generate one per call when the caller does not
                 supply one.
-            purpose: What the upload is for, when that decides whether it is accepted. Absent means a document. Added in Caitlyn 5.115.0.
+            purpose: What the upload is for, when that decides whether it is accepted. Absent means a document. Added in Caitlyn 5.144.0.
             expires_in_seconds: How long the upload URL works: from a minute to an hour, and 15 minutes when absent. A short
                 lifetime lets a test reach an expired upload within seconds.
 
-                Added in Caitlyn 5.115.0.
+                Added in Caitlyn 5.144.0.
 
         Raises:
             ConflictError: HTTP 409.
@@ -11054,7 +11236,7 @@ class AsyncUploadScope:
         Use it to check that the bytes arrived before passing the upload's `id` to the operation that
         uses it. Only the person or client that reserved the upload can read it; anyone else gets 404.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/uploads/{uploadId}` (GetUpload).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/uploads/{uploadId}` (GetUpload).
 
         Raises:
             NotFoundError: HTTP 404.
@@ -11167,7 +11349,7 @@ class Caitlyn:
         credential before doing anything else. It only describes the credential that made the request;
         it never reads another person's or client's record.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/me` (GetCaller).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/me` (GetCaller).
 
         Raises:
             InternalError: HTTP 500.
@@ -11292,7 +11474,7 @@ class AsyncCaitlyn:
         credential before doing anything else. It only describes the credential that made the request;
         it never reads another person's or client's record.
 
-        Added in Caitlyn 5.115.0. Stability: beta. `GET /v3/me` (GetCaller).
+        Added in Caitlyn 5.144.0. Stability: beta. `GET /v3/me` (GetCaller).
 
         Raises:
             InternalError: HTTP 500.

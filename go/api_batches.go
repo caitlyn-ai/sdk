@@ -31,7 +31,7 @@ func newBatches(c *Client, knowledgeBaseID string) *Batches {
 // It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
 // one.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *Batches) List(ctx context.Context, in *ListIngestionBatchesInput, opts ...CallOption) iter.Seq2[IngestionBatch, error] {
 	return core.Items(s.ListPages(ctx, in, opts...), func(p *ListIngestionBatchesPage) []IngestionBatch { return p.Items })
 }
@@ -59,14 +59,23 @@ func (s *Batches) ListPage(ctx context.Context, in *ListIngestionBatchesInput, o
 // Takes up to 10,000 items; add more with BatchCreateIngestionBatchItems while `awaitMoreItems` is
 // true. Returns 202 with the batch, and `Location` names it; wait for the plan with the SDKs'
 // `batch.planned()`. Needs the ingestion create permission and read access to the knowledge base,
-// as v2's ingestion route does; starting the batch, which hands out an upload policy, also needs the
-// files create permission. A `fetchUrl` item needs the files create permission when it is added,
-// which the server checks, because the trait cannot follow an item's member.
+// as v2's ingestion route does. A batch that needs bytes uploaded also needs the files create
+// permission to be started with StartIngestionBatch, which hands out the upload policy; a batch that
+// needs none runs without that call under `start: when_planned`. A `fetchUrl` item needs the files
+// create permission when it is added, which the server checks, because the trait cannot follow an
+// item's member.
+//
+// Each item that removes a document (`remove`, or an overwrite) is checked by the server for the
+// files delete permission, and each item that moves one, or adds a new version of one, for the files
+// update permission, and the token's scope covers it too. An item that fails the check is marked
+// `failed` with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts
+// through StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked
+// per item, not once on the call.
 //
 // It returns the new batch's scope, with the response as Result. Wait follows the work the call
 // started.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *Batches) Create(ctx context.Context, in *CreateIngestionBatchInput, opts ...CallOption) (*CreatedBatch, error) {
 	p := &createIngestionBatchParams{}
 	if in != nil {
@@ -102,7 +111,7 @@ type CreateIngestionBatchInput struct {
 	// How long each upload policy the batch hands out lasts, renewals included: from a minute to
 	// an hour, and 30 minutes when absent. A short window lets a test reach the upload deadline,
 	// and an expired policy, within seconds.
-	// Since Caitlyn 5.115.0: refused before sending to an older server.
+	// Since Caitlyn 5.144.0: refused before sending to an older server.
 	UploadWindowSeconds *int32 `json:"uploadWindowSeconds,omitempty"`
 }
 
@@ -120,7 +129,7 @@ type createIngestionBatchParams struct {
 var opCreateIngestionBatch = &core.Operation{
 	Name:              "CreateIngestionBatch",
 	Method:            "POST",
-	Since:             "5.115.0",
+	Since:             "5.144.0",
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},
@@ -191,7 +200,7 @@ type listIngestionBatchesParams struct {
 var opListIngestionBatches = &core.Operation{
 	Name:      "ListIngestionBatches",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{

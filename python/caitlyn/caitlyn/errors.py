@@ -87,6 +87,22 @@ class PreconditionFailedError(CaitlynError):
     http_status: ClassVar[int | None] = 412
 
 
+class UnprocessableContentError(CaitlynError):
+    """The idempotency key was already used with a different request body; supplied metadata does not
+    fit the knowledge base's field definitions or limits (`METADATA_FIELD_UNDEFINED`,
+    `METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one
+    entry per field in `errors`; an ingestion batch item gives both or neither of its content's
+    description and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused
+    a file (`CONTENT_REJECTED`); or a grant of a knowledge base to a role that guests or anonymous
+    visitors use is not safe for them (`RBAC_NOT_GUEST_SAFE`), refused for what the grant is, not
+    for what the caller lacks.
+
+    Raised for HTTP 422.
+    """
+
+    http_status: ClassVar[int | None] = 422
+
+
 class ConflictError(CaitlynError):
     """The resource's state does not allow the request, a unique name is taken, or a request with the
     same idempotency key is still in progress. An agent version that live points at
@@ -106,20 +122,6 @@ class ConflictError(CaitlynError):
     """
 
     http_status: ClassVar[int | None] = 409
-
-
-class UnprocessableContentError(CaitlynError):
-    """The idempotency key was already used with a different request body; supplied metadata does not
-    fit the knowledge base's field definitions or limits (`METADATA_FIELD_UNDEFINED`,
-    `METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one
-    entry per field in `errors`; an ingestion batch item gives both or neither of its content's
-    description and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused
-    a file (`CONTENT_REJECTED`).
-
-    Raised for HTTP 422.
-    """
-
-    http_status: ClassVar[int | None] = 422
 
 
 class PreconditionRequiredError(CaitlynError):
@@ -193,6 +195,8 @@ class ErrorCode(OpenEnum):
     """Raised as PermissionDeniedError (403)."""
     RATE_LIMITED = "RATE_LIMITED"
     """Raised as TooManyRequestsError (429)."""
+    RBAC_NOT_GUEST_SAFE = "RBAC_NOT_GUEST_SAFE"
+    """Raised as UnprocessableContentError (422)."""
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
     """Raised as ServiceUnavailableError (503)."""
     TARGET_IN_USE = "TARGET_IN_USE"
