@@ -229,14 +229,19 @@ older one. The lock records `"prerelease": {"appVersion", "appCommit"}`. `--from
 keeps the previous lock's `stampNext` unless `STAMP_NEXT` is set. A published model never contains `"next"`.
 
 The `model:version-check` job (`scripts/model-check.sh`, deciding in `scripts/model-check.mjs`) says whether the SDKs
-may be released from the snapshot. It fails when the snapshot is:
+may be released from the snapshot. It compares what the models say, not their version numbers: the app releases
+several times a day, mostly without touching the model, and none of those releases needs anyone to pull a model. It
+fails when the snapshot is:
 
-- **behind:** a published model that isn't the latest published one;
+- **behind:** a published model that says something different from the latest published one;
 - **hand-pulled:** an unpublished build with no `prerelease` record, one `model:main` didn't make;
-- **a stale pre-release:** a `model:main` pre-release whose `stampNext` isn't later than the latest published release.
+- **a stale pre-release:** a `model:main` pre-release, where the app has released since its build (the latest release
+  is later than its `stampNext`) and that release's model says something the pre-release doesn't.
 
-It passes for the latest published model (or one identical to it), and for a `model:main` pre-release ahead of the
-latest release. In a merge request it's a warning; on `main` and `v*` tags it fails, and `docs:publish` needs it.
+It passes for the latest published model (or one identical to it), for a `model:main` pre-release that the latest
+release shipped (the same model, each `@since("next")` stamped with that release's number), and for a `model:main`
+pre-release built since the latest release (its `stampNext` is that release or later). In a merge request it's a
+warning; on `main` and `v*` tags it fails, and `docs:publish` needs it.
 
 ## How a model change reaches the SDK
 
