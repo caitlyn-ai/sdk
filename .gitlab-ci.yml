@@ -108,6 +108,15 @@ variables:
   npm_config_cache: '$CI_PROJECT_DIR/.cache/npm'
   UV_CACHE_DIR: '$CI_PROJECT_DIR/.cache/uv'
   CARGO_HOME: '$CI_PROJECT_DIR/.cache/cargo'
+  # Every job's CPU and memory request on the Kubernetes runner, which sets none by default. Without requests the
+  # scheduler packs a whole pipeline onto one node, where the jobs take three to four times as long and the
+  # timing-sensitive conformance cases flake. This is the light tier, for the checks and release jobs; the busier jobs
+  # extend .resources-medium or .resources-heavy (below). The memory includes the helper container's 300 to 450 MB
+  # while it unpacks the cache (.cache/, about 68,000 files): the runner allows no helper request override, so the
+  # build container's request carries it. No limits: a CPU limit throttles, which slows the timing-sensitive tests,
+  # and the runner allows no limit override anyway. The runner caps requests at 8 CPU and 8Gi.
+  KUBERNETES_CPU_REQUEST: '500m'
+  KUBERNETES_MEMORY_REQUEST: '1Gi'
 
 .toolchain:
   image: $TOOLCHAIN_IMAGE
@@ -120,6 +129,19 @@ variables:
     paths:
       - .cache/
 
+# Resource tiers (the light tier is the default, in variables above). Memory is each job's peak in a contended
+# pipeline (160268), plus the helper's cache unpack, plus about half again. A job whose peak is past its tier sets
+# its own KUBERNETES_MEMORY_REQUEST, which merges over the tier's.
+.resources-medium:
+  variables:
+    KUBERNETES_CPU_REQUEST: '1'
+    KUBERNETES_MEMORY_REQUEST: '1536Mi'
+
+.resources-heavy:
+  variables:
+    KUBERNETES_CPU_REQUEST: '2'
+    KUBERNETES_MEMORY_REQUEST: '2Gi'
+
 .mr-and-main:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -128,6 +150,9 @@ variables:
 # ---------------------------------------------------------------------------- toolchain
 
 toolchain:
+  extends: .resources-heavy
+  variables:
+    KUBERNETES_MEMORY_REQUEST: '4Gi'  # not measured: a rebuild compiles the Go release tools under kaniko
   stage: toolchain
   image:
     name: gcr.io/kaniko-project/executor:v1.23.2-debug
@@ -150,7 +175,7 @@ toolchain:
 # ---------------------------------------------------------------------------- generate and test
 
 generate:
-  extends: .toolchain
+  extends: [.toolchain, .resources-medium]
   stage: generate
   script:
     - scripts/generate.sh
@@ -165,7 +190,7 @@ generate:
   rules: !reference [.mr-and-main, rules]
 
 typescript:
-  extends: .toolchain
+  extends: [.toolchain, .resources-heavy]
   stage: test
   script:
     - scripts/test-typescript.sh
@@ -181,6 +206,7 @@ typescript:
 # Microsoft's image served from our registry) carries the browsers for one Playwright version: keep the version in its
 # name (playwright-1.64.1) the same as the playwright version in typescript/package.json.
 typescript:browser:
+  extends: .resources-heavy
   stage: test
   image: containers.customd.com/custom-d/devops-platform/container-images/playwright/playwright-1.64.1:latest
   interruptible: true
@@ -202,7 +228,7 @@ typescript:browser:
   rules: !reference [.mr-and-main, rules]
 
 python:
-  extends: .toolchain
+  extends: [.toolchain, .resources-medium]
   stage: test
   script:
     - scripts/test-python.sh
@@ -215,7 +241,7 @@ python:
   rules: !reference [.mr-and-main, rules]
 
 go:
-  extends: .toolchain
+  extends: [.toolchain, .resources-heavy]
   stage: test
   script:
     - scripts/test-go.sh
@@ -226,7 +252,7 @@ go:
   rules: !reference [.mr-and-main, rules]
 
 rust:
-  extends: .toolchain
+  extends: [.toolchain, .resources-heavy]
   stage: test
   script:
     - scripts/test-rust.sh
@@ -247,7 +273,7 @@ conformance:
 # ---------------------------------------------------------------------------- the CLI
 
 cli:vet:
-  extends: .toolchain
+  extends: [.toolchain, .resources-medium]
   stage: test
   script:
     - cd cli
@@ -257,7 +283,9 @@ cli:vet:
   rules: !reference [.mr-and-main, rules]
 
 cli:test:
-  extends: .toolchain
+  extends: [.toolchain, .resources-heavy]
+  variables:
+    KUBERNETES_MEMORY_REQUEST: '4Gi'  # peak 2.9 GB (go test -race)
   stage: test
   script:
     - cd cli
@@ -277,7 +305,7 @@ cli:install-ps1:
   rules: !reference [.mr-and-main, rules]
 
 cli:snapshot:
-  extends: .toolchain
+  extends: [.toolchain, .resources-heavy]
   stage: test
   script:
     - cd cli
@@ -297,7 +325,7 @@ cli:snapshot:
 # can be overridden per pipeline; the token is the masked variable CAITLYN_TOKEN_MR2062, never echoed (the runner
 # masks it in what the examples print). The results table is in the job log.
 examples:live:
-  extends: .toolchain
+  extends: [.toolchain, .resources-medium]
   stage: test
   needs: []
   # One run at a time: every run changes the same agents' drafts and versions.
@@ -392,7 +420,7 @@ model:version-check:
 # model change reaches the SDK"). Commits straight to main, and tags a beta, only once every suite passes. One at a
 # time, and never cancelled part way through a push.
 model:main:
-  extends: .toolchain
+  extends: [.toolchain, .resources-heavy]
   stage: generate
   needs: []
   interruptible: false
@@ -408,10 +436,11 @@ model:main:
 # ---------------------------------------------------------------------------- developer docs
 
 docs:build:
-  extends: .toolchain
+  extends: [.toolchain, .resources-heavy]
   stage: docs
   needs: []
   variables:
+    KUBERNETES_MEMORY_REQUEST: '3Gi'  # peak 2.0 GB
     # The whole history, so each page's sitemap lastmod is its source's newest commit (scripts/docs-sitemap.mjs); a
     # shallow clone would date every older page at the clone's oldest commit
     GIT_DEPTH: '0'
@@ -559,12 +588,13 @@ cli:agent-eval:offline:
 # and scoped to the agent-eval environment (set the variable's environment scope to agent-eval). The model is
 # CLI_AGENT_EVAL_MODEL.
 cli:agent-eval:
-  extends: .toolchain
+  extends: [.toolchain, .resources-heavy]
   stage: docs
   needs:
     - job: docs:build
       optional: true
   variables:
+    KUBERNETES_MEMORY_REQUEST: '3Gi'  # builds the docs when docs:build did not run
     CAITLYN_AGENT_EVAL_LIVE: '1'
     CLI_AGENT_EVAL_MODEL: claude-sonnet-5-5
   script:
@@ -589,7 +619,7 @@ cli:agent-eval:
 # every task, three runs each, all three arms, with each model. A missed threshold fails the job, and the job after it
 # opens an issue.
 cli:agent-eval:nightly:
-  extends: .toolchain
+  extends: [.toolchain, .resources-heavy]
   stage: docs
   needs: []
   timeout: 3h
@@ -597,6 +627,7 @@ cli:agent-eval:nightly:
     matrix:
       - CLI_AGENT_EVAL_MODEL: [claude-sonnet-5-5, claude-opus-5-5]
   variables:
+    KUBERNETES_MEMORY_REQUEST: '3Gi'  # builds the docs, as docs:build does
     CAITLYN_AGENT_EVAL_LIVE: '1'
   script:
     - scripts/docs-build.sh
@@ -636,7 +667,7 @@ cli:agent-eval:nightly:issue:
 # ask.caitlyn.ai docs agent through the TypeScript SDK, signed in with workload identity (CAITLYN_ID_TOKEN below), so
 # no secret is stored. Needs ASK_CAITLYN_AGENT (the docs agent) and a schedule with ASK_CAITLYN_EVAL set to "true".
 cli:ask-caitlyn-eval:nightly:
-  extends: .toolchain
+  extends: [.toolchain, .resources-heavy]
   stage: docs
   needs: []
   id_tokens:
@@ -683,7 +714,7 @@ fetch-semantic-version:
 
 # The artifact paths are every stamped file; scripts/version.mjs assets (in make generate) keeps this list complete.
 stamp-version:
-  extends: .toolchain
+  extends: [.toolchain, .resources-medium]
   stage: conformance
   needs:
     - job: fetch-semantic-version
@@ -721,6 +752,7 @@ stamp-version:
     - !reference [fetch-semantic-version, rules]
 
 release:
+  extends: .resources-medium
   # `needs` replaces the template's stage ordering, under which release ran only after every earlier job had
   # passed, so each one it depends on is named: a failed job in `needs` (none allows failure) skips the release.
   # stamp-version's artifacts are the stamped files the release commit carries. The dry run is required now, so
@@ -838,7 +870,7 @@ release:homebrew:
 # the KMS key is the one the binaries are built with. The minisign key never reaches this job: cli:publish signs the
 # manifest.
 cli:release:
-  extends: [.toolchain, .cli-signing]
+  extends: [.toolchain, .cli-signing, .resources-heavy]
   stage: release
   needs: []
   script:
