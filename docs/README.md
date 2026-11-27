@@ -40,20 +40,23 @@ make docs                                   # or, with Node 24 on your machine:
 The build fails on front matter ingestion would skip, a page whose code differs from its example, a
 site-relative link to a page or heading that does not exist, a raw HTML heading, and a page Starlight did not write.
 
-**Since, and Not available yet.** Normally the model is built from the Caitlyn app's `main`, so every operation's
-`@since` in the snapshot is the release it arrived in, and each operation page's table shows its stability and
-"Since Caitlyn X.Y.Z", with no callout. Only an operation whose `@since` is not a released version yet, `"next"` in the
-raw snapshot `model/model.json`, says "Not available yet": that is the pre-release case, a model built from a merge
-request branch before the release that ships it, as v3 is while it is pre-release. It is not the design, and it ends
-on its own once the snapshot comes from a release. While it lasts, the callout and the Stability row name the
-release the operation arrives in from `model/model.lock.json`'s `stampNext` ("Not available yet: arrives in Caitlyn
-5.115.0. The SDKs have this operation, but workspaces serve it only from that release."), the number
-`scripts/prepare-model.mjs` stamps on it and the SDKs' doc comments show ("Since Caitlyn 5.115.0"), so the site and
-the SDKs agree; with no `stampNext` the callout says only "Not available yet", and the operation shows as beta.
+**Since, and Not available yet.** Whether workspaces serve an operation, and since which release, comes from the
+latest model the app has published, not from the snapshot the SDKs are generated from. `scripts/docs-build.sh`
+fetches `caitlyn-v3-model/latest/model.json` to `build/published-model.json` (`scripts/model-latest.sh`, with the job
+token in CI, or `GITLAB_TOKEN` or glab locally) before the build. An operation that model gives a release shows
+"Since Caitlyn X.Y.Z", that release, with no callout, however old or new the snapshot is. Any other operation says
+"Not available yet": the operations a `model:main` pre-release snapshot adds ahead of the latest release. The callout
+and the Stability row name the release it arrives in from `model/model.lock.json`'s `stampNext` ("Not available yet:
+arrives in Caitlyn 5.158.0. The SDKs have this operation, but workspaces serve it only from that release."), the
+number `scripts/prepare-model.mjs` stamps on it and the SDKs' doc comments show, so the site and the SDKs agree; with
+no `stampNext` the callout says only "Not available yet", and the operation shows as beta. If the published model
+can't be read, the build warns and falls back to the snapshot: an operation still `"next"` in the raw
+`model/model.json` is the unreleased one.
 A hand-written page gets the same callout from a `<!-- not-available -->` line (its front matter's `operations`, or
 `<!-- not-available: SendMessage, WatchConversation -->`), shown while any of them is unreleased and dropped once they
-all are (`fillNotAvailable`). `unreleasedOperations()` and `nextRelease()` in `scripts/docs-model.mjs` decide it;
-`docs/site/test/not-available.test.mjs` checks both cases, the released one with a fixture lock and model
+all are (`fillNotAvailable`). `publishedModel()`, `unreleasedOperations()` and `nextRelease()` in
+`scripts/docs-model.mjs` decide it; `docs/site/test/published-model.test.mjs` checks the published model's part, and
+`docs/site/test/not-available.test.mjs` the callout, the released case with a fixture lock and model
 (`docs/site/test/fixtures/released.*.json`).
 
 **Markdown is the canonical output.** Each page is first written as Markdown with its knowledge-base front matter,

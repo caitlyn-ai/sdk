@@ -361,14 +361,20 @@ model:version-check:
   stage: generate
   # Inherits needs from .toolchain, so it waits for a rebuilt toolchain image instead of pulling a tag that
   # doesn't exist yet.
+  # Fails when the snapshot is behind the latest published model, is a hand-pulled unpublished build (no prerelease
+  # record), or is a model:main pre-release whose stampNext isn't later than the latest release (scripts/model-check.mjs).
+  # In a merge request or a schedule that's exit 2, a warning. On main and v* tags it's --strict, exit 1, and
+  # docs:publish needs this job, so the docs never publish from such a snapshot.
   script:
-    - scripts/model-check.sh
-  # Exit 2 means "behind, or an unpublished snapshot": a warning, not a failure. Nothing published yet passes.
+    - scripts/model-check.sh $MODEL_CHECK_FLAGS
   allow_failure:
     exit_codes: [2]
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_TAG =~ /^v\d/
+      variables:
+        MODEL_CHECK_FLAGS: --strict
 
 # Triggered by the app's main pipeline after a merge that changes smithy/, with APP_COMMIT (CONTRIBUTING.md, "How a
 # model change reaches the SDK"). Commits straight to main, and tags a beta, only once every suite passes. One at a
@@ -477,6 +483,7 @@ docs:preview:stop:
 
 docs:publish:
   extends: .docs-aws
+  needs: [docs:build, model:version-check]
   variables:
     ROLE_ARN: $DOCS_PUBLISH_ROLE_ARN
   script:

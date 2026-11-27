@@ -10,10 +10,16 @@ const T = (s) => `smithy.api#${s}`;
 const C = (s) => `ai.caitlyn.traits#${s}`;
 export { T, C };
 
-export function loadModel() {
+export function loadModel({ published = publishedModel() } = {}) {
   const file = path.join(root, 'build/model/model.json');
   if (!fs.existsSync(file)) throw new Error('build/model/model.json is missing: run node scripts/prepare-model.mjs first');
   const ast = JSON.parse(fs.readFileSync(file, 'utf8'));
+  // An operation a release serves shows the release that first served it, as the published model says (publishedModel),
+  // not the stamp of the release the snapshot was taken from
+  for (const [id, shape] of Object.entries(ast.shapes)) {
+    const since = shape.type === 'operation' ? published?.since.get(local(id)) : undefined;
+    if (since) shape.traits = { ...shape.traits, [C('since')]: since };
+  }
   // Mixins' members are the structure's own, as the generators see them (mixin members first, then its own).
   const flat = (shape) => {
     if (!shape.mixins?.length) return shape.members ?? {};
@@ -53,14 +59,40 @@ export function publicDoc(text) {
 }
 
 /**
- * The operations no Caitlyn release serves yet: those the snapshot (model/model.json, before prepare-model stamps
- * it) still marks @since("next"). This is the pre-release case: a model built from a branch of the app, before the
- * release that ships it, as v3 is now. A model built from the app's main has every operation's @since as a released
- * version, so this set is empty and every page shows "Since Caitlyn X.Y.Z" instead. `raw` is the snapshot's shapes
- * (a test passes its own).
+ * The latest model the app has published, which scripts/docs-build.sh fetches to build/published-model.json
+ * (scripts/model-latest.sh) before the docs build: { since }, mapping each operation a release serves to the release
+ * that first served it. It decides availability whatever model the
+ * snapshot is locked to: a snapshot behind it would otherwise call a served operation unreleased, and a model:main
+ * pre-release snapshot ahead of it would call its new operations released. Null when the fetch failed or found nothing
+ * published (docs-build.sh warns), and the docs fall back to the snapshot's own @since("next").
  */
-export function unreleasedOperations(raw = JSON.parse(fs.readFileSync(path.join(root, 'model/model.json'), 'utf8')).shapes) {
-  return new Set(Object.entries(raw).filter(([, s]) => s.type === 'operation' && s.traits?.[C('since')] === 'next').map(([id]) => local(id)));
+export const PUBLISHED_MODEL = path.join(root, 'build/published-model.json');
+const publishedCache = new Map();
+export function publishedModel(file = PUBLISHED_MODEL) {
+  if (!publishedCache.has(file)) publishedCache.set(file, fs.existsSync(file) ? servedSince(JSON.parse(fs.readFileSync(file, 'utf8')).shapes) : null);
+  return publishedCache.get(file);
+}
+
+/** { since } of a model's shapes (see publishedModel): only a released @since counts, never "next". */
+export function servedSince(shapes) {
+  const since = new Map();
+  for (const [id, s] of Object.entries(shapes)) {
+    const v = s.type === 'operation' ? s.traits?.[C('since')] : null;
+    if (/^\d+\.\d+\.\d+$/.test(v ?? '')) since.set(local(id), v);
+  }
+  return { since };
+}
+
+/**
+ * The operations no Caitlyn release serves yet. With the published model (above), those it has no release for: the
+ * operations a model:main pre-release snapshot adds. Without it, those the snapshot (model/model.json, before
+ * prepare-model stamps it) still marks @since("next"), as a model built from a branch of the app does. `raw` is the
+ * snapshot's shapes and `published` the published model's { since } (a test passes its own, or null).
+ */
+export function unreleasedOperations(raw = JSON.parse(fs.readFileSync(path.join(root, 'model/model.json'), 'utf8')).shapes, published = publishedModel()) {
+  const ops = Object.entries(raw).filter(([, s]) => s.type === 'operation');
+  if (published) return new Set(ops.map(([id]) => local(id)).filter((name) => !published.since.has(name)));
+  return new Set(ops.filter(([, s]) => s.traits?.[C('since')] === 'next').map(([id]) => local(id)));
 }
 
 /**
