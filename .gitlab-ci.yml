@@ -373,8 +373,9 @@ model:version-check:
   stage: generate
   # Inherits needs from .toolchain, so it waits for a rebuilt toolchain image instead of pulling a tag that
   # doesn't exist yet.
-  # Fails when the snapshot is behind the latest published model, is a hand-pulled unpublished build (no prerelease
-  # record), or is a model:main pre-release whose stampNext isn't later than the latest release (scripts/model-check.mjs).
+  # Fails when the snapshot says something different from the latest published model: a published model behind it, a
+  # hand-pulled unpublished build (no prerelease record), or a model:main pre-release the app has released past with
+  # a model it doesn't have. A release that leaves the model as it was passes (scripts/model-check.mjs).
   # In a merge request or a schedule that's exit 2, a warning. On main and v* tags it's --strict, exit 1, and
   # docs:publish needs this job, so the docs never publish from such a snapshot.
   script:
