@@ -250,12 +250,12 @@ test('[retry.unsafe-not-retried] an operation that is not retry-safe (SendMessag
 });
 
 test('[retry.above-max-retry-delay] a Retry-After above maxRetryDelay fails at once with the typed error', async () => {
-  await faults({ status: { GetAgentVersion: [{ status: 429, retryAfter: 120 }] } });
-  const t0 = Date.now();
+  // A day's Retry-After, above the 60 s maxRetryDelay: an SDK that waited it out would never return within the test's
+  // own time limit, so returning at all is the check, with no clock of its own.
+  await faults({ status: { GetAgentVersion: [{ status: 429, retryAfter: 86_400 }] } });
   const err = await expectError(client().agents('GHT7YRWXPL').draft.get());
   assert.equal(err.status, 429);
-  assert.equal(err.retryAfterSeconds, 120);
-  assert.ok(Date.now() - t0 < 1000);
+  assert.equal(err.retryAfterSeconds, 86_400);
   assert.equal((await api()).length, 1);
 });
 
@@ -554,10 +554,10 @@ const RESET_CURSOR = '0193a6f3-0a1b-7c2d-8e3f-000000000010';
 
 test('[sse.final-ends-watch] a resumed answer ends at its final event, and closes the connection, although the watch stays open', async () => {
   await faults({ dropAfterEvents: 2 });
-  const t0 = Date.now();
   const answer = await client().conversations('c-watch').send('hi').finalMessage();
   assert.equal(answer.text, 'Staff receive 20 days of annual leave.');
-  assert.ok(Date.now() - t0 < 5_000, 'ended at message.completed, not when the server closed the watch');
+  // The mock keeps the watch open until the client closes it: an SDK that waited for the server to close it would never
+  // get here within the test's own time limit, so arriving is the check.
   let closed = false;
   for (let i = 0; i < 100 && !closed; i++) {
     closed = (await requests()).some((r) => r.event === 'client-disconnected');
@@ -1017,19 +1017,18 @@ test('[environment.hostile-aws] hostile AWS_* variables and ~/.aws files change 
     AWS_ENDPOINT_URL: 'http://127.0.0.1:9',
     AWS_CONFIG_FILE: path.join(dir, 'config'),
     AWS_SHARED_CREDENTIALS_FILE: path.join(dir, 'config'),
-    // Any instance-metadata lookup ("auto" defaults mode) would hang on this unroutable address.
-    AWS_EC2_METADATA_SERVICE_ENDPOINT: 'http://10.255.255.1',
+    // Any instance-metadata lookup ("auto" defaults mode) would reach this path on the mock, which logs it.
+    AWS_EC2_METADATA_SERVICE_ENDPOINT: `${BASE}/__aws-trap`,
   };
   const saved = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
   Object.assign(process.env, vars);
   try {
     await faults({ status: { GetAgentVersion: [{ status: 503, retryAfter: 0 }] } });
-    const t0 = Date.now();
     const v = await client({ telemetry: { enabled: false } }).agents('GHT7YRWXPL').draft.get();
     const docs = await collect(client({ telemetry: { enabled: false } }).knowledgeBases('KB4T7YQ2WL').documents.list({ limit: 3 }));
     assert.equal(v.name, 'draft');
     assert.equal(docs.length, 7);
-    assert.ok(Date.now() - t0 < 2000, `took ${Date.now() - t0} ms: something waited on the environment`);
+    assert.deepEqual((await requests()).filter((r) => r.path?.startsWith('/__aws-trap')).map((r) => r.path), [], 'nothing asked the instance-metadata service');
     const sent = (await api()).filter((r) => r.path.includes('/versions/'));
     assert.equal(sent.length, 2, 'still retried once: AWS_MAX_ATTEMPTS=1 and max_attempts=1 were ignored');
   } finally {
@@ -1798,12 +1797,23 @@ test('[wait.busy-status] wait() treats a busy status as busy even when no job is
 
 test('[wait.timeout] wait() given a time limit that passes raises a TimeoutError with code WAIT_TIMEOUT, and closes the watch', async () => {
   await faults({ busyWithoutJob: { 'doc-0002': 100_000 } });
-  const err = await client().knowledgeBases(KB).documents('doc-0002').wait({ timeoutMs: 150 }).catch((e) => e);
+  const sent = recordingFetch();
+  const err = await client({ requestHandler: { customFetch: sent.fetch } }).knowledgeBases(KB).documents('doc-0002').wait({ timeoutMs: 150 }).catch((e) => e);
   assert.equal(err?.name, 'TimeoutError', String(err));
   assert.equal(err.code, 'WAIT_TIMEOUT');
   assert.equal(err.status, 0);
-  // The watch is closed: the server sees the client leave. A failure says what the server did see of the watch.
-  for (const until = Date.now() + 10_000; !(await requests()).some((r) => r.event === 'client-disconnected'); ) {
+  // The client gave up on the watch: it aborted every request it sent for it, which is all a page can do to close one.
+  const watchesSent = sent.requests.filter((r) => new URL(r.url).pathname.endsWith(`${KB_PATH}/events`));
+  assert.ok(watchesSent.every((r) => r.signal.aborted), 'each watch request was aborted');
+  // And the server saw each one it received closed: in Node and the browsers that close an aborted fetch's connection.
+  // A time limit can pass before the browser has sent the watch at all (it then never reaches the server, and there
+  // is nothing to close), so the check is that none is left open, not that one was opened.
+  if (LEAVES_ABORTED_CONNECTIONS_OPEN) return;
+  const open = async () => {
+    const log = await requests();
+    return log.filter((r) => r.method === 'GET' && r.path === `${KB_PATH}/events`).length - log.filter((r) => r.event === 'client-disconnected').length;
+  };
+  for (const until = Date.now() + 10_000; (await open()) > 0; ) {
     if (Date.now() > until) assert.fail(`the watch was not closed; the server saw ${JSON.stringify((await requests()).map((r) => r.event ?? `${r.method} ${r.path}`))}`);
     await new Promise((r) => setTimeout(r, 10));
   }
@@ -3440,17 +3450,17 @@ test('[batch-upload.keep-alive] while an upload is in flight the policy is renew
 });
 
 test('[batch-upload.keep-alive-floor] a policy due every half second is renewed on the keep-alive timer at most once a second while the upload is in flight', async () => {
-  // Every policy lasts a second, so it is due half a second after it arrives; the one file takes 4 s to arrive. The first
-  // ask is upload()'s own policy; the rest are the timer's, the first half a second on and the others a second apart:
-  // about five in all, where half-second renewals would be about nine.
-  await faults({ uploadReservation: { policySeconds: 1, reservationSeconds: 30 }, uploadDelayMs: 4000 });
+  // Every policy lasts a second, so it is due half a second after it arrives. The one file is held at storage until four
+  // policies have been asked for: upload()'s own, then the timer's, the first half a second on and the others a second
+  // apart. So all four happen while the upload is in flight, however slowly the timer fires; renewals every half second
+  // would show as gaps under a second.
+  await faults({ uploadReservation: { policySeconds: 1, reservationSeconds: 30 }, holdUploadsAfter: 0, releaseUploadsAfterPolicies: 4 });
   const files = handFiles(1);
   const batch = await startedBatch(files);
   const uploaded = await batch.upload(asUploads(files));
   assert.deepEqual(uploaded.items.map((i) => [i.status, i.failureCode]), [['ingesting', undefined]]);
   const at = (await api()).filter((r) => r.method === 'POST' && r.path.endsWith('/upload-policies')).map((r) => r.at as number);
-  assert.ok(at.length >= 4, `${at.length} policies asked for: the timer renewed fewer than three times in 4 s`);
-  assert.ok(at.length <= 6, `${at.length} policies asked for in 4 s: more than once a second`);
+  assert.ok(at.length >= 4 && at.length <= 5, `${at.length} policies asked for: want upload()'s own and three of the timer's (one more may be on its way)`);
   for (let i = 2; i < at.length; i++) assert.ok(at[i] - at[i - 1] >= 900, `renewals ${at[i] - at[i - 1]} ms apart`);
 });
 
@@ -3659,7 +3669,9 @@ test('[batch-upload.result] awaiting upload() gives {batch, items, notGiven, unm
 });
 
 test('[batch-upload.cancel] cancelling upload() aborts the uploads, raises AbortError, and sends no CancelIngestionBatch', async () => {
-  await faults({ uploadDelayMs: 150 });
+  // Two at a time: the first two uploads are answered, and every later one is held until the client lets go of it, so
+  // the two in flight are still in flight when the cancel lands, however long the page takes to send it.
+  await faults({ holdUploadsAfter: 2 });
   const files = handFiles(6);
   const batch = await startedBatch(files);
   const controller = new AbortController();
@@ -3671,8 +3683,15 @@ test('[batch-upload.cancel] cancelling upload() aborts the uploads, raises Abort
   controller.abort();
   const err = await running;
   assert.equal(err?.name, 'AbortError');
-  await new Promise((r) => setTimeout(r, 300));
-  assert.ok((await forms()).length <= 4, 'no new upload after the cancel');
+  // Every upload past the first two was held, so each one sent is aborted, and the mock logs it when its connection
+  // closes. Once each has been, nothing more was sent: a new upload would have been held, and counted, too.
+  const sent = async () => (await forms()).length;
+  const abortedUploads = async () => (await requests()).filter((r) => r.event === 'upload-aborted').length;
+  for (const until = Date.now() + 10_000; (await abortedUploads()) < (await sent()) - 2; ) {
+    if (Date.now() > until) assert.fail(`${await abortedUploads()} of ${(await sent()) - 2} held uploads aborted`);
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  assert.ok((await sent()) <= 4, 'no new upload after the cancel');
   assert.ok(!(await api()).some((r) => r.path.endsWith(':cancel') || r.path.endsWith('/cancel')), 'the batch is left as it is');
   assert.equal((await batch.get()).status, 'running');
 });
@@ -4057,14 +4076,12 @@ test('[client.request-timeout] a call with no response headers within the reques
   const sent = recordingFetch();
   const c = client({ requestHandler: { requestTimeout: 300, customFetch: sent.fetch } });
   await faults({ status: { GetKnowledgeBase: [{ hold: true }, { hold: true }, { hold: true }] } });
-  const started = Date.now();
   const err = await expectError(c.knowledgeBases(KB).get());
   assert.equal(err.code, 'CONNECTION_ERROR');
   assert.equal(err.status, 0);
   assert.match(err.message, /GetKnowledgeBase/, 'the message names the operation');
   assert.match(err.message, /300 ms/, 'and the timeout');
   assert.equal((await api()).filter((r) => r.path === KB_PATH).length, 3, 'retried as a read is');
-  assert.ok(Date.now() - started < 10_000);
   // The client gave up on each attempt: it aborted its request, which is all a page can do to close it.
   const attempts = sent.requests.filter((r) => new URL(r.url).pathname.endsWith(KB_PATH));
   assert.equal(attempts.length, 3);

@@ -152,6 +152,11 @@ const DEFAULT_FAULTS = {
   // logs `upload-aborted` and stores nothing, or 10 s pass, when it carries on as usual. A case that cancels a sync
   // then knows every upload past the first n is still in flight when the cancel lands (sync.cancel). null holds none.
   holdUploadsAfter: null,
+  // With holdUploadsAfter, a held upload is let go (and stored as usual) once this many upload policies have been asked
+  // for (CreateIngestionBatchUploadPolicy), instead of when the client lets go of it: a keep-alive case then knows the
+  // renewals it counts all happened while the upload was in flight, however slowly the runner fires the timer. Held at
+  // most 30 s. null holds until the client lets go.
+  releaseUploadsAfterPolicies: null,
   // Every policy CreateIngestionBatchUploadPolicy gives (not Start's) carries this as its `expiresAt` instead of a
   // timestamp: a string ('not a date'), or null to leave the member out (batch-upload.unreadable-expiry). The policy
   // still works. undefined for the usual mock.
@@ -306,6 +311,7 @@ function reset() {
     // Form POSTs in flight now, and the most there have been at once (GET /__mock/uploads).
     uploadsInFlight: 0,
     uploadsArrived: 0,
+    policiesAsked: 0,
     maxUploadsInFlight: 0,
   };
 }
@@ -2069,6 +2075,7 @@ async function startIngestionBatch(req, res, rid, [kb, id]) {
 }
 
 async function createUploadPolicy(req, res, rid, [kb, id]) {
+  state.policiesAsked++;
   if (statusFault('CreateIngestionBatchUploadPolicy', res, rid)) return;
   const b = findBatch(id, kb);
   if (!b) return problem(res, rid, 404, 'NOT_FOUND', `No ingestion batch ${id}`);
@@ -3781,7 +3788,9 @@ async function postObjectForm(req, res, rid, _m, url, body) {
   });
   const held = faults.holdUploadsAfter != null && state.uploadsArrived++ >= faults.holdUploadsAfter;
   try {
-    if (held) for (const until = Date.now() + 10_000; !aborted && Date.now() < until; ) await sleep(10);
+    const release = faults.releaseUploadsAfterPolicies;
+    const released = () => release != null && state.policiesAsked >= release;
+    if (held) for (const until = Date.now() + (release != null ? 30_000 : 10_000); !aborted && !released() && Date.now() < until; ) await sleep(10);
     else if (faults.uploadDelayMs) await sleep(faults.uploadDelayMs);
     if (aborted) {
       log.push({ event: 'upload-aborted', requestId: rid, at: Date.now() });

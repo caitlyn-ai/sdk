@@ -60,10 +60,11 @@ func init() {
 	}
 
 	protocol["batch-upload.keep-alive-floor"] = func(t *testing.T, m mock) {
-		// Every policy lasts a second, so it is due half a second after it arrives; the one file takes 4 s to arrive. The
-		// first ask is Upload's own policy; the rest are the timer's, the first half a second on and the others a second
-		// apart: about five in all, where half-second renewals would be about nine.
-		m.faults(t, map[string]any{"uploadReservation": map[string]any{"policySeconds": 1, "reservationSeconds": 30}, "uploadDelayMs": 4000})
+		// Every policy lasts a second, so it is due half a second after it arrives. The one file is held at storage until
+		// four policies have been asked for: Upload's own, then the timer's, the first half a second on and the others a
+		// second apart. So all four happen while the upload is in flight, however slowly the timer fires; renewals every
+		// half second would show as gaps under a second.
+		m.faults(t, map[string]any{"uploadReservation": map[string]any{"policySeconds": 1, "reservationSeconds": 30}, "holdUploadsAfter": 0, "releaseUploadsAfterPolicies": 4})
 		c := client(t, m)
 		items, files := newFiles(1)
 		b := startedBatch(t, c, items)
@@ -78,8 +79,8 @@ func init() {
 		for _, r := range m.matching(t, func(r logged) bool { return r.Method == "POST" && pathHasSuffix("/upload-policies")(r) }) {
 			at = append(at, r.At)
 		}
-		if len(at) < 4 || len(at) > 6 {
-			t.Fatalf("%d policies asked for in 4 s: want the timer's renewals, at most one a second", len(at))
+		if len(at) < 4 || len(at) > 5 {
+			t.Fatalf("%d policies asked for: want Upload's own and three of the timer's (one more may be on its way)", len(at))
 		}
 		for i := 2; i < len(at); i++ {
 			if at[i]-at[i-1] < 900 {

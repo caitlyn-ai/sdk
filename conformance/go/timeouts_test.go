@@ -38,7 +38,6 @@ func init() {
 	protocol["client.request-timeout"] = func(t *testing.T, m mock) {
 		c := client(t, m, caitlyn.WithRequestTimeout(300*time.Millisecond))
 		m.faults(t, held("GetKnowledgeBase", 3))
-		started := time.Now()
 		_, err := c.KnowledgeBase(kb).Get(context.Background())
 		var ce *caitlyn.ConnectionError
 		if !errors.As(err, &ce) || ce.Code != "CONNECTION_ERROR" || ce.Status != 0 {
@@ -49,9 +48,6 @@ func init() {
 		}
 		if n := len(m.matching(t, func(r logged) bool { return r.Path == kbPath })); n != 3 {
 			t.Fatalf("%d attempts; want 3, retried as a read is", n)
-		}
-		if time.Since(started) > 10*time.Second {
-			t.Fatal("took too long")
 		}
 		time.Sleep(200 * time.Millisecond)
 		if n := mockEvents(t, m, "request-aborted", "GetKnowledgeBase"); n != 3 {
