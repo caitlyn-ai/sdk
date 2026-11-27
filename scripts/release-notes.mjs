@@ -279,16 +279,19 @@ function mergeRequest(env = process.env) {
 
 /**
  * The Unreleased section: what the next release's notes would say if it were cut once this merge request merged.
- * The change files and releasing commits merged to main since the last release, this merge request's change files,
+ * The change files and releasing commits merged to main since the last release, up to where this merge request
+ * branched (so the entries match the tree the site is built from), this merge request's change files,
  * its title as the squash commit it becomes (when it adds no change file), and the model's changes since the last
  * release. Returns { markdown, thisMr: { subjects } }: the subjects of the entries and API lines this merge request
  * adds, which the preview marks.
  */
 export function unreleased({ site, env = process.env, date = utcDate(Date.now()) } = {}) {
   const mr = mergeRequest(env);
-  const from = lastTag(mr.main) ?? lastTag('HEAD');
-  const onMain = collect({ from, to: mr.main, modelTo: null, site });
-  const pending = new Set([...changeFilesAt(from), ...changeFilesAt(mr.main)]);
+  // Main as this merge request branched from it, not main's tip: the site is built from this branch's tree, so an
+  // entry merged to main since would link pages this tree lacks. Merging main in brings the preview up to date.
+  const from = lastTag(mr.base) ?? lastTag('HEAD');
+  const onMain = collect({ from, to: mr.base, modelTo: null, site });
+  const pending = new Set([...changeFilesAt(from), ...changeFilesAt(mr.base)]);
   // A file naming its commit (one written after that change merged) takes the place of the commit's own line
   const own = workFiles().filter((f) => !pending.has(f)).map((f) => {
     const parsed = parseChangeFile(readWork(f), f);

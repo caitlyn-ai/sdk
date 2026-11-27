@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { THIS_MR, atomFeed, changelogPage, parseChangelog, releaseViews } from '../../../scripts/docs-changelog.mjs';
@@ -212,4 +213,27 @@ test('the dry run regenerates 0.10.0, 0.10.1 and 0.11.0: every change file, ever
   assert.doesNotMatch(v0110, /### (New operations|Changed operations|Breaking API)/, '0.11.0 left the model as it was');
   assert.doesNotMatch(`${v0100}${v0101}${v0110}`, /SDK 0\.1\d\.\d/, "no merge request title's internal phrasing");
   for (const line of `${v0100}${v0101}${v0110}`.split('\n')) assert.deepEqual(lineProblems(line), [], line);
+});
+
+test("the Unreleased preview reads main as the merge request branched from it, not main's tip", (t) => {
+  // A clone with this checkout's scripts, where main has moved on past the branch: an entry merged since may link a
+  // page this branch's tree lacks, which failed the preview's docs build (!105) until the branch merged main in
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'unreleased-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' } });
+  execFileSync('git', ['clone', '-q', '--shared', '--no-checkout', root, dir]);
+  git('checkout', '-q', '--detach', execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim());
+  fs.cpSync(path.join(root, 'scripts'), path.join(dir, 'scripts'), { recursive: true });
+  if (fs.existsSync(path.join(root, 'build/model'))) fs.cpSync(path.join(root, 'build/model'), path.join(dir, 'build/model'), { recursive: true });
+  const branch = git('rev-parse', 'HEAD').trim();
+  git('checkout', '-q', '-b', 'moved-on');
+  fs.writeFileSync(path.join(dir, 'changes/zz-moved-on.md'), '---\ntype: feat\nsummary: a change main gained after the branch\n---\n');
+  git('add', 'changes/zz-moved-on.md');
+  git('commit', '-q', '-m', 'feat: a change main gained after the branch');
+  const preview = () =>
+    execFileSync(process.execPath, ['scripts/release-notes.mjs', 'unreleased'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CI_MERGE_REQUEST_TARGET_BRANCH_NAME: 'moved-on', CI_MERGE_REQUEST_TITLE: 'test: a branch behind main' } });
+  git('checkout', '-q', '--detach', branch);
+  assert.doesNotMatch(preview(), /a change main gained after the branch/, 'a branch behind main previews main as it branched');
+  git('merge', '-q', '--ff-only', 'moved-on');
+  assert.match(preview(), /a change main gained after the branch/, 'merging main in brings the preview up to date');
 });
