@@ -90,6 +90,19 @@ impl Mock {
         self.post("/__mock/faults", f).await;
     }
 
+    /// Returns once a request whose path contains `path` has been answered with `status`: the mock answers this at that
+    /// moment, so a case waits on the event, not on a poll.
+    async fn answered(&self, path: &str, status: u16) {
+        self.http
+            // `path` is a plain path fragment, so it goes into the query as it is
+            .get(format!("{}/__mock/answered?path={path}&status={status}", self.base))
+            .send()
+            .await
+            .expect("mock")
+            .error_for_status()
+            .expect("mock answered");
+    }
+
     async fn requests(&self) -> Vec<Value> {
         self.get("/__mock/requests").await.as_array().cloned().unwrap_or_default()
     }
@@ -1741,17 +1754,7 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 let c = client(m);
                 tokio::spawn(async move { c.agent(AGENT).version("draft").get().cancel_on(t).await })
             };
-            loop {
-                let answered = m
-                    .api()
-                    .await
-                    .iter()
-                    .any(|r| str_at(r, "path").contains("/versions/") && r["status"].as_i64() == Some(503));
-                if answered {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
+            m.answered("/versions/", 503).await;
             token.cancel();
             let r = call.await.map_err(s)?;
             ensure!(matches!(r, Err(Error::Cancelled)), "got {:?}", r.err());

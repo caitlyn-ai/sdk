@@ -253,6 +253,10 @@ const ERRORS = {
 let faults;
 let dropSignalled = false; // POST /__mock/drop: see dropOnSignal
 let log;
+// GET /__mock/answered?path=<part>&status=<n>: answers once a request whose path contains <part> has been answered
+// with <n> (at once if one already has), so a case waits on that event rather than polling the log
+const answeredWaiters = new Set();
+const answeredMatch = (path, status) => log.some((e) => e.path.includes(path) && e.status === status);
 let state;
 let primed;
 // A document's versions, oldest first, kept off the document so no response shows them: [{number, status,
@@ -3888,6 +3892,19 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(204);
       return res.end();
     }
+    if (url.pathname === '/__mock/answered' && req.method === 'GET') {
+      const path = url.searchParams.get('path') ?? '';
+      const status = Number(url.searchParams.get('status'));
+      const answer = () => {
+        if (!answeredMatch(path, status)) return;
+        answeredWaiters.delete(answer);
+        res.writeHead(204);
+        res.end();
+      };
+      answeredWaiters.add(answer);
+      req.on('close', () => answeredWaiters.delete(answer));
+      return answer();
+    }
     if (url.pathname === '/__mock/requests' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify(log));
@@ -3931,6 +3948,7 @@ const server = http.createServer(async (req, res) => {
     // The status it was answered with, once it has been (the CLI's agent evaluation grades on it)
     res.on('finish', () => {
       entry.status = res.statusCode;
+      for (const w of answeredWaiters) w();
     });
     log.push(entry);
     if (await handleAuth(req, res, url, body)) return;
