@@ -301,7 +301,7 @@ func confirm(f *cmdutil.Factory, q string) error {
 
 // noticeWait is how long the end of a run waits for the day's check, begun when the run started. A check that
 // takes longer finishes in the background of the next run instead: the notice never delays a command.
-var noticeWait = 300 * time.Millisecond
+const noticeWait = 300 * time.Millisecond
 
 type pending struct{ done chan struct{} }
 

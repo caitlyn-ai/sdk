@@ -2,7 +2,7 @@
 # JDK or Go on developer machines. CI runs the same scripts in the same image. `make help` lists the targets.
 RUN := scripts/docker.sh
 
-.PHONY: help generate check-generated model-snapshot-check examples-live typescript python go rust cli cli-snapshot conformance check release-notes docs docs-kb-dry-run cli-examples cli-agent-eval model-check shell clean
+.PHONY: help generate check-generated model-snapshot-check examples-live typescript python go rust cli cli-snapshot conformance check test-timers release-notes docs docs-kb-dry-run cli-examples cli-agent-eval model-check shell clean
 
 help: ## List the targets
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
@@ -47,6 +47,9 @@ check: model-snapshot-check generate conformance ## What a merge request pipelin
 
 examples-live: ## Run every SDK's examples against a real workspace (CONTRIBUTING.md, "Running the examples against a workspace")
 	@node scripts/examples-live.mjs
+
+test-timers: ## Find the wall clock in the tests (CONTRIBUTING.md, "Tests and time"): sleeps, timers and clock reads over the baseline
+	@$(RUN) sh -c 'node --test scripts/test-timers.test.mjs && node scripts/test-timers.mjs'
 
 release-notes: ## Print the next release's notes so far: the Unreleased section a merge request's preview shows
 	@$(RUN) node scripts/release-notes.mjs unreleased

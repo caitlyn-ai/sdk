@@ -15,11 +15,12 @@ import (
 	"github.com/caitlyn-ai/sdk/cli/internal/cmdutil"
 )
 
-// SpinnerDelay is how long a call runs before its spinner shows, so fast commands show nothing (12.7).
-var SpinnerDelay = 150 * time.Millisecond
-
-// PlainProgressEvery is the most often a progress line is printed when stderr isn't a terminal (12.7).
-const PlainProgressEvery = 10 * time.Second
+const (
+	// SpinnerDelay is how long a call runs before its spinner shows, so fast commands show nothing (12.7).
+	SpinnerDelay = 150 * time.Millisecond
+	// PlainProgressEvery is the most often a progress line is printed when stderr isn't a terminal (12.7).
+	PlainProgressEvery = 10 * time.Second
+)
 
 // MotionAllowed reports whether spinners and progress bars may be drawn (12.7): stderr is a terminal, the run isn't
 // in CI or agent mode, spinner = false isn't set, and CAITLYN_SPINNER_DISABLED isn't set.

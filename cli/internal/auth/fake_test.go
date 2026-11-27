@@ -21,9 +21,12 @@ import (
 type fakeOAuth struct {
 	t   *testing.T
 	srv *httptest.Server
-	ws  string
+	// handler is srv's handler, for an in-memory transport (inMemory) that reaches it without a socket.
+	handler http.Handler
+	ws      string
 
-	mu sync.Mutex
+	mu          sync.Mutex
+	arrivedOnce sync.Once
 	// expiresIn is the access tokens' lifetime in seconds.
 	expiresIn int64
 	// granted is what a sign-in is granted.
@@ -32,8 +35,9 @@ type fakeOAuth struct {
 	// member), "honour" (the narrower scope, 17.4 item 8) or "server" (the app's rule since !2138 round 5: honoured
 	// only when it can't widen the grant, else invalid_scope; see serverAllows).
 	scopeMode string
-	// refreshDelay widens the window two refreshes could overlap in.
-	refreshDelay time.Duration
+	// refreshArrived, when set, is closed as the first refresh arrives; that refresh, and any after it, is then held
+	// until refreshRelease is closed, so a test can start a second refresh while the first is under way.
+	refreshArrived, refreshRelease chan struct{}
 	// refuseRefresh answers every refresh with invalid_grant.
 	refuseRefresh bool
 	// deviceScript is the device flow's answers in turn: an OAuth error code, or "ok".
@@ -51,9 +55,13 @@ type fakeOAuth struct {
 	revoked      []string
 	reuse        int
 	devicePolls  int
-	deviceStarts []url.Values
-	meBearers    []string
-	ghRequests   []*http.Request
+	// deviceStartedAt and devicePolledAt are when the device authorisation and each poll arrived, by the clock of
+	// whoever sent them: inside a synctest bubble, its fake clock.
+	deviceStartedAt time.Time
+	devicePolledAt  []time.Time
+	deviceStarts    []url.Values
+	meBearers       []string
+	ghRequests      []*http.Request
 }
 
 type codeGrant struct {
@@ -71,6 +79,7 @@ func newFakeOAuth(t *testing.T, ws string) *fakeOAuth {
 	mux.HandleFunc("/api/oauth/device_authorization", f.device)
 	mux.HandleFunc("/api/v3/me", f.me)
 	mux.HandleFunc("/gh/token", f.github)
+	f.handler = mux
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
 	return f
@@ -164,8 +173,9 @@ func (f *fakeOAuth) token(w http.ResponseWriter, r *http.Request) {
 			f.issue(w, f.granted, f.granted, true, true)
 		}
 	case "refresh_token":
-		if d := f.delay(); d > 0 {
-			time.Sleep(d)
+		if arrived, release := f.hold(); release != nil {
+			f.arrivedOnce.Do(func() { close(arrived) })
+			<-release
 		}
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -208,6 +218,7 @@ func (f *fakeOAuth) token(w http.ResponseWriter, r *http.Request) {
 		defer f.mu.Unlock()
 		i := f.devicePolls
 		f.devicePolls++
+		f.devicePolledAt = append(f.devicePolledAt, time.Now())
 		if i >= len(f.deviceScript) {
 			f.oauthError(w, 400, "expired_token", "script ran out")
 			return
@@ -232,16 +243,33 @@ func (f *fakeOAuth) token(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (f *fakeOAuth) delay() time.Duration {
+// inMemory is an *http.Client that serves each request with the fake's handler, in the calling goroutine and with no
+// socket, so a command run inside a synctest bubble reaches the fake and its waits are on the bubble's clock.
+func (f *fakeOAuth) inMemory() *http.Client {
+	return &http.Client{Transport: handlerTransport{f.handler}}
+}
+
+type handlerTransport struct{ h http.Handler }
+
+func (t handlerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	rec := httptest.NewRecorder()
+	t.h.ServeHTTP(rec, r.Clone(r.Context()))
+	res := rec.Result()
+	res.Request = r
+	return res, nil
+}
+
+func (f *fakeOAuth) hold() (arrived, release chan struct{}) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.refreshDelay
+	return f.refreshArrived, f.refreshRelease
 }
 
 func (f *fakeOAuth) device(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	f.mu.Lock()
 	f.deviceStarts = append(f.deviceStarts, r.PostForm)
+	f.deviceStartedAt = time.Now()
 	f.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{

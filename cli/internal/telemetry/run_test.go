@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -36,7 +38,6 @@ func setup(t *testing.T) {
 type run struct {
 	code           int
 	stdout, stderr string
-	took           time.Duration
 }
 
 // cli runs the real CLI (every registered command and the generated tree) in a home of its own.
@@ -54,11 +55,8 @@ func cli(t *testing.T, home string, env map[string]string, tty bool, args ...str
 	for k, v := range env {
 		io.Setenv(k, v)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	start := time.Now()
-	code := root.Run(ctx, io, args, func(f *cmdutil.Factory) { f.Home, f.WorkDir = home, home })
-	return run{code, out.String(), errOut.String(), time.Since(start)}
+	code := root.Run(context.Background(), io, args, func(f *cmdutil.Factory) { f.Home, f.WorkDir = home, home })
+	return run{code, out.String(), errOut.String()}
 }
 
 func queued(t *testing.T, home string) []telemetry.Event {
@@ -222,57 +220,67 @@ func TestUnknownFlagIsSentAsUnknown(t *testing.T) {
 }
 
 // TestHangingEndpointDoesNotSlowACommand: a flush due at the end of a run runs detached; the run doesn't wait for it.
+// It runs on synctest's clock, with the flush's client holding every request until its context ends: the run takes no
+// time at all, and the flush gives up at exactly PostTimeout.
 func TestHangingEndpointDoesNotSlowACommand(t *testing.T) {
 	setup(t)
-	// The flush's 3-second budget, at 200 ms: the same checks without the wait
-	old := telemetry.PostTimeout
-	telemetry.PostTimeout = 200 * time.Millisecond
-	defer func() { telemetry.PostTimeout = old }()
-	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case <-release:
-		case <-r.Context().Done():
-		}
-	}))
-	defer srv.Close()
-	defer close(release)
 	home := t.TempDir()
-	e := map[string]string{"CAITLYN_TELEMETRY": "1", telemetry.EndpointEnv: srv.URL}
-	// The background flush, as a goroutine standing in for the detached process
-	flushed := make(chan time.Duration, 1)
 	q := telemetry.Queue{Dir: filepath.Join(home, ".caitlyn", "telemetry")}
-	telemetry.Spawn = func(env []string) error {
-		go func() {
-			start := time.Now()
-			_, _ = q.Flush(context.Background(), srv.URL, nil)
-			flushed <- time.Since(start)
-		}()
-		return nil
-	}
-	for i := 0; i < 19; i++ {
-		cli(t, home, e, false, "version")
-	}
-	r := cli(t, home, e, false, "version") // the 20th: a flush is due
-	if r.took > time.Second {
-		t.Fatalf("the run took %s with a hanging endpoint", r.took)
-	}
-	select {
-	case took := <-flushed:
-		if took > telemetry.PostTimeout+time.Second {
-			t.Fatalf("the flush took %s, past its %s limit", took, telemetry.PostTimeout)
+	synctest.Test(t, func(t *testing.T) {
+		client, hang := telemetry.HangingClient()
+		e := map[string]string{"CAITLYN_TELEMETRY": "1", telemetry.EndpointEnv: endpoint}
+		// The background flush, as a goroutine standing in for the detached process, with the hanging client
+		flushed := make(chan time.Duration, 1)
+		telemetry.Spawn = func(env []string) error {
+			go func() {
+				start := time.Now() // timers: virtual (synctest)
+				_, _ = q.Flush(context.Background(), endpoint, client)
+				flushed <- time.Since(start) // timers: virtual (synctest)
+			}()
+			return nil
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("the flush never ended")
-	}
+		for i := 0; i < 19; i++ {
+			cli(t, home, e, false, "version")
+		}
+		start := time.Now()                                      // timers: virtual (synctest)
+		r := cli(t, home, e, false, "version")                   // the 20th: a flush is due
+		if took := time.Since(start); r.code != 0 || took != 0 { // timers: virtual (synctest)
+			t.Fatalf("the run exited %d after %s of virtual time with a hanging endpoint; want 0 after none", r.code, took)
+		}
+		synctest.Wait() // the flush is now blocked on its request
+		if hang.InFlight() != 1 || len(flushed) != 0 {
+			t.Fatalf("with the run over, %d requests are in flight and the flush ended %v; want 1, not ended", hang.InFlight(), len(flushed) != 0)
+		}
+		if took := <-flushed; took != telemetry.PostTimeout {
+			t.Fatalf("the flush gave up after %s, want its %s budget", took, telemetry.PostTimeout)
+		}
+		if hang.Started() != 1 || hang.InFlight() != 0 {
+			t.Fatalf("%d requests sent, %d still in flight; want 1 sent, none in flight", hang.Started(), hang.InFlight())
+		}
+	})
 	if n := len(queued(t, home)); n != 20 {
 		t.Fatalf("a failed flush keeps the queue: %d", n)
 	}
-	// The flush command itself gives up at its budget, silently
+	// The flush command itself fails silently and keeps the queue. Its budget is Flush's, checked above and in
+	// TestFlushGivesUpAfter3Seconds; the command's own client can't be given an in-memory transport, so this runs
+	// outside the bubble against an endpoint that answers 503 at once. (In a home of its own: the events queued above
+	// carry synctest's clock, years old to the real one, and a flush out here drops them as stale.)
+	var asked atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked.Add(1)
+		w.WriteHeader(503)
+	}))
+	defer srv.Close()
 	telemetry.Spawn = func([]string) error { return nil }
+	home = t.TempDir()
+	e := map[string]string{"CAITLYN_TELEMETRY": "1", telemetry.EndpointEnv: srv.URL}
+	cli(t, home, e, false, "version")
 	fr := cli(t, home, e, false, "telemetry", "flush")
-	if fr.code != 0 || fr.stderr != "" || fr.took > telemetry.PostTimeout+time.Second {
-		t.Fatalf("telemetry flush: exit %d in %s, %q", fr.code, fr.took, fr.stderr)
+	if fr.code != 0 || fr.stderr != "" || asked.Load() != 1 {
+		t.Fatalf("telemetry flush: exit %d, %q, %d requests", fr.code, fr.stderr, asked.Load())
+	}
+	if n := len(queued(t, home)); n != 1 {
+		t.Fatalf("a failed flush keeps the queue: %d", n)
 	}
 }
 

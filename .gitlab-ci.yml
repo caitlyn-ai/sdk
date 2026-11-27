@@ -356,6 +356,18 @@ changes:check:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
+# Every timer in a test is deterministic (CONTRIBUTING.md, "Tests and time"): no file's tests may gain a wall-clock
+# sleep, timer or clock read over scripts/test-timers-baseline.json, which only goes down
+tests:timers:
+  extends: .toolchain
+  stage: generate
+  script:
+    - node --test scripts/test-timers.test.mjs
+    - node scripts/test-timers.mjs
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
 model:version-check:
   extends: .toolchain
   stage: generate

@@ -1,0 +1,16 @@
+{
+  "conformance/go/auth_test.go": 2,
+  "conformance/go/batch_test.go": 2,
+  "conformance/go/conformance_test.go": 20,
+  "conformance/go/files_test.go": 1,
+  "conformance/go/keepalive_test.go": 4,
+  "conformance/go/scopes_test.go": 3,
+  "conformance/go/things_test.go": 2,
+  "conformance/go/timeouts_test.go": 6,
+  "conformance/mock-server/auth.mjs": 6,
+  "conformance/mock-server/server.mjs": 61,
+  "conformance/python/test_conformance.py": 63,
+  "conformance/rust/tests/conformance.rs": 74,
+  "conformance/typescript/browser/node-test.ts": 4,
+  "conformance/typescript/conformance.test.ts": 64
+}

@@ -49,24 +49,32 @@ func TestMotionAllowed(t *testing.T) {
 }
 
 // The spinner's delay and frames run on synctest's fake clock: time moves only when every goroutine in the bubble is
-// blocked, so each sleep below is exact and the test never depends on how busy the machine is.
+// blocked, so each sleep below is exact and the test never depends on how busy the machine is. The delay is the real
+// SpinnerDelay: on the fake clock it costs nothing.
 func TestSpinnerDelay(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		old := SpinnerDelay
-		defer func() { SpinnerDelay = old }()
-		SpinnerDelay = 150 * time.Millisecond
 		u, f, _, errOut := testUI(t, true)
 		s := u.StartSpinner(f, "Planning the batch…")
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(SpinnerDelay - time.Millisecond) // timers: virtual (synctest)
 		s.Stop()
 		if errOut.Len() != 0 {
-			t.Fatalf("a fast call shows nothing: %q", errOut.String())
+			t.Fatalf("a call that ends before SpinnerDelay shows nothing: %q", errOut.String())
 		}
-		SpinnerDelay = 5 * time.Millisecond
+		// at exactly SpinnerDelay it shows (Wait lets the spinner draw before Stop)
+		u, f, _, errOut = testUI(t, true)
 		s = u.StartSpinner(f, "Planning the batch…")
-		time.Sleep(60 * time.Millisecond)
+		time.Sleep(SpinnerDelay) // timers: virtual (synctest)
+		synctest.Wait()
+		s.Stop()
+		if !strings.Contains(errOut.String(), "Planning the batch…") {
+			t.Fatalf("the spinner didn't show at SpinnerDelay: %q", errOut.String())
+		}
+		// a new label shows on the next frame
+		u, f, _, errOut = testUI(t, true)
+		s = u.StartSpinner(f, "Planning the batch…")
+		time.Sleep(SpinnerDelay + 10*time.Millisecond) // timers: virtual (synctest)
 		s.SetLabel("Uploading")
-		time.Sleep(150 * time.Millisecond)
+		time.Sleep(150 * time.Millisecond) // timers: virtual (synctest)
 		s.Stop()
 		got := errOut.String()
 		if !strings.Contains(got, "Planning the batch…") || !strings.Contains(got, "Uploading") || !strings.ContainsAny(got, "⠋⠙⠹⠸") {
@@ -78,7 +86,7 @@ func TestSpinnerDelay(t *testing.T) {
 		// disabled: nothing, even after the delay
 		u, f, _, errOut = testUI(t, true, "CAITLYN_SPINNER_DISABLED=1")
 		s = u.StartSpinner(f, "x")
-		time.Sleep(30 * time.Millisecond)
+		time.Sleep(2 * SpinnerDelay) // timers: virtual (synctest)
 		s.Stop()
 		if errOut.Len() != 0 {
 			t.Errorf("disabled spinner wrote %q", errOut.String())

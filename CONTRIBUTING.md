@@ -22,6 +22,36 @@ for you. CI runs the same scripts in the same image, so a local run and CI agree
   loop", below): an SDK built from a model that is not locked, for one app worktree. It is gitignored; never copy
   anything from it into the tracked tree, and never commit it.
 
+## Tests and time
+
+Every timer in a test is deterministic. A test that waits on the wall clock passes on a quiet machine and fails on
+a busy CI runner, and one that changes what the code does under test no longer tests what users run. So tests
+control time from outside the code, never from inside it:
+
+1. **Wait on events, never on time.** A test waits for the thing itself: a hold the mock server releases (such as
+   `holdJobs`), a request it recorded, a channel or a state change. Never a fixed sleep that hopes it has happened.
+2. **No upper bounds on real elapsed time** ("dropped within a second"): a busy runner breaks them. Assert order,
+   counts and outcomes. Where a deadline is the behaviour under test (a timeout firing), use virtual time.
+3. **Virtual time comes from below the code, never from a hook in it.** The SDKs and the CLI have no test-only
+   clock or switch; virtual time replaces the platform's own:
+   - Go: `testing/synctest`. Inside its bubble, timers, tickers and `time.Sleep` run on a fake clock that moves
+     only when every goroutine is blocked. It can't control a real socket, so give the code an `http.Client` with
+     an in-memory transport there.
+   - TypeScript: Node's `mock.timers`, which replaces the global timers the SDK already calls.
+   - Python: an event loop with a virtual clock.
+   - Rust: `tokio`'s paused time, only where nothing waits on a real socket.
+4. **Shorter waits through public options.** Tests shorten a wait with the same documented option a user has: a
+   call or stall timeout, a wait's timeout, a retry delay. If a wait has no such option and a user could reasonably
+   want one, add a real, documented option; never a test-only knob.
+5. **Lower bounds are fine** ("waited at least the `Retry-After`"): they can't fail spuriously. Keep them short (a
+   small `Retry-After` from the mock) or virtual.
+
+`scripts/test-timers.mjs` (the `tests:timers` CI job, `make test-timers`) finds the wall clock in the tests of every
+language: sleeps, timers and clock reads. Where one is right, such as a sleep inside a synctest bubble, a comment
+on its line or the line above says why: `// timers: virtual (synctest)`. Today's remaining uses are counted per file
+in `scripts/test-timers-baseline.json`, a ratchet: no file may gain one, a new file has none, and when a file loses
+some, `node scripts/test-timers.mjs --update` lowers its count, which the check asks for.
+
 ## Regenerating
 
 ```bash

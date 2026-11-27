@@ -8,13 +8,6 @@ import (
 // KeyringService is the keychain service the tests read entries from.
 const KeyringService = keyringService
 
-// SetSleep replaces the wait between device-flow polls; the returned function restores it.
-func SetSleep(fn func(ctx context.Context, d time.Duration) error) func() {
-	old := sleep
-	sleep = fn
-	return func() { sleep = old }
-}
-
 // SetOpenBrowser replaces how the browser is opened; the returned function restores it.
 func SetOpenBrowser(fn func(ctx context.Context, browser, url string) error) func() {
 	old := openBrowser

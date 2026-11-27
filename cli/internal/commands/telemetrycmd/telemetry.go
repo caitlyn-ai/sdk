@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -16,9 +15,6 @@ import (
 	"github.com/caitlyn-ai/sdk/cli/internal/output"
 	"github.com/caitlyn-ai/sdk/cli/internal/telemetry"
 )
-
-// HTTPClient is the flush's client (tests).
-var HTTPClient *http.Client
 
 // Add adds the telemetry commands. It is one of root.AddCommands.
 func Add(root *cobra.Command, f *cmdutil.Factory) {
@@ -197,7 +193,7 @@ func flush(f *cmdutil.Factory) *cobra.Command {
 				ctx = context.Background()
 			}
 			// Failures are silent: Flush keeps, drops or stops by the answer.
-			_, _ = q.Flush(ctx, telemetry.EndpointFor(f), HTTPClient)
+			_, _ = q.Flush(ctx, telemetry.EndpointFor(f), nil)
 			return nil
 		},
 	}
