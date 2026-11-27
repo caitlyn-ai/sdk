@@ -168,7 +168,10 @@ var sdkVersion = func() string {
 	return strings.TrimSpace(string(b))
 }()
 
-var sdkModel, modelVersion = func() (string, string) {
+// sdkModel is the model version the SDK sends in Caitlyn-Sdk-Model (PROTOCOL.md 3.1): the model's highest @since,
+// counting "next" as the lock's stampNext, the release the generators stamp it as. The stamp alone is not it: a
+// model:main pre-release stamps the app's release, though nothing in its model may say "next".
+var sdkModel, modelVersion, stampNext = func() (string, string, string) {
 	b, err := os.ReadFile(filepath.Join("..", "..", "model", "model.lock.json"))
 	if err != nil {
 		panic(err)
@@ -178,10 +181,6 @@ var sdkModel, modelVersion = func() (string, string) {
 		Version   string `json:"version"`
 	}
 	json.Unmarshal(b, &lock)
-	if lock.StampNext != "" {
-		return lock.StampNext, lock.Version
-	}
-	// A published model has no "next": the SDK's model version is its highest @since
 	mb, err := os.ReadFile(filepath.Join("..", "..", "model", "model.json"))
 	if err != nil {
 		panic(err)
@@ -197,7 +196,11 @@ var sdkModel, modelVersion = func() (string, string) {
 	json.Unmarshal(mb, &model)
 	highest := ""
 	note := func(t map[string]any) {
-		if s, ok := t["ai.caitlyn.traits#since"].(string); ok && s != "next" && (highest == "" || core.CompareVersions(s, highest) > 0) {
+		s, ok := t["ai.caitlyn.traits#since"].(string)
+		if s == "next" {
+			s = lock.StampNext
+		}
+		if ok && s != "" && (highest == "" || core.CompareVersions(s, highest) > 0) {
 			highest = s
 		}
 	}
@@ -207,11 +210,11 @@ var sdkModel, modelVersion = func() (string, string) {
 			note(m.Traits)
 		}
 	}
-	return highest, lock.Version
+	return highest, lock.Version, lock.StampNext
 }()
 
-// getAgentVersionSince is GetAgentVersion's @since, as the SDK reads it: the model's release, or sdkModel where the
-// model says "next".
+// getAgentVersionSince is GetAgentVersion's @since, as the SDK reads it: the model's release, or the lock's stampNext
+// where the model says "next".
 var getAgentVersionSince = func() string {
 	b, err := os.ReadFile(filepath.Join("..", "..", "model", "model.json"))
 	if err != nil {
@@ -226,22 +229,15 @@ var getAgentVersionSince = func() string {
 	if since, ok := model.Shapes["ai.caitlyn.v3#GetAgentVersion"].Traits["ai.caitlyn.traits#since"].(string); ok && since != "next" {
 		return since
 	}
-	return sdkModel
+	return stampNext
 }()
 
 // serverVersion is the version the mock reports: 5.120.0, or the model's release when that is later (the lock's
 // stampNext for an app branch build, its version for a published model).
 var serverVersion = func() string {
-	// the lock's stampNext for an app branch build (sdkModel is then that stamp), or its version for a published one
 	release := modelVersion
-	if b, err := os.ReadFile(filepath.Join("..", "..", "model", "model.lock.json")); err == nil {
-		var lock struct {
-			StampNext string `json:"stampNext"`
-		}
-		json.Unmarshal(b, &lock)
-		if lock.StampNext != "" {
-			release = lock.StampNext
-		}
+	if stampNext != "" {
+		release = stampNext
 	}
 	if release != "" && core.CompareVersions(release, "5.120.0") > 0 {
 		return release

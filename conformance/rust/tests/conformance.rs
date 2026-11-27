@@ -241,21 +241,26 @@ fn sdk_version() -> String {
     std::fs::read_to_string(root().join("VERSION")).expect("VERSION").trim().to_owned()
 }
 
-fn sdk_model() -> String {
-    let next = read_json("model/model.lock.json")["stampNext"]
+/// The release the generators stamp @since("next") as: the lock's stampNext, or empty for a published model.
+fn stamp_next() -> String {
+    read_json("model/model.lock.json")["stampNext"]
         .as_str()
         .unwrap_or_default()
-        .to_owned();
-    if !next.is_empty() {
-        return next;
-    }
-    // A published model has no "next": the SDK's model version is its highest @since
+        .to_owned()
+}
+
+/// The model version the SDK sends in Caitlyn-Sdk-Model (PROTOCOL.md 3.1): the model's highest @since, counting "next"
+/// as stamp_next(). The stamp alone is not it: a model:main pre-release stamps the app's release, though nothing in its
+/// model may say "next".
+fn sdk_model() -> String {
+    let next = stamp_next();
     let parse = |v: &str| v.split('.').map(|n| n.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>();
     let model = read_json("model/model.json");
     let mut highest = String::new();
     let mut note = |t: &serde_json::Value| {
         if let Some(s) = t["ai.caitlyn.traits#since"].as_str() {
-            if s != "next" && (highest.is_empty() || parse(s) > parse(&highest)) {
+            let s = if s == "next" { next.as_str() } else { s };
+            if !s.is_empty() && (highest.is_empty() || parse(s) > parse(&highest)) {
                 highest = s.to_owned();
             }
         }
@@ -269,11 +274,11 @@ fn sdk_model() -> String {
     highest
 }
 
-/// GetAgentVersion's @since, as the SDK reads it: the model's release, or sdk_model() where the model says "next".
+/// GetAgentVersion's @since, as the SDK reads it: the model's release, or stamp_next() where the model says "next".
 fn get_agent_version_since() -> String {
     match read_json("model/model.json")["shapes"]["ai.caitlyn.v3#GetAgentVersion"]["traits"]["ai.caitlyn.traits#since"].as_str() {
         Some(since) if since != "next" => since.to_owned(),
-        _ => sdk_model(),
+        _ => stamp_next(),
     }
 }
 

@@ -57,18 +57,22 @@ const ROOT = process.env.CAITLYN_REPO_ROOT ?? path.resolve(import.meta.dirname, 
 const EXAMPLES: ExampleCase[] = JSON.parse(fs.readFileSync(path.join(ROOT, 'conformance/cases/examples.json'), 'utf8')).cases;
 const SDK_VERSION = fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim(); // every SDK sends it in its user agent
 const MODEL_LOCK = JSON.parse(fs.readFileSync(path.join(ROOT, 'model/model.lock.json'), 'utf8'));
-/** The SDK's model version: the lock's stampNext for an app branch build, or a published model's highest @since. */
-const SDK_MODEL = (MODEL_LOCK.stampNext as string) || ((): string => {
+/** The release the generators stamp @since("next") as: the lock's stampNext, or none for a published model. */
+const STAMP_NEXT = (MODEL_LOCK.stampNext as string | null) || '';
+/** The model version the SDK sends in Caitlyn-Sdk-Model (PROTOCOL.md 3.1): the model's highest @since, counting "next"
+ *  as STAMP_NEXT. The stamp alone is not it: a model:main pre-release stamps the app's release, though nothing in its
+ *  model may say "next". */
+const SDK_MODEL = ((): string => {
   const shapes = JSON.parse(fs.readFileSync(path.join(ROOT, 'model/model.json'), 'utf8')).shapes as Record<string, { traits?: Record<string, unknown>; members?: Record<string, { traits?: Record<string, unknown> }> }>;
   const all = Object.values(shapes).flatMap((s) => [s.traits, ...Object.values(s.members ?? {}).map((m) => m.traits)]);
-  const found = all.map((t) => t?.['ai.caitlyn.traits#since']).filter((v): v is string => typeof v === 'string' && v !== 'next');
+  const found = all.map((t) => t?.['ai.caitlyn.traits#since']).map((v) => (v === 'next' ? STAMP_NEXT : v)).filter((v): v is string => typeof v === 'string' && v !== '');
   return found.sort((a, b) => b.localeCompare(a, 'en', { numeric: true }))[0] ?? '';
 })();
 /** The version the mock reports: 5.120.0, or the model's release when that is later (the lock's stampNext for an app
  *  branch build, its version for a published model). */
 const SERVER_VERSION = [(MODEL_LOCK.stampNext as string) || MODEL_LOCK.version, '5.120.0'].filter(Boolean).sort((a, b) => b.localeCompare(a, 'en', { numeric: true }))[0]!;
-/** GetAgentVersion's @since, as the SDK reads it: the model's release, or SDK_MODEL where the model says "next". */
-const GET_AGENT_VERSION_SINCE = ((since: string | undefined) => (since === 'next' || since === undefined ? SDK_MODEL : since))(
+/** GetAgentVersion's @since, as the SDK reads it: the model's release, or STAMP_NEXT where the model says "next". */
+const GET_AGENT_VERSION_SINCE = ((since: string | undefined) => (since === 'next' || since === undefined ? STAMP_NEXT : since))(
   JSON.parse(fs.readFileSync(path.join(ROOT, 'model/model.json'), 'utf8')).shapes['ai.caitlyn.v3#GetAgentVersion']?.traits?.['ai.caitlyn.traits#since'],
 );
 const PORT = Number(process.env.CAITLYN_MOCK_PORT) || 4100 + Math.floor(Math.random() * 500);
