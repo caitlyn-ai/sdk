@@ -2,7 +2,8 @@
 # Fails when a change edits the model snapshot (model/) by hand. model/model.json, model/openapi.json and
 # model/PROTOCOL.md are copies of the app's model (custom-d/caitlyn/platform/caitlyn, smithy/) that
 # scripts/model-pull.sh writes together with model/model.lock.json. A change to model/ that does not change the lock
-# file was made here, and the next pull would erase it.
+# file was made here, and the next pull would erase it. Deleting a release's file from model/changes/ is the one edit
+# allowed: a pull never fetches a version at or before the lock again.
 #
 #   scripts/model-snapshot-check.sh [BASE]   compares BASE (default: the merge base with origin/main) with HEAD
 #
@@ -18,7 +19,9 @@ elif ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
   git fetch --quiet --depth=1 origin "$base"
 fi
 
-changed="$(git diff --name-only "$base" HEAD -- model/)"
+# Deleting a file from model/changes/ is allowed without a pull: a pull only ever writes the change files of versions
+# after the lock, so it never brings back one for a version at or before it (scripts/model-changes.mjs).
+changed="$(git diff --name-only "$base" HEAD -- model/ | grep -vxF -f <(git diff --name-only --diff-filter=D "$base" HEAD -- model/changes/) || true)"
 if [ -z "$changed" ] || grep -qx 'model/model.lock.json' <<<"$changed"; then
   echo "model-snapshot-check: model/ is unchanged, or was pulled with scripts/model-pull.sh (the lock file changed too)."
   exit 0

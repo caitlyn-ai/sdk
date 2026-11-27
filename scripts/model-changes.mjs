@@ -2,7 +2,8 @@
 // developer site's Changelog (scripts/docs-changelog.mjs). The app's publish job uploads a changes.json beside each
 // release's model.json: what changed in the public API since the release before it. A pull keeps every published
 // version's after the one the snapshot was locked to, up to and including the one it pulls, so a release the SDKs
-// skipped still has its entry; the files accumulate across pulls.
+// skipped still has its entry; the files accumulate across pulls. A release that changed nothing in the public API
+// keeps no file (scripts/model-pull.sh).
 //
 //   node scripts/model-changes.mjs range LISTING PREVIOUS NEW CHANGES_DIR
 //
