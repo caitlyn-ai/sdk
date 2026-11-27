@@ -142,6 +142,17 @@ variables:
     KUBERNETES_CPU_REQUEST: '2'
     KUBERNETES_MEMORY_REQUEST: '2Gi'
 
+# The heavy tier on the Graviton (arm64) runner, as the app's .cpuheavyjob: the `arm64` tag routes to the runner pinned
+# to the gitlab-runner-container-build Karpenter pool (c8g.2xlarge or c8g.4xlarge, 8 or 16 vCPU), whose cores are
+# faster than the general pool's. Sized so three fit on a c8g.4xlarge, not to claim a node. Only for a job whose image
+# has an arm64 manifest: the toolchain image is amd64 only (kaniko builds it for the runner it runs on), so today that
+# is typescript:browser alone.
+.resources-heavy-arm64:
+  tags: [arm64]
+  variables:
+    KUBERNETES_CPU_REQUEST: '4'
+    KUBERNETES_MEMORY_REQUEST: '3Gi'
+
 .mr-and-main:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -206,7 +217,7 @@ typescript:
 # Microsoft's image served from our registry) carries the browsers for one Playwright version: keep the version in its
 # name (playwright-1.64.1) the same as the playwright version in typescript/package.json.
 typescript:browser:
-  extends: .resources-heavy
+  extends: .resources-heavy-arm64
   stage: test
   image: containers.customd.com/custom-d/devops-platform/container-images/playwright/playwright-1.64.1:latest
   interruptible: true
