@@ -22,11 +22,9 @@ import (
 )
 
 // The queue's limits (9.1).
-// PostTimeout is the flush's whole budget, for all its requests: 3 seconds. A variable only so the tests that wait it
-// out can shorten it.
-var PostTimeout = 3 * time.Second
-
 const (
+	// PostTimeout is the flush's whole budget, for all its requests: 3 seconds.
+	PostTimeout = 3 * time.Second
 	// MaxQueueBytes caps the queue: the oldest events go first.
 	MaxQueueBytes = 256 * 1024
 	// MaxAge drops events older than a week.

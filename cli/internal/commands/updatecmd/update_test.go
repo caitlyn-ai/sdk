@@ -17,6 +17,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"aead.dev/minisign"
 
@@ -32,7 +34,12 @@ var registerOnce sync.Once
 
 // server publishes releases signed with a key made for the test.
 type server struct {
-	srv      *httptest.Server
+	srv *httptest.Server
+	// handler is srv's: the updater reaches it through an in-memory transport, so the notice tests run inside a
+	// synctest bubble. While hold is set, the channel pointer isn't answered until hold is closed or the request's
+	// context ends.
+	handler  http.Handler
+	hold     atomic.Pointer[chan struct{}]
 	pub      string
 	priv     minisign.PrivateKey
 	files    map[string][]byte
@@ -43,9 +50,16 @@ func newServer(t *testing.T) *server {
 	pub, priv, _ := minisign.GenerateKey(rand.Reader)
 	pk, _ := pub.MarshalText()
 	s := &server{pub: string(pk), priv: priv, files: map[string][]byte{}}
-	s.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/channels/") {
 			s.pointers.Add(1)
+			if hold := s.hold.Load(); hold != nil {
+				select {
+				case <-*hold:
+				case <-r.Context().Done():
+				}
+				return
+			}
 		}
 		b, ok := s.files[strings.TrimPrefix(r.URL.Path, "/cli/")]
 		if !ok {
@@ -53,7 +67,8 @@ func newServer(t *testing.T) *server {
 			return
 		}
 		_, _ = w.Write(b)
-	}))
+	})
+	s.srv = httptest.NewServer(s.handler)
 	t.Cleanup(s.srv.Close)
 	return s
 }
@@ -95,6 +110,7 @@ func setup(t *testing.T) *env {
 	t.Cleanup(func() { updatecmd.NewUpdater = prev })
 	updatecmd.NewUpdater = func(f *cmdutil.Factory) (*update.Updater, error) {
 		return &update.Updater{BaseURL: s.srv.URL + "/cli/", PublicKey: s.pub, Exe: e.exe, GOOS: "linux", GOARCH: "amd64",
+			Client: &http.Client{Transport: handlerTransport{s.handler}},
 			StartCheck: func(_ context.Context, p string) (string, error) {
 				b, err := os.ReadFile(p)
 				return strings.TrimPrefix(strings.TrimSpace(string(b)), "#!caitlyn "), err
@@ -121,6 +137,20 @@ func (e *env) run(home string, vars map[string]string, tty bool, args ...string)
 		f.Home, f.WorkDir, f.Version = home, home, "0.12.0"
 	})
 	return result{code, out.String(), errOut.String()}
+}
+
+// handlerTransport serves each request with h, in the calling goroutine and with no socket.
+type handlerTransport struct{ h http.Handler }
+
+func (t handlerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	rec := httptest.NewRecorder()
+	t.h.ServeHTTP(rec, r.Clone(r.Context()))
+	if err := r.Context().Err(); err != nil {
+		return nil, err
+	}
+	res := rec.Result()
+	res.Request = r
+	return res, nil
 }
 
 func (e *env) binary() string {
@@ -213,6 +243,8 @@ func TestBadSignatureRefusedThroughTheCommand(t *testing.T) {
 	}
 }
 
+// The notice tests run on synctest's clock: the end of a run waits at most noticeWait for the day's check, and here
+// that wait, and the check, are on the bubble's clock rather than the machine's.
 func TestNotice(t *testing.T) {
 	e := setup(t)
 	e.s.publish("0.13.0", "stable")
@@ -232,20 +264,26 @@ func TestNotice(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			before := e.s.pointers.Load()
-			r := e.run(t.TempDir(), c.vars, c.tty, c.args...)
-			got := strings.Contains(r.stderr, "caitlyn 0.13.0 is available (you have 0.12.0). Run ")
-			if got != c.notice {
-				t.Fatalf("notice %v, want %v: %q", got, c.notice, r.stderr)
-			}
-			if !c.notice && e.s.pointers.Load() != before {
-				t.Fatal("where there's no notice, the channel isn't even read")
-			}
-			if strings.Contains(r.stdout, "is available") {
-				t.Fatal("the notice goes on stderr")
-			}
+			synctest.Test(t, func(t *testing.T) {
+				before := e.s.pointers.Load()
+				r := e.run(t.TempDir(), c.vars, c.tty, c.args...)
+				got := strings.Contains(r.stderr, "caitlyn 0.13.0 is available (you have 0.12.0). Run ")
+				if got != c.notice {
+					t.Fatalf("notice %v, want %v: %q", got, c.notice, r.stderr)
+				}
+				if !c.notice && e.s.pointers.Load() != before {
+					t.Fatal("where there's no notice, the channel isn't even read")
+				}
+				if strings.Contains(r.stdout, "is available") {
+					t.Fatal("the notice goes on stderr")
+				}
+			})
 		})
 	}
+	synctest.Test(t, func(t *testing.T) { noticeOnceAndWait(t, e) })
+}
+
+func noticeOnceAndWait(t *testing.T, e *env) {
 	// At most once a day
 	home := t.TempDir()
 	r := e.run(home, nil, true, "telemetry", "status")
@@ -264,11 +302,26 @@ func TestNotice(t *testing.T) {
 	if r := e.run(home, nil, true, "telemetry", "status"); strings.Contains(r.stderr, "is available") {
 		t.Fatal("update_notice = false")
 	}
+	// A check slower than noticeWait doesn't delay the command: the run ends at exactly noticeWait, with no notice
+	hold := make(chan struct{})
+	e.s.hold.Store(&hold)
+	defer e.s.hold.Store(nil)
+	start := time.Now() // timers: virtual (synctest)
+	r = e.run(t.TempDir(), nil, true, "telemetry", "status")
+	if took := time.Since(start); took != updatecmd.NoticeWait || strings.Contains(r.stderr, "is available") { // timers: virtual (synctest)
+		t.Fatalf("with a check that never answers, the run took %s (want %s) and printed %q", took, updatecmd.NoticeWait, r.stderr)
+	}
+	close(hold) // the check left running ends before the bubble does
+	synctest.Wait()
 }
 
 func TestNoticePromptMode(t *testing.T) {
 	e := setup(t)
 	e.s.publish("0.13.0", "stable")
+	synctest.Test(t, func(t *testing.T) { noticePrompt(t, e) })
+}
+
+func noticePrompt(t *testing.T, e *env) {
 	home := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(home, ".caitlyn"), 0o700)
 	_ = os.WriteFile(filepath.Join(home, ".caitlyn", "config"), []byte("update_notice = \"prompt\"\n"), 0o600)

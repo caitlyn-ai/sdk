@@ -18,6 +18,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/caitlyn-ai/sdk/cli/internal/config"
@@ -207,28 +208,26 @@ func TestFlush(t *testing.T) {
 	}
 }
 
+// The flush gives up at PostTimeout, on synctest's clock: the client's transport holds each request until its context
+// ends, so the flush returns at exactly its budget with nothing left in flight.
 func TestFlushGivesUpAfter3Seconds(t *testing.T) {
-	shortPostTimeout(t)
-	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case <-release:
-		case <-r.Context().Done():
+	synctest.Test(t, func(t *testing.T) {
+		client, hang := HangingClient()
+		q := Queue{Dir: t.TempDir()}
+		_, _ = q.Append(ev(time.Now(), 1))
+		start := time.Now() // timers: virtual (synctest)
+		_, err := q.Flush(context.Background(), "https://telemetry.invalid/v1/cli", client)
+		took := time.Since(start) // timers: virtual (synctest)
+		if err == nil || took != PostTimeout {
+			t.Fatalf("gave up after %s of virtual time, want %s; err %v", took, PostTimeout, err)
 		}
-	}))
-	defer srv.Close()
-	defer close(release)
-	q := Queue{Dir: t.TempDir()}
-	_, _ = q.Append(ev(time.Now(), 1))
-	start := time.Now()
-	_, err := q.Flush(context.Background(), srv.URL, nil)
-	took := time.Since(start)
-	if err == nil || took < PostTimeout-50*time.Millisecond || took > PostTimeout+time.Second {
-		t.Fatalf("took %s, err %v", took, err)
-	}
-	if evs, _ := q.Pending(); len(evs) != 1 {
-		t.Fatal("a timed-out flush keeps the queue")
-	}
+		if hang.Started() != 1 || hang.InFlight() != 0 {
+			t.Fatalf("%d requests sent, %d still in flight; want 1 sent, none in flight", hang.Started(), hang.InFlight())
+		}
+		if evs, _ := q.Pending(); len(evs) != 1 {
+			t.Fatal("a timed-out flush keeps the queue")
+		}
+	})
 }
 
 func TestDeleteAndReset(t *testing.T) {
@@ -577,6 +576,7 @@ func TestConcurrentFlushesSendEachEventOnce(t *testing.T) {
 	var mu sync.Mutex
 	seen := map[string]int{}
 	release := make(chan struct{})
+	arrived := make(chan struct{})
 	var first atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var b Batch
@@ -587,6 +587,7 @@ func TestConcurrentFlushesSendEachEventOnce(t *testing.T) {
 		}
 		mu.Unlock()
 		if first.CompareAndSwap(false, true) {
+			close(arrived)
 			<-release // hold the first flush's request while the second runs
 		}
 		w.WriteHeader(202)
@@ -601,9 +602,7 @@ func TestConcurrentFlushesSendEachEventOnce(t *testing.T) {
 	_ = os.Chtimes(q.Path(), old, old)
 	done := make(chan struct{})
 	go func() { _, _ = q.Flush(context.Background(), srv.URL, nil); close(done) }()
-	for !first.Load() {
-		time.Sleep(5 * time.Millisecond)
-	}
+	<-arrived                                          // the first flush has taken the queue and its request is held
 	_, _ = q.Flush(context.Background(), srv.URL, nil) // the second, while the first is in flight
 	close(release)
 	<-done
@@ -672,8 +671,13 @@ func TestFlushHonoursRetryAfter(t *testing.T) {
 
 // Events a flush puts back survive Appends that prune and rewrite the queue at the same time: both hold queue.lock.
 func TestPutBackSurvivesConcurrentPrune(t *testing.T) {
+	// The endpoint holds the flush's request until released, then answers 503, so the flush puts its batch back: the
+	// first Appends run while it is in flight, and the rest while it puts the batch back.
+	arrived, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(20 * time.Millisecond)
+		once.Do(func() { close(arrived) })
+		<-release
 		w.WriteHeader(503)
 	}))
 	defer srv.Close()
@@ -686,7 +690,11 @@ func TestPutBackSurvivesConcurrentPrune(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() { defer wg.Done(); _, _ = q.Flush(context.Background(), srv.URL, nil) }()
+	<-arrived // the flush has taken the queue
 	for i := 100; i < 140; i++ {
+		if i == 120 {
+			close(release)
+		}
 		_, _ = q.Append(stale)
 		_, _ = q.Append(ev(time.Now(), i))
 	}
@@ -699,6 +707,11 @@ func TestPutBackSurvivesConcurrentPrune(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		if !ids[fmt.Sprintf("e%04d", i)] {
 			t.Fatalf("e%04d, put back by the flush, was lost (%d events left)", i, len(evs))
+		}
+	}
+	for i := 100; i < 140; i++ {
+		if !ids[fmt.Sprintf("e%04d", i)] {
+			t.Fatalf("e%04d, appended while the flush was out, was lost (%d events left)", i, len(evs))
 		}
 	}
 }
@@ -755,11 +768,32 @@ func TestReleaseBuildsCarryTheEndpoint(t *testing.T) {
 	}
 }
 
-// shortPostTimeout gives a test that waits out the flush's budget 200 ms in place of 3 seconds; it checks the same
-// thing, the flush giving up at its budget, without the wait.
-func shortPostTimeout(t *testing.T) {
-	t.Helper()
-	old := PostTimeout
-	PostTimeout = 200 * time.Millisecond
-	t.Cleanup(func() { PostTimeout = old })
+// Hanging is a transport for a flush's client that never answers: each request is held until its context ends, as a
+// telemetry endpoint that accepts the connection and never replies. It needs no socket, so it works inside a synctest
+// bubble, where the flush's deadline is on the fake clock.
+type Hanging struct {
+	started, inFlight atomic.Int32
 }
+
+// HangingClient is an *http.Client whose every request hangs until its context ends.
+func HangingClient() (*http.Client, *Hanging) {
+	h := &Hanging{}
+	return &http.Client{Transport: h}, h
+}
+
+// RoundTrip holds the request until its context is done.
+func (h *Hanging) RoundTrip(r *http.Request) (*http.Response, error) {
+	h.started.Add(1)
+	h.inFlight.Add(1)
+	defer h.inFlight.Add(-1)
+	if r.Body != nil {
+		_, _ = io.Copy(io.Discard, r.Body)
+		_ = r.Body.Close()
+	}
+	<-r.Context().Done()
+	return nil, r.Context().Err()
+}
+
+// Started is how many requests were sent; InFlight is how many are still held.
+func (h *Hanging) Started() int  { return int(h.started.Load()) }
+func (h *Hanging) InFlight() int { return int(h.inFlight.Load()) }

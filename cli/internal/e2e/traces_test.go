@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/hex"
 	"io"
@@ -10,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	coltrace "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/protobuf/proto"
@@ -160,7 +160,8 @@ func TestYourOwnTracesSwitches(t *testing.T) {
 	}
 }
 
-// A collector that never answers costs a command about a second, never more.
+// A collector that never answers doesn't hold a command: the export gives up on its own (traces.ShutdownTimeout), the
+// command exits 0, and it is the CLI that hangs up, while the collector is still waiting to answer.
 func TestYourOwnTracesDeadCollector(t *testing.T) {
 	reset(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -168,18 +169,27 @@ func TestYourOwnTracesDeadCollector(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ln.Close()
+	requested := make(chan string, 1)
+	hungUp := make(chan struct{})
 	go func() {
-		for {
-			c, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			defer c.Close() // accept and never answer
+		c, err := ln.Accept()
+		if err != nil {
+			return
 		}
+		defer c.Close()
+		// read the request and never answer, until the CLI closes the connection
+		br := bufio.NewReader(c)
+		line, _ := br.ReadString('\n')
+		requested <- line
+		_, _ = io.Copy(io.Discard, br)
+		close(hungUp)
 	}()
-	start := time.Now()
 	r := run(t, map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://" + ln.Addr().String()}, "", "agents", "list")
-	if took := time.Since(start); r.code != 0 || took > 2500*time.Millisecond {
-		t.Fatalf("exit %d after %s with a dead collector", r.code, took)
+	if r.code != 0 {
+		t.Fatalf("exit %d with a dead collector: %s", r.code, r.errOut)
 	}
+	if line := <-requested; !strings.HasPrefix(line, "POST /v1/traces ") {
+		t.Fatalf("the collector was asked %q", line)
+	}
+	<-hungUp // the CLI gave up on the export and closed the connection; the collector never answered
 }

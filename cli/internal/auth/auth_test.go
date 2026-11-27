@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/zalando/go-keyring"
@@ -41,6 +42,9 @@ type harness struct {
 	dir  string
 	env  []string
 	tty  bool
+	// memory sends the command's requests to the fake through its in-memory transport (the factory's HTTPClient),
+	// for a run inside a synctest bubble.
+	memory bool
 	// opened is every URL the CLI asked a browser to open.
 	mu     sync.Mutex
 	opened []string
@@ -81,7 +85,6 @@ func newHarness(t *testing.T) *harness {
 		}()
 		return nil
 	}))
-	t.Cleanup(auth.SetSleep(func(context.Context, time.Duration) error { return nil }))
 	return h
 }
 
@@ -99,6 +102,9 @@ func (h *harness) run(stdin string, args ...string) result {
 	defer cancel()
 	code := root.Run(ctx, io, args, func(f *cmdutil.Factory) {
 		f.Home, f.WorkDir = h.home, h.home
+		if h.memory {
+			f.HTTPClient = h.fake.inMemory()
+		}
 	})
 	return result{code: code, out: out.String(), errOut: errOut.String()}
 }
@@ -311,19 +317,29 @@ func TestTwoProcessesRefreshOnce(t *testing.T) {
 	h := newHarness(t)
 	h.fake.with(func(f *fakeOAuth) { f.expiresIn = 30 })
 	h.login("--insecure-storage")
-	h.fake.with(func(f *fakeOAuth) { f.expiresIn = 3600; f.refreshDelay = 200 * time.Millisecond })
+	// The first refresh is held at the server, inside the first process's lock, until the second process has started
+	// its own Token call: the second has to wait for the lock, then use what the first saved.
+	arrived, release := make(chan struct{}), make(chan struct{})
+	h.fake.with(func(f *fakeOAuth) { f.expiresIn = 3600; f.refreshArrived, f.refreshRelease = arrived, release })
 	endpoint := h.fake.srv.URL + "/api"
 	a := auth.PersonTokenFunc(h.dir, endpoint, ws, "default", true)
 	b := auth.PersonTokenFunc(h.dir, endpoint, ws, "default", true)
 	var wg sync.WaitGroup
 	toks, errs := make([]string, 2), make([]error, 2)
-	for i, fn := range []func(context.Context) (string, error){a, b} {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			toks[i], errs[i] = fn(context.Background())
-		}()
-	}
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		toks[0], errs[0] = a(context.Background())
+	}()
+	<-arrived // the first holds the lock, its refresh under way
+	started := make(chan struct{})
+	go func() {
+		defer wg.Done()
+		close(started)
+		toks[1], errs[1] = b(context.Background())
+	}()
+	<-started
+	close(release)
 	wg.Wait()
 	for _, err := range errs {
 		if err != nil {
@@ -345,60 +361,71 @@ func TestTwoProcessesRefreshOnce(t *testing.T) {
 
 // ---------------------------------------------------------------- device flow
 
+// The device flow runs on synctest's clock, with the fake reached through an in-memory transport: the waits between
+// polls are the real RFC 8628 ones (the server's 5-second interval, five seconds more after slow_down), and the fake
+// records when each poll arrives, so the gaps are exact.
 func TestDeviceFlow(t *testing.T) {
 	cases := []struct {
 		name   string
 		script []string
 		exit   int
 		code   string
-		sleeps []time.Duration
+		// gaps are the waits before each poll: after the device authorisation, then after each poll before it.
+		gaps []time.Duration
 	}{
 		{"pending then slow_down then approved", []string{"authorization_pending", "slow_down", "ok"}, 0, "", []time.Duration{5 * time.Second, 5 * time.Second, 10 * time.Second}},
-		{"access_denied", []string{"authorization_pending", "access_denied"}, 4, "access_denied", nil},
-		{"expired_token", []string{"expired_token"}, 4, "expired_token", nil},
+		{"access_denied", []string{"authorization_pending", "access_denied"}, 4, "access_denied", []time.Duration{5 * time.Second, 5 * time.Second}},
+		{"expired_token", []string{"expired_token"}, 4, "expired_token", []time.Duration{5 * time.Second}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			// The fake's server and the keychain mock are made outside the bubble; the run, and its clock, inside it
 			h := newHarness(t)
+			h.memory = true
 			h.fake.with(func(f *fakeOAuth) { f.deviceScript = c.script })
-			var sleeps []time.Duration
-			t.Cleanup(auth.SetSleep(func(_ context.Context, d time.Duration) error {
-				sleeps = append(sleeps, d)
-				return nil
-			}))
-			r := h.run("", "auth", "login", "--workspace", ws, "--device")
-			if r.code != c.exit {
-				t.Fatalf("exit %d, want %d: %s", r.code, c.exit, r.errOut)
-			}
-			if !strings.Contains(r.errOut, "BCDF-GHJK") {
-				t.Errorf("the code isn't shown: %s", r.errOut)
-			}
-			if c.exit == 0 {
-				if stored(t, personKey("default")) == nil {
-					t.Error("no tokens saved")
+			synctest.Test(t, func(t *testing.T) {
+				r := h.run("", "auth", "login", "--workspace", ws, "--device")
+				if r.code != c.exit {
+					t.Fatalf("exit %d, want %d: %s", r.code, c.exit, r.errOut)
 				}
-				if len(sleeps) != len(c.sleeps) {
-					t.Fatalf("sleeps %v, want %v", sleeps, c.sleeps)
-				}
-				for i := range sleeps {
-					if sleeps[i] != c.sleeps[i] {
-						t.Errorf("sleeps %v, want %v (slow_down adds five seconds)", sleeps, c.sleeps)
-					}
+				if !strings.Contains(r.errOut, "BCDF-GHJK") {
+					t.Errorf("the code isn't shown: %s", r.errOut)
 				}
 				h.fake.with(func(f *fakeOAuth) {
-					s := f.deviceStarts[0]
-					if s.Get("client_id") != "caitlyn-cli" || s.Get("resource") != "https://"+ws+"/api" {
-						t.Errorf("device authorisation request: %v", s)
+					var gaps []time.Duration
+					last := f.deviceStartedAt
+					for _, at := range f.devicePolledAt {
+						gaps = append(gaps, at.Sub(last)) // timers: virtual (synctest)
+						last = at
+					}
+					if len(gaps) != len(c.gaps) {
+						t.Fatalf("waits before each poll %v, want %v", gaps, c.gaps)
+					}
+					for i := range gaps {
+						if gaps[i] != c.gaps[i] {
+							t.Errorf("waits before each poll %v, want %v (slow_down adds five seconds)", gaps, c.gaps)
+						}
 					}
 				})
-				return
-			}
-			if p := r.problem(t); p["code"] != c.code {
-				t.Errorf("code %v, want %s", p["code"], c.code)
-			}
-			if stored(t, personKey("default")) != nil {
-				t.Error("tokens saved after a failed device sign-in")
-			}
+				if c.exit == 0 {
+					if stored(t, personKey("default")) == nil {
+						t.Error("no tokens saved")
+					}
+					h.fake.with(func(f *fakeOAuth) {
+						s := f.deviceStarts[0]
+						if s.Get("client_id") != "caitlyn-cli" || s.Get("resource") != "https://"+ws+"/api" {
+							t.Errorf("device authorisation request: %v", s)
+						}
+					})
+					return
+				}
+				if p := r.problem(t); p["code"] != c.code {
+					t.Errorf("code %v, want %s", p["code"], c.code)
+				}
+				if stored(t, personKey("default")) != nil {
+					t.Error("tokens saved after a failed device sign-in")
+				}
+			})
 		})
 	}
 }

@@ -24,8 +24,8 @@ type deviceAuthorization struct {
 	Interval                int64  `json:"interval"`
 }
 
-// sleep waits between polls; tests replace it.
-var sleep = func(ctx context.Context, d time.Duration) error {
+// wait waits d, or until ctx is done: between device-flow polls, and between workload identity retries.
+func wait(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)
 	defer t.Stop()
 	select {
@@ -72,7 +72,7 @@ func (c *oauthClient) pollDevice(ctx context.Context, d *deviceAuthorization) (*
 	deadline := c.Now().Add(time.Duration(d.ExpiresIn) * time.Second)
 	form := url.Values{"grant_type": {deviceGrant}, "device_code": {d.DeviceCode}, "client_id": {ClientID}}
 	for {
-		if err := sleep(ctx, interval); err != nil {
+		if err := wait(ctx, interval); err != nil {
 			return nil, err
 		}
 		g, err := c.token(ctx, form)

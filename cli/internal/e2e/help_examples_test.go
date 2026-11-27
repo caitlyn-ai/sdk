@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -123,22 +123,28 @@ func TestHelpExamplesRun(t *testing.T) {
 						continue
 					}
 					// A follow (events tail) waits for events until it is stopped. What this checks, that the example is no usage
-					// error, shows at once, so a follow is stopped after 2 seconds; anything else has 10.
-					limit := 10 * time.Second
-					if strings.Contains(line, "events tail") {
-						limit = 2 * time.Second
-					}
-					ctx, cancel := context.WithTimeout(context.Background(), limit)
+					// error, has shown once it prints "Listening." (the server is listening, so its flags and arguments were
+					// taken): it is stopped then. Anything else runs until it exits.
+					ctx, cancel := context.WithCancel(context.Background())
 					cmd := exec.CommandContext(ctx, "sh", "-c", line)
 					cmd.Dir, cmd.Env = dir, env
-					var out bytes.Buffer
-					cmd.Stdout, cmd.Stderr = &out, &out
-					cmd.WaitDelay = time.Second
+					out := newWatched("Listening.")
+					cmd.Stdout, cmd.Stderr = out, out
+					stopsWholeGroup(cmd) // a pipeline's commands too, so its output pipe closes
 					code := 0
-					started := time.Now()
-					err := cmd.Run()
-					if took := time.Since(started); took > 5*time.Second {
-						t.Logf("%s took %s", line, took.Round(time.Second))
+					if err := cmd.Start(); err != nil {
+						t.Fatal(err)
+					}
+					exited := make(chan error, 1)
+					go func() { exited <- cmd.Wait() }()
+					var err error
+					select {
+					case err = <-exited:
+					case <-out.seen:
+						cancel()
+						if err = <-exited; errors.Is(err, context.Canceled) {
+							err = nil // stopped, as it was asked to be
+						}
 					}
 					if err != nil {
 						var ee *exec.ExitError
@@ -157,4 +163,31 @@ func TestHelpExamplesRun(t *testing.T) {
 		}
 	})
 	t.Logf("ran %d of %d examples", ran.Load(), len(examples))
+}
+
+// watched is a command's output that notes when a marker first appears in it.
+type watched struct {
+	mu     sync.Mutex
+	buf    bytes.Buffer
+	marker string
+	seen   chan struct{}
+	once   sync.Once
+}
+
+func newWatched(marker string) *watched { return &watched{marker: marker, seen: make(chan struct{})} }
+
+func (w *watched) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	n, err := w.buf.Write(p)
+	if bytes.Contains(w.buf.Bytes(), []byte(w.marker)) {
+		w.once.Do(func() { close(w.seen) })
+	}
+	return n, err
+}
+
+func (w *watched) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
 }

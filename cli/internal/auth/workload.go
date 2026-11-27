@@ -138,7 +138,7 @@ func buildkiteIDToken(ctx context.Context, audience string) (string, error) {
 	var last error
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
-			if err := sleep(ctx, time.Duration(attempt)*time.Second); err != nil {
+			if err := wait(ctx, time.Duration(attempt)*time.Second); err != nil {
 				return "", err
 			}
 		}
