@@ -1,7 +1,7 @@
 # The Caitlyn SDK repository's pipeline (custom-d/caitlyn/sdk).
 #
-#   toolchain              Builds docker/Dockerfile into this project's registry when it changes. Every other job
-#                          runs in that image, the same one `make` uses locally.
+#   toolchain              Builds docker/Dockerfile, for linux/amd64 and linux/arm64, into this project's registry when
+#                          it changes. Every other job runs in that image, the same one `make` uses locally.
 #   generate               Regenerates every SDK from the committed model snapshot and fails if the committed
 #                          generated code differs: generated code is reviewed in merge requests, never edited.
 #   typescript/python/go/rust  Install, strict type checks, lint, and the conformance harness against the mock server.
@@ -94,7 +94,7 @@ stages:
 
 variables:
   # Bump when docker/Dockerfile or scripts/install-smithy-cli.sh changes; the toolchain job pushes this tag on main.
-  TOOLCHAIN_VERSION: '3'
+  TOOLCHAIN_VERSION: '4'
   # The image's tag: TOOLCHAIN_VERSION, or a merge request's own (<version>-mr<iid>) when it changes the image
   # (the workflow rules, above)
   TOOLCHAIN_TAG: '$TOOLCHAIN_VERSION'
@@ -187,14 +187,25 @@ variables:
 
 # The heavy tier on the Graviton (arm64) runner, as the app's .cpuheavyjob: the `arm64` tag routes to the runner pinned
 # to the gitlab-runner-container-build Karpenter pool (c8g.2xlarge or c8g.4xlarge, 8 or 16 vCPU), whose cores are
-# faster than the general pool's. Sized so three fit on a c8g.4xlarge, not to claim a node. Only for a job whose image
-# has an arm64 manifest: the toolchain image is amd64 only (kaniko builds it for the runner it runs on), so today that
-# is typescript:browser alone.
+# faster than the general pool's. Sized so three fit on a c8g.4xlarge, not to claim a node: 4 CPUs, and 3Gi, over
+# every heavy job's peak (cli:test sets more). No limits, as above. For a job whose image has an arm64 build: the
+# toolchain image (multi-arch since TOOLCHAIN_VERSION 4) and Playwright's.
+#
+# The worker caps stop a runtime sizing itself to the node's cores (16 on a c8g.4xlarge) rather than to this job's 4:
+# GOMAXPROCS for Go (go, cli:test, cli:snapshot's builds, gofmt and staticcheck), CARGO_BUILD_JOBS for cargo's
+# compiles and RUST_TEST_THREADS for its test threads. Each is inert in the jobs that don't run that runtime. Node's
+# test runner takes the cores less one by default and accepts no environment setting (NODE_OPTIONS refuses
+# --test-concurrency); the conformance runs already pass --test-concurrency=1.
 .resources-heavy-arm64:
   tags: [arm64]
   variables:
     KUBERNETES_CPU_REQUEST: '4'
     KUBERNETES_MEMORY_REQUEST: '3Gi'
+    GOMAXPROCS: '4'
+    CARGO_BUILD_JOBS: '4'
+    RUST_TEST_THREADS: '4'
+    # Go's build cache is per architecture (.caches, go-build)
+    CACHE_ARCH: 'arm64'
 
 .mr-and-main:
   rules:
@@ -205,19 +216,42 @@ variables:
 
 toolchain:
   extends: .resources-heavy
-  variables:
-    KUBERNETES_MEMORY_REQUEST: '4Gi'  # not measured: a rebuild compiles the Go release tools under kaniko
   stage: toolchain
-  image:
-    name: gcr.io/kaniko-project/executor:v1.23.2-debug
-    entrypoint: ['']
+  # Multi-arch, as the shared publish-containers template (custom-d/devops-platform/ci-templates) builds
+  # container-images' playwright and node images: buildx in Docker-in-Docker, emulating arm64 with QEMU, pushing one
+  # manifest list for both platforms under TOOLCHAIN_IMAGE. Only the Dockerfile's RUN steps for arm64 run emulated (apt,
+  # the Smithy CLI, rustup); the Go tools cross-compile natively (docker/Dockerfile, go-tools). Layers are cached in the
+  # project's registry, so a rebuild redoes only the layers whose inputs changed.
+  image: docker:25.0.4
+  services:
+    - docker:25.0.4-dind
+  variables:
+    KUBERNETES_MEMORY_REQUEST: '4Gi'  # not measured; the build runs in the dind service, which takes no request here
+    PLATFORMS: 'linux/amd64,linux/arm64'
+    BINFMT_IMAGE: 'tonistiigi/binfmt:qemu-v10.2.3'
+    # The dind service's TLS endpoint, as cli:image reaches it (the runner doesn't honour the docker image's
+    # entrypoint, which would otherwise set these)
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: /certs
+    DOCKER_CERT_PATH: /certs/client
+    DOCKER_TLS_VERIFY: '1'
+  before_script:
+    - |
+      for i in $(seq 120); do docker info > /dev/null 2>&1 && break; sleep 1; done
+      docker info > /dev/null || { echo "The Docker daemon (the dind service, $DOCKER_HOST) didn't answer within 120 s" >&2; exit 1; }
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" "$CI_REGISTRY" --password-stdin
   script:
-    # Layers are cached in the project's registry, so a rebuild redoes only the layers whose inputs changed (the Go
-    # release tools alone took about ten minutes to compile and snapshot from nothing)
+    - docker run --privileged --rm "$BINFMT_IMAGE" --install arm64
+    # buildx won't make a builder from the TLS settings the dind service puts in the environment; a context wraps them
+    - docker context create multiarch-context
+    - docker buildx create --use --name multiarch --driver docker-container multiarch-context
     - >-
-      /kaniko/executor --context "$CI_PROJECT_DIR" --dockerfile "$CI_PROJECT_DIR/docker/Dockerfile"
-      --destination "$TOOLCHAIN_IMAGE"
-      --cache=true --cache-repo="$CI_REGISTRY_IMAGE/toolchain-cache" --snapshot-mode=redo
+      docker buildx build --file docker/Dockerfile --platform "$PLATFORMS" --provenance=false --push
+      --tag "$TOOLCHAIN_IMAGE"
+      --cache-from "type=registry,ref=$CI_REGISTRY_IMAGE/toolchain-cache:buildx"
+      --cache-to "type=registry,ref=$CI_REGISTRY_IMAGE/toolchain-cache:buildx,mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true"
+      .
+    - docker buildx imagetools inspect "$TOOLCHAIN_IMAGE"
   # Only when the image's own inputs change. A merge request builds its own tag (the workflow rules, above); main
   # builds TOOLCHAIN_VERSION once it merges.
   rules:
@@ -229,7 +263,7 @@ toolchain:
 # ---------------------------------------------------------------------------- generate and test
 
 generate:
-  extends: [.toolchain, .resources-medium]
+  extends: [.toolchain, .resources-heavy-arm64]
   cache:
     - !reference [.caches, gradle]
   stage: generate
@@ -246,7 +280,7 @@ generate:
   rules: !reference [.mr-and-main, rules]
 
 typescript:
-  extends: [.toolchain, .resources-heavy]
+  extends: [.toolchain, .resources-heavy-arm64]
   cache:
     - !reference [.caches, npm]
   stage: test
@@ -304,7 +338,7 @@ python:
   rules: !reference [.mr-and-main, rules]
 
 go:
-  extends: [.toolchain, .resources-heavy]
+  extends: [.toolchain, .resources-heavy-arm64]
   cache:
     - !reference [.caches, go-mod]
     - !reference [.caches, go-build]
@@ -318,7 +352,7 @@ go:
   rules: !reference [.mr-and-main, rules]
 
 rust:
-  extends: [.toolchain, .resources-heavy]
+  extends: [.toolchain, .resources-heavy-arm64]
   cache:
     - !reference [.caches, cargo]
   stage: test
@@ -333,7 +367,14 @@ rust:
 conformance:
   extends: [.toolchain, .light]
   stage: conformance
-  needs: [typescript, 'typescript:browser', python, go, rust]
+  needs:
+    - typescript
+    - 'typescript:browser'
+    - python
+    - go
+    - rust
+    - job: toolchain
+      optional: true
   script:
     - node scripts/check-conformance.mjs
   rules: !reference [.mr-and-main, rules]
@@ -354,7 +395,7 @@ cli:vet:
   rules: !reference [.mr-and-main, rules]
 
 cli:test:
-  extends: [.toolchain, .resources-heavy]
+  extends: [.toolchain, .resources-heavy-arm64]
   cache:
     - !reference [.caches, go-mod]
     - !reference [.caches, go-build]
@@ -379,7 +420,7 @@ cli:install-ps1:
   rules: !reference [.mr-and-main, rules]
 
 cli:snapshot:
-  extends: [.toolchain, .resources-heavy]
+  extends: [.toolchain, .resources-heavy-arm64]
   cache:
     - !reference [.caches, go-mod]
     - !reference [.caches, go-build]
@@ -410,7 +451,9 @@ examples:live:
     - !reference [.caches, npm]
     - !reference [.caches, uv]
   stage: test
-  needs: []
+  needs:
+    - job: toolchain
+      optional: true
   # One run at a time: every run changes the same agents' drafts and versions.
   resource_group: examples-live
   # Each language waits up to 15 to 21 minutes for a document to index, then deletes what it made; the project's
@@ -512,7 +555,9 @@ model:main:
     - !reference [.caches, cargo]
     - !reference [.caches, npm]
   stage: generate
-  needs: []
+  needs:
+    - job: toolchain
+      optional: true
   interruptible: false
   resource_group: model-main
   variables:
@@ -526,13 +571,14 @@ model:main:
 # ---------------------------------------------------------------------------- developer docs
 
 docs:build:
-  extends: [.toolchain, .resources-heavy]
+  extends: [.toolchain, .resources-heavy-arm64]
   cache:
     - !reference [.caches, npm]
   stage: docs
-  needs: []
+  needs:
+    - job: toolchain
+      optional: true
   variables:
-    KUBERNETES_MEMORY_REQUEST: '3Gi'  # peak 2.0 GB
     # The whole history, so each page's sitemap lastmod is its source's newest commit (scripts/docs-sitemap.mjs); a
     # shallow clone would date every older page at the clone's oldest commit
     GIT_DEPTH: '0'
@@ -635,7 +681,11 @@ docs:publish:
 docs:knowledge-base:
   extends: [.toolchain, .light]
   stage: docs
-  needs: [docs:build, docs:publish]
+  needs:
+    - docs:build
+    - docs:publish
+    - job: toolchain
+      optional: true
   script:
     - node scripts/docs-kb-publish.mjs --dry-run
   resource_group: docs-knowledge-base
@@ -662,7 +712,9 @@ cli:agent-eval:offline:
     - !reference [.caches, go-mod]
     - !reference [.caches, go-build]
   stage: test
-  needs: []
+  needs:
+    - job: toolchain
+      optional: true
   script:
     - cli/agent-eval/run.sh --agent scripted --arms docs,snippet,skill
   artifacts:
@@ -691,6 +743,8 @@ cli:agent-eval:
   stage: docs
   needs:
     - job: docs:build
+      optional: true
+    - job: toolchain
       optional: true
   variables:
     KUBERNETES_MEMORY_REQUEST: '3Gi'  # builds the docs when docs:build did not run
@@ -724,7 +778,9 @@ cli:agent-eval:nightly:
     - !reference [.caches, go-build]
     - !reference [.caches, npm]
   stage: docs
-  needs: []
+  needs:
+    - job: toolchain
+      optional: true
   timeout: 3h
   parallel:
     matrix:
@@ -776,7 +832,9 @@ cli:ask-caitlyn-eval:nightly:
     - !reference [.caches, go-build]
     - !reference [.caches, npm]
   stage: docs
-  needs: []
+  needs:
+    - job: toolchain
+      optional: true
   id_tokens:
     CAITLYN_ID_TOKEN:
       aud: https://ask.caitlyn.ai/api
@@ -826,6 +884,8 @@ stamp-version:
   needs:
     - job: fetch-semantic-version
       artifacts: true
+    - job: toolchain
+      optional: true
   script:
     - |
       if [ ! -s VERSION.txt ]; then
@@ -883,7 +943,9 @@ release:
 release:version:
   extends: [.toolchain, .light]
   stage: release
-  needs: []
+  needs:
+    - job: toolchain
+      optional: true
   script:
     - node scripts/version.mjs check "${CI_COMMIT_TAG#v}"
   rules:
@@ -930,7 +992,9 @@ release:pypi:
 release:go:
   extends: [.toolchain, .light]
   stage: release
-  needs: []
+  needs:
+    - job: toolchain
+      optional: true
   script:
     - node scripts/go-tag.mjs "$GO_TAG"
   rules:
@@ -982,7 +1046,9 @@ cli:release:
     - !reference [.caches, go-mod]
     - !reference [.caches, go-build]
   stage: release
-  needs: []
+  needs:
+    - job: toolchain
+      optional: true
   script:
     # The minisign key the binaries are built with must be set and well formed, before anything is built or signed
     - cli/scripts/minisign-key-check.sh
@@ -1043,6 +1109,8 @@ cli:packages:
       artifacts: true
     - job: cli:publish
       artifacts: false
+    - job: toolchain
+      optional: true
   script:
     - cli/scripts/release-packages.sh cli/dist "$CI_COMMIT_TAG"
   resource_group: cli-releases
