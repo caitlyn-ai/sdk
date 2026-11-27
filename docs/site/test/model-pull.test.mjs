@@ -54,7 +54,7 @@ function checkout(lock) {
 /** The app's package registry: a two-page listing, and each version's files (a missing one is a 404). */
 async function registry(files) {
   const older = Array.from({ length: 98 }, (_, i) => ({ name: 'caitlyn-v3-model', version: `4.${i}.0` }));
-  const pages = [[...older, ...listing('5.112.0', '5.113.0')], listing('5.114.0', '5.115.0', 'latest')];
+  const pages = [[...older, ...listing('5.112.0', '5.113.0')], listing('5.114.0', '5.114.1', '5.115.0', 'latest')];
   const asked = [];
   const server = http.createServer((req, res) => {
     if (req.headers['private-token'] !== 'token') return res.writeHead(401).end();
@@ -79,9 +79,12 @@ const run = (dir, args, env) =>
     execFile(path.join(dir, 'scripts/model-pull.sh'), args, { env: { ...process.env, CI_JOB_TOKEN: '', ...env } }, (error, stdout, stderr) => resolve({ code: error?.code ?? 0, stdout, stderr }));
   });
 
-const changes = (version, previousVersion) => JSON.stringify({ model: 'caitlyn-v3-model', version, previousVersion, date: '2026-11-17', changes: [] });
+// A release's changes.json, by default with one change; `none` for a release that changed nothing in the public API
+const ONE_CHANGE = [{ kind: 'operationAdded', surface: 'ga', operation: 'ListThings', stability: 'ga', title: 'List things' }];
+const changes = (version, previousVersion, list = ONE_CHANGE) => JSON.stringify({ model: 'caitlyn-v3-model', version, previousVersion, date: '2026-11-17', changes: list });
+const none = [];
 
-test('model-pull.sh keeps the changes.json of each version after the lock, notes one published without it, and locks the model by its SHA-256', async () => {
+test('model-pull.sh keeps the changes.json of each version after the lock that changed the API, notes one published without it or with no changes, and locks the model by its SHA-256', async () => {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'model-pull-tar-'));
   fs.writeFileSync(path.join(work, 'PROTOCOL.md'), '# Protocol\n');
   execFileSync('tar', ['-czf', path.join(work, 'model.tar.gz'), '-C', work, 'PROTOCOL.md']);
@@ -91,7 +94,9 @@ test('model-pull.sh keeps the changes.json of each version after the lock, notes
     '5.115.0/openapi.json': '{}',
     '5.115.0/caitlyn-v3-model.tar.gz': fs.readFileSync(path.join(work, 'model.tar.gz')),
     '5.114.0/changes.json': changes('5.114.0', '5.113.0'),
-    '5.115.0/changes.json': changes('5.115.0', '5.114.0'),
+    // 5.114.1 changed nothing in the public API: no file is kept
+    '5.114.1/changes.json': changes('5.114.1', '5.114.0', none),
+    '5.115.0/changes.json': changes('5.115.0', '5.114.1'),
     // 5.113.0 was published before changes.json existed: a 404
     '5.112.0/changes.json': changes('5.112.0', '5.111.0'),
   });
@@ -101,6 +106,7 @@ test('model-pull.sh keeps the changes.json of each version after the lock, notes
     assert.equal(code, 0, stderr);
     assert.deepEqual(fs.readdirSync(path.join(dir, 'model/changes')).sort(), ['5.114.0.json', '5.115.0.json']);
     assert.match(stdout, /caitlyn-v3-model\/5\.113\.0 has no changes\.json/);
+    assert.match(stdout, /5\.114\.1 changed nothing in the public API, so no file is kept/);
     assert.ok(reg.asked.some((p) => p.endsWith('/packages')) && reg.asked.filter((p) => p.endsWith('/packages')).length === 2, 'both listing pages read');
     assert.ok(!reg.asked.includes('/api/v4/projects/653/packages/generic/caitlyn-v3-model/5.112.0/changes.json'), 'the locked version is not fetched again');
     const lock = JSON.parse(fs.readFileSync(path.join(dir, 'model/model.lock.json'), 'utf8'));

@@ -4,8 +4,8 @@
 # model/changes/<version>.json, the changes.json the app publishes beside each release's model (what changed in the
 # public API since the release before), for the developer site's Changelog: a pull keeps every published version's
 # after the previous lock's version, up to and including the one it pulls (scripts/model-changes.mjs), so a skipped
-# release's changes are kept too. The files accumulate across pulls. A version published before changes.json existed
-# is skipped with a note.
+# release's changes are kept too. The files accumulate across pulls. A version whose changes.json lists no changes,
+# and one published before changes.json existed, keeps no file and is skipped with a note.
 #
 #   scripts/model-pull.sh 5.121.0           a version from the app's package registry
 #   scripts/model-pull.sh latest            the newest published model
@@ -164,6 +164,15 @@ else
 fi
 sha="$(shasum -a 256 "$tmp/model.json" 2>/dev/null | cut -d' ' -f1 || sha256sum "$tmp/model.json" | cut -d' ' -f1)"
 cp "$tmp/model.json" "$tmp/openapi.json" "$tmp/PROTOCOL.md" "$root/model/"
+# Only a release that changed the public API keeps a file: the app releases several times a day, and most releases
+# change nothing in the model. The Changelog has an API entry only for a release with a file.
+for f in "$tmp/changes/"*.json; do
+  [ -e "$f" ] || continue
+  if [ "$(node -p "require('$f').changes.length")" = 0 ]; then
+    rm -f "$f"
+    echo "changes: $(basename "$f" .json) changed nothing in the public API, so no file is kept"
+  fi
+done
 if [ -n "$(ls -A "$tmp/changes")" ]; then
   mkdir -p "$changes_dir"
   cp "$tmp/changes/"*.json "$changes_dir/"
