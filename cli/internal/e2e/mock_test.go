@@ -113,14 +113,22 @@ type result struct {
 // run runs the CLI with args against the mock, signed in with the mock's personal access token, in a fresh home.
 func run(t *testing.T, env map[string]string, stdin string, args ...string) result {
 	t.Helper()
-	return runOn(t, false, env, stdin, args...)
+	return runIO(t, env, stdin, nil, args...)
 }
 
 // runOn is run, with stdin, stdout and stderr terminals when tty is set: a person typing at a terminal.
 func runOn(t *testing.T, tty bool, env map[string]string, stdin string, args ...string) result {
 	t.Helper()
+	return runIO(t, env, stdin, func(s *iostreams.IOStreams) { s.SetTTY(tty, tty, tty) }, args...)
+}
+
+// runIO is run with the streams set up first: setup marks some of them as terminals, for example.
+func runIO(t *testing.T, env map[string]string, stdin string, setup func(*iostreams.IOStreams), args ...string) result {
+	t.Helper()
 	io, out, errOut := iostreams.Test(stdin)
-	io.SetTTY(tty, tty, tty)
+	if setup != nil {
+		setup(io)
+	}
 	home := t.TempDir()
 	vars := map[string]string{
 		"HOME":                       home,

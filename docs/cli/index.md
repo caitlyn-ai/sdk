@@ -460,6 +460,11 @@ policy-3.pdf  doc-0003  /policies/  partially_indexed  1        4 days ago
 More: --all, or --cursor eyJvZmZzZXQiOjN9
 ```
 
+### Conversations and streams
+
+On a terminal, `caitlyn chat`, `events tail` and the `watch` commands render for people, whatever output is
+configured. Give `-o jsonl`, `--jq` or `--query` on the command for their events as data.
+
 ## When something fails
 
 Every command ends with an exit code from one fixed table, so a script can branch on it: 0 succeeded, 2 a usage error (nothing was sent), 6 not found, 7 a conflict or a stale ETag, and so on ([Exit codes](/cli/exit-codes/)). The error goes to stderr, in the form that suits whoever reads it, whatever `--output` says:

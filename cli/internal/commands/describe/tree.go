@@ -365,6 +365,16 @@ func Describe(c *cobra.Command, f *cmdutil.Factory, m *spec.Manifest) *Command {
 	}
 	if g == nil || g.Op == nil {
 		d.Examples = append(d.Examples, cobraExamples(c.Example)...)
+	} else if c.Annotations[gen.AnnotationOwnExamples] != "" {
+		// A generated command a hand-written hook changes (documents download saves the bytes): its own examples,
+		// then the model's examples of errors, which still hold
+		own := cobraExamples(c.Example)
+		for _, ex := range d.Examples {
+			if ex.Error != "" {
+				own = append(own, ex)
+			}
+		}
+		d.Examples = own
 	}
 	d.ExitCodes = exitCodes(d, g, c.Annotations[AnnotationExitCodes])
 	return d

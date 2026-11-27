@@ -32,6 +32,8 @@ func SplitCompact(v string) (id, version string) {
 // identifiers. Scope identifiers come from the positional argument, the flags, or the configuration's defaults.
 func (r *Run) input() error {
 	c, f, cmd := r.C, r.F, r.Cobra
+	// --generate-input prints a skeleton: what's given fills it, and what's required but missing is what it's for
+	skeleton, _ := cmd.Flags().GetBool("generate-input")
 	in := invoke.NewInput()
 	r.In = in
 	cfg, err := f.Config()
@@ -194,7 +196,7 @@ func (r *Run) input() error {
 		if v, _ := cmd.Flags().GetString("if-match"); v != "" {
 			in.IfMatch = &v
 		}
-		if in.IfMatch == nil && op.IfMatch.Required {
+		if in.IfMatch == nil && op.IfMatch.Required && !skeleton {
 			get := r.getCommand()
 			e := &cmdutil.Error{Exit: exitcode.Usage, Code: "PRECONDITION_REQUIRED", Title: fmt.Sprintf("%s needs --if-match: the ETag of what you read.", "caitlyn "+c.Spec.Name()),
 				Detail: "So a change someone else made since can't be overwritten.", Hint: &cmdutil.Hint{Missing: []string{"--if-match"}}}
@@ -263,7 +265,7 @@ func (r *Run) input() error {
 			missing = append(missing, flag)
 		}
 	}
-	if len(missing) > 0 {
+	if len(missing) > 0 && !skeleton {
 		return r.missing(missing)
 	}
 	return nil

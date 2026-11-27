@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path"
 	"strings"
 	"time"
 
@@ -81,12 +82,20 @@ func (r *Run) wait(ctx context.Context, lr *spec.LongRunning, thing []byte) erro
 				ids["ingestionBatchId"] = str(obj, "id")
 			}
 		}
+		// A created knowledge base: the watch follows it by the id in the body, or in the 202's Location
+		if lr.Watch == "WatchKnowledgeBase" && ids["knowledgeBaseId"] == "" {
+			ids["knowledgeBaseId"] = createdID(obj, r.location)
+		}
 		if lr.Watch == "WatchOperation" && ids["operationId"] == "" {
 			ids["operationId"] = firstString(obj, "operationId", "id")
 			if op, ok := obj["operation"].(map[string]any); ok && ids["operationId"] == "" {
 				ids["operationId"] = str(op, "id")
 			}
 		}
+	}
+	if lr.Watch == "WatchKnowledgeBase" && ids["knowledgeBaseId"] == "" {
+		return &cmdutil.Error{Exit: exitcode.Failed, Code: "WAIT_TARGET_UNKNOWN", Title: "Done, but the response doesn't say which knowledge base to wait for.",
+			Detail: "It has no id and no Location. Follow it with caitlyn knowledge-bases watch <knowledge base>."}
 	}
 	resume := r.resumeLine(lr, ids)
 	if r.F.Agent.On || !r.F.IO.IsStderrTTY() {
@@ -154,6 +163,17 @@ func isTimeout(err error) bool {
 		return true
 	}
 	return errors.Is(err, context.DeadlineExceeded)
+}
+
+// createdID is what a create made: the id in its response's body, or the last part of its 202's Location.
+func createdID(body map[string]any, location string) string {
+	if id := str(body, "id"); id != "" {
+		return id
+	}
+	if location = strings.TrimRight(location, "/"); location == "" {
+		return ""
+	}
+	return path.Base(location)
 }
 
 func str(m map[string]any, k string) string {

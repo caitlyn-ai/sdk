@@ -31,10 +31,21 @@ func (r *Run) Hint(err error) error {
 		}
 		e.Fields[i].Flag = r.flagFor(fp.Pointer)
 	}
+	cmdLine := r.commandLine()
+	// A field the server needed but this run didn't send (publishing the draft without --name): name its flag, and
+	// the command with it. The CLI never makes the value up.
+	for _, fp := range e.Fields {
+		if !strings.HasPrefix(fp.Flag, "--") || strings.Contains(fp.Flag, " ") || r.sent(fp.Pointer) {
+			continue
+		}
+		e.Hint.Missing = append(e.Hint.Missing, fp.Flag)
+		if len(e.Hint.Next) == 0 {
+			e.AddNext(cmdLine+" "+fp.Flag+" <"+strings.TrimPrefix(fp.Flag, "--")+">", "give "+fp.Flag+": this call needs it")
+		}
+	}
 	if len(e.Hint.Next) > 0 {
 		return e
 	}
-	cmdLine := r.commandLine()
 	get, list := r.getCommand(), r.listCommand()
 	scope := ""
 	if r.C.Op != nil {
@@ -101,6 +112,20 @@ func (r *Run) Hint(err error) error {
 		e.AddNext("caitlyn "+r.C.Spec.Name()+" --help", "see what it takes, with examples")
 	}
 	return e
+}
+
+// sent reports whether this run sent the top-level member a JSON pointer names (/name: was --name given).
+func (r *Run) sent(pointer string) bool {
+	p := strings.TrimPrefix(pointer, "/")
+	if r.In == nil || p == "" || strings.Contains(p, "/") {
+		return true
+	}
+	for _, mf := range r.C.Members {
+		if mf.Member.Wire == p {
+			return r.In.Has(mf.Member.Name)
+		}
+	}
+	return true
 }
 
 // flagFor names the flag a JSON pointer's member came from (/name gives --name; /guidance/instructions gives

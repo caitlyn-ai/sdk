@@ -129,7 +129,7 @@ func runTail(ctx context.Context, f *cmdutil.Factory, o *tailOptions) error {
 		defer cancel()
 	}
 	u := gen.UIFor(f)
-	p, err := output.New(f, u)
+	p, err := output.NewStream(f, u)
 	if err != nil {
 		return err
 	}

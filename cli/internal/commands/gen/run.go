@@ -33,6 +33,8 @@ type Run struct {
 	// IDs are the identifier values given, by identifier name (agentId, knowledgeBaseId, version).
 	IDs map[string]string
 	UI  *ui.UI
+	// location is the last call's Location header: a create's 202 names what it made there
+	location string
 }
 
 // UIFor returns the UI the root command set up.
@@ -75,6 +77,13 @@ func ImpactOf(f *cmdutil.Factory, op *spec.Operation) string {
 
 func (r *Run) do(ctx context.Context) error {
 	c, f := r.C, r.F
+	// A skeleton sends nothing, so it needs neither the checks before a call nor the required members' values
+	if b, _ := r.Cobra.Flags().GetBool("generate-input"); b && c.Op != nil {
+		if err := r.input(); err != nil {
+			return err
+		}
+		return Skeleton(f.IO.Out, f.Manifest(), c.Op, r.In)
+	}
 	if err := r.guard(); err != nil {
 		return err
 	}
@@ -83,9 +92,6 @@ func (r *Run) do(ctx context.Context) error {
 	}
 	if c.Op == nil {
 		return r.wait(ctx, c.Spec.Waits, nil)
-	}
-	if b, _ := r.Cobra.Flags().GetBool("generate-input"); b {
-		return Skeleton(f.IO.Out, f.Manifest(), c.Op, r.In)
 	}
 	if err := r.confirm(); err != nil {
 		return err
@@ -115,7 +121,11 @@ func (r *Run) call(ctx context.Context, op *spec.Operation, in *invoke.Input) er
 	if err != nil {
 		return err
 	}
-	p, err := output.New(f, r.UI)
+	newPrinter := output.New
+	if op.SSE != nil {
+		newPrinter = output.NewStream
+	}
+	p, err := newPrinter(f, r.UI)
 	if err != nil {
 		return err
 	}
@@ -167,6 +177,7 @@ func (r *Run) call(ctx context.Context, op *spec.Operation, in *invoke.Input) er
 		return err
 	}
 	r.noteVersion(res)
+	r.location = res.Header.Get("Location")
 	thing := res.Thing(op)
 	if err := r.clearSecrets(op, thing); err != nil {
 		return err
@@ -506,36 +517,56 @@ func Confirmed(f *cmdutil.Factory, a Action) error {
 		line = a.Name
 	}
 	strict := f.Agent.On || f.CI.In()
+	// Every confirmation that's missing, in one error: --confirm naming the target, and --yes
+	var want string
 	if len(a.Targets) > 0 && strict {
 		given := map[string]bool{}
 		for _, t := range strings.Split(f.Globals.Confirm, ",") {
 			given[strings.TrimSpace(t)] = true
 		}
-		missing := false
 		for _, t := range a.Targets {
 			if !given[t] {
-				missing = true
+				want = shellQuote(strings.Join(a.Targets, ","))
 			}
 		}
-		if missing {
-			want := shellQuote(strings.Join(a.Targets, ","))
-			e := cmdutil.ActionNeeded(fmt.Sprintf("%s needs --confirm %s, naming the exact target.", a.Name, want), "--confirm")
-			e.AddNext(line+" --dry-run", "see what it would send")
-			e.AddNext(line+" --yes --confirm "+want, "then run it, naming the target")
-			return e
-		}
 	}
-	if f.Globals.Yes {
-		return nil
+	needYes := !f.Globals.Yes && (strict || (a.Impact == "destructive" && !f.Interactive()))
+	if needYes && a.Impact == "user-facing" && !strict {
+		needYes = false
 	}
-	if strict || (a.Impact == "destructive" && !f.Interactive()) {
-		if a.Impact == "user-facing" && !strict {
-			return nil
+	if want != "" || needYes {
+		var title string
+		var missing, add []string
+		switch {
+		case want != "" && needYes:
+			title = fmt.Sprintf("%s is %s and needs --yes and --confirm %s, naming the exact target.", a.Name, a.Impact, want)
+		case want != "":
+			title = fmt.Sprintf("%s needs --confirm %s, naming the exact target.", a.Name, want)
+		default:
+			title = fmt.Sprintf("%s is %s and needs --yes.", a.Name, a.Impact)
 		}
-		e := cmdutil.ActionNeeded(fmt.Sprintf("%s is %s and needs --yes.", a.Name, a.Impact), "--yes")
+		if needYes {
+			missing = append(missing, "--yes")
+		}
+		// The next step is the whole command: --yes too when it was given, since the command line here leaves it out
+		if (needYes || f.Globals.Yes) && !strings.Contains(" "+line+" ", " --yes ") {
+			add = append(add, "--yes")
+		}
+		if want != "" {
+			missing, add = append(missing, "--confirm"), append(add, "--confirm "+want)
+		}
+		e := cmdutil.ActionNeeded(title, "")
+		e.Hint = &cmdutil.Hint{Missing: missing}
 		e.AddNext(line+" --dry-run", "see what it would send")
-		e.AddNext(line+" --yes", "then run it")
+		why := "then run it"
+		if want != "" {
+			why = "then run it, naming the target"
+		}
+		e.AddNext(withoutFlag(line, "--confirm")+" "+strings.Join(add, " "), why)
 		return e
+	}
+	if f.Globals.Yes || strict {
+		return nil
 	}
 	if a.Impact == "destructive" {
 		what := strings.TrimSuffix(a.Title, ".")
