@@ -146,6 +146,11 @@ impl CallOptions {
         }
     }
 
+    /// Whether the call has been cancelled already.
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.cancel.as_ref().is_some_and(|t| t.is_cancelled())
+    }
+
     pub(crate) async fn cancelled(&self) {
         match &self.cancel {
             Some(t) => t.cancelled().await,
