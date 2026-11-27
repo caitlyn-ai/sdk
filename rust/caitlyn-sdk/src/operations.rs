@@ -42,7 +42,7 @@ pub struct BatchCreateIngestionBatchItemsInput {
 static OP_BATCH_CREATE_INGESTION_BATCH_ITEMS: rt::Operation = rt::Operation {
     name: "BatchCreateIngestionBatchItems",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: false,
     sse: false,
     idempotency_header: None,
@@ -192,7 +192,7 @@ pub struct BatchDeleteDocumentsInput {
 static OP_BATCH_DELETE_DOCUMENTS: rt::Operation = rt::Operation {
     name: "BatchDeleteDocuments",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -322,7 +322,7 @@ pub struct CancelDocumentProcessingInput {
 static OP_CANCEL_DOCUMENT_PROCESSING: rt::Operation = rt::Operation {
     name: "CancelDocumentProcessing",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -511,7 +511,7 @@ pub struct CancelIngestionBatchInput {
 static OP_CANCEL_INGESTION_BATCH: rt::Operation = rt::Operation {
     name: "CancelIngestionBatch",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -717,7 +717,7 @@ pub struct CancelIngestionBatchItemInput {
 static OP_CANCEL_INGESTION_BATCH_ITEM: rt::Operation = rt::Operation {
     name: "CancelIngestionBatchItem",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -867,7 +867,7 @@ pub struct CancelOperationInput {
 static OP_CANCEL_OPERATION: rt::Operation = rt::Operation {
     name: "CancelOperation",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -1004,7 +1004,7 @@ pub struct CompareAgentVersionsInput {
 static OP_COMPARE_AGENT_VERSIONS: rt::Operation = rt::Operation {
     name: "CompareAgentVersions",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -1145,7 +1145,7 @@ pub struct CompleteIngestionBatchUploadsInput {
 static OP_COMPLETE_INGESTION_BATCH_UPLOADS: rt::Operation = rt::Operation {
     name: "CompleteIngestionBatchUploads",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -1288,7 +1288,7 @@ pub struct CreateAgentInput {
 static OP_CREATE_AGENT: rt::Operation = rt::Operation {
     name: "CreateAgent",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: Some("Idempotency-Key"),
@@ -1788,7 +1788,7 @@ pub struct CreateConversationInput {
 static OP_CREATE_CONVERSATION: rt::Operation = rt::Operation {
     name: "CreateConversation",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: Some("Idempotency-Key"),
@@ -1970,7 +1970,7 @@ pub struct CreateDocumentInput {
 static OP_CREATE_DOCUMENT: rt::Operation = rt::Operation {
     name: "CreateDocument",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: Some("Idempotency-Key"),
@@ -2206,7 +2206,7 @@ pub struct CreateDocumentVersionInput {
 static OP_CREATE_DOCUMENT_VERSION: rt::Operation = rt::Operation {
     name: "CreateDocumentVersion",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: Some("Idempotency-Key"),
@@ -2475,7 +2475,7 @@ pub struct CreateFieldInput {
 static OP_CREATE_FIELD: rt::Operation = rt::Operation {
     name: "CreateField",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: Some("Idempotency-Key"),
@@ -2654,7 +2654,7 @@ pub struct CreateFolderInput {
 static OP_CREATE_FOLDER: rt::Operation = rt::Operation {
     name: "CreateFolder",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: Some("Idempotency-Key"),
@@ -2815,7 +2815,7 @@ pub struct CreateIngestionBatchInput {
     /// an hour, and 30 minutes when absent. A short window lets a test reach the upload deadline,
     /// and an expired policy, within seconds.
     ///
-    /// Since Caitlyn 5.144.0: refused before sending to an older server.
+    /// Since Caitlyn 5.149.0: refused before sending to an older server.
     #[serde(rename = "uploadWindowSeconds", skip_serializing_if = "Option::is_none")]
     pub upload_window_seconds: Option<i32>,
 }
@@ -2823,7 +2823,7 @@ pub struct CreateIngestionBatchInput {
 static OP_CREATE_INGESTION_BATCH: rt::Operation = rt::Operation {
     name: "CreateIngestionBatch",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: Some("Idempotency-Key"),
@@ -3028,7 +3028,7 @@ pub struct CreateIngestionBatchUploadPolicyInput {
 static OP_CREATE_INGESTION_BATCH_UPLOAD_POLICY: rt::Operation = rt::Operation {
     name: "CreateIngestionBatchUploadPolicy",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: Some("Idempotency-Key"),
@@ -3181,7 +3181,7 @@ pub struct CreateKnowledgeBaseInput {
 static OP_CREATE_KNOWLEDGE_BASE: rt::Operation = rt::Operation {
     name: "CreateKnowledgeBase",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: Some("Idempotency-Key"),
@@ -3369,13 +3369,13 @@ pub struct CreateUploadInput {
     pub sha256: String,
     /// What the upload is for, when that decides whether it is accepted. Absent means a document.
     ///
-    /// Since Caitlyn 5.144.0: refused before sending to an older server.
+    /// Since Caitlyn 5.149.0: refused before sending to an older server.
     #[serde(rename = "purpose", skip_serializing_if = "Option::is_none")]
     pub purpose: Option<UploadPurpose>,
     /// How long the upload URL works: from a minute to an hour, and 15 minutes when absent. A short
     /// lifetime lets a test reach an expired upload within seconds.
     ///
-    /// Since Caitlyn 5.144.0: refused before sending to an older server.
+    /// Since Caitlyn 5.149.0: refused before sending to an older server.
     #[serde(rename = "expiresInSeconds", skip_serializing_if = "Option::is_none")]
     pub expires_in_seconds: Option<i32>,
 }
@@ -3383,7 +3383,7 @@ pub struct CreateUploadInput {
 static OP_CREATE_UPLOAD: rt::Operation = rt::Operation {
     name: "CreateUpload",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: Some("Idempotency-Key"),
@@ -3528,7 +3528,7 @@ pub struct DeleteAgentInput {
 static OP_DELETE_AGENT: rt::Operation = rt::Operation {
     name: "DeleteAgent",
     method: "DELETE",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -3650,7 +3650,7 @@ pub struct DeleteAgentVersionInput {
 static OP_DELETE_AGENT_VERSION: rt::Operation = rt::Operation {
     name: "DeleteAgentVersion",
     method: "DELETE",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -3786,7 +3786,7 @@ pub struct DeleteDocumentInput {
 static OP_DELETE_DOCUMENT: rt::Operation = rt::Operation {
     name: "DeleteDocument",
     method: "DELETE",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -3956,7 +3956,7 @@ pub struct DeleteDocumentVersionInput {
 static OP_DELETE_DOCUMENT_VERSION: rt::Operation = rt::Operation {
     name: "DeleteDocumentVersion",
     method: "DELETE",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -4101,7 +4101,7 @@ pub struct DeleteFieldInput {
 static OP_DELETE_FIELD: rt::Operation = rt::Operation {
     name: "DeleteField",
     method: "DELETE",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -4237,7 +4237,7 @@ pub struct DeleteFolderInput {
 static OP_DELETE_FOLDER: rt::Operation = rt::Operation {
     name: "DeleteFolder",
     method: "DELETE",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -4407,7 +4407,7 @@ pub struct DeleteKnowledgeBaseInput {
 static OP_DELETE_KNOWLEDGE_BASE: rt::Operation = rt::Operation {
     name: "DeleteKnowledgeBase",
     method: "DELETE",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -4563,7 +4563,7 @@ pub struct EnableLayoutAwareSearchInput {
 static OP_ENABLE_LAYOUT_AWARE_SEARCH: rt::Operation = rt::Operation {
     name: "EnableLayoutAwareSearch",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: false,
     sse: false,
     idempotency_header: None,
@@ -4756,7 +4756,7 @@ pub struct EstimateDocumentVersionInput {
 static OP_ESTIMATE_DOCUMENT_VERSION: rt::Operation = rt::Operation {
     name: "EstimateDocumentVersion",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -4967,7 +4967,7 @@ pub struct EstimateFillInFieldsInput {
 static OP_ESTIMATE_FILL_IN_FIELDS: rt::Operation = rt::Operation {
     name: "EstimateFillInFields",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -5095,7 +5095,7 @@ pub struct EstimateIngestionInput {
 static OP_ESTIMATE_INGESTION: rt::Operation = rt::Operation {
     name: "EstimateIngestion",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -5289,7 +5289,7 @@ pub struct EstimateLayoutAwareSearchInput {
 static OP_ESTIMATE_LAYOUT_AWARE_SEARCH: rt::Operation = rt::Operation {
     name: "EstimateLayoutAwareSearch",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -5419,7 +5419,7 @@ pub struct EstimateReprocessDocumentsInput {
 static OP_ESTIMATE_REPROCESS_DOCUMENTS: rt::Operation = rt::Operation {
     name: "EstimateReprocessDocuments",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -5560,7 +5560,7 @@ pub struct FillInFieldsInput {
 static OP_FILL_IN_FIELDS: rt::Operation = rt::Operation {
     name: "FillInFields",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: Some("Idempotency-Key"),
@@ -5749,7 +5749,7 @@ pub struct GetAccessInput {
 static OP_GET_ACCESS: rt::Operation = rt::Operation {
     name: "GetAccess",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -5878,7 +5878,7 @@ pub struct GetAgentInput {
 static OP_GET_AGENT: rt::Operation = rt::Operation {
     name: "GetAgent",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -5998,7 +5998,7 @@ pub struct GetAgentVersionInput {
 static OP_GET_AGENT_VERSION: rt::Operation = rt::Operation {
     name: "GetAgentVersion",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -6122,7 +6122,7 @@ pub struct GetCallerInput {}
 static OP_GET_CALLER: rt::Operation = rt::Operation {
     name: "GetCaller",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -6233,7 +6233,7 @@ pub struct GetConversationInput {
 static OP_GET_CONVERSATION: rt::Operation = rt::Operation {
     name: "GetConversation",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -6350,7 +6350,7 @@ pub struct GetDocumentInput {
 static OP_GET_DOCUMENT: rt::Operation = rt::Operation {
     name: "GetDocument",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -6489,7 +6489,7 @@ pub struct GetDocumentContentInput {
 static OP_GET_DOCUMENT_CONTENT: rt::Operation = rt::Operation {
     name: "GetDocumentContent",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -6641,7 +6641,7 @@ pub struct GetDocumentDownloadInput {
 static OP_GET_DOCUMENT_DOWNLOAD: rt::Operation = rt::Operation {
     name: "GetDocumentDownload",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -6791,7 +6791,7 @@ pub struct GetDocumentVersionInput {
 static OP_GET_DOCUMENT_VERSION: rt::Operation = rt::Operation {
     name: "GetDocumentVersion",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -6931,7 +6931,7 @@ pub struct GetFieldInput {
 static OP_GET_FIELD: rt::Operation = rt::Operation {
     name: "GetField",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -7065,7 +7065,7 @@ pub struct GetHistoryEntryInput {
 static OP_GET_HISTORY_ENTRY: rt::Operation = rt::Operation {
     name: "GetHistoryEntry",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -7196,7 +7196,7 @@ pub struct GetIngestionBatchInput {
 static OP_GET_INGESTION_BATCH: rt::Operation = rt::Operation {
     name: "GetIngestionBatch",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -7335,7 +7335,7 @@ pub struct GetIngestionBatchItemInput {
 static OP_GET_INGESTION_BATCH_ITEM: rt::Operation = rt::Operation {
     name: "GetIngestionBatchItem",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -7473,7 +7473,7 @@ pub struct GetKnowledgeBaseInput {
 static OP_GET_KNOWLEDGE_BASE: rt::Operation = rt::Operation {
     name: "GetKnowledgeBase",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -7593,7 +7593,7 @@ pub struct GetOperationInput {
 static OP_GET_OPERATION: rt::Operation = rt::Operation {
     name: "GetOperation",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -7719,7 +7719,7 @@ pub struct GetUploadInput {
 static OP_GET_UPLOAD: rt::Operation = rt::Operation {
     name: "GetUpload",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -7836,7 +7836,7 @@ pub struct ListAgentsInput {
 static OP_LIST_AGENTS: rt::Operation = rt::Operation {
     name: "ListAgents",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -7999,7 +7999,7 @@ pub struct ListAgentVersionsInput {
 static OP_LIST_AGENT_VERSIONS: rt::Operation = rt::Operation {
     name: "ListAgentVersions",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -8172,7 +8172,7 @@ pub struct ListConversationsInput {
 static OP_LIST_CONVERSATIONS: rt::Operation = rt::Operation {
     name: "ListConversations",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -8400,7 +8400,7 @@ pub struct ListDocumentsInput {
 static OP_LIST_DOCUMENTS: rt::Operation = rt::Operation {
     name: "ListDocuments",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -8673,7 +8673,7 @@ pub struct ListDocumentVersionsInput {
 static OP_LIST_DOCUMENT_VERSIONS: rt::Operation = rt::Operation {
     name: "ListDocumentVersions",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -8862,7 +8862,7 @@ pub struct ListFieldsInput {
 static OP_LIST_FIELDS: rt::Operation = rt::Operation {
     name: "ListFields",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -9046,7 +9046,7 @@ pub struct ListFoldersInput {
 static OP_LIST_FOLDERS: rt::Operation = rt::Operation {
     name: "ListFolders",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -9241,7 +9241,7 @@ pub struct ListGuardrailsInput {
 static OP_LIST_GUARDRAILS: rt::Operation = rt::Operation {
     name: "ListGuardrails",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -9408,7 +9408,7 @@ pub struct ListHistoryEntriesInput {
 static OP_LIST_HISTORY_ENTRIES: rt::Operation = rt::Operation {
     name: "ListHistoryEntries",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -9586,7 +9586,7 @@ pub struct ListIngestionBatchesInput {
 static OP_LIST_INGESTION_BATCHES: rt::Operation = rt::Operation {
     name: "ListIngestionBatches",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -9801,7 +9801,7 @@ pub struct ListIngestionBatchItemsInput {
 static OP_LIST_INGESTION_BATCH_ITEMS: rt::Operation = rt::Operation {
     name: "ListIngestionBatchItems",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -10026,7 +10026,7 @@ pub struct ListKnowledgeBasesInput {
 static OP_LIST_KNOWLEDGE_BASES: rt::Operation = rt::Operation {
     name: "ListKnowledgeBases",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -10197,7 +10197,7 @@ pub struct ListMemoryStoresInput {
 static OP_LIST_MEMORY_STORES: rt::Operation = rt::Operation {
     name: "ListMemoryStores",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -10364,7 +10364,7 @@ pub struct ListMessagesInput {
 static OP_LIST_MESSAGES: rt::Operation = rt::Operation {
     name: "ListMessages",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -10532,7 +10532,7 @@ pub struct ListModelsInput {
 static OP_LIST_MODELS: rt::Operation = rt::Operation {
     name: "ListModels",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -10715,7 +10715,7 @@ pub struct ListOperationsInput {
 static OP_LIST_OPERATIONS: rt::Operation = rt::Operation {
     name: "ListOperations",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -10919,7 +10919,7 @@ pub struct ListToolsInput {
 static OP_LIST_TOOLS: rt::Operation = rt::Operation {
     name: "ListTools",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -11077,7 +11077,7 @@ pub struct ListVoicesInput {
 static OP_LIST_VOICES: rt::Operation = rt::Operation {
     name: "ListVoices",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -11250,7 +11250,7 @@ pub struct PublishAgentVersionInput {
 static OP_PUBLISH_AGENT_VERSION: rt::Operation = rt::Operation {
     name: "PublishAgentVersion",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: Some("Idempotency-Key"),
@@ -11435,7 +11435,7 @@ pub struct PutAccessInput {
 static OP_PUT_ACCESS: rt::Operation = rt::Operation {
     name: "PutAccess",
     method: "PUT",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -11640,7 +11640,7 @@ pub struct ReplaceDraftVersionInput {
 static OP_REPLACE_DRAFT_VERSION: rt::Operation = rt::Operation {
     name: "ReplaceDraftVersion",
     method: "PUT",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -12204,7 +12204,7 @@ pub struct ReprocessDocumentsInput {
 static OP_REPROCESS_DOCUMENTS: rt::Operation = rt::Operation {
     name: "ReprocessDocuments",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: Some("Idempotency-Key"),
@@ -12409,7 +12409,7 @@ pub struct ResetDraftVersionInput {
 static OP_RESET_DRAFT_VERSION: rt::Operation = rt::Operation {
     name: "ResetDraftVersion",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: Some("Idempotency-Key"),
@@ -12542,7 +12542,7 @@ pub struct RetryDocumentInput {
 static OP_RETRY_DOCUMENT: rt::Operation = rt::Operation {
     name: "RetryDocument",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: false,
     sse: false,
     idempotency_header: None,
@@ -12741,7 +12741,7 @@ pub struct SaveDraftVersionInput {
 static OP_SAVE_DRAFT_VERSION: rt::Operation = rt::Operation {
     name: "SaveDraftVersion",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: Some("Idempotency-Key"),
@@ -12892,7 +12892,7 @@ pub struct SendMessageInput {
 static OP_SEND_MESSAGE: rt::Operation = rt::Operation {
     name: "SendMessage",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: false,
     sse: true,
     idempotency_header: None,
@@ -13069,7 +13069,7 @@ pub struct StartIngestionBatchInput {
 static OP_START_INGESTION_BATCH: rt::Operation = rt::Operation {
     name: "StartIngestionBatch",
     method: "POST",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: false,
     sse: false,
     idempotency_header: None,
@@ -13279,7 +13279,7 @@ pub struct UpdateAgentInput {
 static OP_UPDATE_AGENT: rt::Operation = rt::Operation {
     name: "UpdateAgent",
     method: "PATCH",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -13482,7 +13482,7 @@ pub struct UpdateDocumentInput {
 static OP_UPDATE_DOCUMENT: rt::Operation = rt::Operation {
     name: "UpdateDocument",
     method: "PATCH",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -13786,7 +13786,7 @@ pub struct UpdateDraftVersionInput {
 static OP_UPDATE_DRAFT_VERSION: rt::Operation = rt::Operation {
     name: "UpdateDraftVersion",
     method: "PATCH",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -14387,7 +14387,7 @@ pub struct UpdateFieldInput {
 static OP_UPDATE_FIELD: rt::Operation = rt::Operation {
     name: "UpdateField",
     method: "PATCH",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -14598,7 +14598,7 @@ pub struct UpdateFolderInput {
 static OP_UPDATE_FOLDER: rt::Operation = rt::Operation {
     name: "UpdateFolder",
     method: "PATCH",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -14817,7 +14817,7 @@ pub struct UpdateIngestionBatchInput {
 static OP_UPDATE_INGESTION_BATCH: rt::Operation = rt::Operation {
     name: "UpdateIngestionBatch",
     method: "PATCH",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -14975,7 +14975,7 @@ pub struct UpdateIngestionBatchItemInput {
 static OP_UPDATE_INGESTION_BATCH_ITEM: rt::Operation = rt::Operation {
     name: "UpdateIngestionBatchItem",
     method: "PATCH",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -15140,7 +15140,7 @@ pub struct UpdateKnowledgeBaseInput {
 static OP_UPDATE_KNOWLEDGE_BASE: rt::Operation = rt::Operation {
     name: "UpdateKnowledgeBase",
     method: "PATCH",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: false,
     idempotency_header: None,
@@ -15328,7 +15328,7 @@ pub struct WatchConversationInput {
 static OP_WATCH_CONVERSATION: rt::Operation = rt::Operation {
     name: "WatchConversation",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: true,
     idempotency_header: None,
@@ -15476,7 +15476,7 @@ pub struct WatchKnowledgeBaseInput {
 static OP_WATCH_KNOWLEDGE_BASE: rt::Operation = rt::Operation {
     name: "WatchKnowledgeBase",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: true,
     idempotency_header: None,
@@ -15650,7 +15650,7 @@ pub struct WatchOperationInput {
 static OP_WATCH_OPERATION: rt::Operation = rt::Operation {
     name: "WatchOperation",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: true,
     idempotency_header: None,
@@ -15813,7 +15813,7 @@ pub struct WatchWorkspaceEventsInput {
 static OP_WATCH_WORKSPACE_EVENTS: rt::Operation = rt::Operation {
     name: "WatchWorkspaceEvents",
     method: "GET",
-    since: Some("5.144.0"),
+    since: Some("5.149.0"),
     retry_safe: true,
     sse: true,
     idempotency_header: None,

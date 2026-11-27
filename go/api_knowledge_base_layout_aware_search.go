@@ -33,7 +33,7 @@ func newKnowledgeBaseLayoutAwareSearch(c *Client, knowledgeBaseID string) *Knowl
 //
 // It returns the response, as Result, with Wait, which follows the work the call started.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *KnowledgeBaseLayoutAwareSearch) Enable(ctx context.Context, opts ...CallOption) (*EnableLayoutAwareSearchStarted, error) {
 	p := &enableLayoutAwareSearchParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -76,7 +76,7 @@ func (r *EnableLayoutAwareSearchStarted) Wait(ctx context.Context, opts ...WaitO
 //
 // It takes Enable's arguments and starts nothing.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *KnowledgeBaseLayoutAwareSearch) EstimateEnable(ctx context.Context, opts ...CallOption) (*EstimateLayoutAwareSearchResult, error) {
 	p := &estimateLayoutAwareSearchParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -91,7 +91,7 @@ type enableLayoutAwareSearchParams struct {
 var opEnableLayoutAwareSearch = &core.Operation{
 	Name:      "EnableLayoutAwareSearch",
 	Method:    "POST",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
 }
@@ -136,7 +136,7 @@ type estimateLayoutAwareSearchParams struct {
 var opEstimateLayoutAwareSearch = &core.Operation{
 	Name:      "EstimateLayoutAwareSearch",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,

@@ -32,7 +32,7 @@ func newOperations(c *Client) *Operations {
 // It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
 // one.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *Operations) List(ctx context.Context, knowledgeBaseID string, in *ListOperationsInput, opts ...CallOption) iter.Seq2[Operation, error] {
 	return core.Items(s.ListPages(ctx, knowledgeBaseID, in, opts...), func(p *ListOperationsPage) []Operation { return p.Items })
 }
@@ -95,7 +95,7 @@ type listOperationsParams struct {
 var opListOperations = &core.Operation{
 	Name:      "ListOperations",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{

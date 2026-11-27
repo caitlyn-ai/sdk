@@ -35,7 +35,7 @@ func newFolderAccess(c *Client, knowledgeBaseID, folderPath string) *FolderAcces
 // adds is the access on its own, with the ETag that SetAccess's `If-Match` takes, and the root
 // folder's readers; reading it needs the files permissions list permission.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *FolderAccess) Get(ctx context.Context, opts ...CallOption) (*Access, error) {
 	p := &getAccessParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -70,7 +70,7 @@ func (s *FolderAccess) Get(ctx context.Context, opts ...CallOption) (*Access, er
 // it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
 // yourself: no helper fills it in.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *FolderAccess) Set(ctx context.Context, in *PutAccessInput, opts ...CallOption) (*Access, error) {
 	p := &putAccessParams{}
 	if in != nil {

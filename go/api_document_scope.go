@@ -49,7 +49,7 @@ func (s *DocumentScope) Version(version string) *DocumentVersionScope {
 // exist is. `processing` says how far the work on it has got; follow it with the scope's `watch()`, or
 // `wait()` until it is done.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *DocumentScope) Get(ctx context.Context, opts ...CallOption) (*Document, error) {
 	p := &getDocumentParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -71,7 +71,7 @@ func (s *DocumentScope) Get(ctx context.Context, opts ...CallOption) (*Document,
 // with an input error before anything is sent. WithIfMatch("*") (any version) is sent only when you
 // pass it yourself: no helper fills it in.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *DocumentScope) Update(ctx context.Context, in *UpdateDocumentInput, opts ...CallOption) (*UpdateDocumentStarted, error) {
 	p := &updateDocumentParams{}
 	if in != nil {
@@ -135,7 +135,7 @@ func (r *UpdateDocumentStarted) Wait(ctx context.Context, opts ...WaitOption) (*
 // It returns the response, as Result, with Wait, which follows the work the call started until the
 // thing is gone.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *DocumentScope) Delete(ctx context.Context, opts ...CallOption) (*DeleteDocumentStarted, error) {
 	p := &deleteDocumentParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -184,7 +184,7 @@ func (r *DeleteDocumentStarted) Wait(ctx context.Context, opts ...WaitOption) er
 //
 // It returns the response, as Result, with Wait, which follows the work the call started.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *DocumentScope) CancelProcessing(ctx context.Context, opts ...CallOption) (*CancelDocumentProcessingStarted, error) {
 	p := &cancelDocumentProcessingParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -237,7 +237,7 @@ func (r *CancelDocumentProcessingStarted) Wait(ctx context.Context, opts ...Wait
 // it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
 // yourself: no helper fills it in.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *DocumentScope) Replace(ctx context.Context, file File, in *CreateDocumentVersionInput, opts ...CallOption) (*CreateDocumentVersionStarted, error) {
 	p := &createDocumentVersionParams{}
 	if in != nil {
@@ -293,7 +293,7 @@ func (r *CreateDocumentVersionStarted) Wait(ctx context.Context, opts ...WaitOpt
 // It takes Replace's file and its own input, and starts nothing: of the file it sends only a
 // description (name, content type, size and the hints WithHints gave), uploading nothing.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *DocumentScope) EstimateReplace(ctx context.Context, file File, in *EstimateDocumentVersionInput, opts ...CallOption) (*EstimateDocumentVersionResult, error) {
 	p := &estimateDocumentVersionParams{}
 	if in != nil {
@@ -316,7 +316,7 @@ func (s *DocumentScope) EstimateReplace(ctx context.Context, file File, in *Esti
 // GetDocumentContent it never redirects, so a browser script can read the address. The SDKs'
 // `doc.download()` calls it.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *DocumentScope) Download(ctx context.Context, in *GetDocumentDownloadInput, opts ...CallOption) (*DocumentDownload, error) {
 	p := &getDocumentDownloadParams{}
 	if in != nil {
@@ -334,7 +334,7 @@ func (s *DocumentScope) Download(ctx context.Context, in *GetDocumentDownloadInp
 //
 // It returns the response, as Result, with Wait, which follows the work the call started.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *DocumentScope) Retry(ctx context.Context, opts ...CallOption) (*RetryDocumentStarted, error) {
 	p := &retryDocumentParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -406,7 +406,7 @@ type cancelDocumentProcessingParams struct {
 var opCancelDocumentProcessing = &core.Operation{
 	Name:      "CancelDocumentProcessing",
 	Method:    "POST",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -466,7 +466,7 @@ type createDocumentVersionParams struct {
 var opCreateDocumentVersion = &core.Operation{
 	Name:              "CreateDocumentVersion",
 	Method:            "POST",
-	Since:             "5.144.0",
+	Since:             "5.149.0",
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},
@@ -520,7 +520,7 @@ type deleteDocumentParams struct {
 var opDeleteDocument = &core.Operation{
 	Name:      "DeleteDocument",
 	Method:    "DELETE",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -579,7 +579,7 @@ type estimateDocumentVersionParams struct {
 var opEstimateDocumentVersion = &core.Operation{
 	Name:      "EstimateDocumentVersion",
 	Method:    "POST",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{
@@ -641,7 +641,7 @@ type getDocumentParams struct {
 var opGetDocument = &core.Operation{
 	Name:      "GetDocument",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -700,7 +700,7 @@ type getDocumentDownloadParams struct {
 var opGetDocumentDownload = &core.Operation{
 	Name:      "GetDocumentDownload",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -752,7 +752,7 @@ type retryDocumentParams struct {
 var opRetryDocument = &core.Operation{
 	Name:      "RetryDocument",
 	Method:    "POST",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
 }
@@ -834,7 +834,7 @@ type updateDocumentParams struct {
 var opUpdateDocument = &core.Operation{
 	Name:            "UpdateDocument",
 	Method:          "PATCH",
-	Since:           "5.144.0",
+	Since:           "5.149.0",
 	RetrySafe:       true,
 	IfMatchRequired: true,
 	Retryable:       []int{503, 429},

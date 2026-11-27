@@ -75,7 +75,7 @@ func (c *Client) KnowledgeBase(knowledgeBaseID string) *KnowledgeBaseScope {
 // credential before doing anything else. It only describes the credential that made the request;
 // it never reads another person's or client's record.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (c *Client) Me(ctx context.Context, opts ...CallOption) (*Caller, error) {
 	p := &getCallerParams{}
 	return c.callGetCaller(ctx, p, opts)
@@ -88,7 +88,7 @@ type getCallerParams struct {
 var opGetCaller = &core.Operation{
 	Name:      "GetCaller",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,

@@ -33,7 +33,7 @@ func (s *UploadScope) ID() string { return s.uploadID }
 // Use it to check that the bytes arrived before passing the upload's `id` to the operation that
 // uses it. Only the person or client that reserved the upload can read it; anyone else gets 404.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *UploadScope) Get(ctx context.Context, opts ...CallOption) (*Upload, error) {
 	p := &getUploadParams{}
 	p.UploadID = s.uploadID
@@ -48,7 +48,7 @@ type getUploadParams struct {
 var opGetUpload = &core.Operation{
 	Name:      "GetUpload",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,

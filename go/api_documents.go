@@ -38,7 +38,7 @@ func newDocuments(c *Client, knowledgeBaseID string) *Documents {
 // It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
 // one.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *Documents) List(ctx context.Context, in *ListDocumentsInput, opts ...CallOption) iter.Seq2[Document, error] {
 	return core.Items(s.ListPages(ctx, in, opts...), func(p *ListDocumentsPage) []Document { return p.Items })
 }
@@ -82,7 +82,7 @@ func (s *Documents) ListPage(ctx context.Context, in *ListDocumentsInput, opts .
 // It returns the new document's scope, with the response as Result. Wait follows the work the call
 // started.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *Documents) Create(ctx context.Context, file File, in *CreateDocumentInput, opts ...CallOption) (*CreatedDocument, error) {
 	p := &createDocumentParams{}
 	if in != nil {
@@ -114,7 +114,7 @@ func (s *Documents) Create(ctx context.Context, file File, in *CreateDocumentInp
 // It takes Create's file and its own input, and starts nothing: of the file it sends only a
 // description (name, content type, size and the hints WithHints gave), uploading nothing.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *Documents) EstimateCreate(ctx context.Context, file File, opts ...CallOption) (*EstimateIngestionResult, error) {
 	p := &estimateIngestionParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -138,7 +138,7 @@ func (s *Documents) EstimateCreate(ctx context.Context, file File, opts ...CallO
 // whole call. Safe to repeat: a repeat gives the same results, apart from `NOT_FOUND` for documents
 // that finished deleting in between.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *Documents) DeleteMany(ctx context.Context, in *BatchDeleteDocumentsInput, opts ...CallOption) (*BatchDeleteDocumentsResult, error) {
 	p := &batchDeleteDocumentsParams{}
 	if in != nil {
@@ -158,7 +158,7 @@ func (s *Documents) DeleteMany(ctx context.Context, in *BatchDeleteDocumentsInpu
 //
 // It returns the response, as Result, with Wait, which follows the work the call started.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *Documents) Reprocess(ctx context.Context, in *ReprocessDocumentsInput, opts ...CallOption) (*ReprocessDocumentsStarted, error) {
 	p := &reprocessDocumentsParams{}
 	if in != nil {
@@ -206,7 +206,7 @@ func (r *ReprocessDocumentsStarted) Wait(ctx context.Context, opts ...WaitOption
 //
 // It takes Reprocess's arguments and starts nothing.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *Documents) EstimateReprocess(ctx context.Context, in *ReprocessDocumentsInput, opts ...CallOption) (*EstimateReprocessDocumentsResult, error) {
 	p := &estimateReprocessDocumentsParams{}
 	if in != nil {
@@ -233,7 +233,7 @@ type batchDeleteDocumentsParams struct {
 var opBatchDeleteDocuments = &core.Operation{
 	Name:      "BatchDeleteDocuments",
 	Method:    "POST",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -315,7 +315,7 @@ type createDocumentParams struct {
 var opCreateDocument = &core.Operation{
 	Name:              "CreateDocument",
 	Method:            "POST",
-	Since:             "5.144.0",
+	Since:             "5.149.0",
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},
@@ -367,7 +367,7 @@ type estimateIngestionParams struct {
 var opEstimateIngestion = &core.Operation{
 	Name:      "EstimateIngestion",
 	Method:    "POST",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{
@@ -427,7 +427,7 @@ type estimateReprocessDocumentsParams struct {
 var opEstimateReprocessDocuments = &core.Operation{
 	Name:      "EstimateReprocessDocuments",
 	Method:    "POST",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -533,7 +533,7 @@ type listDocumentsParams struct {
 var opListDocuments = &core.Operation{
 	Name:      "ListDocuments",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{
@@ -650,7 +650,7 @@ type reprocessDocumentsParams struct {
 var opReprocessDocuments = &core.Operation{
 	Name:              "ReprocessDocuments",
 	Method:            "POST",
-	Since:             "5.144.0",
+	Since:             "5.149.0",
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},

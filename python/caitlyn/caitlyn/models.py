@@ -2254,7 +2254,7 @@ class DocumentCounts(CaitlynModel):
     failed: int
     """Documents whose latest attempt failed."""
     out_of_date: int | None = None
-    """Documents processed in an older way than the newest, which `ReprocessDocuments` would update. Added in Caitlyn 5.144.0."""
+    """Documents processed in an older way than the newest, which `ReprocessDocuments` would update. Added in Caitlyn 5.149.0."""
 
 
 class EngineInput(OpenEnum):
@@ -2526,33 +2526,33 @@ class Operation(CaitlynModel):
     status: OperationStatus
     """Where the work is."""
     target: OperationTarget | None = None
-    """What the work is on. Added in Caitlyn 5.144.0."""
+    """What the work is on. Added in Caitlyn 5.149.0."""
     progress: OperationProgress | None = None
-    """How far the work has got, where it can say. Added in Caitlyn 5.144.0."""
+    """How far the work has got, where it can say. Added in Caitlyn 5.149.0."""
     percent: int | None = None
     """How far the work has got, from 0 to 100, weighted by how long each part takes; never moves
     back.
 
-    Added in Caitlyn 5.144.0.
+    Added in Caitlyn 5.149.0.
     """
     eta: Eta | None = None
-    """How long is left, once the work has run long enough to say. Added in Caitlyn 5.144.0."""
+    """How long is left, once the work has run long enough to say. Added in Caitlyn 5.149.0."""
     cost_so_far: Cost | None = None
-    """What the work has cost so far. Present only for callers who may see cost. Added in Caitlyn 5.144.0."""
+    """What the work has cost so far. Present only for callers who may see cost. Added in Caitlyn 5.149.0."""
     created_at: datetime
     """When the work was requested."""
     started_at: datetime | None = None
-    """When the work started. Added in Caitlyn 5.144.0."""
+    """When the work started. Added in Caitlyn 5.149.0."""
     updated_at: datetime | None = None
-    """When the Operation last changed. Added in Caitlyn 5.144.0."""
+    """When the Operation last changed. Added in Caitlyn 5.149.0."""
     ended_at: datetime | None = None
-    """When the work ended. Present once `status` is final. Added in Caitlyn 5.144.0."""
+    """When the work ended. Present once `status` is final. Added in Caitlyn 5.149.0."""
     created_by: Actor | None = None
-    """Who asked for the work. Added in Caitlyn 5.144.0."""
+    """Who asked for the work. Added in Caitlyn 5.149.0."""
     error: OperationError | None = None
-    """Why the work failed. Present only when `status` is `failed`. Added in Caitlyn 5.144.0."""
+    """Why the work failed. Present only when `status` is `failed`. Added in Caitlyn 5.149.0."""
     partial_failures: list[PartialFailure] | None = None
-    """Parts of the work that did not complete, at most the first 100. They never fail the whole. Added in Caitlyn 5.144.0."""
+    """Parts of the work that did not complete, at most the first 100. They never fail the whole. Added in Caitlyn 5.149.0."""
 
 
 class DeleteKnowledgeBaseResult(CaitlynResult):
@@ -2756,56 +2756,56 @@ class Document(CaitlynModel):
     sha256: str | None = None
     """The base64-encoded SHA-256 of the current bytes."""
     version: int | None = None
-    """The current version's number. Absent until the first version is indexed. Added in Caitlyn 5.144.0."""
+    """The current version's number. Absent until the first version is indexed. Added in Caitlyn 5.149.0."""
     version_count: int | None = None
-    """How many versions the document has. Added in Caitlyn 5.144.0."""
+    """How many versions the document has. Added in Caitlyn 5.149.0."""
     latest_version: LatestVersion | None = None
     """The newest version, when it is not the current one: uploading, processing or failed. Shown only
     to callers who may add versions.
 
-    Added in Caitlyn 5.144.0.
+    Added in Caitlyn 5.149.0.
     """
     superseded: bool | None = None
     """True when a newer version than the current one exists. Shown only to callers who may add
     versions.
 
-    Added in Caitlyn 5.144.0.
+    Added in Caitlyn 5.149.0.
     """
     source_url: str | None = None
-    """The address a citation of this document links to. Added in Caitlyn 5.144.0."""
+    """The address a citation of this document links to. Added in Caitlyn 5.149.0."""
     external_id: str | None = None
-    """The caller's own key for the document, unique within the knowledge base. Added in Caitlyn 5.144.0."""
+    """The caller's own key for the document, unique within the knowledge base. Added in Caitlyn 5.149.0."""
     metadata: dict[str, JsonValue] | None = None
     """Values for the metadata fields the knowledge base defines, including `title`, `summary`,
     `keywords`, `author` and `publishedDate`.
 
-    Added in Caitlyn 5.144.0.
+    Added in Caitlyn 5.149.0.
     """
     extra_metadata: dict[str, JsonValue] | None = None
     """Keys the knowledge base does not define. Stored and returned, but never searched on or given to
     an agent.
 
-    Added in Caitlyn 5.144.0.
+    Added in Caitlyn 5.149.0.
     """
     readers: Readers | None = None
-    """Who may read the document. Added in Caitlyn 5.144.0."""
+    """Who may read the document. Added in Caitlyn 5.149.0."""
     inherited_from: str | None = None
-    """When `readers` is `inherit`: the folder whose readers apply. Added in Caitlyn 5.144.0."""
+    """When `readers` is `inherit`: the folder whose readers apply. Added in Caitlyn 5.149.0."""
     out_of_date: bool | None = None
     """True when a newer way of processing documents is available, and processing the document again
     would use it.
 
-    Added in Caitlyn 5.144.0.
+    Added in Caitlyn 5.149.0.
     """
     page_count: int | None = None
-    """The number of pages, for a paged document. Added in Caitlyn 5.144.0."""
+    """The number of pages, for a paged document. Added in Caitlyn 5.149.0."""
     duration_seconds: float | None = None
-    """How long it plays, in seconds, for audio and video. Added in Caitlyn 5.144.0."""
+    """How long it plays, in seconds, for audio and video. Added in Caitlyn 5.149.0."""
     processing: DocumentProcessing | None = None
     """The work running on the document, while there is some: what kind, which stage, how far it has
     got and how long is left. Absent when nothing is running.
 
-    Added in Caitlyn 5.144.0.
+    Added in Caitlyn 5.149.0.
     """
     created_at: datetime
     """When the document was created."""
@@ -2819,7 +2819,7 @@ class Document(CaitlynModel):
     """Why the document could not be made searchable. Present only when `status` is `failed`; a
     document that is searchable with gaps lists them in `partialFailures` instead.
 
-    Added in Caitlyn 5.144.0.
+    Added in Caitlyn 5.149.0.
     """
     etag: str
     """The document's ETag; send it as `If-Match` to change it."""
@@ -3200,33 +3200,33 @@ class Job(CaitlynModel):
     status: OperationStatus
     """Where the work is."""
     target: OperationTarget | None = None
-    """What the work is on. Added in Caitlyn 5.144.0."""
+    """What the work is on. Added in Caitlyn 5.149.0."""
     progress: OperationProgress | None = None
-    """How far the work has got, where it can say. Added in Caitlyn 5.144.0."""
+    """How far the work has got, where it can say. Added in Caitlyn 5.149.0."""
     percent: int | None = None
     """How far the work has got, from 0 to 100, weighted by how long each part takes; never moves
     back.
 
-    Added in Caitlyn 5.144.0.
+    Added in Caitlyn 5.149.0.
     """
     eta: Eta | None = None
-    """How long is left, once the work has run long enough to say. Added in Caitlyn 5.144.0."""
+    """How long is left, once the work has run long enough to say. Added in Caitlyn 5.149.0."""
     cost_so_far: Cost | None = None
-    """What the work has cost so far. Present only for callers who may see cost. Added in Caitlyn 5.144.0."""
+    """What the work has cost so far. Present only for callers who may see cost. Added in Caitlyn 5.149.0."""
     created_at: datetime
     """When the work was requested."""
     started_at: datetime | None = None
-    """When the work started. Added in Caitlyn 5.144.0."""
+    """When the work started. Added in Caitlyn 5.149.0."""
     updated_at: datetime | None = None
-    """When the Operation last changed. Added in Caitlyn 5.144.0."""
+    """When the Operation last changed. Added in Caitlyn 5.149.0."""
     ended_at: datetime | None = None
-    """When the work ended. Present once `status` is final. Added in Caitlyn 5.144.0."""
+    """When the work ended. Present once `status` is final. Added in Caitlyn 5.149.0."""
     created_by: Actor | None = None
-    """Who asked for the work. Added in Caitlyn 5.144.0."""
+    """Who asked for the work. Added in Caitlyn 5.149.0."""
     error: OperationError | None = None
-    """Why the work failed. Present only when `status` is `failed`. Added in Caitlyn 5.144.0."""
+    """Why the work failed. Present only when `status` is `failed`. Added in Caitlyn 5.149.0."""
     partial_failures: list[PartialFailure] | None = None
-    """Parts of the work that did not complete, at most the first 100. They never fail the whole. Added in Caitlyn 5.144.0."""
+    """Parts of the work that did not complete, at most the first 100. They never fail the whole. Added in Caitlyn 5.149.0."""
 
 
 class ReprocessDocumentsResult(CaitlynResult):
@@ -4007,10 +4007,10 @@ class IngestionBatch(CaitlynModel):
     """How far the batch has got, from 0 to 100: its documents' progress, weighted by how long each
     is expected to take. Never moves back.
 
-    Added in Caitlyn 5.144.0.
+    Added in Caitlyn 5.149.0.
     """
     eta: Eta | None = None
-    """How long is left: the longest of its documents' times left. Added in Caitlyn 5.144.0."""
+    """How long is left: the longest of its documents' times left. Added in Caitlyn 5.149.0."""
     plan_expires_at: datetime | None = None
     """When the plan goes stale, 5 minutes after planning. A stale plan does not end the batch:
     StartIngestionBatch on a stale plan plans again first.
@@ -4023,7 +4023,7 @@ class IngestionBatch(CaitlynModel):
     time to see which items failed. Renewing the upload policy moves it later. Absent when no item
     is awaiting upload.
 
-    Added in Caitlyn 5.144.0.
+    Added in Caitlyn 5.149.0.
     """
     created_by: Actor | None = None
     """Who made the batch."""
@@ -4039,13 +4039,13 @@ class IngestionBatch(CaitlynModel):
     """Why the batch failed, as a stable code and a fixed message. Present only when `status` is
     `failed`.
 
-    Added in Caitlyn 5.144.0.
+    Added in Caitlyn 5.149.0.
     """
     upload_window_seconds: int | None = None
     """How long each upload policy the batch hands out lasts, renewals included, as set when the
     batch was made.
 
-    Added in Caitlyn 5.144.0.
+    Added in Caitlyn 5.149.0.
     """
     etag: str
     """The batch's ETag."""
@@ -4530,7 +4530,7 @@ class UploadPurpose(CaitlynModel):
     checked when the upload is reserved. Use the upload as `avatar.mark.pictureUploadId` on
     CreateAgent or UpdateAgent.
 
-    Added in Caitlyn 5.144.0.
+    Added in Caitlyn 5.149.0.
     """
     conversation_id: str | None = None
     """The conversation the file will be attached to. The caller must be able to send to it (its

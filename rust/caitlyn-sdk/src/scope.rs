@@ -117,7 +117,7 @@ impl Client {
     /// (400); another status the API models has its own variant too ([`Error::NotFound`] for 404), and any
     /// other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn me(&self) -> GetCallerRequest {
         let mut input = GetCallerInput::default();
         GetCallerRequest::new(self.core.clone(), input, vec![])
@@ -234,7 +234,7 @@ impl Agents {
     /// (400); another status the API models has its own variant too ([`Error::NotFound`] for 404), and any
     /// other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn list(&self) -> ListAgentsRequest {
         let mut input = ListAgentsInput::default();
         ListAgentsRequest::new(self.core.clone(), input, vec![])
@@ -254,7 +254,7 @@ impl Agents {
     /// models has its own variant too ([`Error::NotFound`] for 404), and any other status is
     /// [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn create(&self, name: impl Into<String>) -> CreateAgentRequest {
         let mut input = CreateAgentInput::default();
         input.name = name.into();
@@ -286,7 +286,7 @@ impl AgentsOptions {
     /// (400); another status the API models has its own variant too ([`Error::NotFound`] for 404), and any
     /// other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn guardrails(&self) -> ListGuardrailsRequest {
         let mut input = ListGuardrailsInput::default();
         ListGuardrailsRequest::new(self.core.clone(), input, vec![])
@@ -301,7 +301,7 @@ impl AgentsOptions {
     /// (400); another status the API models has its own variant too ([`Error::NotFound`] for 404), and any
     /// other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn memory_stores(&self) -> ListMemoryStoresRequest {
         let mut input = ListMemoryStoresInput::default();
         ListMemoryStoresRequest::new(self.core.clone(), input, vec![])
@@ -319,7 +319,7 @@ impl AgentsOptions {
     /// (400); another status the API models has its own variant too ([`Error::NotFound`] for 404), and any
     /// other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn models(&self) -> ListModelsRequest {
         let mut input = ListModelsInput::default();
         ListModelsRequest::new(self.core.clone(), input, vec![])
@@ -334,7 +334,7 @@ impl AgentsOptions {
     /// (400); another status the API models has its own variant too ([`Error::NotFound`] for 404), and any
     /// other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn tools(&self) -> ListToolsRequest {
         let mut input = ListToolsInput::default();
         ListToolsRequest::new(self.core.clone(), input, vec![])
@@ -349,7 +349,7 @@ impl AgentsOptions {
     /// (400); another status the API models has its own variant too ([`Error::NotFound`] for 404), and any
     /// other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn voices(&self) -> ListVoicesRequest {
         let mut input = ListVoicesInput::default();
         ListVoicesRequest::new(self.core.clone(), input, vec![])
@@ -428,7 +428,7 @@ impl AgentScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn get(&self) -> GetAgentRequest {
         let mut input = GetAgentInput::default();
         input.agent_id = self.agent_id.clone();
@@ -447,7 +447,7 @@ impl AgentScope {
     /// [`Error::PreconditionRequired`] (428); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn update(&self) -> UpdateAgentRequest {
         let mut input = UpdateAgentInput::default();
         input.agent_id = self.agent_id.clone();
@@ -464,7 +464,7 @@ impl AgentScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn delete(&self) -> DeleteAgentRequest {
         let mut input = DeleteAgentInput::default();
         input.agent_id = self.agent_id.clone();
@@ -499,7 +499,7 @@ impl AgentConversations {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn list(&self) -> ListConversationsRequest {
         let mut input = ListConversationsInput::default();
         input.agent_id = self.agent_id.clone();
@@ -553,7 +553,7 @@ impl AgentDraftScope {
     /// (400), [`Error::NotFound`] (404), [`Error::PreconditionFailed`] (412); another status the API models
     /// has its own variant too ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn replace(&self) -> ReplaceDraftVersionRequest {
         let mut input = ReplaceDraftVersionInput::default();
         input.agent_id = self.agent_id.clone();
@@ -573,7 +573,7 @@ impl AgentDraftScope {
     /// models has its own variant too ([`Error::NotFound`] for 404), and any other status is
     /// [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn reset(&self, from: impl Into<String>) -> ResetDraftVersionRequest {
         let mut input = ResetDraftVersionInput::default();
         input.agent_id = self.agent_id.clone();
@@ -593,7 +593,7 @@ impl AgentDraftScope {
     /// [`Error::UnprocessableContent`] (422); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn save(&self, name: impl Into<String>) -> SaveDraftVersionRequest {
         let mut input = SaveDraftVersionInput::default();
         input.agent_id = self.agent_id.clone();
@@ -614,7 +614,7 @@ impl AgentDraftScope {
     /// (400), [`Error::NotFound`] (404), [`Error::PreconditionFailed`] (412); another status the API models
     /// has its own variant too ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn update(&self) -> UpdateDraftVersionRequest {
         let mut input = UpdateDraftVersionInput::default();
         input.agent_id = self.agent_id.clone();
@@ -634,7 +634,7 @@ impl AgentDraftScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn get(&self) -> GetAgentVersionRequest {
         let mut input = GetAgentVersionInput::default();
         input.agent_id = self.agent_id.clone();
@@ -654,7 +654,7 @@ impl AgentDraftScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn compare(&self, with_version: impl Into<String>) -> CompareAgentVersionsRequest {
         let mut input = CompareAgentVersionsInput::default();
         input.agent_id = self.agent_id.clone();
@@ -683,7 +683,7 @@ impl AgentDraftScope {
     /// [`Error::UnprocessableContent`] (422); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn publish(&self) -> PublishAgentVersionRequest {
         let mut input = PublishAgentVersionInput::default();
         input.agent_id = self.agent_id.clone();
@@ -725,7 +725,7 @@ impl AgentDraftConversations {
     /// another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other
     /// status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn create(&self) -> CreateConversationRequest {
         let mut input = CreateConversationInput::default();
         input.agent_id = self.agent_id.clone();
@@ -762,7 +762,7 @@ impl AgentHistory {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn list(&self) -> ListHistoryEntriesRequest {
         let mut input = ListHistoryEntriesInput::default();
         input.agent_id = self.agent_id.clone();
@@ -818,7 +818,7 @@ impl HistoryEntryScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn get(&self) -> GetHistoryEntryRequest {
         let mut input = GetHistoryEntryInput::default();
         input.agent_id = self.agent_id.clone();
@@ -856,7 +856,7 @@ impl AgentVersions {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn list(&self) -> ListAgentVersionsRequest {
         let mut input = ListAgentVersionsInput::default();
         input.agent_id = self.agent_id.clone();
@@ -917,7 +917,7 @@ impl AgentVersionScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn get(&self) -> GetAgentVersionRequest {
         let mut input = GetAgentVersionInput::default();
         input.agent_id = self.agent_id.clone();
@@ -938,7 +938,7 @@ impl AgentVersionScope {
     /// (400), [`Error::Conflict`] (409), [`Error::NotFound`] (404); another status the API models has its
     /// own variant too ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn delete(&self) -> DeleteAgentVersionRequest {
         let mut input = DeleteAgentVersionInput::default();
         input.agent_id = self.agent_id.clone();
@@ -958,7 +958,7 @@ impl AgentVersionScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn compare(&self, with_version: impl Into<String>) -> CompareAgentVersionsRequest {
         let mut input = CompareAgentVersionsInput::default();
         input.agent_id = self.agent_id.clone();
@@ -987,7 +987,7 @@ impl AgentVersionScope {
     /// [`Error::UnprocessableContent`] (422); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn publish(&self) -> PublishAgentVersionRequest {
         let mut input = PublishAgentVersionInput::default();
         input.agent_id = self.agent_id.clone();
@@ -1029,7 +1029,7 @@ impl AgentVersionConversations {
     /// another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other
     /// status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn create(&self) -> CreateConversationRequest {
         let mut input = CreateConversationInput::default();
         input.agent_id = self.agent_id.clone();
@@ -1085,7 +1085,7 @@ impl AgentLiveScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn get(&self) -> GetAgentVersionRequest {
         let mut input = GetAgentVersionInput::default();
         input.agent_id = self.agent_id.clone();
@@ -1105,7 +1105,7 @@ impl AgentLiveScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn compare(&self, with_version: impl Into<String>) -> CompareAgentVersionsRequest {
         let mut input = CompareAgentVersionsInput::default();
         input.agent_id = self.agent_id.clone();
@@ -1148,7 +1148,7 @@ impl AgentLiveConversations {
     /// another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other
     /// status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn create(&self) -> CreateConversationRequest {
         let mut input = CreateConversationInput::default();
         input.agent_id = self.agent_id.clone();
@@ -1205,7 +1205,7 @@ impl ConversationScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn get(&self) -> GetConversationRequest {
         let mut input = GetConversationInput::default();
         input.conversation_id = self.conversation_id.clone();
@@ -1236,7 +1236,7 @@ impl ConversationScope {
     /// another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other
     /// status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn send(&self, message: impl Into<String>) -> SendMessageRequest {
         let mut input = SendMessageInput::default();
         input.conversation_id = self.conversation_id.clone();
@@ -1265,7 +1265,7 @@ impl ConversationScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn watch(&self) -> WatchConversationRequest {
         let mut input = WatchConversationInput::default();
         input.conversation_id = self.conversation_id.clone();
@@ -1300,7 +1300,7 @@ impl ConversationMessages {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn list(&self) -> ListMessagesRequest {
         let mut input = ListMessagesInput::default();
         input.conversation_id = self.conversation_id.clone();
@@ -1380,7 +1380,7 @@ impl EventsScope {
     /// (400); another status the API models has its own variant too ([`Error::NotFound`] for 404), and any
     /// other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn watch(&self) -> WatchWorkspaceEventsRequest {
         let mut input = WatchWorkspaceEventsInput::default();
         WatchWorkspaceEventsRequest::new(self.core.clone(), input, vec![])
@@ -1412,7 +1412,7 @@ impl KnowledgeBases {
     /// (400); another status the API models has its own variant too ([`Error::NotFound`] for 404), and any
     /// other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn list(&self) -> ListKnowledgeBasesRequest {
         let mut input = ListKnowledgeBasesInput::default();
         ListKnowledgeBasesRequest::new(self.core.clone(), input, vec![])
@@ -1432,7 +1432,7 @@ impl KnowledgeBases {
     /// models has its own variant too ([`Error::NotFound`] for 404), and any other status is
     /// [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn create(&self, name: impl Into<String>) -> CreateKnowledgeBaseRequest {
         let mut input = CreateKnowledgeBaseInput::default();
         input.name = name.into();
@@ -1523,7 +1523,7 @@ impl KnowledgeBaseScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn get(&self) -> GetKnowledgeBaseRequest {
         let mut input = GetKnowledgeBaseInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -1542,7 +1542,7 @@ impl KnowledgeBaseScope {
     /// [`Error::PreconditionRequired`] (428); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn update(&self) -> UpdateKnowledgeBaseRequest {
         let mut input = UpdateKnowledgeBaseInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -1562,7 +1562,7 @@ impl KnowledgeBaseScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn delete(&self) -> DeleteKnowledgeBaseRequest {
         let mut input = DeleteKnowledgeBaseInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -1590,7 +1590,7 @@ impl KnowledgeBaseScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn watch(&self) -> WatchKnowledgeBaseRequest {
         let mut input = WatchKnowledgeBaseInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -1714,7 +1714,7 @@ impl KnowledgeBaseLayoutAwareSearch {
     /// (400), [`Error::Conflict`] (409), [`Error::NotFound`] (404); another status the API models has its
     /// own variant too ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn enable(&self) -> EnableLayoutAwareSearchRequest {
         let mut input = EnableLayoutAwareSearchInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -1732,7 +1732,7 @@ impl KnowledgeBaseLayoutAwareSearch {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn estimate_enable(&self) -> EstimateLayoutAwareSearchRequest {
         let mut input = EstimateLayoutAwareSearchInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -1781,7 +1781,7 @@ impl KnowledgeBaseAccessScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn get(&self) -> GetAccessRequest {
         let mut input = GetAccessInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -1817,7 +1817,7 @@ impl KnowledgeBaseAccessScope {
     /// [`Error::UnprocessableContent`] (422); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn set(&self) -> PutAccessRequest {
         let mut input = PutAccessInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -1857,7 +1857,7 @@ impl KnowledgeBaseDocuments {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn list(&self) -> ListDocumentsRequest {
         let mut input = ListDocumentsInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -1883,7 +1883,7 @@ impl KnowledgeBaseDocuments {
     /// another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other
     /// status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn create(&self, file: impl Into<rt::UploadFile>) -> CreateDocumentRequest {
         let mut input = CreateDocumentInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -1904,7 +1904,7 @@ impl KnowledgeBaseDocuments {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn estimate_create(&self, file: impl Into<rt::UploadFile>) -> EstimateIngestionRequest {
         let mut input = EstimateIngestionInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -1928,7 +1928,7 @@ impl KnowledgeBaseDocuments {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn delete_many(&self, document_ids: impl IntoIterator<Item = impl Into<String>>) -> BatchDeleteDocumentsRequest {
         let mut input = BatchDeleteDocumentsInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -1952,7 +1952,7 @@ impl KnowledgeBaseDocuments {
     /// (400), [`Error::Conflict`] (409), [`Error::NotFound`] (404); another status the API models has its
     /// own variant too ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn reprocess(&self) -> ReprocessDocumentsRequest {
         let mut input = ReprocessDocumentsInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -1971,7 +1971,7 @@ impl KnowledgeBaseDocuments {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn estimate_reprocess(&self) -> EstimateReprocessDocumentsRequest {
         let mut input = EstimateReprocessDocumentsInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2044,7 +2044,7 @@ impl DocumentScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn get(&self) -> GetDocumentRequest {
         let mut input = GetDocumentInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2074,7 +2074,7 @@ impl DocumentScope {
     /// models has its own variant too ([`Error::NotFound`] for 404), and any other status is
     /// [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn update(&self) -> UpdateDocumentRequest {
         let mut input = UpdateDocumentInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2106,7 +2106,7 @@ impl DocumentScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn delete(&self) -> DeleteDocumentRequest {
         let mut input = DeleteDocumentInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2137,7 +2137,7 @@ impl DocumentScope {
     /// (400), [`Error::Conflict`] (409), [`Error::NotFound`] (404); another status the API models has its
     /// own variant too ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn cancel_processing(&self) -> CancelDocumentProcessingRequest {
         let mut input = CancelDocumentProcessingInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2168,7 +2168,7 @@ impl DocumentScope {
     /// [`Error::UnprocessableContent`] (422); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn replace(&self, file: impl Into<rt::UploadFile>) -> CreateDocumentVersionRequest {
         let mut input = CreateDocumentVersionInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2193,7 +2193,7 @@ impl DocumentScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn estimate_replace(&self, file: impl Into<rt::UploadFile>) -> EstimateDocumentVersionRequest {
         let mut input = EstimateDocumentVersionInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2218,7 +2218,7 @@ impl DocumentScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn download(&self) -> GetDocumentDownloadRequest {
         let mut input = GetDocumentDownloadInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2243,7 +2243,7 @@ impl DocumentScope {
     /// (400), [`Error::Conflict`] (409), [`Error::NotFound`] (404); another status the API models has its
     /// own variant too ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn retry(&self) -> RetryDocumentRequest {
         let mut input = RetryDocumentInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2376,7 +2376,7 @@ impl DocumentVersions {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn list(&self) -> ListDocumentVersionsRequest {
         let mut input = ListDocumentVersionsInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2441,7 +2441,7 @@ impl DocumentVersionScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn get(&self) -> GetDocumentVersionRequest {
         let mut input = GetDocumentVersionInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2474,7 +2474,7 @@ impl DocumentVersionScope {
     /// (400), [`Error::Conflict`] (409), [`Error::NotFound`] (404); another status the API models has its
     /// own variant too ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn delete(&self) -> DeleteDocumentVersionRequest {
         let mut input = DeleteDocumentVersionInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2525,7 +2525,7 @@ impl DocumentAccess {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn get(&self) -> GetAccessRequest {
         let mut input = GetAccessInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2566,7 +2566,7 @@ impl DocumentAccess {
     /// [`Error::UnprocessableContent`] (422); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn set(&self) -> PutAccessRequest {
         let mut input = PutAccessInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2607,7 +2607,7 @@ impl KnowledgeBaseFields {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn list(&self) -> ListFieldsRequest {
         let mut input = ListFieldsInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2627,7 +2627,7 @@ impl KnowledgeBaseFields {
     /// another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other
     /// status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn create(&self, key: impl Into<String>, name: impl Into<String>, r#type: impl Into<FieldType>) -> CreateFieldRequest {
         let mut input = CreateFieldInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2653,7 +2653,7 @@ impl KnowledgeBaseFields {
     /// (400), [`Error::Conflict`] (409), [`Error::NotFound`] (404); another status the API models has its
     /// own variant too ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn fill_in(&self, keys: impl IntoIterator<Item = impl Into<String>>) -> FillInFieldsRequest {
         let mut input = FillInFieldsInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2673,7 +2673,7 @@ impl KnowledgeBaseFields {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn estimate_fill_in(&self, keys: impl IntoIterator<Item = impl Into<String>>) -> EstimateFillInFieldsRequest {
         let mut input = EstimateFillInFieldsInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2724,7 +2724,7 @@ impl FieldScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn get(&self) -> GetFieldRequest {
         let mut input = GetFieldInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2747,7 +2747,7 @@ impl FieldScope {
     /// (400), [`Error::NotFound`] (404), [`Error::PreconditionFailed`] (412); another status the API models
     /// has its own variant too ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn update(&self) -> UpdateFieldRequest {
         let mut input = UpdateFieldInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2768,7 +2768,7 @@ impl FieldScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn delete(&self) -> DeleteFieldRequest {
         let mut input = DeleteFieldInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2812,7 +2812,7 @@ impl KnowledgeBaseFolders {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn list(&self) -> ListFoldersRequest {
         let mut input = ListFoldersInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2833,7 +2833,7 @@ impl KnowledgeBaseFolders {
     /// another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other
     /// status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn create(&self, path: impl Into<String>) -> CreateFolderRequest {
         let mut input = CreateFolderInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2897,7 +2897,7 @@ impl FolderScope {
     /// [`Error::PreconditionRequired`] (428); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn update(&self) -> UpdateFolderRequest {
         let mut input = UpdateFolderInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -2922,7 +2922,7 @@ impl FolderScope {
     /// (400), [`Error::Conflict`] (409), [`Error::NotFound`] (404); another status the API models has its
     /// own variant too ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn delete(&self) -> DeleteFolderRequest {
         let mut input = DeleteFolderInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -3068,7 +3068,7 @@ impl FolderAccess {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn get(&self) -> GetAccessRequest {
         let mut input = GetAccessInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -3109,7 +3109,7 @@ impl FolderAccess {
     /// [`Error::UnprocessableContent`] (422); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn set(&self) -> PutAccessRequest {
         let mut input = PutAccessInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -3177,7 +3177,7 @@ impl KnowledgeBaseIngestionBatches {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn list(&self) -> ListIngestionBatchesRequest {
         let mut input = ListIngestionBatchesInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -3211,7 +3211,7 @@ impl KnowledgeBaseIngestionBatches {
     /// another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other
     /// status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn create(&self) -> CreateIngestionBatchRequest {
         let mut input = CreateIngestionBatchInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -3280,7 +3280,7 @@ impl BatchScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn get(&self) -> GetIngestionBatchRequest {
         let mut input = GetIngestionBatchInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -3304,7 +3304,7 @@ impl BatchScope {
     /// [`Error::PreconditionRequired`] (428); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn update(&self) -> UpdateIngestionBatchRequest {
         let mut input = UpdateIngestionBatchInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -3332,7 +3332,7 @@ impl BatchScope {
     /// (400), [`Error::Conflict`] (409), [`Error::NotFound`] (404); another status the API models has its
     /// own variant too ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn cancel(&self) -> CancelIngestionBatchRequest {
         let mut input = CancelIngestionBatchInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -3373,7 +3373,7 @@ impl BatchScope {
     /// another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other
     /// status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn start(&self) -> StartIngestionBatchRequest {
         let mut input = StartIngestionBatchInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -3521,7 +3521,7 @@ impl BatchItems {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn list(&self) -> ListIngestionBatchItemsRequest {
         let mut input = ListIngestionBatchItemsInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -3587,7 +3587,7 @@ impl ItemScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn get(&self) -> GetIngestionBatchItemRequest {
         let mut input = GetIngestionBatchItemInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -3624,7 +3624,7 @@ impl ItemScope {
     /// another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other
     /// status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn resolve(&self, resolution: impl Into<IngestionItemResolution>) -> UpdateIngestionBatchItemRequest {
         let mut input = UpdateIngestionBatchItemInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -3658,7 +3658,7 @@ impl ItemScope {
     /// another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other
     /// status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn cancel(&self) -> CancelIngestionBatchItemRequest {
         let mut input = CancelIngestionBatchItemInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -3745,7 +3745,7 @@ impl CoreDocuments {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn content(&self, knowledge_base_id: impl Into<String>, document_id: impl Into<String>) -> GetDocumentContentRequest {
         let mut input = GetDocumentContentInput::default();
         let knowledge_base_id: String = knowledge_base_id.into();
@@ -3786,7 +3786,7 @@ impl CoreIngestion {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn complete_uploads(
         &self,
         knowledge_base_id: impl Into<String>,
@@ -3821,7 +3821,7 @@ impl CoreIngestion {
     /// another status the API models has its own variant too ([`Error::NotFound`] for 404), and any other
     /// status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn upload_policy(
         &self,
         knowledge_base_id: impl Into<String>,
@@ -3851,7 +3851,7 @@ impl CoreIngestion {
     /// (400), [`Error::Conflict`] (409), [`Error::NotFound`] (404); another status the API models has its
     /// own variant too ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn add_items(
         &self,
         knowledge_base_id: impl Into<String>,
@@ -3897,7 +3897,7 @@ impl CoreOperations {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn list(&self, knowledge_base_id: impl Into<String>) -> ListOperationsRequest {
         let mut input = ListOperationsInput::default();
         let knowledge_base_id: String = knowledge_base_id.into();
@@ -3951,7 +3951,7 @@ impl OperationScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn get(&self) -> GetOperationRequest {
         let mut input = GetOperationInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -3981,7 +3981,7 @@ impl OperationScope {
     /// (400), [`Error::Conflict`] (409), [`Error::NotFound`] (404); another status the API models has its
     /// own variant too ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn cancel(&self) -> CancelOperationRequest {
         let mut input = CancelOperationInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -4003,7 +4003,7 @@ impl OperationScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn watch(&self) -> WatchOperationRequest {
         let mut input = WatchOperationInput::default();
         input.knowledge_base_id = self.knowledge_base_id.clone();
@@ -4045,7 +4045,7 @@ impl CoreUploads {
     /// (422); another status the API models has its own variant too ([`Error::NotFound`] for 404), and any
     /// other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn reserve(
         &self,
         file_name: impl Into<String>,
@@ -4100,7 +4100,7 @@ impl UploadScope {
     /// (400), [`Error::NotFound`] (404); another status the API models has its own variant too
     /// ([`Error::NotFound`] for 404), and any other status is [`Error::Api`].
     ///
-    /// Since Caitlyn 5.144.0; beta.
+    /// Since Caitlyn 5.149.0; beta.
     pub fn get(&self) -> GetUploadRequest {
         let mut input = GetUploadInput::default();
         input.upload_id = self.upload_id.clone();

@@ -63,7 +63,7 @@ func (s *AgentScope) Live() *LiveScope {
 // An agent the caller may not see is 404, as one that does not exist is. Its configuration is in
 // its versions: read them with GetAgentVersion.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *AgentScope) Get(ctx context.Context, opts ...CallOption) (*Agent, error) {
 	p := &getAgentParams{}
 	p.AgentID = s.agentID
@@ -80,7 +80,7 @@ func (s *AgentScope) Get(ctx context.Context, opts ...CallOption) (*Agent, error
 // with an input error before anything is sent. WithIfMatch("*") (any version) is sent only when you
 // pass it yourself: no helper fills it in.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *AgentScope) Update(ctx context.Context, in *UpdateAgentInput, opts ...CallOption) (*Agent, error) {
 	p := &updateAgentParams{}
 	if in != nil {
@@ -113,7 +113,7 @@ func (s *AgentScope) Update(ctx context.Context, in *UpdateAgentInput, opts ...C
 // Conversations with the agent are kept. Caitlyn's built-in agents (`native`) are defined by the
 // platform and refused with 403 `PERMISSION_DENIED`. Deleting cannot be undone, and is audited.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *AgentScope) Delete(ctx context.Context, opts ...CallOption) (*DeleteAgentResult, error) {
 	p := &deleteAgentParams{}
 	p.AgentID = s.agentID
@@ -128,7 +128,7 @@ type deleteAgentParams struct {
 var opDeleteAgent = &core.Operation{
 	Name:      "DeleteAgent",
 	Method:    "DELETE",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -171,7 +171,7 @@ type getAgentParams struct {
 var opGetAgent = &core.Operation{
 	Name:      "GetAgent",
 	Method:    "GET",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -234,7 +234,7 @@ type updateAgentParams struct {
 var opUpdateAgent = &core.Operation{
 	Name:            "UpdateAgent",
 	Method:          "PATCH",
-	Since:           "5.144.0",
+	Since:           "5.149.0",
 	RetrySafe:       true,
 	IfMatchRequired: true,
 	Retryable:       []int{503, 429},

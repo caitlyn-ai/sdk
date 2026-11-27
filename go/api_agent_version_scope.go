@@ -43,7 +43,7 @@ func (s *AgentVersionScope) Version() string { return s.version }
 // access grant, and anyone else gets 404. An agent with no live version, because none has been
 // published or chosen yet, answers `live` with 404 `NO_LIVE_VERSION`.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *AgentVersionScope) Get(ctx context.Context, opts ...CallOption) (*AgentVersion, error) {
 	p := &getAgentVersionParams{}
 	p.AgentID = s.agentID
@@ -59,7 +59,7 @@ func (s *AgentVersionScope) Get(ctx context.Context, opts ...CallOption) (*Agent
 // with 409 `VERSION_IN_HISTORY`. A saved version that was never live can be deleted. Like every
 // change, it is audited.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *AgentVersionScope) Delete(ctx context.Context, opts ...CallOption) (*DeleteAgentVersionResult, error) {
 	p := &deleteAgentVersionParams{}
 	p.AgentID = s.agentID
@@ -74,7 +74,7 @@ func (s *AgentVersionScope) Delete(ctx context.Context, opts ...CallOption) (*De
 // compared by their items' keys, so a path reads `workflow.phases[intake].transitions`. Both versions
 // need the same access as reading them.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *AgentVersionScope) Compare(ctx context.Context, in *CompareAgentVersionsInput, opts ...CallOption) (*CompareAgentVersionsResult, error) {
 	p := &compareAgentVersionsParams{}
 	if in != nil {
@@ -103,7 +103,7 @@ func (s *AgentVersionScope) Compare(ctx context.Context, in *CompareAgentVersion
 // it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
 // yourself: no helper fills it in.
 //
-// Since Caitlyn 5.144.0; beta.
+// Since Caitlyn 5.149.0; beta.
 func (s *AgentVersionScope) Publish(ctx context.Context, in *PublishAgentVersionInput, opts ...CallOption) (*PublishAgentVersionResult, error) {
 	p := &publishAgentVersionParams{}
 	if in != nil {
@@ -125,7 +125,7 @@ type deleteAgentVersionParams struct {
 var opDeleteAgentVersion = &core.Operation{
 	Name:      "DeleteAgentVersion",
 	Method:    "DELETE",
-	Since:     "5.144.0",
+	Since:     "5.149.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,

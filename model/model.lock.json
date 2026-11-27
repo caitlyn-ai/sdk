@@ -1,8 +1,8 @@
 {
   "package": "caitlyn-v3-model",
   "registryProject": "custom-d/caitlyn/platform/caitlyn",
-  "version": "5.156.0",
-  "source": "package registry caitlyn-v3-model/5.156.0",
-  "sha256": "9b76836b5010f7b913ca9cbb2f688efc01dd9312deb190c76ef6dc2f22d98580",
+  "version": "5.158.1",
+  "source": "package registry caitlyn-v3-model/latest",
+  "sha256": "86a466e5d7743eb296c08c5b746c6e1cc600363dcec71a12063de0f3971437a3",
   "stampNext": null
 }
