@@ -6,15 +6,24 @@
 #   - uv, for the Python SDK;
 #   - Rust (rustc, cargo, rustfmt, clippy), for the Rust SDK.
 # Keep SMITHY_VERSION in step with the app repository's smithy/docker/Dockerfile and codegen/gradle.properties.
-FROM golang:1.27 AS go
+# Built for linux/amd64 and linux/arm64 (the toolchain job). The Go tools compile on the build machine's own
+# architecture for the target's (GOOS/GOARCH), so an emulated arm64 build doesn't compile them under QEMU. `go install`
+# won't cross-compile into GOBIN, so they land in GOPATH/bin, or GOPATH/bin/<os>_<arch> when cross-compiled.
+FROM --platform=$BUILDPLATFORM golang:1.27 AS go-tools
+ARG TARGETOS TARGETARCH
+ENV GOOS=$TARGETOS GOARCH=$TARGETARCH CGO_ENABLED=0
 # staticcheck 2026.1 cannot read Go 1.27 export data; this master commit (2026-10-24) can.
-RUN GOBIN=/out go install honnef.co/go/tools/cmd/staticcheck@v0.7.0-0.dev.0.20261024224503-8371db75e9da
+RUN go install honnef.co/go/tools/cmd/staticcheck@v0.7.0-0.dev.0.20261024224503-8371db75e9da
 # The CLI's release tools (cli/.goreleaser.yaml): GoReleaser, cosign for Sigstore signatures, syft for SBOMs, and
 # minisign for the update manifest's signature. Static, so cli:publish can carry minisign into the AWS CLI image.
-RUN CGO_ENABLED=0 GOBIN=/out go install github.com/goreleaser/goreleaser/v2@v2.20.0 \
- && CGO_ENABLED=0 GOBIN=/out go install github.com/sigstore/cosign/v3/cmd/cosign@v3.1.4 \
- && CGO_ENABLED=0 GOBIN=/out go install github.com/anchore/syft/cmd/syft@v1.57.0 \
- && CGO_ENABLED=0 GOBIN=/out go install aead.dev/minisign/cmd/minisign@v0.3.0
+RUN go install github.com/goreleaser/goreleaser/v2@v2.20.0 \
+ && go install github.com/sigstore/cosign/v3/cmd/cosign@v3.1.4 \
+ && go install github.com/anchore/syft/cmd/syft@v1.57.0 \
+ && go install aead.dev/minisign/cmd/minisign@v0.3.0
+RUN mkdir /out && find "$(go env GOPATH)/bin" -type f -exec mv {} /out/ \;
+
+# Go itself, for the target's architecture
+FROM golang:1.27 AS go
 
 FROM ghcr.io/astral-sh/uv:0.8.0 AS uv
 
@@ -30,7 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl unzip jq g
  && SMITHY_VERSION=${SMITHY_VERSION} SMITHY_CLI_DIR=/opt/smithy-cli sh /usr/local/bin/install-smithy-cli.sh \
  && smithy --version
 COPY --from=go /usr/local/go /usr/local/go
-COPY --from=go /out/staticcheck /out/goreleaser /out/cosign /out/syft /out/minisign /usr/local/bin/
+COPY --from=go-tools /out/staticcheck /out/goreleaser /out/cosign /out/syft /out/minisign /usr/local/bin/
 COPY --from=node:24-slim /usr/local/bin/node /usr/local/bin/node
 COPY --from=node:24-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
