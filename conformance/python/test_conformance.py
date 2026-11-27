@@ -168,10 +168,8 @@ async def test_retry_budget_drains(mock: Mock, case_id: str) -> None:
     mock.faults(status={"GetAgentVersion": fault503(4)})
     first = await expect_error(c.agents("GHT7YRWXPL").draft.get())
     assert isinstance(first, ServiceUnavailableError) and len(mock.api()) == 3  # two retries, 5 tokens each
-    t0 = time.monotonic()
     second = await expect_error(c.agents("GHT7YRWXPL").draft.get())
-    assert isinstance(second, ServiceUnavailableError) and len(mock.api()) == 4  # spent: no retry
-    assert time.monotonic() - t0 < 1
+    assert isinstance(second, ServiceUnavailableError) and len(mock.api()) == 4  # spent: no retry, so no wait for one
     # A retry after no response costs 10: a budget of 9 pays for a 503's retry but not this one.
     mock.reset()
     mock.faults(status={"GetAgentVersion": [{"close": True}]})
@@ -220,11 +218,10 @@ async def test_unsafe_not_retried(mock: Mock, case_id: str) -> None:
 
 @case("retry.above-max-retry-delay")
 async def test_above_max_retry_delay(mock: Mock, case_id: str) -> None:
-    mock.faults(status={"GetAgentVersion": [{"status": 429, "retryAfter": 120}]})
-    t0 = time.monotonic()
+    # A day's Retry-After: an SDK that waited it out would never return within the test's own time limit.
+    mock.faults(status={"GetAgentVersion": [{"status": 429, "retryAfter": 86_400}]})
     err = await expect_error(client(mock).agents("GHT7YRWXPL").draft.get())
-    assert (err.status, err.retry_after_seconds) == (429, 120)
-    assert time.monotonic() - t0 < 1
+    assert (err.status, err.retry_after_seconds) == (429, 86_400)
     assert len(mock.api()) == 1
 
 
@@ -629,11 +626,11 @@ RESET_CURSOR = "0193a6f3-0a1b-7c2d-8e3f-000000000010"
 @case("sse.final-ends-watch")
 async def test_sse_final_ends_watch(mock: Mock, case_id: str) -> None:
     mock.faults(dropAfterEvents=2)
-    t0 = time.monotonic()
     async with await client(mock).conversations("c-watch").send("hi") as stream:
         answer = await stream.final_message()
     assert answer.text == "Staff receive 20 days of annual leave."
-    assert time.monotonic() - t0 < 5, "ended at message.completed, not when the server closed the watch"
+    # The mock keeps the watch open until the client closes it: an SDK that waited for the server to close it would never
+    # get here within the test's own time limit, so arriving is the check.
     for _ in range(100):
         if any(r.get("event") == "client-disconnected" for r in mock.requests()):
             break
@@ -1059,15 +1056,14 @@ async def test_hostile_aws(mock: Mock, tmp_path: Path, monkeypatch: pytest.Monke
     for k, v in {
         "AWS_PROFILE": "hostile", "AWS_REGION": "xx-hostile-1", "AWS_MAX_ATTEMPTS": "1", "AWS_RETRY_MODE": "adaptive",
         "AWS_DEFAULTS_MODE": "auto", "AWS_ENDPOINT_URL": "http://127.0.0.1:9", "AWS_CONFIG_FILE": str(tmp_path / "config"),
-        "AWS_SHARED_CREDENTIALS_FILE": str(tmp_path / "config"), "AWS_EC2_METADATA_SERVICE_ENDPOINT": "http://10.255.255.1",
+        "AWS_SHARED_CREDENTIALS_FILE": str(tmp_path / "config"), "AWS_EC2_METADATA_SERVICE_ENDPOINT": f"{mock.base}/__aws-trap",
     }.items():
         monkeypatch.setenv(k, v)
     mock.faults(status={"GetAgentVersion": [{"status": 503, "retryAfter": 0}]})
-    t0 = time.monotonic()
     v = await client(mock).agents("GHT7YRWXPL").draft.get()
     docs = await collect(client(mock).knowledge_bases("KB4T7YQ2WL").documents.list(limit=3))
     assert (v.name, len(docs)) == ("draft", 7)
-    assert time.monotonic() - t0 < 2, "something waited on the environment"
+    assert [r["path"] for r in mock.requests() if str(r.get("path", "")).startswith("/__aws-trap")] == [], "nothing asked the instance-metadata service"
     assert len([r for r in mock.api() if "/versions/" in r["path"]]) == 2, "AWS_MAX_ATTEMPTS=1 was not ignored"
 
 
@@ -2435,9 +2431,9 @@ async def test_watch_break_closes(mock: Mock, case_id: str) -> None:
     sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base).knowledge_bases(KB)
 
     async def closed_within_a_second(before: int, requests_before: int, how: str) -> None:
-        deadline = time.monotonic() + 1
+        # The mock keeps the watch open until the client closes it, so waiting needs no time limit of its own: a watch
+        # left open fails the test at its own time limit.
         while len(disconnected(mock)) == before:
-            assert time.monotonic() < deadline, f"{how}: the server did not see the client disconnect within a second"
             await asyncio.sleep(0.02)
         assert len(mock.api()) == requests_before, f"{how}: no further request"
 
@@ -3291,12 +3287,12 @@ async def interrupted(call: Callable[[], object], mock: Mock, uploads: int = 6) 
 
 
 async def uploads_dropped(mock: Mock, uploads: int, finish: Callable[[], Awaitable[object]], outcome: dict[str, BaseException]) -> BaseException:
-    """Every upload in flight is dropped: the mock notes each one aborted within a second (each was held 1 s from
-    before the interrupt), and no new upload starts."""
-    deadline = time.monotonic() + 1
-    while aborted(mock) < uploads:
-        assert time.monotonic() < deadline, f"{aborted(mock)} of {uploads} uploads in flight dropped within a second"
+    """Every upload in flight is dropped: each was held by the mock until the client let go of it (holdUploadsAfter), so
+    the mock notes each one aborted, and stores none, rather than storing it when the hold ends (10 s). No new upload
+    starts. Waiting for the aborts needs no time limit of its own: an upload that was waited for ends stored."""
+    while aborted(mock) < uploads and not mock.uploads()["objects"]:
         await asyncio.sleep(0.02)
+    assert aborted(mock) == uploads, f"{aborted(mock)} of {uploads} uploads in flight dropped"
     await finish()
     assert len(forms(mock)) == uploads, "no upload starts after the interrupt"
     assert mock.uploads()["objects"] == []
@@ -3364,7 +3360,7 @@ async def test_sync_on_item_once(mock: Mock, tmp_path: Path, case_id: str) -> No
 @case("sync.cancel-report")
 async def test_sync_cancel_report(mock: Mock, tmp_path: Path, case_id: str) -> None:
     root = folder_of(tmp_path, {"policy-1.pdf": b"doc1", **{f"f{n:02}.md": f"file {n}".encode() for n in range(12)}})
-    mock.faults(uploadDelayMs=1000)
+    mock.faults(holdUploadsAfter=0)
     finished: list[str] = []
     task = asyncio.create_task(client(mock).knowledge_bases(KB).ingestion.sync(root, folder="/policies/", on_item=lambda i: finished.append(str(i.path))))
     while len(forms(mock)) < 6:
@@ -3379,12 +3375,15 @@ async def test_sync_cancel_report(mock: Mock, tmp_path: Path, case_id: str) -> N
     assert statuses["/policies/policy-1.pdf"] == "skipped" and statuses["/policies/f00.md"] == "awaiting_upload", "each with its last status"
     assert report.batch.counts is not None
     assert finished == ["/policies/policy-1.pdf"], "on_item had only items final before the cancellation"
-    await asyncio.sleep(1.1)
+    # Once every held upload is aborted, nothing more can finish: on_item is never called after the cancellation error.
+    while aborted(mock) < len(forms(mock)) and not mock.uploads()["objects"]:
+        await asyncio.sleep(0.02)
+    assert mock.uploads()["objects"] == [], "no upload in flight was stored"
     assert finished == ["/policies/policy-1.pdf"], "and is never called after the cancellation error"
     # The synchronous client, Ctrl-C: SyncInterrupted, a KeyboardInterrupt with the report. The interrupt is raised in
     # the calling thread as Ctrl-C raises it, once the uploads have started.
     mock.reset()
-    mock.faults(uploadDelayMs=1000)
+    mock.faults(holdUploadsAfter=0)
     sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     stopped = await interrupted(lambda: sync.knowledge_bases(KB).ingestion.sync(root, folder="/policies/"), mock)
     assert isinstance(stopped, SyncInterrupted) and stopped.report is not None, repr(stopped.__cause__)
@@ -3818,15 +3817,16 @@ async def test_batch_upload_short_window(mock: Mock, case_id: str) -> None:
 
 @case("batch-upload.keep-alive-floor")
 async def test_batch_upload_keep_alive_floor(mock: Mock, case_id: str) -> None:
-    # Every policy lasts a second, so it is due half a second after it arrives; the one file takes 4 s to arrive. The first
-    # ask is upload()'s own policy; the rest are the timer's, the first half a second on and the others a second apart:
-    # about five in all, where half-second renewals would be about nine.
-    mock.faults(uploadReservation={"policySeconds": 1, "reservationSeconds": 30}, uploadDelayMs=4000)
+    # Every policy lasts a second, so it is due half a second after it arrives. The one file is held at storage until four
+    # policies have been asked for: upload()'s own, then the timer's, the first half a second on and the others a second
+    # apart. So all four happen while the upload is in flight, however slowly the timer fires; renewals every half second
+    # would show as gaps under a second.
+    mock.faults(uploadReservation={"policySeconds": 1, "reservationSeconds": 30}, holdUploadsAfter=0, releaseUploadsAfterPolicies=4)
     contents = {"/hr/annual-leave.md": b"Staff receive 20 days of annual leave."}
     uploaded = await (await built_batch(client(mock), contents)).upload(by_path(contents))
     assert [(str(i.status), i.failure_code) for i in uploaded.items] == [("ingesting", None)]
     at = [int(r["at"]) for r in calls(mock, "/upload-policies")]
-    assert 4 <= len(at) <= 6, f"{len(at)} policies asked for in 4 s: want the timer's renewals, at most one a second"
+    assert 4 <= len(at) <= 5, f"{len(at)} policies asked for: want upload()'s own and three of the timer's (one more may be on its way)"
     gaps = [b - a for a, b in zip(at[1:], at[2:])]
     assert all(g >= 900 for g in gaps), f"renewals {gaps} ms apart"
 
@@ -3995,22 +3995,24 @@ async def test_batch_upload_result(mock: Mock, case_id: str) -> None:
 async def test_batch_upload_cancel(mock: Mock, case_id: str) -> None:
     contents = {f"/hr/f{n:02}.md": f"file {n}".encode() for n in range(12)}
     batch = await built_batch(client(mock), contents)
-    mock.faults(uploadDelayMs=1000)
+    mock.faults(holdUploadsAfter=0)
     task = asyncio.create_task(batch.upload(by_path(contents)))
     while len(forms(mock)) < 6:
         await asyncio.sleep(0.02)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    await asyncio.sleep(1.1)  # the mock notes the aborted uploads once their hold ends
+    deadline = time.monotonic() + 5
+    while aborted(mock) < 6 and time.monotonic() < deadline:  # the mock notes each one as it sees its connection close
+        await asyncio.sleep(0.02)
     assert len(forms(mock)) == 6, "no upload starts after the cancel"
-    assert len([r for r in mock.requests() if r.get("event") == "upload-aborted"]) == 6
+    assert aborted(mock) == 6
     assert calls(mock, "/cancel") == [], "the batch is not cancelled"
     assert str((await batch.get()).status) == "running"
     # The synchronous client, Ctrl-C: the same, raised as a KeyboardInterrupt.
     mock.reset()
     batch = await built_batch(client(mock), contents)
-    mock.faults(uploadDelayMs=1000)
+    mock.faults(holdUploadsAfter=0)
     sync = Caitlyn(workspace="your-company.caitlyn.ai", auth=Token("pat_test"), endpoint=mock.base)
     error = await interrupted(lambda: sync.knowledge_bases(KB).ingestion.batches(batch.id).upload(by_path(contents)), mock)
     assert isinstance(error, KeyboardInterrupt), repr(error)
@@ -4178,12 +4180,10 @@ async def test_request_timeout(mock: Mock, case_id: str) -> None:
     # Python's `timeout` (default 120 s) is httpx's: each read waits at most this long, which covers the wait for the headers.
     c = client(mock, timeout=0.3)
     mock.faults(status=held("GetKnowledgeBase", 3))
-    started = time.monotonic()
     err = await expect_error(c.knowledge_bases(KB).get())
     assert type(err) is CaitlynConnectionError and (err.status, err.code) == (0, "CONNECTION_ERROR")
     assert "GetKnowledgeBase" in str(err) and "300 ms" in str(err), f"the message names the operation and the timeout: {err}"
     assert len([r for r in mock.api() if r["path"] == f"/v3/knowledge-bases/{KB}"]) == 3, "retried as a read is"
-    assert time.monotonic() - started < 10
     await asyncio.sleep(0.2)
     assert len(mock_events(mock, "request-aborted", "GetKnowledgeBase")) == 3, "each timed-out attempt was closed"
     # A watch whose stream has only keep-alives for longer than the timeout is not cut.

@@ -285,9 +285,9 @@ var protocol = map[string]func(t *testing.T, m mock){
 		if err := get(c); !errors.As(err, &su) || len(m.api(t)) != 3 {
 			t.Fatalf("first call: %v after %d requests", err, len(m.api(t)))
 		}
-		start := time.Now()
-		if err := get(c); !errors.As(err, &su) || len(m.api(t)) != 4 || time.Since(start) > time.Second {
-			t.Fatalf("second call: %v after %d requests, %v", err, len(m.api(t)), time.Since(start))
+		// Spent: no retry, so no wait for one (the request count is the check).
+		if err := get(c); !errors.As(err, &su) || len(m.api(t)) != 4 {
+			t.Fatalf("second call: %v after %d requests", err, len(m.api(t)))
 		}
 		// A retry after no response costs 10: a budget of 9 pays for a 503's retry but not this one. (A transport of
 		// its own: net/http resends a GET once by itself when a reused keep-alive connection closes.)
@@ -344,15 +344,15 @@ var protocol = map[string]func(t *testing.T, m mock){
 		}
 	},
 	"retry.above-max-retry-delay": func(t *testing.T, m mock) {
-		m.faults(t, status("GetAgentVersion", fault(429, 120)))
-		t0 := time.Now()
+		// A day's Retry-After: an SDK that waited it out would never return within the test's own time limit.
+		m.faults(t, status("GetAgentVersion", fault(429, 86400)))
 		_, err := client(t, m).Agent(agent).Draft().Get(context.Background())
 		var tooMany *caitlyn.TooManyRequestsError
-		if !errors.As(err, &tooMany) || tooMany.Status != 429 || tooMany.RetryAfterSeconds == nil || *tooMany.RetryAfterSeconds != 120 {
+		if !errors.As(err, &tooMany) || tooMany.Status != 429 || tooMany.RetryAfterSeconds == nil || *tooMany.RetryAfterSeconds != 86400 {
 			t.Fatalf("got %v", err)
 		}
-		if time.Since(t0) > time.Second || len(m.api(t)) != 1 {
-			t.Fatalf("waited %v, %d requests", time.Since(t0), len(m.api(t)))
+		if n := len(m.api(t)); n != 1 {
+			t.Fatalf("%d requests", n)
 		}
 	},
 
@@ -628,14 +628,12 @@ var protocol = map[string]func(t *testing.T, m mock){
 	},
 	"sse.final-ends-watch": func(t *testing.T, m mock) {
 		m.faults(t, map[string]any{"dropAfterEvents": 2})
-		t0 := time.Now()
 		answer, err := send(t, client(t, m), context.Background(), "c-watch").FinalMessage()
 		if err != nil || answer.Text != "Staff receive 20 days of annual leave." {
 			t.Fatalf("answer %+v err %v", answer, err)
 		}
-		if time.Since(t0) > 5*time.Second {
-			t.Fatal("ended when the server closed the watch, not at message.completed")
-		}
+		// The mock keeps the watch open until the client closes it: an SDK that waited for the server to close it would
+		// never get here within the test's own time limit, so arriving is the check.
 		for i := 0; ; i++ {
 			if len(m.matching(t, func(r logged) bool { return r.Event == "client-disconnected" })) > 0 {
 				break
@@ -1125,13 +1123,35 @@ var protocol = map[string]func(t *testing.T, m mock){
 		}
 	},
 	"cancel.unary": func(t *testing.T, m mock) {
-		m.faults(t, status("GetAgentVersion", fault(503, 2)))
+		// The mock holds the answer until the client lets go of it, and the case cancels once the request has arrived: the
+		// call is in flight, an event rather than a timer. It ends with ctx's error and is not retried.
+		m.faults(t, map[string]any{"status": map[string]any{"GetAgentVersion": []any{map[string]any{"hold": true}}}})
 		ctx, cancel := context.WithCancel(context.Background())
-		time.AfterFunc(200*time.Millisecond, cancel)
-		t0 := time.Now()
+		defer cancel()
+		go func() {
+			defer cancel()
+			for {
+				resp, err := http.Get(m.base + "/__mock/requests")
+				if err != nil {
+					return
+				}
+				var log []logged
+				json.NewDecoder(resp.Body).Decode(&log)
+				resp.Body.Close()
+				for _, r := range log {
+					if strings.Contains(r.Path, "/versions/") {
+						return
+					}
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		}()
 		_, err := client(t, m).Agent(agent).Draft().Get(ctx)
-		if !errors.Is(err, context.Canceled) || time.Since(t0) > time.Second {
-			t.Fatalf("err %v after %v", err, time.Since(t0))
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err %v", err)
+		}
+		if n := len(m.api(t)); n != 1 {
+			t.Fatalf("%d requests: the cancel did not stop the retry", n)
 		}
 	},
 
@@ -1208,16 +1228,18 @@ var protocol = map[string]func(t *testing.T, m mock){
 		for k, v := range map[string]string{
 			"AWS_PROFILE": "hostile", "AWS_REGION": "xx-hostile-1", "AWS_MAX_ATTEMPTS": "1", "AWS_RETRY_MODE": "adaptive",
 			"AWS_DEFAULTS_MODE": "auto", "AWS_ENDPOINT_URL": "http://127.0.0.1:9", "AWS_CONFIG_FILE": cfg,
-			"AWS_SHARED_CREDENTIALS_FILE": cfg, "AWS_EC2_METADATA_SERVICE_ENDPOINT": "http://10.255.255.1",
+			"AWS_SHARED_CREDENTIALS_FILE": cfg, "AWS_EC2_METADATA_SERVICE_ENDPOINT": m.base + "/__aws-trap",
 		} {
 			t.Setenv(k, v)
 		}
 		m.faults(t, status("GetAgentVersion", fault(503, 0)))
-		t0 := time.Now()
 		v := draft(t, client(t, m))
 		docs, err := listAll(context.Background(), client(t, m), &caitlyn.ListDocumentsInput{Limit: caitlyn.Ptr[int32](3)})
-		if v.Name != "draft" || len(docs) != 7 || err != nil || time.Since(t0) > 2*time.Second {
-			t.Fatalf("name %q docs %d err %v after %v", v.Name, len(docs), err, time.Since(t0))
+		if v.Name != "draft" || len(docs) != 7 || err != nil {
+			t.Fatalf("name %q docs %d err %v", v.Name, len(docs), err)
+		}
+		if n := len(m.matching(t, pathContains("/__aws-trap"))); n != 0 {
+			t.Fatalf("the instance-metadata service was asked %d times", n)
 		}
 		if n := len(m.matching(t, pathContains("/versions/"))); n != 2 {
 			t.Fatalf("AWS_MAX_ATTEMPTS=1 was not ignored: %d requests", n)

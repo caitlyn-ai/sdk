@@ -568,14 +568,10 @@ var scopeCases = map[string]func(t *testing.T, m mock){
 
 	"wait.timeout": func(t *testing.T, m mock) {
 		m.faults(t, map[string]any{"busyDocuments": map[string]any{"doc-0001": true}, "jobSteps": 100000})
-		start := time.Now()
 		_, err := client(t, m).KnowledgeBase(kb).Document("doc-0001").Wait(within(t), caitlyn.WithTimeLimit(300*time.Millisecond))
 		var e *caitlyn.Error
 		if !errors.As(err, &e) || e.Code != "WAIT_TIMEOUT" || e.Status != 0 || !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("got %T %v; want WAIT_TIMEOUT that is context.DeadlineExceeded", err, err)
-		}
-		if time.Since(start) > 10*time.Second {
-			t.Fatalf("the limit took %v", time.Since(start))
 		}
 		// The watch is closed.
 		for i := 0; len(m.matching(t, func(r logged) bool { return r.Event == "client-disconnected" })) == 0; i++ {

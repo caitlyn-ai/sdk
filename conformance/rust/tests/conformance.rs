@@ -473,19 +473,15 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             Ok(())
         }),
         "retry.above-max-retry-delay" => Box::pin(async move {
-            m.faults(status("GetAgentVersion", &[(429, 120)])).await;
-            let t0 = Instant::now();
+            // A day's Retry-After: an SDK that waited it out would never return within the test's own time limit.
+            m.faults(status("GetAgentVersion", &[(429, 86_400)])).await;
             let r = draft(&client(m)).await;
             let Err(Error::TooManyRequests(e)) = &r else {
                 return Err(format!("got {:?}", r.err()));
             };
-            ensure!(e.status == 429 && e.retry_after_seconds == Some(120), "got {e:?}");
+            ensure!(e.status == 429 && e.retry_after_seconds == Some(86_400), "got {e:?}");
             let n = m.api().await.len();
-            ensure!(
-                t0.elapsed() < Duration::from_secs(1) && n == 1,
-                "waited {:?}, {n} requests",
-                t0.elapsed()
-            );
+            ensure!(n == 1, "{n} requests");
             Ok(())
         }),
 
@@ -2610,12 +2606,12 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             watch.next().await.ok_or("no first event")?.map_err(s)?;
             let before = m.requests().await.len();
             drop(watch);
-            let t0 = Instant::now();
+            // The mock keeps the watch open until the client closes it, so waiting needs no time limit of its own: a watch
+            // left open fails the case at the harness's own time limit.
             loop {
                 if !m.matching(|r| str_at(r, "event") == "client-disconnected").await.is_empty() {
                     break;
                 }
-                ensure!(t0.elapsed() < Duration::from_secs(1), "no disconnect within a second");
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
             let after: Vec<Value> = m.requests().await.into_iter().skip(before).collect();
@@ -4490,10 +4486,11 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             Ok(())
         }),
         "batch-upload.keep-alive-floor" => Box::pin(async move {
-            // Every policy lasts a second, so it is due half a second after it arrives; the one file takes 4 s to arrive.
-            // The first ask is upload()'s own policy; the rest are the timer's, the first half a second on and the
-            // others a second apart: about five in all, where half-second renewals would be about nine.
-            m.faults(json!({"uploadReservation": {"policySeconds": 1, "reservationSeconds": 30}, "uploadDelayMs": 4000}))
+            // Every policy lasts a second, so it is due half a second after it arrives. The one file is held at storage
+            // until four policies have been asked for: upload()'s own, then the timer's, the first half a second on and
+            // the others a second apart. So all four happen while the upload is in flight, however slowly the timer
+            // fires; renewals every half second would show as gaps under a second.
+            m.faults(json!({"uploadReservation": {"policySeconds": 1, "reservationSeconds": 30}, "holdUploadsAfter": 0, "releaseUploadsAfterPolicies": 4}))
                 .await;
             let c = client(m);
             let data = b"Staff receive 20 days of annual leave.";
@@ -4514,8 +4511,8 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 .filter_map(|r| r["at"].as_i64())
                 .collect();
             ensure!(
-                (4..=6).contains(&at.len()),
-                "{} policies asked for in 4 s: want the timer's renewals, at most one a second",
+                (4..=5).contains(&at.len()),
+                "{} policies asked for: want upload()'s own and three of the timer's (one more may be on its way)",
                 at.len()
             );
             let gaps: Vec<i64> = at.windows(2).skip(1).map(|w| w[1] - w[0]).collect();
@@ -4855,7 +4852,8 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             Ok(())
         }),
         "batch-upload.cancel" => Box::pin(async move {
-            m.faults(json!({"uploadDelayMs": 2000})).await;
+            // Both uploads are held at storage until the client lets go of them (at most 10 s).
+            m.faults(json!({"holdUploadsAfter": 0})).await;
             let c = client(m);
             let batch = hand_batch(
                 &c,
@@ -4879,10 +4877,8 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             token.cancel();
             let r = call.await.map_err(s)?;
             ensure!(matches!(r, Err(Error::Cancelled)), "got {:?}", r.err());
-            ensure!(
-                t0.elapsed() < Duration::from_millis(1500),
-                "the uploads were waited for, not aborted"
-            );
+            // Not waited for: both uploads were held until the client let go of them, so one waited for would have been
+            // stored when its hold ended. The mock logs both aborted, and nothing completed (below).
             let t1 = Instant::now();
             while m.matching(|r| str_at(r, "event") == "upload-aborted").await.len() < 2 {
                 ensure!(t1.elapsed() < Duration::from_secs(4), "the mock saw no aborted upload");
@@ -5357,7 +5353,6 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
                 .build()
                 .map_err(s)?;
             m.faults(held("GetKnowledgeBase", 3)).await;
-            let t0 = Instant::now();
             let e = c.knowledge_base(KB).get().await.err().ok_or("no error")?;
             ensure!(
                 matches!(e, Error::Connection(_)) && e.code() == Some("CONNECTION_ERROR") && e.status() == Some(0),
@@ -5370,7 +5365,6 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             );
             let attempts = m.matching(|r| str_at(r, "path") == format!("/v3/knowledge-bases/{KB}")).await.len();
             ensure!(attempts == 3, "{attempts} attempts; want 3, retried as a read is");
-            ensure!(t0.elapsed() < Duration::from_secs(10), "took too long");
             tokio::time::sleep(Duration::from_millis(200)).await;
             let closed = mock_events(m, "request-aborted", "GetKnowledgeBase").await;
             ensure!(closed == 3, "{closed} attempts closed; want each of the 3");

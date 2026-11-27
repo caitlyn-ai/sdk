@@ -569,8 +569,9 @@ var batchCases = map[string]func(t *testing.T, m mock){
 	},
 
 	"batch-upload.cancel": func(t *testing.T, m mock) {
-		// Each upload takes 3 s at storage: cancelling aborts those in flight at once, without waiting for them
-		m.faults(t, map[string]any{"uploadDelayMs": 3000})
+		// Every upload is held at storage until the client lets go of it (at most 10 s): cancelling aborts those in
+		// flight at once, without waiting for them
+		m.faults(t, map[string]any{"holdUploadsAfter": 0})
 		c := client(t, m)
 		items, files := newFiles(12)
 		b := startedBatch(t, c, items)
@@ -586,8 +587,10 @@ var batchCases = map[string]func(t *testing.T, m mock){
 			cancel()
 		}()
 		_, err := b.Upload(ctx, caitlyn.FilesByPath(files), nil)
-		if took := time.Since(cancelledAt); cancelledAt.IsZero() || took > time.Second {
-			t.Fatalf("returned %v after the cancellation, want at once", took)
+		// Returned without waiting for the uploads: they were held until the client let go of them, so any that had been
+		// waited for would have been stored when the hold ended. None was (below).
+		if cancelledAt.IsZero() {
+			t.Fatal("returned before the cancellation")
 		}
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("got %v, want context.Canceled", err)
