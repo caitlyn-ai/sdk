@@ -951,6 +951,26 @@ test('[cancel.unary] cancelling a single call stops it', async () => {
   await assert.rejects(client().agents('GHT7YRWXPL').draft.get({ signal: controller.signal }), (err: Error) => err.name === 'AbortError');
 });
 
+test('[cancel.before-retry] a call cancelled once its attempt is answered ends with AbortError, not the answer, and sends nothing more', async () => {
+  // The cancel comes when the whole answer has arrived, before the SDK has done anything with it: an event, not a timer.
+  const cancelOnAnswer = (controller: AbortController) => async (input: RequestInfo | URL, init?: RequestInit) => {
+    const res = await fetch(input instanceof Request ? input : new Request(input, init));
+    const body = await res.arrayBuffer();
+    controller.abort();
+    return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+  };
+  // A 503 that asks for a retry in 30 s, and a 500, which is not retried: either way the caller cancelled first.
+  for (const fault of [{ status: 503, retryAfter: 30 }, { status: 500 }]) {
+    await fetch(`${BASE}/__mock/reset`, { method: 'POST' });
+    await faults({ status: { GetAgentVersion: [fault] } });
+    const controller = new AbortController();
+    const c = client({ requestHandler: { customFetch: cancelOnAnswer(controller) } });
+    const err = await c.agents('GHT7YRWXPL').draft.get({ signal: controller.signal }).then(() => undefined, (e: Error) => e);
+    assert.equal(err?.name, 'AbortError', `after a ${fault.status}: ${String(err)}`);
+    assert.equal((await api()).filter((r) => r.path.includes('/versions/')).length, 1, `after a ${fault.status}: nothing more sent`);
+  }
+});
+
 // ---------------------------------------------------------------- updates
 
 test('[update.if-match] If-Match is sent from the call option and the new ETag comes back', async () => {

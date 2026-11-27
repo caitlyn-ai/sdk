@@ -1733,6 +1733,37 @@ fn protocol<'a>(id: &str, m: &'a Mock) -> Option<Fut<'a>> {
             Ok(())
         }),
 
+        "cancel.before-retry" => Box::pin(async move {
+            // A 503 that asks for a retry in 30 s. The cancel comes once the mock has answered it, an event rather than a
+            // timer: the call is then between its answer and the retry, or in the wait, and ends cancelled with nothing
+            // more sent. (Rust's harness has no client-side hook on a response, so the 500 path the other languages
+            // also check is not here; send() checks the token on every attempt's result.)
+            m.faults(status("GetAgentVersion", &[(503, 30)])).await;
+            let token = CancellationToken::new();
+            let t = token.clone();
+            let call = {
+                let c = client(m);
+                tokio::spawn(async move { c.agent(AGENT).version("draft").get().cancel_on(t).await })
+            };
+            loop {
+                let answered = m
+                    .api()
+                    .await
+                    .iter()
+                    .any(|r| str_at(r, "path").contains("/versions/") && r["status"].as_i64() == Some(503));
+                if answered {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            token.cancel();
+            let r = call.await.map_err(s)?;
+            ensure!(matches!(r, Err(Error::Cancelled)), "got {:?}", r.err());
+            let n = m.api().await.iter().filter(|r| str_at(r, "path").contains("/versions/")).count();
+            ensure!(n == 1, "{n} requests: want nothing more sent");
+            Ok(())
+        }),
+
         // ------------------------------------------------------------------ updates
         "update.if-match" => Box::pin(async move {
             let c = client(m);

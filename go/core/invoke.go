@@ -209,6 +209,15 @@ func (c *Client) Do(ctx context.Context, op *Operation, req *Request, opts []Cal
 		if resp != nil {
 			span.SetAttributes(attribute.String("caitlyn.request_id", resp.Header.Get("Caitlyn-Request-Id")))
 		}
+		// Cancelled wins (PROTOCOL.md 6.4.5): once the caller has cancelled, the call ends with the context's error,
+		// whatever the attempt brought back, an answer or an error, and nothing more is sent.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			if resp != nil && resp.Body != nil {
+				resp.Body.Close()
+			}
+			recordFailure(span, ctxErr)
+			return nil, ctxErr
+		}
 		if err == nil {
 			c.budget.release(lastRetryCost)
 			return resp, nil

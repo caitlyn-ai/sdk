@@ -488,6 +488,12 @@ class AsyncClientCore(_CoreBase):
                         await response.aclose()
                 error = None if _succeeded(spec, response) else read_error(spec, response)
                 self._after_attempt(call, span, request, response, None, error)
+                # Cancelled wins (PROTOCOL.md 6.4.5): a task cancelled while this attempt was answered ends cancelled,
+                # whatever the answer was, and sends nothing more.
+                if (task := asyncio.current_task()) is not None and task.cancelling():
+                    if error is None and spec.streaming:
+                        await response.aclose()
+                    raise asyncio.CancelledError()
                 if error is None:
                     self.retry_budget.release(retry_cost)
                     return response, call

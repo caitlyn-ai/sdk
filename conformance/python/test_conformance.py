@@ -994,6 +994,26 @@ async def test_cancel_unary(mock: Mock, case_id: str) -> None:
         await task
 
 
+@case("cancel.before-retry")
+async def test_cancel_before_retry(mock: Mock, case_id: str) -> None:
+    # The cancel comes when the whole answer has arrived, before the SDK has done anything with it: an event, not a timer.
+    # A 503 that asks for a retry in 30 s, and a 500, which is not retried: either way the caller cancelled first.
+    for fault in ({"status": 503, "retryAfter": 30}, {"status": 500}):
+        mock.reset()
+        mock.faults(status={"GetAgentVersion": [fault]})
+        holder: dict[str, asyncio.Task[object]] = {}
+
+        async def cancel_on_answer(response: httpx.Response) -> None:
+            await response.aread()
+            holder["task"].cancel()
+
+        c = client(mock, http_client=httpx.AsyncClient(event_hooks={"response": [cancel_on_answer]}))
+        holder["task"] = asyncio.create_task(c.agents("GHT7YRWXPL").draft.get())
+        with pytest.raises(asyncio.CancelledError):
+            await holder["task"]
+        assert len([r for r in mock.api() if "/versions/" in r["path"]]) == 1, f"after a {fault['status']}: nothing more sent"
+
+
 # ------------------------------------------------------------------ updates
 
 

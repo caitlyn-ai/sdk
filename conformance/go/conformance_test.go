@@ -1124,6 +1124,24 @@ var protocol = map[string]func(t *testing.T, m mock){
 			t.Fatal("the mock saw no disconnect")
 		}
 	},
+	"cancel.before-retry": func(t *testing.T, m mock) {
+		// The cancel comes when the answer has arrived, before the SDK has done anything with it: an event, not a timer.
+		// A 503 that asks for a retry in 30 s, and a 500, which is not retried: either way the caller cancelled first.
+		for _, f := range []map[string]any{fault(503, 30), {"status": 500}} {
+			m.post(t, "/__mock/reset", nil)
+			m.faults(t, status("GetAgentVersion", f))
+			ctx, cancel := context.WithCancel(context.Background())
+			c := client(t, m, caitlyn.WithHTTPClient(hook{after: func(*http.Request, *http.Response) { cancel() }}))
+			_, err := c.Agent(agent).Draft().Get(ctx)
+			cancel()
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("after a %v: got %v, want context.Canceled", f["status"], err)
+			}
+			if n := len(m.matching(t, pathContains("/versions/"))); n != 1 {
+				t.Fatalf("after a %v: %d requests, want nothing more sent", f["status"], n)
+			}
+		}
+	},
 	"cancel.unary": func(t *testing.T, m mock) {
 		m.faults(t, status("GetAgentVersion", fault(503, 2)))
 		ctx, cancel := context.WithCancel(context.Background())

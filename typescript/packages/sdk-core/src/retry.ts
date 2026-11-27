@@ -115,12 +115,15 @@ export function resolveRetryConfig<T extends { maxAttempts?: Lazy<number>; retry
   return Object.assign(input, { maxAttempts, retryStrategy: () => strategy });
 }
 
+/** The error a cancelled call ends with. */
+const abortError = () => Object.assign(new Error('Request aborted'), { name: 'AbortError' });
+
 /** Rejects with an AbortError when the signal fires first. */
 function race<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return promise;
   let cleanup = () => {};
   const aborted = new Promise<never>((_, reject) => {
-    const handler = () => reject(Object.assign(new Error('Request aborted'), { name: 'AbortError' }));
+    const handler = () => reject(abortError());
     if (signal.aborted) handler();
     else {
       signal.addEventListener('abort', handler, { once: true });
@@ -157,13 +160,18 @@ export function getRetryPlugin(options: { retryStrategy: () => Promise<RetryStra
     let attempts = 0;
     let totalRetryDelay = 0;
     for (;;) {
+      // Cancelled wins (PROTOCOL.md 6.4.5): once the signal has fired, nothing more is sent, and the call ends with an
+      // AbortError, whatever the attempt brought back.
+      if (signal?.aborted) throw abortError();
       try {
         const { response, output } = await next(args);
+        if (signal?.aborted) throw abortError();
         strategy.recordSuccess(token);
         output.$metadata.attempts = attempts + 1;
         output.$metadata.totalRetryDelay = totalRetryDelay;
         return { response, output };
       } catch (e) {
+        if (signal?.aborted) throw (e as Error)?.name === 'AbortError' ? e : abortError();
         const lastError = asError(e);
         if (isStream(args.request?.body)) throw lastError; // its bytes are spent
         const hint = retryAfter((e as { $response?: unknown })?.$response);

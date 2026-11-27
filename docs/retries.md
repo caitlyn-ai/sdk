@@ -30,7 +30,9 @@ SDK follows the same rules.
   never wait longer than you said.
 - Otherwise it waits a random time between 0 and `0.5 s × 2^retry`, at most 8 seconds ("full jitter"), so that
   many clients failing at once do not all come back at once.
-- Cancelling the call (an abort signal, a cancelled context or task) stops the wait.
+- Cancelling the call (an abort signal, a cancelled context or task) stops the wait. A cancelled call always ends
+  cancelled, with the language's own cancellation error, even when an answer or an error had already come back: it
+  never hands you that answer after you cancelled, and sends nothing more.
 
 ## Idempotency keys
 

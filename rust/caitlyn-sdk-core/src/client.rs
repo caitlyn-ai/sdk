@@ -400,7 +400,9 @@ impl Client {
         tokio::select! {
             biased;
             _ = opts.cancelled() => Err(Error::Cancelled),
-            r = self.send_inner(op, req, opts) => r,
+            // Cancelled wins (PROTOCOL.md 6.4.5): a call cancelled by the time its attempt is answered ends cancelled,
+            // whatever the answer was.
+            r = self.send_inner(op, req, opts) => if opts.is_cancelled() { Err(Error::Cancelled) } else { r },
         }
     }
 

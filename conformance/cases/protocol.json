@@ -58,6 +58,7 @@
     {"id": "errors.connection", "section": "6.5", "title": "A connection closed before any response, and a refused connection, are the connection error: status 0, code CONNECTION_ERROR, the cause kept"},
     {"id": "cancel.stream", "section": "5.8", "title": "Cancelling a stream closes the connection and raises the language's cancellation error"},
     {"id": "cancel.unary", "section": "5.8", "title": "Cancelling a single call stops it"},
+    {"id": "cancel.before-retry", "section": "6.4", "title": "A call cancelled once its attempt is answered, before its result is handed back, ends with the language's own cancellation error and sends nothing more: after a 503 that asks for a retry, and after an error that is not retried"},
     {"id": "update.if-match", "section": "10", "title": "If-Match is sent from the call option and the new ETag comes back"},
     {"id": "update.clear", "section": "8", "title": "clear sends only the clear list, and the field is cleared"},
     {"id": "wire.headers", "section": "3.1", "title": "Exactly the SDK headers: Caitlyn user agent, Caitlyn-Sdk-Model, no AWS headers"},
