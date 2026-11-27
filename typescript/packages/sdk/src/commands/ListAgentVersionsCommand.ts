@@ -27,8 +27,8 @@ export interface ListAgentVersionsCommandOutput extends ListAgentVersionsOutput,
  *
  * Each entry says how the version was made, who made it, whether live points at it, and which
  * members differ from the version it was made from. The draft and live are not entries: read them
- * with `draft` and `live`. Needs the agent's version access grant, as reading any version other than
- * live does.
+ * with `draft` and `live`. Needs the agent's version access grant, as reading any version, `live`
+ * included, does.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript

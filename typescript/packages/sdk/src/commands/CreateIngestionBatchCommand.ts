@@ -28,9 +28,18 @@ export interface CreateIngestionBatchCommandOutput extends CreateIngestionBatchO
  * Takes up to 10,000 items; add more with BatchCreateIngestionBatchItems while `awaitMoreItems` is
  * true. Returns 202 with the batch, and `Location` names it; wait for the plan with the SDKs'
  * `batch.planned()`. Needs the ingestion create permission and read access to the knowledge base,
- * as v2's ingestion route does; starting the batch, which hands out an upload policy, also needs the
- * files create permission. A `fetchUrl` item needs the files create permission when it is added,
- * which the server checks, because the trait cannot follow an item's member.
+ * as v2's ingestion route does. A batch that needs bytes uploaded also needs the files create
+ * permission to be started with StartIngestionBatch, which hands out the upload policy; a batch that
+ * needs none runs without that call under `start: when_planned`. A `fetchUrl` item needs the files
+ * create permission when it is added, which the server checks, because the trait cannot follow an
+ * item's member.
+ *
+ * Each item that removes a document (`remove`, or an overwrite) is checked by the server for the
+ * files delete permission, and each item that moves one, or adds a new version of one, for the files
+ * update permission, and the token's scope covers it too. An item that fails the check is marked
+ * `failed` with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts
+ * through StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked
+ * per item, not once on the call.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript
@@ -180,7 +189,9 @@ export interface CreateIngestionBatchCommandOutput extends CreateIngestionBatchO
  * `METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one
  * entry per field in `errors`; an ingestion batch item gives both or neither of its content's
  * description and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused
- * a file (`CONTENT_REJECTED`).
+ * a file (`CONTENT_REJECTED`); or a grant of a knowledge base to a role that guests or anonymous
+ * visitors use is not safe for them (`RBAC_NOT_GUEST_SAFE`), refused for what the grant is, not
+ * for what the caller lacks.
  *
  * @throws {@link InternalError} (server fault)
  *  An unexpected server failure. Not retried by the SDKs.

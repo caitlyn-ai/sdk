@@ -28,8 +28,9 @@ export interface ListDocumentsCommandOutput extends ListDocumentsOutput, __Metad
  * Documents are returned in a stable order that does not change between pages. Filters combine
  * with AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. With `filter[folder][eq]`,
  * the documents directly in that folder; with `deep` as well, every document below it. `q` keeps
- * documents whose name contains the text. The list can be sorted by `name`, `updatedAt` (when the
- * document last changed) and `byteSize`.
+ * documents whose name contains the text. The list can be sorted by `folder`, `name`, `updatedAt`
+ * (when the document last changed) and `byteSize`. With no `sort`, documents come by folder, then
+ * name.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript

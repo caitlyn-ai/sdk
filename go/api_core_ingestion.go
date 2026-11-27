@@ -31,7 +31,7 @@ func newCoreIngestion(c *Client) *CoreIngestion {
 // while the batch has items awaiting upload, and goes through the same checks; only an item whose
 // bytes are still missing when its reservation ends fails, with `UPLOAD_EXPIRED`.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *CoreIngestion) CompleteUploads(ctx context.Context, knowledgeBaseID string, ingestionBatchID string, in *CompleteIngestionBatchUploadsInput, opts ...CallOption) (*CompleteIngestionBatchUploadsResult, error) {
 	p := &completeIngestionBatchUploadsParams{}
 	if in != nil {
@@ -51,7 +51,7 @@ func (s *CoreIngestion) CompleteUploads(ctx context.Context, knowledgeBaseID str
 // first did. The SDKs renew when less than 5 minutes, or half the policy's lifetime when that is
 // shorter, are left.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *CoreIngestion) UploadPolicy(ctx context.Context, knowledgeBaseID string, ingestionBatchID string, opts ...CallOption) (*IngestionBatchUploadPolicy, error) {
 	p := &createIngestionBatchUploadPolicyParams{}
 	p.KnowledgeBaseID = knowledgeBaseID
@@ -66,7 +66,7 @@ func (s *CoreIngestion) UploadPolicy(ctx context.Context, knowledgeBaseID string
 // the item, or `failed` with a problem (for example 422 `BATCH_ITEM_CONTENT_AMBIGUOUS`). One bad
 // item never refuses the rest. A batch that is not `draft` is refused with 409 `CONFLICT`.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *CoreIngestion) AddItems(ctx context.Context, knowledgeBaseID string, ingestionBatchID string, in *BatchCreateIngestionBatchItemsInput, opts ...CallOption) (*BatchCreateIngestionBatchItemsResult, error) {
 	p := &batchCreateIngestionBatchItemsParams{}
 	if in != nil {
@@ -99,7 +99,7 @@ type batchCreateIngestionBatchItemsParams struct {
 var opBatchCreateIngestionBatchItems = &core.Operation{
 	Name:      "BatchCreateIngestionBatchItems",
 	Method:    "POST",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{
 		{Where: "body", Path: "/items/*/byteSize", Min: core.Bound(1)},
@@ -161,7 +161,7 @@ type completeIngestionBatchUploadsParams struct {
 var opCompleteIngestionBatchUploads = &core.Operation{
 	Name:      "CompleteIngestionBatchUploads",
 	Method:    "POST",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -213,7 +213,7 @@ type createIngestionBatchUploadPolicyParams struct {
 var opCreateIngestionBatchUploadPolicy = &core.Operation{
 	Name:              "CreateIngestionBatchUploadPolicy",
 	Method:            "POST",
-	Since:             "5.115.0",
+	Since:             "5.144.0",
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},

@@ -34,6 +34,13 @@ export interface StartIngestionBatchCommandOutput extends StartIngestionBatchOut
  * `INGESTION_BATCH_UNRESOLVED` while any item is `unresolved`. Returns 202 with the batch and one
  * upload policy: list the items to upload with `filter[status][eq]=awaiting_upload`, upload each to
  * its `objectKey`, then report them with CompleteIngestionBatchUploads.
+ *
+ * Each item that removes a document (`remove`, or an overwrite) is checked by the server for the
+ * files delete permission, and each item that moves one, or adds a new version of one, for the files
+ * update permission, and the token's scope covers it too. An item that fails the check is marked
+ * `failed` with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts
+ * through StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked
+ * per item, not once on the call.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript

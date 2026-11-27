@@ -38,7 +38,7 @@ func (s *DocumentVersionScope) Version() string { return s.version }
 // `version` is a number, `current` (the version search uses) or `latest` (the newest, whatever its
 // state). A caller who may not add versions can read only the current version.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *DocumentVersionScope) Get(ctx context.Context, opts ...CallOption) (*DocumentVersion, error) {
 	p := &getDocumentVersionParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -56,10 +56,13 @@ func (s *DocumentVersionScope) Get(ctx context.Context, opts ...CallOption) (*Do
 //
 // A version's number is its place in upload order, so deleting by number needs the document's
 // versions to be numbered already: until they are, a number is refused with 409
-// `VERSIONS_NOT_NUMBERED`, because deleting would shift every later number. Try again later, or
-// delete `latest`, which works either way.
+// `VERSIONS_NOT_NUMBERED`, because deleting would shift every later number; try again later.
 //
-// Since Caitlyn 5.115.0; beta.
+// Only a version number is accepted: `latest` and `current` are refused with 400
+// `VALIDATION_FAILED`, because the version they name changes after each delete, so a retried
+// request could delete a second version.
+//
+// Since Caitlyn 5.144.0; beta.
 func (s *DocumentVersionScope) Delete(ctx context.Context, opts ...CallOption) (*DeleteDocumentVersionResult, error) {
 	p := &deleteDocumentVersionParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -78,7 +81,7 @@ type deleteDocumentVersionParams struct {
 var opDeleteDocumentVersion = &core.Operation{
 	Name:      "DeleteDocumentVersion",
 	Method:    "DELETE",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -129,7 +132,7 @@ type getDocumentVersionParams struct {
 var opGetDocumentVersion = &core.Operation{
 	Name:      "GetDocumentVersion",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,

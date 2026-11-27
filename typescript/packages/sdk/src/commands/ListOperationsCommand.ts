@@ -26,7 +26,9 @@ export interface ListOperationsCommandOutput extends ListOperationsOutput, __Met
  * Lists the Operations on one knowledge base, or one thing in it, newest first.
  *
  * The caller needs read access to the knowledge base. Narrow the list with the target, the kind and
- * the status.
+ * the status. Rows are filtered to the Operations a direct GetOperation would return for this
+ * caller: an Operation whose target the caller could not read is left out, not shown with its
+ * details removed.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript

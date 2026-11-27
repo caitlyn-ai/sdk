@@ -28,6 +28,14 @@ export interface UpdateIngestionBatchItemCommandOutput extends UpdateIngestionBa
  * Only `resolution` can change, and only while the batch is `planned`; anything else is refused with
  * 409 `CONFLICT`. A resolution that does not fit the outcome (for example `move` for a `new` item) is
  * refused with 400 `VALIDATION_FAILED`.
+ *
+ * Resolving to `remove`, an overwrite or `move` does not check the permission now: each item that
+ * removes a document (`remove`, or an overwrite) is checked by the server for the files delete
+ * permission, and each item that moves one, or adds a new version of one, for the files update
+ * permission, and the token's scope covers it too. An item that fails the check is marked `failed`
+ * with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts through
+ * StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked per
+ * item, not once on the call.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript

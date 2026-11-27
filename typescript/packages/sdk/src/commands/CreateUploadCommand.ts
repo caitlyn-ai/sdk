@@ -100,7 +100,9 @@ export interface CreateUploadCommandOutput extends CreateUploadOutput, __Metadat
  * `METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one
  * entry per field in `errors`; an ingestion batch item gives both or neither of its content's
  * description and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused
- * a file (`CONTENT_REJECTED`).
+ * a file (`CONTENT_REJECTED`); or a grant of a knowledge base to a role that guests or anonymous
+ * visitors use is not safe for them (`RBAC_NOT_GUEST_SAFE`), refused for what the grant is, not
+ * for what the caller lacks.
  *
  * @throws {@link InternalError} (server fault)
  *  An unexpected server failure. Not retried by the SDKs.
@@ -148,7 +150,8 @@ export interface CreateUploadCommandOutput extends CreateUploadOutput, __Metadat
  *   id: "0193a6f2-1111-7a2b-8c3d-4e5f60718293",
  *   location: "/api/v3/uploads/0193a6f2-1111-7a2b-8c3d-4e5f60718293",
  *   requiredHeaders: {
- *     Content-Type: "application/pdf"
+ *     Content-Type: "application/pdf",
+ *     x-amz-checksum-sha256: "n4bQgYhMfWWaL+qgxVrQFaO/TxsrC4Is0V1sFbDwCgg="
  *   },
  *   status: "awaiting_bytes",
  *   uploadMethod: "PUT",

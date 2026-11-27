@@ -28,8 +28,8 @@ export interface GetHistoryEntryCommandOutput extends GetHistoryEntryOutput, __M
  * The configuration is that of the entry's `version`, which never changes. Reading the entry (who
  * changed live, when, and to which version) needs agent read; its `configuration` needs what
  * reading that version needs, so a caller without the permission to read versions, or without the
- * agent's version access grant for a version that is not live now, gets the entry without it. It is also absent when that version was deleted
- * through an older API that does not protect versions named in live history.
+ * agent's version access grant, gets the entry without it. It is also absent when that version was
+ * deleted through an older API that does not protect versions named in live history.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript

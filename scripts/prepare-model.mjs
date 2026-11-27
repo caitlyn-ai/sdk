@@ -11,7 +11,8 @@
 // The app's local loop (scripts/dev-sdk.sh) uses its dev mode instead, for a model the app has just built:
 //   node scripts/prepare-model.mjs --dev <input model.json> <output model.json>
 // It reads <input>, not the snapshot, so it skips the lock's SHA-256 check (the input is not the locked model); it
-// still stamps @since("next") with the lock's stampNext, and it writes <output>, never build/model/model.json, which
+// still stamps @since("next") with the lock's stampNext (or, with a published lock, the minor release after its
+// version), and it writes <output>, never build/model/model.json, which
 // `make generate` reads. Committed generated code comes only from the locked snapshot.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -38,14 +39,18 @@ delete ast.metadata?.validators;
 delete ast.metadata?.suppressions;
 
 const SINCE = 'ai.caitlyn.traits#since';
+// What "next" is stamped as: the lock's stampNext. A published lock has none (its model has no "next"), so dev mode, for
+// an app build made after that release, stamps the release after it: the next minor version.
+const nextMinor = (v) => (/^\d+\.\d+\.\d+$/.test(v ?? '') ? `${v.split('.')[0]}.${Number(v.split('.')[1]) + 1}.0` : null);
+const stampNext = lock.stampNext || (dev ? nextMinor(lock.version) : null);
 let stamped = 0;
 const stamp = (traits) => {
   if (traits?.[SINCE] === 'next') {
-    if (!/^\d+\.\d+\.\d+$/.test(lock.stampNext ?? '')) {
+    if (!/^\d+\.\d+\.\d+$/.test(stampNext ?? '')) {
       console.error('prepare-model: the model contains @since("next") and model.lock.json has no stampNext release number.');
       process.exit(1);
     }
-    traits[SINCE] = lock.stampNext;
+    traits[SINCE] = stampNext;
     stamped++;
   }
 };
@@ -57,4 +62,4 @@ fs.mkdirSync(path.dirname(output), { recursive: true });
 fs.writeFileSync(output, JSON.stringify(ast, null, 2));
 const from = dev ? `the dev model ${path.relative(root, input)}` : (lock.version ?? 'an unpublished model');
 console.log(`prepare-model: ${path.relative(root, output)} from ${from} (${sha.slice(0, 12)})` +
-  (stamped ? `, ${stamped} @since("next") stamped as ${lock.stampNext}` : ''));
+  (stamped ? `, ${stamped} @since("next") stamped as ${stampNext}` : ''));

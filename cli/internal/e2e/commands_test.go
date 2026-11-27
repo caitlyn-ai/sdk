@@ -604,7 +604,8 @@ func TestApplyPublishRetryAndUnknownMembers(t *testing.T) {
 		t.Fatalf("first publish: %d %s", r.code, r.errOut)
 	}
 	os.WriteFile(path, []byte(strings.Replace(string(b), "Answer from the HR policies.", "Answer from the HR policies. Be brief.", 1)), 0o644)
-	faults(t, map[string]any{"status": map[string]any{"PublishAgentVersion": []map[string]any{{"status": 503}}}})
+	// PublishAgentVersion takes an Idempotency-Key (model 5.156.0), so the SDK retries a 503: fail every attempt
+	faults(t, map[string]any{"status": map[string]any{"PublishAgentVersion": []map[string]any{{"status": 503}, {"status": 503}, {"status": 503}}}})
 	r := run(t, nil, "", "apply", "-f", dir, "--yes", "--publish", "--name", "release-1")
 	if r.code == 0 {
 		t.Fatalf("the publish failed, so apply fails: %s", r.errOut)
@@ -834,7 +835,8 @@ func TestRetryPublishesWithoutBasedOn(t *testing.T) {
 	path := filepath.Join(dir, "agents", agentID+".yaml")
 	b, _ := os.ReadFile(path)
 	os.WriteFile(path, []byte(strings.Replace(string(b), "Answer from the HR policies.", "Answer from the HR policies. Retry me.", 1)), 0o644)
-	faults(t, map[string]any{"status": map[string]any{"PublishAgentVersion": []map[string]any{{"status": 503}}}})
+	// PublishAgentVersion takes an Idempotency-Key (model 5.156.0), so the SDK retries a 503: fail every attempt
+	faults(t, map[string]any{"status": map[string]any{"PublishAgentVersion": []map[string]any{{"status": 503}, {"status": 503}, {"status": 503}}}})
 	if r := run(t, nil, "", "apply", "-f", dir, "--yes", "--publish", "--name", "release-1"); r.code == 0 {
 		t.Fatalf("the publish failed, so apply fails")
 	}

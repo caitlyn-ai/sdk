@@ -2116,8 +2116,8 @@ export var ProcessingEstimate$: StaticStructureSchema = [3, n0, _PEr,
 ];
 export var PublishAgentVersionInput$: StaticStructureSchema = [3, n0, _PAVI,
   0,
-  [_aI, _ve, _iM, _eLx, _n, _no],
-  [[0, 1], [0, 1], [0, { [_hH]: _IM }], 0, 0, 0], 2
+  [_aI, _ve, _iK, _iM, _eLx, _n, _no],
+  [[0, 1], [0, 1], [0, { [_hH]: _IK, [_iT]: 1 }], [0, { [_hH]: _IM }], 0, 0, 0], 2
 ];
 export var PublishAgentVersionOutput$: StaticStructureSchema = [3, n0, _PAVO,
   0,
@@ -2166,8 +2166,8 @@ export var ReprocessDocumentsOutput$: StaticStructureSchema = [3, n0, _RDO,
 ];
 export var ResetDraftVersionInput$: StaticStructureSchema = [3, n0, _RDVIe,
   0,
-  [_aI, _iM, _fr],
-  [[0, 1], [0, { [_hH]: _IM }], 0], 3
+  [_aI, _iM, _fr, _iK],
+  [[0, 1], [0, { [_hH]: _IM }], 0, [0, { [_hH]: _IK, [_iT]: 1 }]], 3
 ];
 export var ResetDraftVersionOutput$: StaticStructureSchema = [3, n0, _RDVOe,
   0,

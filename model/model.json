@@ -531,6 +531,9 @@
                 "agent.native.connectorprobe": {
                     "scope": "agents:write"
                 },
+                "agent.native.conversationsummary": {
+                    "scope": "agents:write"
+                },
                 "agent.native.echo": {
                     "scope": "agents:write"
                 },
@@ -1222,6 +1225,9 @@
                 "caitlyn.deprecated",
                 "caitlyn.error.code",
                 "caitlyn.idempotency.replayed",
+                "caitlyn.ingestion_batch.id",
+                "caitlyn.ingestion_batch.item.id",
+                "caitlyn.ingestion_batch.item.path",
                 "caitlyn.ingestion_batch.item.status",
                 "caitlyn.ingestion_batch.start",
                 "caitlyn.ingestion_batch.status",
@@ -1798,7 +1804,7 @@
                 "version": {
                     "target": "smithy.api#String",
                     "traits": {
-                        "smithy.api#documentation": "The input member holding an agent version. `live` needs only the agent grant; any\nother version also needs the agent's version access grant."
+                        "smithy.api#documentation": "The input member holding an agent version. Every version, `live`\nincluded, needs the agent grant and the agent's version access grant."
                     }
                 },
                 "alsoVersion": {
@@ -1816,7 +1822,7 @@
                 "versionAccess": {
                     "target": "smithy.api#Boolean",
                     "traits": {
-                        "smithy.api#documentation": "True when the operation reveals the agent's versions without naming one (listing them), so\nit needs the agent's version access grant, as reading any version other than live does."
+                        "smithy.api#documentation": "True when the operation reveals the agent's versions without naming one (listing them), so\nit needs the agent's version access grant, as reading any version other than `live` does."
                     }
                 },
                 "documentAccess": {
@@ -2284,7 +2290,7 @@
                 "conversationAgent": {
                     "target": "ai.caitlyn.traits#ConversationAgentCheck",
                     "traits": {
-                        "smithy.api#documentation": "On an operation whose entity is a conversation: also check the agent and version the\nconversation was started on, which the server reads from the conversation, as v2's chat turns\ndo (nativeChatRouteGuards.ts). The caller needs the agent grant at `level` on that agent, and\nthe version check on that version (the agent's version access grant for any version other\nthan live), so revoking either stops the caller chatting in conversations already started."
+                        "smithy.api#documentation": "On an operation whose entity is a conversation: also check the agent and version the\nconversation was started on, which the server reads from the conversation, as v2's chat turns\ndo (nativeChatRouteGuards.ts). The caller needs the agent grant at `level` on that agent and,\nfor a version other than `live`, the agent's version access grant, so revoking either stops\nthe caller chatting in conversations already started."
                     }
                 },
                 "whenPresent": {
@@ -2399,7 +2405,7 @@
                 "default": {
                     "target": "smithy.api#String",
                     "traits": {
-                        "smithy.api#documentation": "The order used when the caller sends no `sort`, for example \"-createdAt\". Every List\ndocuments its default order; while it is not decided yet, CaitlynFilters warns."
+                        "smithy.api#documentation": "The order used when the caller sends no `sort`, written like `sort`: one or more of `fields`,\ncomma-separated, for example \"-createdAt\" or \"folder,name\". Every List\ndocuments its default order; while it is not decided yet, CaitlynFilters warns."
                     }
                 }
             },
@@ -2528,7 +2534,7 @@
                 }
             },
             "traits": {
-                "smithy.api#documentation": "The member holds what reading an agent version shows, so it is present only when the caller may\nread the version `versionMember` names, by the check GetAgentVersion makes: the permission\n`action` (v2 reads a configuration only under `agents.aliases.read`), and the agent grant for the\nversion live points at now or the agent's version access grant for any other. Without both the\nserver leaves the member out and returns the rest of the record, so the record itself stays\nreadable under its own permission. It applies wherever the structure appears: a single read, a\nlist row, an event, or inside another operation's result.",
+                "smithy.api#documentation": "The member holds what reading an agent version shows, so it is present only when the caller may\nread the version `versionMember` names, by the check GetAgentVersion makes: the permission\n`action` (v2 reads a configuration only under `agents.aliases.read`), the agent grant and, for a\nversion other than `live`, the agent's version access grant. Without them the\nserver leaves the member out and returns the rest of the record, so the record itself stays\nreadable under its own permission. It applies wherever the structure appears: a single read, a\nlist row, an event, or inside another operation's result.",
                 "smithy.api#trait": {
                     "selector": "structure > member"
                 }
@@ -3806,7 +3812,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Adds up to 10,000 more items to a batch that is still `draft`, with a result for each.\n\nA batch takes at most 100,000 items, at most 1,000 of them with `fetchUrl`. The call returns 200\neven when every item fails: `results` has one entry per item, in request order, each `created` with\nthe item, or `failed` with a problem (for example 422 `BATCH_ITEM_CONTENT_AMBIGUOUS`). One bad\nitem never refuses the rest. A batch that is not `draft` is refused with 409 `CONFLICT`.",
                 "smithy.api#examples": [
@@ -3967,7 +3973,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Deletes up to 100 documents in one call, with a result for each.\n\nEach document is deleted as DeleteDocument deletes one. The call returns 200 even when every\nitem fails: `results` has one entry per identifier, always in request order, each either\n`accepted` (the document is now `deleting`, or already was) or `failed` with a code: `NOT_FOUND`\nfor a document that is gone or that the caller may not see, or `SERVICE_UNAVAILABLE` when it could\nnot be marked for deletion; try that one again. A document still being processed is deleted like\nany other. One failed item never stops the others. More than 100\nidentifiers, none, or the same identifier twice is refused with 400 `VALIDATION_FAILED` for the\nwhole call. Safe to repeat: a repeat gives the same results, apart from `NOT_FOUND` for documents\nthat finished deleting in between.",
                 "smithy.api#examples": [
@@ -4185,9 +4191,9 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Stops the work running on a document: its ingestion, a fill-in or reprocessing.\n\nA stopped first version removes the document; a stopped new version leaves the current one\nserving. Until stopping running work is built, every call is refused with 409 `CONFLICT` (\"This\ndocument's processing can't be stopped yet\"), so callers can build against it now.",
+                "smithy.api#documentation": "Stops the work running on a document: its ingestion, a fill-in or reprocessing.\n\nA stopped first version removes the document; a stopped new version leaves the current one\nserving. Until stopping running work is built, every call is refused with 409 `CONFLICT` (\"This\ndocument's processing can't be stopped yet\"), so callers can build against it now.\n\nNeeds the files update permission. Stopping a first version removes the document, so it also\nneeds the files delete permission, and a caller without it is refused with 403\n`PERMISSION_DENIED`. The server checks this, because the permission trait follows input members,\nnot the document's state.",
                 "smithy.api#examples": [
                     {
                         "title": "Stop a document's ingestion",
@@ -4324,7 +4330,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Cancels an ingestion batch.\n\nItems not yet uploaded are stopped, and their reserved documents released. With `stopRunning`,\nitems already being ingested are stopped too: a stopped new document is removed, and a stopped new\nversion leaves the current one serving. Otherwise, work already being ingested finishes. Returns\n202 with the batch, which becomes `cancelled` once nothing is left running. A final batch is\nrefused with 409 `CONFLICT`.",
                 "smithy.api#examples": [
@@ -4452,7 +4458,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Cancels one item of a running batch that is still waiting for its upload.\n\nThe item becomes `cancelled`, and the document the batch reserved for it is released: a new\ndocument's placeholder is removed, and an existing document is no longer held for a new version.\nBytes already uploaded for it are never ingested. The rest of the batch carries on; if this was the\nlast item not yet finished, the batch ends. An item that is not `awaiting_upload` (being ingested,\nalready finished, or in a batch not yet started) is refused with 409 `CONFLICT`. Needs the same\npermission as cancelling the batch, and the caller must be able to see the item's folder (404\notherwise).",
                 "smithy.api#examples": [
@@ -4622,7 +4628,7 @@
             ],
             "traits": {
                 "ai.caitlyn.traits#permission": {
-                    "action": "files.read",
+                    "action": "files.update",
                     "entity": {
                         "type": "knowledge-bases",
                         "from": "knowledgeBaseId",
@@ -4633,9 +4639,9 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Cancels an Operation's work.\n\nWork not started yet is dropped; work running is stopped where its kind allows. Only\n`document_ingestion` can be cancelled today: a cancelled first version removes the document, and a\ncancelled new version leaves the current one serving. Any other kind is refused with 409\n`OPERATION_NOT_CANCELLABLE`, and a final Operation with 409 `CONFLICT`. Returns the Operation, which\nbecomes `cancelled` once the work has stopped.\n\nCancelling needs what starting that kind of work needs, on the same record, which the server\nreads from the Operation and checks per kind before it acts: for `document_ingestion`, the\npermission that started it (`files.create` for a new document, `files.update` for a new version\nor a retry) and the document's readers; for `document_update`, `files.update` and its readers; for\n`fill_in`, `reprocess` and `layout_aware_search`, `knowledge-bases.update` and\n`knowledge-bases.ingestions.update`; for a `folder_change`, the permission of the change\n(`files.create`, `files.update` or `files.delete`) and the folder's readers; for\n`permissions_change`, `files.permissions.update` and the record's readers; for\n`knowledge_base_deletion`, `knowledge-bases.delete`. A caller without it gets 404, as for an\nOperation it may not see. No one permission is common to every kind, so the operation declares\nonly what reading an Operation needs (`files.read`, as GetOperation), and the per-kind check does\nthe rest.",
+                "smithy.api#documentation": "Cancels an Operation's work.\n\nWork not started yet is dropped; work running is stopped. Only `document_ingestion` can be\ncancelled today: a cancelled first version removes the document, and a cancelled new version\nleaves the current one serving. Any other kind is refused with 409 `OPERATION_NOT_CANCELLABLE`,\nand a final Operation with 409 `CONFLICT`. Returns the Operation, which becomes `cancelled` once\nthe work has stopped.\n\nNeeds the files update permission. For `document_ingestion` the server also checks, on the\ndocument the Operation reads, the permission that started it (`files.create` for a new document,\n`files.update` for a new version or a retry) and the document's readers. A caller without it\ngets 404, as for an Operation it may not see.",
                 "smithy.api#examples": [
                     {
                         "title": "Stop a document's ingestion",
@@ -5184,7 +5190,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Compares two versions of an agent, member by member.\n\nReturns one change per member that differs, from `version` to `with`, each with its value before\nand after; `before` is absent for a member `with` added, and `after` for one it removed. Lists are\ncompared by their items' keys, so a path reads `workflow.phases[intake].transitions`. Both versions\nneed the same access as reading them.",
                 "smithy.api#examples": [
@@ -5325,7 +5331,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Reports that items' bytes are in place, so they can be ingested.\n\nTakes 1 to 100 item identifiers, each awaiting upload. For each, the server checks that the\nuploaded object's stored SHA-256 and size match the item's, and that the caller may still write to\nthe item's folder, then starts its ingestion. Returns 200 with a result for each item, in request\norder: `accepted`, or `failed` with `CHECKSUM_MISMATCH` (the object is deleted; upload it again),\n`NOT_FOUND` (nothing was uploaded to the item's key), `PERMISSION_DENIED`, `UPLOAD_EXPIRED` or\n`CONFLICT` (the item is not awaiting upload). One failed item never stops the others. The SDKs\nalways call this for you. An upload nobody reports is found by the server within about a minute,\nwhile the batch has items awaiting upload, and goes through the same checks; only an item whose\nbytes are still missing when its reservation ends fails, with `UPLOAD_EXPIRED`.",
                 "smithy.api#examples": [
@@ -5510,7 +5516,7 @@
                 "NEW_VERSION": {
                     "target": "smithy.api#Unit",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Add the item's bytes as a new version of the document it clashes with, as the item\nresolution `new_version` does. For `ambiguous_content` it resolves the item to `add`, and for\n`duplicate_in_batch` it leaves the item `unresolved`.",
                         "smithy.api#enumValue": "new_version"
                     }
@@ -5546,7 +5552,7 @@
                 "pathTaken": {
                     "target": "ai.caitlyn.v3#ConflictRule",
                     "traits": {
-                        "smithy.api#documentation": "The path and the `externalId` name different documents, or the path holds one the caller may\nnot read."
+                        "smithy.api#documentation": "The path and the `externalId` name different documents. A path held by a document the caller\nmay not read is not a conflict: the item fails as in any write the caller may not make, so\nthis rule never reveals that document."
                     }
                 },
                 "ambiguousContent": {
@@ -5590,7 +5596,7 @@
                 "connectorId": {
                     "target": "ai.caitlyn.v3#ConnectorId",
                     "traits": {
-                        "smithy.api#documentation": "Which of the workspace's connectors the version may use.",
+                        "smithy.api#documentation": "Which of the workspace's connectors the version may use. The caller must be able to read the\nconnector; one it cannot read is refused with 404 `NOT_FOUND`.",
                         "smithy.api#required": {}
                     }
                 }
@@ -5627,7 +5633,7 @@
                 "guardrail": {
                     "target": "ai.caitlyn.v3#GuardrailChoice",
                     "traits": {
-                        "smithy.api#documentation": "The ID of an entry in `GET /v3/guardrails`, `default` (the platform default, also used when\nabsent) or `none`."
+                        "smithy.api#documentation": "The ID of an entry in `GET /v3/guardrails`, `default` (the platform default, also used when\nabsent) or `none`. The caller must be able to read the entry; one it cannot read is refused\nwith 404 `NOT_FOUND`."
                     }
                 }
             },
@@ -6157,7 +6163,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "ai.caitlyn.traits#uploadTarget": {
                     "member": "avatar.mark.pictureUploadId"
@@ -6339,7 +6345,7 @@
                         "guest"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Starts a conversation with one version of an agent: `live`, `draft` or a version name.\n\nThe version in the path is the one that answers, for the whole conversation. Send messages to it\nwith SendMessage, and watch it with WatchConversation. The conversation belongs to the caller that\ncreated it: the person, or the API client's own credential.",
                 "smithy.api#examples": [
@@ -6492,7 +6498,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "ai.caitlyn.traits#uploadTarget": {
                     "member": "uploadId"
@@ -6736,7 +6742,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "ai.caitlyn.traits#uploadTarget": {
                     "member": "uploadId"
@@ -6928,7 +6934,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Adds a metadata field to a knowledge base.\n\nExisting documents have no value for it until a fill-in fills them (`kb.fields.fillIn([key])`).\nA key the knowledge base already defines is refused with 409 `ALREADY_EXISTS`.",
                 "smithy.api#examples": [
@@ -7130,7 +7136,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Creates a folder; it appears once the work finishes, after the response.\n\nReturns 202 with the Operation that tracks it, and `Location` names the Operation. A folder that\nalready exists is refused with 409 `ALREADY_EXISTS`.",
                 "smithy.api#examples": [
@@ -7272,9 +7278,9 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Makes an ingestion batch for one knowledge base, and plans it unless more items will follow.\n\nTakes up to 10,000 items; add more with BatchCreateIngestionBatchItems while `awaitMoreItems` is\ntrue. Returns 202 with the batch, and `Location` names it; wait for the plan with the SDKs'\n`batch.planned()`. Needs the ingestion create permission and read access to the knowledge base,\nas v2's ingestion route does; starting the batch, which hands out an upload policy, also needs the\nfiles create permission. A `fetchUrl` item needs the files create permission when it is added,\nwhich the server checks, because the trait cannot follow an item's member.",
+                "smithy.api#documentation": "Makes an ingestion batch for one knowledge base, and plans it unless more items will follow.\n\nTakes up to 10,000 items; add more with BatchCreateIngestionBatchItems while `awaitMoreItems` is\ntrue. Returns 202 with the batch, and `Location` names it; wait for the plan with the SDKs'\n`batch.planned()`. Needs the ingestion create permission and read access to the knowledge base,\nas v2's ingestion route does. A batch that needs bytes uploaded also needs the files create\npermission to be started with StartIngestionBatch, which hands out the upload policy; a batch that\nneeds none runs without that call under `start: when_planned`. A `fetchUrl` item needs the files\ncreate permission when it is added, which the server checks, because the trait cannot follow an\nitem's member.\n\nEach item that removes a document (`remove`, or an overwrite) is checked by the server for the\nfiles delete permission, and each item that moves one, or adds a new version of one, for the files\nupdate permission, and the token's scope covers it too. An item that fails the check is marked\n`failed` with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts\nthrough StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked\nper item, not once on the call.",
                 "smithy.api#examples": [
                     {
                         "title": "Plan a folder of policies before uploading anything",
@@ -7349,6 +7355,9 @@
                     "uri": "/v3/knowledge-bases/{knowledgeBaseId}/ingestion-batches",
                     "code": 202
                 },
+                "smithy.api#suppress": [
+                    "CaitlynPermissions.NestedRecord"
+                ],
                 "smithy.api#title": "Create an ingestion batch"
             }
         },
@@ -7404,7 +7413,7 @@
                 "uploadWindowSeconds": {
                     "target": "smithy.api#Integer",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#default": 1800,
                         "smithy.api#documentation": "How long each upload policy the batch hands out lasts, renewals included: from a minute to\nan hour, and 30 minutes when absent. A short window lets a test reach the upload deadline,\nand an expired policy, within seconds.",
                         "smithy.api#range": {
@@ -7494,7 +7503,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Renews a running batch's upload policy before it expires.\n\nReturns a new policy for the same key prefix while the batch is `running` and has items awaiting\nupload; anything else is refused with 409 `CONFLICT`. Each renewal also extends how long the\nbatch's new documents stay reserved. A renewed policy lasts the batch's `uploadWindowSeconds`, as the\nfirst did. The SDKs renew when less than 5 minutes, or half the policy's lifetime when that is\nshorter, are left.",
                 "smithy.api#examples": [
@@ -7632,7 +7641,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Creates a knowledge base; setting it up continues after the response.\n\nReturns 202 with the knowledge base in `creating`, and `Location` names it; documents can be added\nonce it is `ready`. Where its documents are stored is decided by Caitlyn and never exposed.",
                 "smithy.api#examples": [
@@ -7778,7 +7787,7 @@
                     ]
                 },
                 "ai.caitlyn.traits#presignedUpload": {},
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Reserves a short-lived slot for a file's bytes and returns a presigned URL bound to their\nchecksum.\n\nSend the bytes with `uploadMethod` to `uploadUrl`, with every header in `requiredHeaders`,\nbefore `expiresAt`; then pass the upload's `id` to the operation that uses it. Files can be at\nmost 2 GB. For an attachment, name the conversation in `purpose`: the conversation's attachment\nsettings are checked here, before the bytes travel. The SDKs' `core.uploads.send(file)` does all of\nthis, and their document and attachment helpers call it for you. Many files at once go through an\ningestion batch instead, which signs one upload policy for them all.",
                 "smithy.api#examples": [
@@ -7797,7 +7806,8 @@
                             "uploadUrl": "https://uploads.example.com/0193a6f2-1111-7a2b-8c3d-4e5f60718293?signature=abc",
                             "uploadMethod": "PUT",
                             "requiredHeaders": {
-                                "Content-Type": "application/pdf"
+                                "Content-Type": "application/pdf",
+                                "x-amz-checksum-sha256": "n4bQgYhMfWWaL+qgxVrQFaO/TxsrC4Is0V1sFbDwCgg="
                             },
                             "expiresAt": "2026-11-10T01:17:03.000Z",
                             "status": "awaiting_bytes"
@@ -7900,14 +7910,14 @@
                 "purpose": {
                     "target": "ai.caitlyn.v3#UploadPurpose",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "What the upload is for, when that decides whether it is accepted. Absent means a document."
                     }
                 },
                 "expiresInSeconds": {
                     "target": "smithy.api#Integer",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#default": 900,
                         "smithy.api#documentation": "How long the upload URL works: from a minute to an hour, and 15 minutes when absent. A short\nlifetime lets a test reach an expired upload within seconds.",
                         "smithy.api#range": {
@@ -8062,7 +8072,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Deletes an agent, its draft and every version.\n\nConversations with the agent are kept. Caitlyn's built-in agents (`native`) are defined by the\nplatform and refused with 403 `PERMISSION_DENIED`. Deleting cannot be undone, and is audited.",
                 "smithy.api#examples": [
@@ -8157,7 +8167,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Deletes a named version that live does not point at and live history does not name.\n\nVersions serve as the record of what live was, so these are refused: `draft` and `live`, which\nevery agent keeps, with 400 `VERSION_NOT_DELETABLE`; the version live points at, with 409\n`VERSION_IN_USE` (point live at another version first); and any version a live history entry names,\nwith 409 `VERSION_IN_HISTORY`. A saved version that was never live can be deleted. Like every\nchange, it is audited.",
                 "smithy.api#examples": [
@@ -8300,7 +8310,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Deletes a document; removing it from search continues after the response.\n\nReturns 202 with the document in `deleting`; in the SDKs, `.wait()` on the result waits until it is\ngone. Repeating the call while the document is still `deleting` returns 202 again;\nonce it is gone, 404, as for any record that does not exist.\n\nA document still being processed (`pending` or `processing`) is deleted too: its processing stops,\nand it does not come back.\n\nNeeds the files delete permission, read access to the knowledge base and access to the\ndocument's folder.",
                 "smithy.api#examples": [
@@ -8436,9 +8446,9 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Deletes one version of a document that is neither current nor processing.\n\nThe version, its passages and its renders are removed; its bytes are kept while another version\nor document has the same ones. The current version and a version still processing are refused with\n409 `CONFLICT`; to remove the current version, delete the document. Like every change, it is\naudited.\n\nA version's number is its place in upload order, so deleting by number needs the document's\nversions to be numbered already: until they are, a number is refused with 409\n`VERSIONS_NOT_NUMBERED`, because deleting would shift every later number. Try again later, or\ndelete `latest`, which works either way.",
+                "smithy.api#documentation": "Deletes one version of a document that is neither current nor processing.\n\nThe version, its passages and its renders are removed; its bytes are kept while another version\nor document has the same ones. The current version and a version still processing are refused with\n409 `CONFLICT`; to remove the current version, delete the document. Like every change, it is\naudited.\n\nA version's number is its place in upload order, so deleting by number needs the document's\nversions to be numbered already: until they are, a number is refused with 409\n`VERSIONS_NOT_NUMBERED`, because deleting would shift every later number; try again later.\n\nOnly a version number is accepted: `latest` and `current` are refused with 400\n`VALIDATION_FAILED`, because the version they name changes after each delete, so a retried\nrequest could delete a second version.",
                 "smithy.api#examples": [
                     {
                         "title": "Delete an old version",
@@ -8450,11 +8460,11 @@
                         "output": {}
                     },
                     {
-                        "title": "The current version",
+                        "title": "The current version, by its number",
                         "input": {
                             "knowledgeBaseId": "KB4T7YQ2WL",
                             "documentId": "doc-3b7f9e21",
-                            "version": "current"
+                            "version": "2"
                         },
                         "error": {
                             "shapeId": "ai.caitlyn.v3#ConflictError",
@@ -8482,7 +8492,7 @@
                                 "title": "Versions not numbered",
                                 "status": 409,
                                 "code": "VERSIONS_NOT_NUMBERED",
-                                "detail": "Document doc-3b7f9e21's versions are not numbered yet. Try again later, or delete latest.",
+                                "detail": "Document doc-3b7f9e21's versions are not numbered yet. Try again later.",
                                 "requestId": "01JC9Q2W7R4M0H2T6N1S8V3BD5"
                             }
                         }
@@ -8519,7 +8529,7 @@
                 "version": {
                     "target": "ai.caitlyn.v3#DocumentVersionRef",
                     "traits": {
-                        "smithy.api#documentation": "The version to delete: its number, or `current` or `latest` as GetDocumentVersion takes them.\nThe current version itself is refused, as above.",
+                        "smithy.api#documentation": "The number of the version to delete. `current` and `latest` are refused with 400\n`VALIDATION_FAILED`. The current version itself is refused, as above.",
                         "smithy.api#httpLabel": {},
                         "smithy.api#required": {}
                     }
@@ -8567,7 +8577,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Removes a metadata field, with every value documents hold for it and every lock on those values.\n\nDeleting cannot be undone. Agents and searches stop using the field at once.",
                 "smithy.api#examples": [
@@ -8676,7 +8686,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Deletes a folder and everything in it; the work continues after the response.\n\nReturns 202 with the Operation that tracks it. A folder holding documents still being processed is\ndeleted too; their processing stops.",
                 "smithy.api#examples": [
@@ -8802,7 +8812,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Deletes a knowledge base and every document in it; the work continues after the response.\n\nReturns 202 with the Operation that tracks it. The knowledge base reads as `deleting` until it is\ngone, then 404. Deleting cannot be undone.",
                 "smithy.api#examples": [
@@ -8998,7 +9008,7 @@
                 "version": {
                     "target": "smithy.api#Integer",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "The current version's number. Absent until the first version is indexed.",
                         "smithy.api#range": {
                             "min": 1
@@ -9008,7 +9018,7 @@
                 "versionCount": {
                     "target": "smithy.api#Integer",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "How many versions the document has.",
                         "smithy.api#range": {
                             "min": 0
@@ -9018,63 +9028,63 @@
                 "latestVersion": {
                     "target": "ai.caitlyn.v3#LatestVersion",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "The newest version, when it is not the current one: uploading, processing or failed. Shown only\nto callers who may add versions."
                     }
                 },
                 "superseded": {
                     "target": "smithy.api#Boolean",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "True when a newer version than the current one exists. Shown only to callers who may add\nversions."
                     }
                 },
                 "sourceUrl": {
                     "target": "ai.caitlyn.v3#SourceUrl",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "The address a citation of this document links to."
                     }
                 },
                 "externalId": {
                     "target": "ai.caitlyn.v3#ExternalId",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "The caller's own key for the document, unique within the knowledge base."
                     }
                 },
                 "metadata": {
                     "target": "ai.caitlyn.v3#DocumentMetadata",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Values for the metadata fields the knowledge base defines, including `title`, `summary`,\n`keywords`, `author` and `publishedDate`."
                     }
                 },
                 "extraMetadata": {
                     "target": "ai.caitlyn.v3#ExtraMetadata",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Keys the knowledge base does not define. Stored and returned, but never searched on or given to\nan agent."
                     }
                 },
                 "readers": {
                     "target": "ai.caitlyn.v3#Readers",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Who may read the document."
                     }
                 },
                 "inheritedFrom": {
                     "target": "ai.caitlyn.v3#FolderPath",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "When `readers` is `inherit`: the folder whose readers apply."
                     }
                 },
                 "outOfDate": {
                     "target": "smithy.api#Boolean",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "True when a newer way of processing documents is available, and processing the document again\nwould use it.",
                         "smithy.api#suppress": [
                             "ShouldHaveUsedTimestamp"
@@ -9084,7 +9094,7 @@
                 "pageCount": {
                     "target": "smithy.api#Integer",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "The number of pages, for a paged document.",
                         "smithy.api#range": {
                             "min": 0
@@ -9094,7 +9104,7 @@
                 "durationSeconds": {
                     "target": "smithy.api#Double",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "How long it plays, in seconds, for audio and video.",
                         "smithy.api#range": {
                             "min": 0
@@ -9104,7 +9114,7 @@
                 "processing": {
                     "target": "ai.caitlyn.v3#DocumentProcessing",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "The work running on the document, while there is some: what kind, which stage, how far it has\ngot and how long is left. Absent when nothing is running."
                     }
                 },
@@ -9131,7 +9141,7 @@
                 "failure": {
                     "target": "ai.caitlyn.v3#DocumentFailure",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Why the document could not be made searchable. Present only when `status` is `failed`; a\ndocument that is searchable with gaps lists them in `partialFailures` instead."
                     }
                 }
@@ -9186,7 +9196,7 @@
                 "outOfDate": {
                     "target": "smithy.api#Long",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Documents processed in an older way than the newest, which `ReprocessDocuments` would update.",
                         "smithy.api#range": {
                             "min": 0
@@ -9356,7 +9366,7 @@
                 "CANCELLED": {
                     "target": "smithy.api#Unit",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Processing was cancelled before it finished.",
                         "smithy.api#enumValue": "cancelled"
                     }
@@ -9984,7 +9994,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Switches a knowledge base to layout-aware search; rebuilding its passages continues after the\nresponse.\n\nReturns 202 with the Operation that rebuilds the search vectors of every indexed document. Searches\ncarry on while it runs, and the knowledge base's watch reports it as a job, from the rebuild's own\nrecord. Read what it will cost first with EstimateLayoutAwareSearch. Calling it\nagain resumes a rebuild that failed; while a rebuild is running it is refused with 409 `CONFLICT`.",
                 "smithy.api#examples": [
@@ -10151,7 +10161,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Estimates what replacing a document's file would take and cost, before anything is uploaded.\n\nTakes CreateDocumentVersion's arguments, with the file described in place of the upload.",
                 "smithy.api#examples": [
@@ -10298,7 +10308,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Estimates what filling in metadata fields would do, take and cost, without starting it.\n\nTakes the same arguments as FillInFields. `details` says how many passages would be read and how\nmany search vectors made again.",
                 "smithy.api#examples": [
@@ -10418,7 +10428,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Estimates what adding documents would take and cost, before anything is uploaded.\n\nDescribe each file (its name, type and size, with any hints the client could read). The SDKs call\nthis for `kb.documents.create.estimate(file)` and `kb.ingestion.sync.estimate(…)`.",
                 "smithy.api#examples": [
@@ -10554,7 +10564,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Estimates what switching a knowledge base to layout-aware search would rebuild, take and cost.\n\n`details.searchType` says how the knowledge base searches now.",
                 "smithy.api#examples": [
@@ -10738,7 +10748,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Estimates what processing documents again would take and cost, and what it would improve.\n\nTakes the same arguments as ReprocessDocuments. `details` lists the improvements the newest\nprocessing brings.",
                 "smithy.api#examples": [
@@ -11499,7 +11509,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Fills in metadata fields for the documents that still need them; the work continues after the\nresponse.\n\nFor each field named, every document with no value yet gets one, and the search index and vectors\nare brought up to date. Values someone set by hand are kept. Returns 202 with the job, which the\nknowledge base's watch follows; estimate it first with EstimateFillInFields. It is charged for: see\nthe estimate's `cost`, in the form the organisation sees it.",
                 "smithy.api#examples": [
@@ -11846,9 +11856,9 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Gets who may use a knowledge base, or who may read a folder or a document in it.\n\nWithout `folder` or `document`, the knowledge base's role grants (`roles`). With `folder`, that\nfolder's `readers`; with `document`, that document's. `inheritedFrom` names the folder whose readers\napply when they are inherited. A folder or document the caller may not see is 404. The root\nfolder (`folder=/`, `kb.folders('/').access`) holds the readers every folder falls back to; its\nreaders are never inherited.",
+                "smithy.api#documentation": "Gets who may use a knowledge base, or who may read a folder or a document in it.\n\nWithout `folder` or `document`, the knowledge base's role grants (`roles`). With `folder`, that\nfolder's `readers`; with `document`, that document's. `inheritedFrom` names the folder whose readers\napply when they are inherited. A folder or document the caller may not see is 404. The root\nfolder (`folder=/`, `kb.folders('/').access`) holds the readers every folder falls back to; its\nreaders are never inherited.\n\nFor a folder or document, the `readers` also come back on ListFolders, ListDocuments and\nGetDocument too, with `inheritedFrom`, under the files list and read permissions. What GetAccess\nadds is the access on its own, with the ETag that SetAccess's `If-Match` takes, and the root\nfolder's readers; reading it needs the files permissions list permission.",
                 "smithy.api#examples": [
                     {
                         "title": "The roles that may use a knowledge base",
@@ -12033,7 +12043,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Gets one agent: its name, description, avatar and the version live points at.\n\nAn agent the caller may not see is 404, as one that does not exist is. Its configuration is in\nits versions: read them with GetAgentVersion.",
                 "smithy.api#examples": [
@@ -12157,9 +12167,9 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Gets one version of an agent, with its full configuration and its ETag.\n\n`version` is `draft`, `live` or the name of a saved or published version. Live is the version the\nagent's live pointer names, read as `live`; it is readable by everyone with access to the agent.\nThe draft and named versions are readable only by the people and groups on the agent's version\naccess grant, and anyone else gets 404, as for an agent with no live version yet.",
+                "smithy.api#documentation": "Gets one version of an agent, with its full configuration and its ETag.\n\n`version` is `draft`, `live` or the name of a saved or published version. Live is the version the\nagent's live pointer names, read as `live`; it is readable by everyone with access to the agent.\nThe draft and named versions are readable only by the people and groups on the agent's version\naccess grant, and anyone else gets 404. An agent with no live version, because none has been\npublished or chosen yet, answers `live` with 404 `NO_LIVE_VERSION`.",
                 "smithy.api#examples": [
                     {
                         "title": "Read the draft before editing it",
@@ -12342,7 +12352,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Describes the caller: who the credential belongs to, what kind of credential it is, its scopes\nand its organisation.\n\nAny valid credential may call it, with no particular scope, so an integration can check its\ncredential before doing anything else. It only describes the credential that made the request;\nit never reads another person's or client's record.",
                 "smithy.api#examples": [
@@ -12487,13 +12497,16 @@
                         "from": "conversationId",
                         "level": "read"
                     },
+                    "conversationAgent": {
+                        "level": "list"
+                    },
                     "callers": [
                         "person",
                         "api_client",
                         "guest"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Gets a conversation: its agent and version, its title and whether it is answering.\n\nRead its messages with ListMessages, and follow it with WatchConversation. A conversation the\ncaller may not see is 404, as one that does not exist is.",
                 "smithy.api#examples": [
@@ -12603,7 +12616,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Gets one document in a knowledge base, with its status.\n\n`status` says where the current version is in its lifecycle; `indexed`, `partially_indexed` and\n`failed` are final. A document in a folder the caller may not see is 404, as one that does not\nexist is. `processing` says how far the work on it has got; follow it with the scope's `watch()`, or\n`wait()` until it is done.",
                 "smithy.api#examples": [
@@ -12733,7 +12746,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Redirects to a short-lived address for a document's bytes, for links and command-line tools.\n\nAnswers 302, with `Location` the address, which works for 15 minutes and needs no credential, so\ntreat it as a secret. Without `version`, the current version's bytes. Use it as a link's target,\nor with `curl -L`. A browser script cannot read a redirect's address: it calls\nGetDocumentDownload, which answers with the address as JSON, as the SDKs' `doc.download()` does.",
                 "smithy.api#examples": [
@@ -12878,7 +12891,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Gets a short-lived address for a document's bytes, as JSON.\n\nAnswers 200 with `url`, which works for 15 minutes and needs no credential, so treat it as a\nsecret, and `expiresAt`. Without `version`, the current version's bytes. Unlike\nGetDocumentContent it never redirects, so a browser script can read the address. The SDKs'\n`doc.download()` calls it.",
                 "smithy.api#examples": [
@@ -13057,7 +13070,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Gets one version of a document.\n\n`version` is a number, `current` (the version search uses) or `latest` (the newest, whatever its\nstate). A caller who may not add versions can read only the current version.",
                 "smithy.api#examples": [
@@ -13187,7 +13200,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Gets one metadata field, with how much work it still needs.",
                 "smithy.api#examples": [
@@ -13331,9 +13344,9 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Gets one live history entry, with the configuration live had after the change.\n\nThe configuration is that of the entry's `version`, which never changes. Reading the entry (who\nchanged live, when, and to which version) needs agent read; its `configuration` needs what\nreading that version needs, so a caller without the permission to read versions, or without the\nagent's version access grant for a version that is not live now, gets the entry without it. It is also absent when that version was deleted\nthrough an older API that does not protect versions named in live history.",
+                "smithy.api#documentation": "Gets one live history entry, with the configuration live had after the change.\n\nThe configuration is that of the entry's `version`, which never changes. Reading the entry (who\nchanged live, when, and to which version) needs agent read; its `configuration` needs what\nreading that version needs, so a caller without the permission to read versions, or without the\nagent's version access grant, gets the entry without it. It is also absent when that version was\ndeleted through an older API that does not protect versions named in live history.",
                 "smithy.api#examples": [
                     {
                         "title": "Live as it was after the November publish",
@@ -13469,7 +13482,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Gets one ingestion batch, with its counts and ETag.\n\nIn the SDKs, `batch.planned()` waits until every item has an outcome, and `batch.wait()` until every\nitem has finished, both through the knowledge base's watch.",
                 "smithy.api#examples": [
@@ -13583,7 +13596,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Gets one item of an ingestion batch.\n\nReturns its outcome, its resolution and its status, and once it is done the document and version\nit made or changed.",
                 "smithy.api#examples": [
@@ -13755,7 +13768,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Gets one knowledge base, with its settings and ETag.\n\n`agentDescription` and `engine` are shown only to callers who may change the knowledge base. A\nknowledge base the caller may not see is 404, as one that does not exist is.",
                 "smithy.api#examples": [
@@ -13903,7 +13916,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Gets one Operation: where its work is, how far it has got, and how it ended.\n\nThe caller needs the access it would need to read the Operation's target; anyone else gets 404.\nEveryday code waits through the scope the work is on (`doc.wait()`, `kb.wait()`) instead.",
                 "smithy.api#examples": [
@@ -14038,7 +14051,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Gets an upload's status and when its upload URL expires.\n\nUse it to check that the bytes arrived before passing the upload's `id` to the operation that\nuses it. Only the person or client that reserved the upload can read it; anyone else gets 404.",
                 "smithy.api#examples": [
@@ -14120,7 +14133,7 @@
         "ai.caitlyn.v3#GuardrailChoice": {
             "type": "string",
             "traits": {
-                "smithy.api#documentation": "Which guardrail screens attached documents: the ID of an entry in `GET /v3/guardrails`, `default`\nfor the workspace's own, or `none` to screen nothing.",
+                "smithy.api#documentation": "Which guardrail screens attached documents: the ID of an entry in `GET /v3/guardrails`, `default`\nfor the platform default, or `none` to screen nothing.",
                 "smithy.api#length": {
                     "min": 1,
                     "max": 128
@@ -14344,7 +14357,7 @@
                             "versionMember": "version",
                             "action": "agents.aliases.read"
                         },
-                        "smithy.api#documentation": "The configuration of `version`. Present only when the caller may read that version, as\nGetAgentVersion checks: the permission to read versions, and the agent grant if it is live now\nor the agent's version access grant if it is not. Absent otherwise, in a list, and when that\nversion no longer exists."
+                        "smithy.api#documentation": "The configuration of `version`. Present only when the caller may read that version, as\nGetAgentVersion checks: the permission to read versions, and the agent grant and the agent's\nversion access grant. Absent otherwise, in a list, and when that\nversion no longer exists."
                     }
                 }
             },
@@ -14568,7 +14581,7 @@
                 "percent": {
                     "target": "smithy.api#Integer",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "How far the batch has got, from 0 to 100: its documents' progress, weighted by how long each\nis expected to take. Never moves back.",
                         "smithy.api#range": {
                             "min": 0,
@@ -14579,7 +14592,7 @@
                 "eta": {
                     "target": "ai.caitlyn.v3#Eta",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "How long is left: the longest of its documents' times left."
                     }
                 },
@@ -14592,7 +14605,7 @@
                 "uploadsExpireAt": {
                     "target": "ai.caitlyn.v3#DateTime",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "When uploads must arrive by: the upload policy's `expiresAt` plus a grace of 5 minutes, or of\n`uploadWindowSeconds` when that is shorter. An item whose bytes\nhave not arrived by then fails with `UPLOAD_EXPIRED`; bytes that arrived in time are accepted\nwhen they are reported, however late. A caller watching the batch can read it again after this\ntime to see which items failed. Renewing the upload policy moves it later. Absent when no item\nis awaiting upload."
                     }
                 },
@@ -14631,14 +14644,14 @@
                 "failure": {
                     "target": "ai.caitlyn.v3#IngestionBatchFailure",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Why the batch failed, as a stable code and a fixed message. Present only when `status` is\n`failed`."
                     }
                 },
                 "uploadWindowSeconds": {
                     "target": "smithy.api#Integer",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "How long each upload policy the batch hands out lasts, renewals included, as set when the\nbatch was made.",
                         "smithy.api#range": {
                             "min": 60,
@@ -15241,7 +15254,7 @@
                 "sourceUrl": {
                     "target": "ai.caitlyn.v3#SourceUrl",
                     "traits": {
-                        "smithy.api#documentation": "The address a citation of the document links to. Defaults to `fetchUrl`."
+                        "smithy.api#documentation": "The address a citation of the document links to. Defaults to `fetchUrl` when that is an `https`\naddress; with an `http` `fetchUrl` and no `sourceUrl`, the document has none."
                     }
                 },
                 "metadata": {
@@ -15332,7 +15345,7 @@
                 "PATH_TAKEN": {
                     "target": "smithy.api#Unit",
                     "traits": {
-                        "smithy.api#documentation": "The path and the `externalId` name different documents, or the path holds one the caller may\nnot read.",
+                        "smithy.api#documentation": "The path and the `externalId` name different documents. Never used for a path held by a\ndocument the caller may not read: that item is `failed` with `PERMISSION_DENIED`, and its\ndetail says only that the path cannot be written, so the document is not revealed.",
                         "smithy.api#enumValue": "path_taken"
                     }
                 },
@@ -15431,7 +15444,7 @@
                 "NEW_VERSION": {
                     "target": "smithy.api#Unit",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Upload the bytes as a new version of the existing document the item matches (`matches[0]`):\nthe same document at the same path or `externalId`, which keeps its identifier and history. The\nrules are CreateDocumentVersion's: bytes of another file type than the document's fail the item\nwith `VALIDATION_FAILED`; bytes that equal an earlier version's restore that version (its number\nis the item's `version`); and while a version of the document is still processing the item fails\nwith `DOCUMENT_INGESTION_IN_PROGRESS`. The current version keeps serving until the new one is\nindexed. The default for `changed` items; also allowed for `in_progress` items and for\n`conflict` items whose reason is `path_taken` or `changed_since_plan`.",
                         "smithy.api#enumValue": "new_version"
                     }
@@ -16096,7 +16109,7 @@
                 "documentCounts": {
                     "target": "ai.caitlyn.v3#DocumentCounts",
                     "traits": {
-                        "smithy.api#documentation": "How many documents are processing, and how many failed, counting each document's latest\nattempt."
+                        "smithy.api#documentation": "How many documents are processing, and how many failed, counting each document's latest\nattempt. Totals for the whole knowledge base, including documents the caller cannot read."
                     }
                 },
                 "retrieval": {
@@ -16642,17 +16655,14 @@
                         "level": "read",
                         "versionAccess": true
                     },
-                    "list": {
-                        "type": "agents"
-                    },
                     "callers": [
                         "person",
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Lists an agent's named versions in the order they were made, oldest first.\n\nEach entry says how the version was made, who made it, whether live points at it, and which\nmembers differ from the version it was made from. The draft and live are not entries: read them\nwith `draft` and `live`. Needs the agent's version access grant, as reading any version other than\nlive does.",
+                "smithy.api#documentation": "Lists an agent's named versions in the order they were made, oldest first.\n\nEach entry says how the version was made, who made it, whether live points at it, and which\nmembers differ from the version it was made from. The draft and live are not entries: read them\nwith `draft` and `live`. Needs the agent's version access grant, as reading any version, `live`\nincluded, does.",
                 "smithy.api#examples": [
                     {
                         "title": "The first two versions of an agent",
@@ -16807,7 +16817,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Lists the agents the caller may see, one page at a time.\n\nEach agent says which version live points at; read a version's configuration with\nGetAgentVersion.",
                 "smithy.api#examples": [
@@ -16952,7 +16962,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Lists the caller's conversations with one agent, newest first, across its versions.\n\nEach says which version it is with. Only the caller's own conversations, and those shared with\nit, are listed.",
                 "smithy.api#examples": [
@@ -17099,7 +17109,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Lists a document's versions, newest first.\n\nEach version says whether it is the current one (the one search uses) and whether it is the\nlatest. A caller who may not add versions sees only the current version.",
                 "smithy.api#examples": [
@@ -17287,16 +17297,18 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#sortable": {
                     "fields": [
+                        "folder",
                         "name",
                         "updatedAt",
                         "byteSize"
-                    ]
+                    ],
+                    "default": "folder,name"
                 },
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Lists the documents in a knowledge base, one page at a time.\n\nDocuments are returned in a stable order that does not change between pages. Filters combine\nwith AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. With `filter[folder][eq]`,\nthe documents directly in that folder; with `deep` as well, every document below it. `q` keeps\ndocuments whose name contains the text. The list can be sorted by `name`, `updatedAt` (when the\ndocument last changed) and `byteSize`.",
+                "smithy.api#documentation": "Lists the documents in a knowledge base, one page at a time.\n\nDocuments are returned in a stable order that does not change between pages. Filters combine\nwith AND, and an unknown filter is refused with 400 `UNKNOWN_FILTER`. With `filter[folder][eq]`,\nthe documents directly in that folder; with `deep` as well, every document below it. `q` keeps\ndocuments whose name contains the text. The list can be sorted by `folder`, `name`, `updatedAt`\n(when the document last changed) and `byteSize`. With no `sort`, documents come by folder, then\nname.",
                 "smithy.api#examples": [
                     {
                         "title": "List the HR folder's documents that finished indexing",
@@ -17416,7 +17428,7 @@
                 "sort": {
                     "target": "ai.caitlyn.v3#SortOrder",
                     "traits": {
-                        "smithy.api#documentation": "The order: `name`, `updatedAt` or `byteSize`, comma-separated, with a leading `-` for\ndescending (for example `-updatedAt`). Any other field is refused with 400 `UNKNOWN_SORT`.",
+                        "smithy.api#documentation": "The order: `folder`, `name`, `updatedAt` or `byteSize`, comma-separated, with a leading `-`\nfor descending (for example `-updatedAt`). Defaults to `folder,name`. Any other field is\nrefused with 400 `UNKNOWN_SORT`.",
                         "smithy.api#httpQuery": "sort"
                     }
                 },
@@ -17472,7 +17484,7 @@
                 "sha256": {
                     "target": "ai.caitlyn.v3#Sha256",
                     "traits": {
-                        "smithy.api#documentation": "Only documents whose current bytes have this base64-encoded SHA-256.",
+                        "smithy.api#documentation": "Only documents whose current bytes have this base64-encoded SHA-256. Percent-encode the\nvalue in the query string: `+` as `%2B`, `/` as `%2F` and `=` as `%3D`.",
                         "smithy.api#httpQuery": "filter[sha256][eq]"
                     }
                 },
@@ -17546,7 +17558,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Lists a knowledge base's metadata fields, each with how much work it still needs.\n\n`needsWork` says how many documents still need a value, an index write or new search vectors for\nthe field; `fillIn` does that work.",
                 "smithy.api#examples": [
@@ -17710,9 +17722,9 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Lists the folders in a knowledge base, one page at a time.\n\nWith `filter[parent][eq]`, the folders directly in that folder; with `deep` as well, every folder\nbelow it. `q` keeps folders whose name contains the text. List the documents in a folder with\nListDocuments.",
+                "smithy.api#documentation": "Lists the folders in a knowledge base, one page at a time.\n\nFolders come back in a stable order that does not change between pages; the server decides the\ndefault order, which is not yet recorded here. With `filter[parent][eq]`, the folders directly in that folder; with `deep` as well, every folder\nbelow it. `q` keeps folders whose name contains the text. List the documents in a folder with\nListDocuments.",
                 "smithy.api#examples": [
                     {
                         "title": "The folders in the HR folder",
@@ -17874,7 +17886,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Lists the guardrails an agent version can screen attached documents with.\n\nThe list holds the platform default and the guardrails available to the workspace. An agent's\n`contentSafety.guardrail` names one of these by its `id`, or says `default` or `none`. Guardrails\nare created and changed outside Caitlyn.",
                 "smithy.api#examples": [
@@ -17999,15 +18011,12 @@
                         "from": "agentId",
                         "level": "read"
                     },
-                    "list": {
-                        "type": "agents"
-                    },
                     "callers": [
                         "person",
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Lists an agent's live history, newest first: every time live moved to another version.\n\nEach entry names the version live pointed at after the change and before it, what kind of change\nit was, who made it and when, and which members differ between the two versions. Read the\nconfiguration live had with GetHistoryEntry. Entries are never edited or deleted.",
                 "smithy.api#examples": [
@@ -18174,7 +18183,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Lists a batch's items, in the order they were added.\n\nFilter by action, outcome, status or resolution: for example `filter[status][eq]=awaiting_upload`\nfor the items to upload after Start, or `filter[resolution][eq]=unresolved` for those that need a\ndecision.",
                 "smithy.api#examples": [
@@ -18375,7 +18384,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Lists one knowledge base's ingestion batches, newest first.\n\nNarrow the list by status.",
                 "smithy.api#examples": [
@@ -18538,9 +18547,9 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Lists the knowledge bases the caller may see, in every state.\n\nKnowledge bases still being created, being moved, that failed or that are being deleted are\nlisted too, each with its `status`. Document operations on a knowledge base that is not `ready`\nare refused with 409 `CONFLICT`.",
+                "smithy.api#documentation": "Lists the knowledge bases the caller may see, in every state, in a stable order that does not\nchange between pages. The server decides the default order; it is not yet recorded here.\n\nKnowledge bases still being created, being moved, that failed or that are being deleted are\nlisted too, each with its `status`. Document operations on a knowledge base that is not `ready`\nare refused with 409 `CONFLICT`.",
                 "smithy.api#examples": [
                     {
                         "title": "The first knowledge base",
@@ -18678,7 +18687,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Lists the memory stores an agent can remember people in.\n\nAn agent's `memory.memoryStoreId` names one of these.",
                 "smithy.api#examples": [
@@ -18800,6 +18809,9 @@
                         "from": "conversationId",
                         "level": "read"
                     },
+                    "conversationAgent": {
+                        "level": "list"
+                    },
                     "list": {
                         "type": "conversations"
                     },
@@ -18809,7 +18821,7 @@
                         "guest"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Lists a conversation's messages, oldest first: the caller's and the agent's.\n\nAn answer still being written is not listed until it ends; follow it with WatchConversation.",
                 "smithy.api#examples": [
@@ -18951,7 +18963,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Lists the models an agent can use, with the settings each one accepts.\n\nEach model says whether it reasons, which reasoning effort levels it offers, which sampling\nsettings it accepts and how many tokens it can write, so an editor shows only the settings that\napply. An agent configuration that names a model or setting this list does not offer is refused\nwith 400 `VALIDATION_FAILED`.",
                 "smithy.api#examples": [
@@ -19105,9 +19117,9 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Lists the Operations on one knowledge base, or one thing in it, newest first.\n\nThe caller needs read access to the knowledge base. Narrow the list with the target, the kind and\nthe status.",
+                "smithy.api#documentation": "Lists the Operations on one knowledge base, or one thing in it, newest first.\n\nThe caller needs read access to the knowledge base. Narrow the list with the target, the kind and\nthe status. Rows are filtered to the Operations a direct GetOperation would return for this\ncaller: an Operation whose target the caller could not read is left out, not shown with its\ndetails removed.",
                 "smithy.api#examples": [
                     {
                         "title": "The running Operations on a knowledge base",
@@ -19278,7 +19290,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Lists Caitlyn's own tools, which an agent's phases can use.\n\nA phase names one of these tools with `tools[].name`. Tools on an MCP server are not in this list.",
                 "smithy.api#examples": [
@@ -19402,7 +19414,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Lists the cloud voices an agent can speak its answers in.\n\nAn agent's `voice.voiceId` names one of these when `voice.provider` is `cloud`.",
                 "smithy.api#examples": [
@@ -19535,7 +19547,7 @@
                 "secretId": {
                     "target": "ai.caitlyn.v3#SecretId",
                     "traits": {
-                        "smithy.api#documentation": "The stored secret holding the provider's key. Exported as a template variable.",
+                        "smithy.api#documentation": "The stored secret holding the provider's key. Exported as a template variable. The secret must\nbelong to this workspace, and the caller must be allowed to update the agent's integrations,\nthe permission v2 asks for when it stores the key.",
                         "smithy.api#required": {},
                         "smithy.api#suppress": [
                             "MissingSensitiveTrait"
@@ -19545,7 +19557,7 @@
                 "answerVersion": {
                     "target": "ai.caitlyn.v3#AgentVersionName",
                     "traits": {
-                        "smithy.api#documentation": "The version of this agent that answers for the avatar. Absent means this version. `draft` and\n`live` follow their moving target: edits to the draft, and each publish, take effect without\nthis setting changing. A saved version's name never moves."
+                        "smithy.api#documentation": "The version of this agent that answers for the avatar: `live`, or a saved version's name.\nAbsent means this version. `live` follows its moving target, so each publish takes effect\nwithout this setting changing; a saved version's name never moves. `draft` is not accepted:\nsaving a configuration that names it is refused with 400 `VALIDATION_FAILED`."
                     }
                 },
                 "triggerPhrases": {
@@ -19718,7 +19730,7 @@
                 "memoryStoreId": {
                     "target": "ai.caitlyn.v3#MemoryStoreId",
                     "traits": {
-                        "smithy.api#documentation": "The memory store, from `GET /v3/memory-stores`. Required when `enabled`."
+                        "smithy.api#documentation": "The memory store, from `GET /v3/memory-stores`. Required when `enabled`. The caller must be\nable to read the store."
                     }
                 },
                 "minimumRelevance": {
@@ -20479,21 +20491,21 @@
                 "target": {
                     "target": "ai.caitlyn.v3#OperationTarget",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "What the work is on."
                     }
                 },
                 "progress": {
                     "target": "ai.caitlyn.v3#OperationProgress",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "How far the work has got, where it can say."
                     }
                 },
                 "percent": {
                     "target": "smithy.api#Integer",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "How far the work has got, from 0 to 100, weighted by how long each part takes; never moves\nback.",
                         "smithy.api#range": {
                             "min": 0,
@@ -20504,14 +20516,14 @@
                 "eta": {
                     "target": "ai.caitlyn.v3#Eta",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "How long is left, once the work has run long enough to say."
                     }
                 },
                 "costSoFar": {
                     "target": "ai.caitlyn.v3#Cost",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "What the work has cost so far. Present only for callers who may see cost."
                     }
                 },
@@ -20525,42 +20537,42 @@
                 "startedAt": {
                     "target": "ai.caitlyn.v3#DateTime",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "When the work started."
                     }
                 },
                 "updatedAt": {
                     "target": "ai.caitlyn.v3#DateTime",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "When the Operation last changed."
                     }
                 },
                 "endedAt": {
                     "target": "ai.caitlyn.v3#DateTime",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "When the work ended. Present once `status` is final."
                     }
                 },
                 "createdBy": {
                     "target": "ai.caitlyn.v3#Actor",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Who asked for the work."
                     }
                 },
                 "error": {
                     "target": "ai.caitlyn.v3#OperationError",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Why the work failed. Present only when `status` is `failed`."
                     }
                 },
                 "partialFailures": {
                     "target": "ai.caitlyn.v3#PartialFailureList",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Parts of the work that did not complete, at most the first 100. They never fail the whole."
                     }
                 }
@@ -20657,7 +20669,7 @@
                 "DOCUMENT_UPDATE": {
                     "target": "smithy.api#Unit",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Applying a change to a document's name, folder or metadata to search.",
                         "smithy.api#enumValue": "document_update"
                     }
@@ -20665,7 +20677,7 @@
                 "FOLDER_CHANGE": {
                     "target": "smithy.api#Unit",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Creating, moving, renaming or deleting a folder.",
                         "smithy.api#enumValue": "folder_change"
                     }
@@ -20673,7 +20685,7 @@
                 "PERMISSIONS_CHANGE": {
                     "target": "smithy.api#Unit",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Applying new permissions to a document's or folder's passages.",
                         "smithy.api#enumValue": "permissions_change"
                     }
@@ -20681,7 +20693,7 @@
                 "KNOWLEDGE_BASE_DELETION": {
                     "target": "smithy.api#Unit",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Deleting a knowledge base and everything in it.",
                         "smithy.api#enumValue": "knowledge_base_deletion"
                     }
@@ -20689,7 +20701,7 @@
                 "LAYOUT_AWARE_SEARCH": {
                     "target": "smithy.api#Unit",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Rebuilding a knowledge base's search vectors for layout-aware search.",
                         "smithy.api#enumValue": "layout_aware_search"
                     }
@@ -20697,7 +20709,7 @@
                 "FILL_IN": {
                     "target": "smithy.api#Unit",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Filling in metadata fields.",
                         "smithy.api#enumValue": "fill_in"
                     }
@@ -20705,7 +20717,7 @@
                 "REPROCESS": {
                     "target": "smithy.api#Unit",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "Processing documents again the newest way.",
                         "smithy.api#enumValue": "reprocess"
                     }
@@ -21269,7 +21281,7 @@
                 "policyRules": {
                     "target": "ai.caitlyn.v3#PolicyRuleRefList",
                     "traits": {
-                        "smithy.api#documentation": "For `take_action`: the policy rules this phase checks, as `<policyId>/<ruleId>`. Each policy\nmust be in `policies`."
+                        "smithy.api#documentation": "For `take_action`: the policy rules this phase checks, as `<policyId>/<ruleId>`. Each policy\nmust be in `policies`. The caller must be able to read each policy, checked on every save as\nfor `policies`; one it cannot read is refused with 404 `NOT_FOUND`."
                     }
                 },
                 "review": {
@@ -21684,7 +21696,7 @@
                 "mcpServerId": {
                     "target": "ai.caitlyn.v3#McpServerId",
                     "traits": {
-                        "smithy.api#documentation": "An MCP server whose tools the phase may use. Exactly one of `name` and `mcpServerId`. With no\n`tools`, every tool on the server, including tools it adds later; otherwise only those\nlisted. Exported as a template variable."
+                        "smithy.api#documentation": "An MCP server whose tools the phase may use. Exactly one of `name` and `mcpServerId`. With no\n`tools`, every tool on the server, including tools it adds later; otherwise only those\nlisted. Exported as a template variable. The caller must be able to read the server."
                     }
                 },
                 "tools": {
@@ -21863,7 +21875,7 @@
                 "policyId": {
                     "target": "ai.caitlyn.v3#PolicyId",
                     "traits": {
-                        "smithy.api#documentation": "Which policy the version may review documents against.",
+                        "smithy.api#documentation": "Which policy the version may review documents against.\nThe caller must be able to read the policy. This is checked for every policy id sent, not only\nnew ones, because the rules go into the cached prompt. A policy the caller cannot read is\nrefused with 404 `NOT_FOUND`.",
                         "smithy.api#required": {}
                     }
                 }
@@ -21921,7 +21933,7 @@
                 "policyId": {
                     "target": "ai.caitlyn.v3#PolicyId",
                     "traits": {
-                        "smithy.api#documentation": "Which policy the phase reviews against. It must be in `policies`.",
+                        "smithy.api#documentation": "Which policy the phase reviews against. It must be in `policies`.\nThe caller must be able to read the policy. This is checked for every policy id sent, not only\nnew ones, because the rules go into the cached prompt. A policy the caller cannot read is\nrefused with 404 `NOT_FOUND`.",
                         "smithy.api#required": {}
                     }
                 },
@@ -22439,6 +22451,9 @@
                 },
                 {
                     "target": "ai.caitlyn.v3#PreconditionFailedError"
+                },
+                {
+                    "target": "ai.caitlyn.v3#UnprocessableContentError"
                 }
             ],
             "traits": {
@@ -22461,7 +22476,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Publishes a version: live then points at it.\n\nCalled on `draft`, it first keeps the draft as a new version named `name`, then points live at it,\nso live always names a version. The publish permission alone is enough for both: publishing the\ndraft needs no permission to create versions, which SaveDraftVersion needs to keep a version\nwithout making it live. Called on a named version, it points live at that version, which\nrolls back when live pointed at it before: nothing is copied, and the history entry's `kind` is\n`rollback`. Versions never change once made, so live answers exactly as the version it names.\n\nTwo publishes cannot silently overwrite each other when the caller says what it expects live to\nbe: `expectedLive` names the version (or `none` before the first publish), or `If-Match` carries\nlive's ETag. Either, when stale, is refused with 412; with neither, the publish applies to live as\nit is. Returns live, the version published, and the history entry the publish wrote.",
                 "smithy.api#examples": [
@@ -22606,6 +22621,14 @@
                         "smithy.api#required": {}
                     }
                 },
+                "idempotencyKey": {
+                    "target": "ai.caitlyn.v3#IdempotencyKey",
+                    "traits": {
+                        "smithy.api#documentation": "Makes the request safe to retry. The SDKs generate one per call when the caller does not\nsupply one.",
+                        "smithy.api#httpHeader": "Idempotency-Key",
+                        "smithy.api#idempotencyToken": {}
+                    }
+                },
                 "ifMatch": {
                     "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
@@ -22691,7 +22714,13 @@
                     "target": "ai.caitlyn.v3#NotFoundError"
                 },
                 {
+                    "target": "ai.caitlyn.v3#PermissionDeniedError"
+                },
+                {
                     "target": "ai.caitlyn.v3#PreconditionFailedError"
+                },
+                {
+                    "target": "ai.caitlyn.v3#UnprocessableContentError"
                 }
             ],
             "traits": {
@@ -22731,9 +22760,9 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Sets who may use a knowledge base, or who may read a folder or a document in it.\n\n`If-Match` is optional. Without it the write is unconditional and the last writer wins, which is\nsafe because the caller sends the whole list. With it, access that changed since is refused with\n412.\n\nWithout `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or\n`document`, send `readers`; `kind: inherit` makes it follow its folder again. The knowledge base's\nrole grants are set only without a target, under the knowledge base's own permission, as v2's\nknowledge base permissions route sets them, so `roles` with `folder` or `document`, `readers`\nwithout one, and both `folder` and `document` are refused with 400 `VALIDATION_FAILED`. The root folder\n(`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there\nwith 400 `VALIDATION_FAILED`. Applying readers to\nthe passages a folder or document holds continues after the response; the returned access says\nwhat is set, and the knowledge base's watch shows the work.",
+                "smithy.api#documentation": "Sets who may use a knowledge base, or who may read a folder or a document in it.\n\n`If-Match` is optional. Without it the write is unconditional and the last writer wins, which is\nsafe because the caller sends the whole list. With it, access that changed since is refused with\n412.\n\nWithout `folder` or `document`, send `roles`: the roles sent become the whole list. With `folder` or\n`document`, send `readers`; `kind: inherit` makes it follow its folder again. The knowledge base's\nrole grants are set only without a target, under the knowledge base's own permission, as v2's\nknowledge base permissions route sets them, so `roles` with `folder` or `document`, `readers`\nwithout one, and both `folder` and `document` are refused with 400 `VALIDATION_FAILED`. The root folder\n(`folder=/`) holds the readers every other folder falls back to, so `inherit` is refused there\nwith 400 `VALIDATION_FAILED`. Applying readers to\nthe passages a folder or document holds continues after the response; the returned access says\nwhat is set, and the knowledge base's watch shows the work.\n\nSetting `roles` is refused in two cases, as in v2. A caller may give a role only a grant it\ncould make itself: any other is refused with 403 `PERMISSION_DENIED`. And a grant that is not\nsafe for guests, given to a role that guests or anonymous visitors use, is refused with 422\n`RBAC_NOT_GUEST_SAFE`. Only the grants being added are judged, so a grant the role already holds\nnever blocks an unrelated change. Both checks are made by the server on the roles sent.",
                 "smithy.api#examples": [
                     {
                         "title": "Only the HR team may read investigations",
@@ -23132,7 +23161,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Replaces the draft with a whole configuration; `If-Match` is optional.\n\nThe draft becomes exactly the configuration sent, with defaults for every absent member: this is\nhow configuration kept as code is applied. Every reference is checked as UpdateDraftVersion checks\nit, and a configuration over 256 KiB is refused with 400 `CONFIGURATION_TOO_LARGE`. Returns the\ndraft and its new ETag.",
                 "smithy.api#examples": [
@@ -23328,7 +23357,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Processes documents again the newest way; the work continues after the response.\n\nGive `outOfDate: true` for every document processed in an older way than the newest, or\n`documentIds` for particular documents. Each document's current version keeps serving until its\nnew processing is indexed. Returns 202 with the job, which the knowledge base's watch follows;\nestimate it first with EstimateReprocessDocuments. It is charged for: see the estimate's `cost`, in\nthe form the organisation sees it.",
                 "smithy.api#examples": [
@@ -23464,6 +23493,9 @@
                 },
                 {
                     "target": "ai.caitlyn.v3#PreconditionRequiredError"
+                },
+                {
+                    "target": "ai.caitlyn.v3#UnprocessableContentError"
                 }
             ],
             "traits": {
@@ -23483,7 +23515,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Resets the draft to another version; `If-Match` is required.\n\nThe draft's configuration becomes the configuration of `from`, which is a version name or `live`.\nNothing else changes: `from` is kept as it is, and live is untouched. Returns the draft and its\nnew ETag.",
                 "smithy.api#examples": [
@@ -23555,10 +23587,18 @@
                         "smithy.api#required": {}
                     }
                 },
+                "idempotencyKey": {
+                    "target": "ai.caitlyn.v3#IdempotencyKey",
+                    "traits": {
+                        "smithy.api#documentation": "Makes the request safe to retry. The SDKs generate one per call when the caller does not\nsupply one.",
+                        "smithy.api#httpHeader": "Idempotency-Key",
+                        "smithy.api#idempotencyToken": {}
+                    }
+                },
                 "ifMatch": {
                     "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
-                        "smithy.api#documentation": "The draft's current ETag. A stale value is refused with 412; a missing one with 428.",
+                        "smithy.api#documentation": "The draft's current ETag. A stale value is refused with 412. The SDKs will not send a call\nwithout it; a raw HTTP request that leaves it out is refused with 428.",
                         "smithy.api#httpHeader": "If-Match",
                         "smithy.api#required": {}
                     }
@@ -23780,7 +23820,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Processes a failed document again; ingestion continues after the response.\n\nReturns 202 with the document and the Operation that tracks ingestion. A document that is not\n`failed` is refused with 409 `CONFLICT`.",
                 "smithy.api#examples": [
@@ -24025,7 +24065,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Saves the draft as a new named version, without changing live.\n\nLive does not change, and the draft carries on as before. Versions never change once made. Send\nthe draft's ETag as `If-Match` to save only the draft you tested; without it, the draft is saved as\nit is now. Returns the new version, and `Location` names it.",
                 "smithy.api#examples": [
@@ -24293,14 +24333,14 @@
                         "guest"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#sseEvents": {
                     "events": "ai.caitlyn.v3#ConversationEvent",
                     "resumeWith": "ai.caitlyn.v3#WatchConversation",
                     "final": "messageCompleted"
                 },
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Sends a message and streams the answer as server-sent events.\n\nThe message is sent when the call is made, whether or not anyone reads the stream. The stream ends\nwith exactly one `message.completed` or `message.failed`. If the connection drops, the SDK\nre-attaches with `WatchConversation` and `Last-Event-ID`, so no event is lost or repeated. Not retried automatically: a send that fails before the stream starts is\nreported to the caller.\n\nA message may carry documents in `attachments`, each named by an upload reserved for this\nconversation. The SDKs also take files there: each file is uploaded for the conversation first,\nand the message is sent once every upload has arrived.\n\nOnly a participant may send: whoever started the conversation, or someone it is shared with for\nwriting (the update grant), who may still see the conversation's agent, and, when it was started\non a version other than live, holds that agent's version access grant. A caller without any of\nthese gets 404, so revoking someone's access to the agent stops them chatting in conversations\nthey already started.",
+                "smithy.api#documentation": "Sends a message and streams the answer as server-sent events.\n\nThe message is sent when the call is made, whether or not anyone reads the stream. The stream ends\nwith exactly one `message.completed` or `message.failed`. If the connection drops, the SDK\nre-attaches with `WatchConversation` and `Last-Event-ID`, so no event is lost or repeated. Not retried automatically: a send that fails before the stream starts is\nreported to the caller.\n\nA message may carry documents in `attachments`, each named by an upload reserved for this\nconversation. The SDKs also take files there: each file is uploaded for the conversation first,\nand the message is sent once every upload has arrived.\n\nOnly a participant may send: whoever started the conversation, or someone it is shared with for\nwriting (the update grant), who may still see the conversation's agent and holds that agent's\nversion access grant (the conversation's version may be `live`). A caller without any of\nthese gets 404, so revoking someone's access to the agent stops them chatting in conversations\nthey already started.",
                 "smithy.api#examples": [
                     {
                         "title": "Ask a question",
@@ -24601,9 +24641,9 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Starts a planned ingestion batch, and returns the upload policy for the items that need bytes.\n\n`If-Match` is optional. Without it, the batch starts as it stands; with it, a batch that changed\nsince that ETag is refused with 412. A stale plan is planned again first. Each item's write is then checked and\nclaimed: a new document is reserved at its path, and an existing one is protected by its own\nversion, so a document that changed since the plan becomes a `changed_since_plan` conflict. An item\nthe caller may not write is marked `failed` with `PERMISSION_DENIED`, and the rest carry on; the\ncall still answers 202. Refused with 409\n`INGESTION_BATCH_UNRESOLVED` while any item is `unresolved`. Returns 202 with the batch and one\nupload policy: list the items to upload with `filter[status][eq]=awaiting_upload`, upload each to\nits `objectKey`, then report them with CompleteIngestionBatchUploads.",
+                "smithy.api#documentation": "Starts a planned ingestion batch, and returns the upload policy for the items that need bytes.\n\n`If-Match` is optional. Without it, the batch starts as it stands; with it, a batch that changed\nsince that ETag is refused with 412. A stale plan is planned again first. Each item's write is then checked and\nclaimed: a new document is reserved at its path, and an existing one is protected by its own\nversion, so a document that changed since the plan becomes a `changed_since_plan` conflict. An item\nthe caller may not write is marked `failed` with `PERMISSION_DENIED`, and the rest carry on; the\ncall still answers 202. Refused with 409\n`INGESTION_BATCH_UNRESOLVED` while any item is `unresolved`. Returns 202 with the batch and one\nupload policy: list the items to upload with `filter[status][eq]=awaiting_upload`, upload each to\nits `objectKey`, then report them with CompleteIngestionBatchUploads.\n\nEach item that removes a document (`remove`, or an overwrite) is checked by the server for the\nfiles delete permission, and each item that moves one, or adds a new version of one, for the files\nupdate permission, and the token's scope covers it too. An item that fails the check is marked\n`failed` with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts\nthrough StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked\nper item, not once on the call.",
                 "smithy.api#examples": [
                     {
                         "title": "Start a planned batch",
@@ -25017,7 +25057,7 @@
                 "version": {
                     "target": "ai.caitlyn.v3#AgentVersionName",
                     "traits": {
-                        "smithy.api#documentation": "The version of this agent whose knowledge bases and search settings the tool uses. `draft` and\n`live` follow their moving target: edits to the draft, and each publish, take effect without\nthis setting changing. A saved version's name never moves.",
+                        "smithy.api#documentation": "The version of this agent whose knowledge bases and search settings the tool uses: `live`, or\na saved version's name. `live` follows its moving target, so each publish takes effect without\nthis setting changing; a saved version's name never moves. `draft` is not accepted: saving a\nconfiguration that names it is refused with 400 `VALIDATION_FAILED`.",
                         "smithy.api#required": {}
                     }
                 }
@@ -25306,9 +25346,10 @@
                     "METADATA_FIELD_PASSAGE_SCOPED",
                     "METADATA_LIMIT_EXCEEDED",
                     "BATCH_ITEM_CONTENT_AMBIGUOUS",
-                    "CONTENT_REJECTED"
+                    "CONTENT_REJECTED",
+                    "RBAC_NOT_GUEST_SAFE"
                 ],
-                "smithy.api#documentation": "The idempotency key was already used with a different request body; supplied metadata does not\nfit the knowledge base's field definitions or limits (`METADATA_FIELD_UNDEFINED`,\n`METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one\nentry per field in `errors`; an ingestion batch item gives both or neither of its content's\ndescription and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused\na file (`CONTENT_REJECTED`).",
+                "smithy.api#documentation": "The idempotency key was already used with a different request body; supplied metadata does not\nfit the knowledge base's field definitions or limits (`METADATA_FIELD_UNDEFINED`,\n`METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one\nentry per field in `errors`; an ingestion batch item gives both or neither of its content's\ndescription and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused\na file (`CONTENT_REJECTED`); or a grant of a knowledge base to a role that guests or anonymous\nvisitors use is not safe for them (`RBAC_NOT_GUEST_SAFE`), refused for what the grant is, not\nfor what the caller lacks.",
                 "smithy.api#error": "client",
                 "smithy.api#httpError": 422
             }
@@ -25345,7 +25386,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "ai.caitlyn.traits#uploadTarget": {
                     "member": "avatar.mark.pictureUploadId"
@@ -25419,7 +25460,7 @@
                 "ifMatch": {
                     "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
-                        "smithy.api#documentation": "The agent's current ETag. A stale value is refused with 412; a missing one with 428.",
+                        "smithy.api#documentation": "The agent's current ETag. A stale value is refused with 412. The SDKs will not send a call\nwithout it; a raw HTTP request that leaves it out is refused with 428.",
                         "smithy.api#httpHeader": "If-Match",
                         "smithy.api#required": {}
                     }
@@ -25530,7 +25571,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Changes a document's name, folder, citation address, key or metadata; `If-Match` is required.\n\nMembers that are absent stay unchanged. `metadata` and `extraMetadata` merge key by key; to remove\none key, name it in `clear` as `metadata.<key>` or `extraMetadata.<key>`, which also lets\nprocessing fill a defined field again. A change that needs processing (a new name or folder, or\nmetadata that search reads) is applied after the response, by the Operation returned. Returns the\ndocument and its new ETag.",
                 "smithy.api#examples": [
@@ -25626,7 +25667,7 @@
                 "ifMatch": {
                     "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
-                        "smithy.api#documentation": "The document's current ETag. A stale value is refused with 412; a missing one with 428.",
+                        "smithy.api#documentation": "The document's current ETag. A stale value is refused with 412. The SDKs will not send a call\nwithout it; a raw HTTP request that leaves it out is refused with 428.",
                         "smithy.api#httpHeader": "If-Match",
                         "smithy.api#required": {}
                     }
@@ -25748,7 +25789,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Edits the draft with a partial update of its configuration.\n\nMembers that are absent stay unchanged, nested objects are merged and lists are replaced whole,\neach item taken as sent with defaults for its absent members. To return a member to its default,\nname it in `clear`; naming a member that is not clearable, or one the same request also sets, is\nrefused with 400 `VALIDATION_FAILED`. A draft whose configuration would pass 256 KiB is refused\nwith 400 `CONFIGURATION_TOO_LARGE`. Returns the whole draft and its new ETag.",
                 "smithy.api#examples": [
@@ -25966,7 +26007,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Changes a metadata field's settings.\n\nMembers that are absent stay unchanged. Saving never fills values in again by itself: run a\nfill-in for that. The change is made to the field alone, so it never undoes a change someone made\nto another field at the same time.",
                 "smithy.api#examples": [
@@ -26132,7 +26173,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Renames or moves a folder, with everything in it; the work continues after the response.\n\n`If-Match` is required. Give `name` to rename it, `parent` to move it, or both. Returns 202 with the\nOperation that tracks the change. Documents keep their identifiers, versions and history. A path\nthat is taken is refused with 409 `ALREADY_EXISTS`.",
                 "smithy.api#examples": [
@@ -26206,7 +26247,7 @@
                 "ifMatch": {
                     "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
-                        "smithy.api#documentation": "The folder's current ETag. A stale value is refused with 412; a missing one with 428.",
+                        "smithy.api#documentation": "The folder's current ETag. A stale value is refused with 412. The SDKs will not send a call\nwithout it; a raw HTTP request that leaves it out is refused with 428.",
                         "smithy.api#httpHeader": "If-Match",
                         "smithy.api#required": {}
                     }
@@ -26298,7 +26339,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Changes an ingestion batch's rules, or ends its `draft`; `If-Match` is required.\n\n`policy` can change while the batch is `draft` or `planned`, and applies to every item not resolved\nby hand. A batch past `planned` is refused with 409 `CONFLICT`. The last items, which end the\n`draft`, are added with BatchCreateIngestionBatchItems and `last: true`.",
                 "smithy.api#examples": [
@@ -26388,7 +26429,7 @@
                 "ifMatch": {
                     "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
-                        "smithy.api#documentation": "The batch's current ETag. A stale value is refused with 412; a missing one with 428.",
+                        "smithy.api#documentation": "The batch's current ETag. A stale value is refused with 412. The SDKs will not send a call\nwithout it; a raw HTTP request that leaves it out is refused with 428.",
                         "smithy.api#httpHeader": "If-Match",
                         "smithy.api#required": {}
                     }
@@ -26442,9 +26483,9 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Resolves one item of a planned batch by hand.\n\nOnly `resolution` can change, and only while the batch is `planned`; anything else is refused with\n409 `CONFLICT`. A resolution that does not fit the outcome (for example `move` for a `new` item) is\nrefused with 400 `VALIDATION_FAILED`.",
+                "smithy.api#documentation": "Resolves one item of a planned batch by hand.\n\nOnly `resolution` can change, and only while the batch is `planned`; anything else is refused with\n409 `CONFLICT`. A resolution that does not fit the outcome (for example `move` for a `new` item) is\nrefused with 400 `VALIDATION_FAILED`.\n\nResolving to `remove`, an overwrite or `move` does not check the permission now: each item that\nremoves a document (`remove`, or an overwrite) is checked by the server for the files delete\npermission, and each item that moves one, or adds a new version of one, for the files update\npermission, and the token's scope covers it too. An item that fails the check is marked `failed`\nwith `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts through\nStartIngestionBatch or by itself under `start: when_planned`, so the permission is checked per\nitem, not once on the call.",
                 "smithy.api#examples": [
                     {
                         "title": "Skip an item that clashed",
@@ -26638,7 +26679,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#stability": "beta",
                 "smithy.api#documentation": "Changes a knowledge base's settings; `If-Match` is required.\n\nMembers that are absent stay unchanged, nested objects are merged and lists are replaced whole.\nName a member in `clear` to return it to its default. Metadata fields are changed one at a\ntime, with the field operations. Returns the knowledge base and its new ETag.",
                 "smithy.api#examples": [
@@ -26710,7 +26751,7 @@
                 "ifMatch": {
                     "target": "ai.caitlyn.v3#EntityTagCondition",
                     "traits": {
-                        "smithy.api#documentation": "The knowledge base's current ETag. A stale value is refused with 412; a missing one with\n428.",
+                        "smithy.api#documentation": "The knowledge base's current ETag. A stale value is refused with 412. The SDKs will not\nsend a call without it; a raw HTTP request that leaves it out is refused with 428.",
                         "smithy.api#httpHeader": "If-Match",
                         "smithy.api#required": {}
                     }
@@ -26977,7 +27018,7 @@
                 "agentAvatar": {
                     "target": "smithy.api#Boolean",
                     "traits": {
-                        "ai.caitlyn.traits#since": "next",
+                        "ai.caitlyn.traits#since": "5.144.0",
                         "smithy.api#documentation": "True when the file is an agent's avatar picture: a PNG, JPEG or WebP image of at most 1 MB,\nchecked when the upload is reserved. Use the upload as `avatar.mark.pictureUploadId` on\nCreateAgent or UpdateAgent."
                     }
                 },
@@ -27393,13 +27434,16 @@
                         "type": "conversations",
                         "from": "conversationId"
                     },
+                    "conversationAgent": {
+                        "level": "list"
+                    },
                     "callers": [
                         "person",
                         "api_client",
                         "guest"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#sseEvents": {
                     "events": "ai.caitlyn.v3#ConversationEvent",
                     "resumeWith": "ai.caitlyn.v3#WatchConversation"
@@ -27502,7 +27546,10 @@
                     "name": "watch"
                 },
                 "ai.caitlyn.traits#permission": {
-                    "action": "files.list",
+                    "action": "knowledge-bases.read",
+                    "alsoActions": [
+                        "files.list"
+                    ],
                     "entity": {
                         "type": "knowledge-bases",
                         "from": "knowledgeBaseId",
@@ -27512,18 +27559,47 @@
                             "document"
                         ]
                     },
+                    "whenPresent": [
+                        {
+                            "members": [
+                                "batch"
+                            ],
+                            "action": "knowledge-bases.ingestions.list",
+                            "entity": {
+                                "type": "knowledge-bases",
+                                "from": "knowledgeBaseId",
+                                "level": "read"
+                            }
+                        },
+                        {
+                            "members": [
+                                "folder",
+                                "document"
+                            ],
+                            "action": "files.list",
+                            "entity": {
+                                "type": "knowledge-bases",
+                                "from": "knowledgeBaseId",
+                                "level": "read",
+                                "alsoDocumentAccess": [
+                                    "folder",
+                                    "document"
+                                ]
+                            }
+                        }
+                    ],
                     "callers": [
                         "person",
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#sseEvents": {
                     "events": "ai.caitlyn.v3#KnowledgeBaseEvent",
                     "resumeWith": "ai.caitlyn.v3#WatchKnowledgeBase"
                 },
                 "ai.caitlyn.traits#stability": "beta",
-                "smithy.api#documentation": "Watches a knowledge base, or one document, folder or batch in it: a snapshot first, then each\nchange.\n\nEvery connection starts with `snapshot`: the thing watched as it stands, its running and recently\nfinished jobs, and the progress of each document being processed. Then one event per change. A\nreconnect needs no cursor, because it starts with a snapshot again; nothing is replayed and\nnothing is lost. The SDKs build every scope's `watch()` and `wait()` on this: `wait()` returns once\nno job on the thing is running, or raises the error of the job that failed. Events name a document\nonly to callers who may read it. The server ends the stream after at most an hour, and the SDKs\nreconnect.",
+                "smithy.api#documentation": "Watches a knowledge base, or one document, folder or batch in it: a snapshot first, then each\nchange.\n\nEvery connection starts with `snapshot`: the thing watched as it stands, its running and recently\nfinished jobs, and the progress of each document being processed. Then one event per change. A\nreconnect needs no cursor, because it starts with a snapshot again; nothing is replayed and\nnothing is lost. The SDKs build every scope's `watch()` and `wait()` on this: `wait()` returns once\nno job on the thing is running, or raises the error of the job that failed. Events name a document\nonly to callers who may read it. The server ends the stream after at most an hour, and the SDKs\nreconnect.\n\nWhat the caller needs depends on what it watches. The whole knowledge base needs the knowledge\nbase read permission and the files list permission, because the snapshot returns the knowledge\nbase and the documents' progress. One document or folder needs the files list permission. One\nbatch needs the ingestion list permission, because the snapshot returns the batch.",
                 "smithy.api#examples": [
                     {
                         "title": "Watch one document after a page reload",
@@ -27642,7 +27718,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#sseEvents": {
                     "events": "ai.caitlyn.v3#OperationEvent",
                     "resumeWith": "ai.caitlyn.v3#WatchOperation",
@@ -27759,7 +27835,7 @@
                         "api_client"
                     ]
                 },
-                "ai.caitlyn.traits#since": "next",
+                "ai.caitlyn.traits#since": "5.144.0",
                 "ai.caitlyn.traits#sseEvents": {
                     "events": "ai.caitlyn.v3#WorkspaceEvent",
                     "resumeWith": "ai.caitlyn.v3#WatchWorkspaceEvents"

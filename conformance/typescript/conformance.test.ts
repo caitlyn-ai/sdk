@@ -56,9 +56,17 @@ import { MOCK_AWS, MOCK_CLIENT, MOCK_OAUTH_CLIENT, MOCK_PAT, MOCK_SESSION_COOKIE
 const ROOT = process.env.CAITLYN_REPO_ROOT ?? path.resolve(import.meta.dirname, '../..');
 const EXAMPLES: ExampleCase[] = JSON.parse(fs.readFileSync(path.join(ROOT, 'conformance/cases/examples.json'), 'utf8')).cases;
 const SDK_VERSION = fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim(); // every SDK sends it in its user agent
-const SDK_MODEL = JSON.parse(fs.readFileSync(path.join(ROOT, 'model/model.lock.json'), 'utf8')).stampNext as string;
-/** The version the mock reports: 5.120.0, or the model's @since("next") stamp when that is later. */
-const SERVER_VERSION = [SDK_MODEL, '5.120.0'].filter(Boolean).sort((a, b) => b.localeCompare(a, 'en', { numeric: true }))[0]!;
+const MODEL_LOCK = JSON.parse(fs.readFileSync(path.join(ROOT, 'model/model.lock.json'), 'utf8'));
+/** The SDK's model version: the lock's stampNext for an app branch build, or a published model's highest @since. */
+const SDK_MODEL = (MODEL_LOCK.stampNext as string) || ((): string => {
+  const shapes = JSON.parse(fs.readFileSync(path.join(ROOT, 'model/model.json'), 'utf8')).shapes as Record<string, { traits?: Record<string, unknown>; members?: Record<string, { traits?: Record<string, unknown> }> }>;
+  const all = Object.values(shapes).flatMap((s) => [s.traits, ...Object.values(s.members ?? {}).map((m) => m.traits)]);
+  const found = all.map((t) => t?.['ai.caitlyn.traits#since']).filter((v): v is string => typeof v === 'string' && v !== 'next');
+  return found.sort((a, b) => b.localeCompare(a, 'en', { numeric: true }))[0] ?? '';
+})();
+/** The version the mock reports: 5.120.0, or the model's release when that is later (the lock's stampNext for an app
+ *  branch build, its version for a published model). */
+const SERVER_VERSION = [(MODEL_LOCK.stampNext as string) || MODEL_LOCK.version, '5.120.0'].filter(Boolean).sort((a, b) => b.localeCompare(a, 'en', { numeric: true }))[0]!;
 /** GetAgentVersion's @since, as the SDK reads it: the model's release, or SDK_MODEL where the model says "next". */
 const GET_AGENT_VERSION_SINCE = ((since: string | undefined) => (since === 'next' || since === undefined ? SDK_MODEL : since))(
   JSON.parse(fs.readFileSync(path.join(ROOT, 'model/model.json'), 'utf8')).shapes['ai.caitlyn.v3#GetAgentVersion']?.traits?.['ai.caitlyn.traits#since'],

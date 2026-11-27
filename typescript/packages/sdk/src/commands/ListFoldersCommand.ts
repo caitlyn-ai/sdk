@@ -25,7 +25,8 @@ export interface ListFoldersCommandOutput extends ListFoldersOutput, __MetadataB
 /**
  * Lists the folders in a knowledge base, one page at a time.
  *
- * With `filter[parent][eq]`, the folders directly in that folder; with `deep` as well, every folder
+ * Folders come back in a stable order that does not change between pages; the server decides the
+ * default order, which is not yet recorded here. With `filter[parent][eq]`, the folders directly in that folder; with `deep` as well, every folder
  * below it. `q` keeps folders whose name contains the text. List the documents in a folder with
  * ListDocuments.
  * @example

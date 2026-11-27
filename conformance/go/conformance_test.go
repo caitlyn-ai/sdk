@@ -168,16 +168,46 @@ var sdkVersion = func() string {
 	return strings.TrimSpace(string(b))
 }()
 
-var sdkModel = func() string {
+var sdkModel, modelVersion = func() (string, string) {
 	b, err := os.ReadFile(filepath.Join("..", "..", "model", "model.lock.json"))
 	if err != nil {
 		panic(err)
 	}
 	var lock struct {
 		StampNext string `json:"stampNext"`
+		Version   string `json:"version"`
 	}
 	json.Unmarshal(b, &lock)
-	return lock.StampNext
+	if lock.StampNext != "" {
+		return lock.StampNext, lock.Version
+	}
+	// A published model has no "next": the SDK's model version is its highest @since
+	mb, err := os.ReadFile(filepath.Join("..", "..", "model", "model.json"))
+	if err != nil {
+		panic(err)
+	}
+	var model struct {
+		Shapes map[string]struct {
+			Traits  map[string]any `json:"traits"`
+			Members map[string]struct {
+				Traits map[string]any `json:"traits"`
+			} `json:"members"`
+		} `json:"shapes"`
+	}
+	json.Unmarshal(mb, &model)
+	highest := ""
+	note := func(t map[string]any) {
+		if s, ok := t["ai.caitlyn.traits#since"].(string); ok && s != "next" && (highest == "" || core.CompareVersions(s, highest) > 0) {
+			highest = s
+		}
+	}
+	for _, s := range model.Shapes {
+		note(s.Traits)
+		for _, m := range s.Members {
+			note(m.Traits)
+		}
+	}
+	return highest, lock.Version
 }()
 
 // getAgentVersionSince is GetAgentVersion's @since, as the SDK reads it: the model's release, or sdkModel where the
@@ -199,10 +229,22 @@ var getAgentVersionSince = func() string {
 	return sdkModel
 }()
 
-// serverVersion is the version the mock reports: 5.120.0, or the model's @since("next") stamp when that is later.
+// serverVersion is the version the mock reports: 5.120.0, or the model's release when that is later (the lock's
+// stampNext for an app branch build, its version for a published model).
 var serverVersion = func() string {
-	if core.CompareVersions(sdkModel, "5.120.0") > 0 {
-		return sdkModel
+	// the lock's stampNext for an app branch build (sdkModel is then that stamp), or its version for a published one
+	release := modelVersion
+	if b, err := os.ReadFile(filepath.Join("..", "..", "model", "model.lock.json")); err == nil {
+		var lock struct {
+			StampNext string `json:"stampNext"`
+		}
+		json.Unmarshal(b, &lock)
+		if lock.StampNext != "" {
+			release = lock.StampNext
+		}
+	}
+	if release != "" && core.CompareVersions(release, "5.120.0") > 0 {
+		return release
 	}
 	return "5.120.0"
 }()

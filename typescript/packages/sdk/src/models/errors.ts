@@ -622,6 +622,87 @@ export class PreconditionFailedError extends __BaseException {
 }
 
 /**
+ * The idempotency key was already used with a different request body; supplied metadata does not
+ * fit the knowledge base's field definitions or limits (`METADATA_FIELD_UNDEFINED`,
+ * `METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one
+ * entry per field in `errors`; an ingestion batch item gives both or neither of its content's
+ * description and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused
+ * a file (`CONTENT_REJECTED`); or a grant of a knowledge base to a role that guests or anonymous
+ * visitors use is not safe for them (`RBAC_NOT_GUEST_SAFE`), refused for what the grant is, not
+ * for what the caller lacks.
+ * @public
+ */
+export class UnprocessableContentError extends __BaseException {
+  public static readonly shapeId: string = "ai.caitlyn.v3#UnprocessableContentError";
+  readonly name = "UnprocessableContentError" as const;
+  readonly $fault = "client" as const;
+  /**
+   * A stable URI for the code: its page in the public error reference,
+   * `https://build.caitlyn.ai/errors/\{code\}`.
+   * @public
+   */
+  type: string;
+
+  /**
+   * A short, human-readable summary of the problem, the same for every occurrence of the code.
+   * @public
+   */
+  title: string;
+
+  /**
+   * The HTTP status code, repeated from the response.
+   * @public
+   */
+  status: number;
+
+  /**
+   * The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never
+   * renamed; callers match on it.
+   * @public
+   */
+  code: string;
+
+  /**
+   * What went wrong in this occurrence, written for the integrator. Never holds stack traces,
+   * storage keys or another person's data.
+   * @public
+   */
+  detail?: string | undefined;
+
+  /**
+   * The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to
+   * support.
+   * @public
+   */
+  requestId: string;
+
+  /**
+   * Field-level problems, one per member or parameter at fault. Present only on 400
+   * `VALIDATION_FAILED` and on the 422 `METADATA_*` codes.
+   * @public
+   */
+  errors?: FieldError[] | undefined;
+  /**
+   * @internal
+   */
+  constructor(opts: __ExceptionOptionType<UnprocessableContentError, __BaseException>) {
+    super({
+      name: "UnprocessableContentError",
+      $fault: "client",
+      ...opts,
+    });
+    Object.setPrototypeOf(this, new.target.prototype);
+    this.type = opts.type;
+    this.title = opts.title;
+    this.status = opts.status;
+    this.code = opts.code;
+    this.detail = opts.detail;
+    this.requestId = opts.requestId;
+    this.errors = opts.errors;
+  }
+}
+
+/**
  * The resource's state does not allow the request, a unique name is taken, or a request with the
  * same idempotency key is still in progress. An agent version that live points at
  * (`VERSION_IN_USE`) or that live history names (`VERSION_IN_HISTORY`) cannot be deleted. A
@@ -713,85 +794,6 @@ export class ConflictError extends __BaseException {
     this.requestId = opts.requestId;
     this.errors = opts.errors;
     this.retryAfterSeconds = opts.retryAfterSeconds;
-  }
-}
-
-/**
- * The idempotency key was already used with a different request body; supplied metadata does not
- * fit the knowledge base's field definitions or limits (`METADATA_FIELD_UNDEFINED`,
- * `METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one
- * entry per field in `errors`; an ingestion batch item gives both or neither of its content's
- * description and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused
- * a file (`CONTENT_REJECTED`).
- * @public
- */
-export class UnprocessableContentError extends __BaseException {
-  public static readonly shapeId: string = "ai.caitlyn.v3#UnprocessableContentError";
-  readonly name = "UnprocessableContentError" as const;
-  readonly $fault = "client" as const;
-  /**
-   * A stable URI for the code: its page in the public error reference,
-   * `https://build.caitlyn.ai/errors/\{code\}`.
-   * @public
-   */
-  type: string;
-
-  /**
-   * A short, human-readable summary of the problem, the same for every occurrence of the code.
-   * @public
-   */
-  title: string;
-
-  /**
-   * The HTTP status code, repeated from the response.
-   * @public
-   */
-  status: number;
-
-  /**
-   * The stable code, for example `NOT_FOUND`. Once shipped a code keeps its meaning and is never
-   * renamed; callers match on it.
-   * @public
-   */
-  code: string;
-
-  /**
-   * What went wrong in this occurrence, written for the integrator. Never holds stack traces,
-   * storage keys or another person's data.
-   * @public
-   */
-  detail?: string | undefined;
-
-  /**
-   * The request's identifier, the same value as the `Caitlyn-Request-Id` header. Quote it to
-   * support.
-   * @public
-   */
-  requestId: string;
-
-  /**
-   * Field-level problems, one per member or parameter at fault. Present only on 400
-   * `VALIDATION_FAILED` and on the 422 `METADATA_*` codes.
-   * @public
-   */
-  errors?: FieldError[] | undefined;
-  /**
-   * @internal
-   */
-  constructor(opts: __ExceptionOptionType<UnprocessableContentError, __BaseException>) {
-    super({
-      name: "UnprocessableContentError",
-      $fault: "client",
-      ...opts,
-    });
-    Object.setPrototypeOf(this, new.target.prototype);
-    this.type = opts.type;
-    this.title = opts.title;
-    this.status = opts.status;
-    this.code = opts.code;
-    this.detail = opts.detail;
-    this.requestId = opts.requestId;
-    this.errors = opts.errors;
   }
 }
 

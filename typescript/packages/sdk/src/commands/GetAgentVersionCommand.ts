@@ -28,7 +28,8 @@ export interface GetAgentVersionCommandOutput extends GetAgentVersionOutput, __M
  * `version` is `draft`, `live` or the name of a saved or published version. Live is the version the
  * agent's live pointer names, read as `live`; it is readable by everyone with access to the agent.
  * The draft and named versions are readable only by the people and groups on the agent's version
- * access grant, and anyone else gets 404, as for an agent with no live version yet.
+ * access grant, and anyone else gets 404. An agent with no live version, because none has been
+ * published or chosen yet, answers `live` with 404 `NO_LIVE_VERSION`.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript

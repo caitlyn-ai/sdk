@@ -30,6 +30,11 @@ export interface GetAccessCommandOutput extends GetAccessOutput, __MetadataBeare
  * apply when they are inherited. A folder or document the caller may not see is 404. The root
  * folder (`folder=/`, `kb.folders('/').access`) holds the readers every folder falls back to; its
  * readers are never inherited.
+ *
+ * For a folder or document, the `readers` also come back on ListFolders, ListDocuments and
+ * GetDocument too, with `inheritedFrom`, under the files list and read permissions. What GetAccess
+ * adds is the access on its own, with the ETag that SetAccess's `If-Match` takes, and the root
+ * folder's readers; reading it needs the files permissions list permission.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript

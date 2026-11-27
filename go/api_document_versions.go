@@ -35,7 +35,7 @@ func newDocumentVersions(c *Client, knowledgeBaseID, documentID string) *Documen
 // It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
 // one.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *DocumentVersions) List(ctx context.Context, in *ListDocumentVersionsInput, opts ...CallOption) iter.Seq2[DocumentVersion, error] {
 	return core.Items(s.ListPages(ctx, in, opts...), func(p *ListDocumentVersionsPage) []DocumentVersion { return p.Items })
 }
@@ -80,7 +80,7 @@ type listDocumentVersionsParams struct {
 var opListDocumentVersions = &core.Operation{
 	Name:      "ListDocumentVersions",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{

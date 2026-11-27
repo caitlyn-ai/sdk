@@ -30,7 +30,7 @@ func newAgentOptions(c *Client) *AgentOptions {
 // It yields every item, fetching pages as needed; GuardrailsPages yields whole pages, and
 // GuardrailsPage reads one.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *AgentOptions) Guardrails(ctx context.Context, in *ListGuardrailsInput, opts ...CallOption) iter.Seq2[GuardrailSummary, error] {
 	return core.Items(s.GuardrailsPages(ctx, in, opts...), func(p *ListGuardrailsPage) []GuardrailSummary { return p.Items })
 }
@@ -59,7 +59,7 @@ func (s *AgentOptions) GuardrailsPage(ctx context.Context, in *ListGuardrailsInp
 // It yields every item, fetching pages as needed; MemoryStoresPages yields whole pages, and
 // MemoryStoresPage reads one.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *AgentOptions) MemoryStores(ctx context.Context, in *ListMemoryStoresInput, opts ...CallOption) iter.Seq2[MemoryStoreSummary, error] {
 	return core.Items(s.MemoryStoresPages(ctx, in, opts...), func(p *ListMemoryStoresPage) []MemoryStoreSummary { return p.Items })
 }
@@ -91,7 +91,7 @@ func (s *AgentOptions) MemoryStoresPage(ctx context.Context, in *ListMemoryStore
 // It yields every item, fetching pages as needed; ModelsPages yields whole pages, and ModelsPage reads
 // one.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *AgentOptions) Models(ctx context.Context, in *ListModelsInput, opts ...CallOption) iter.Seq2[ModelSummary, error] {
 	return core.Items(s.ModelsPages(ctx, in, opts...), func(p *ListModelsPage) []ModelSummary { return p.Items })
 }
@@ -119,7 +119,7 @@ func (s *AgentOptions) ModelsPage(ctx context.Context, in *ListModelsInput, opts
 // It yields every item, fetching pages as needed; ToolsPages yields whole pages, and ToolsPage reads
 // one.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *AgentOptions) Tools(ctx context.Context, in *ListToolsInput, opts ...CallOption) iter.Seq2[ToolSummary, error] {
 	return core.Items(s.ToolsPages(ctx, in, opts...), func(p *ListToolsPage) []ToolSummary { return p.Items })
 }
@@ -147,7 +147,7 @@ func (s *AgentOptions) ToolsPage(ctx context.Context, in *ListToolsInput, opts .
 // It yields every item, fetching pages as needed; VoicesPages yields whole pages, and VoicesPage reads
 // one.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *AgentOptions) Voices(ctx context.Context, in *ListVoicesInput, opts ...CallOption) iter.Seq2[VoiceSummary, error] {
 	return core.Items(s.VoicesPages(ctx, in, opts...), func(p *ListVoicesPage) []VoiceSummary { return p.Items })
 }
@@ -188,7 +188,7 @@ type listGuardrailsParams struct {
 var opListGuardrails = &core.Operation{
 	Name:      "ListGuardrails",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{
@@ -272,7 +272,7 @@ type listMemoryStoresParams struct {
 var opListMemoryStores = &core.Operation{
 	Name:      "ListMemoryStores",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{
@@ -358,7 +358,7 @@ type listModelsParams struct {
 var opListModels = &core.Operation{
 	Name:      "ListModels",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{
@@ -441,7 +441,7 @@ type listToolsParams struct {
 var opListTools = &core.Operation{
 	Name:      "ListTools",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{
@@ -525,7 +525,7 @@ type listVoicesParams struct {
 var opListVoices = &core.Operation{
 	Name:      "ListVoices",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{

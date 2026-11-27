@@ -841,7 +841,8 @@ impl<'de> Deserialize<'de> for AttachmentSettings {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(remote = "Self", default)]
 pub struct ConnectorBinding {
-    /// Which of the workspace's connectors the version may use.
+    /// Which of the workspace's connectors the version may use. The caller must be able to read the
+    /// connector; one it cannot read is refused with 404 `NOT_FOUND`.
     #[serde(rename = "connectorId")]
     pub connector_id: String,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
@@ -868,7 +869,8 @@ impl<'de> Deserialize<'de> for ConnectorBinding {
 #[serde(remote = "Self", default)]
 pub struct ContentSafety {
     /// The ID of an entry in `GET /v3/guardrails`, `default` (the platform default, also used when
-    /// absent) or `none`.
+    /// absent) or `none`. The caller must be able to read the entry; one it cannot read is refused
+    /// with 404 `NOT_FOUND`.
     #[serde(rename = "guardrail", skip_serializing_if = "Option::is_none")]
     pub guardrail: Option<String>,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
@@ -1663,12 +1665,15 @@ pub struct LiveAvatarSettings {
     /// Which company's service runs the avatar. Defaults to `heygen`, the only one.
     #[serde(rename = "provider", skip_serializing_if = "Option::is_none")]
     pub provider: Option<LiveAvatarProvider>,
-    /// The stored secret holding the provider's key. Exported as a template variable.
+    /// The stored secret holding the provider's key. Exported as a template variable. The secret must
+    /// belong to this workspace, and the caller must be allowed to update the agent's integrations,
+    /// the permission v2 asks for when it stores the key.
     #[serde(rename = "secretId")]
     pub secret_id: String,
-    /// The version of this agent that answers for the avatar. Absent means this version. `draft` and
-    /// `live` follow their moving target: edits to the draft, and each publish, take effect without
-    /// this setting changing. A saved version's name never moves.
+    /// The version of this agent that answers for the avatar: `live`, or a saved version's name.
+    /// Absent means this version. `live` follows its moving target, so each publish takes effect
+    /// without this setting changing; a saved version's name never moves. `draft` is not accepted:
+    /// saving a configuration that names it is refused with 400 `VALIDATION_FAILED`.
     #[serde(rename = "answerVersion", skip_serializing_if = "Option::is_none")]
     pub answer_version: Option<String>,
     /// Phrases that hand the conversation to the answering version when the avatar says one, at
@@ -1736,7 +1741,8 @@ pub struct MemorySettings {
     /// Whether the agent remembers. Defaults to false.
     #[serde(rename = "enabled", skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
-    /// The memory store, from `GET /v3/memory-stores`. Required when `enabled`.
+    /// The memory store, from `GET /v3/memory-stores`. Required when `enabled`. The caller must be
+    /// able to read the store.
     #[serde(rename = "memoryStoreId", skip_serializing_if = "Option::is_none")]
     pub memory_store_id: Option<String>,
     /// The lowest relevance a memory needs to be recalled, from 0 to 1. Defaults to 0.4.
@@ -1897,6 +1903,9 @@ impl<'de> Deserialize<'de> for AgentModels {
 #[serde(remote = "Self", default)]
 pub struct PolicyBinding {
     /// Which policy the version may review documents against.
+    /// The caller must be able to read the policy. This is checked for every policy id sent, not only
+    /// new ones, because the rules go into the cached prompt. A policy the caller cannot read is
+    /// refused with 404 `NOT_FOUND`.
     #[serde(rename = "policyId")]
     pub policy_id: String,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
@@ -2966,6 +2975,9 @@ impl<'de> Deserialize<'de> for PhaseResponse {
 #[serde(remote = "Self", default)]
 pub struct PolicyReviewSettings {
     /// Which policy the phase reviews against. It must be in `policies`.
+    /// The caller must be able to read the policy. This is checked for every policy id sent, not only
+    /// new ones, because the rules go into the cached prompt. A policy the caller cannot read is
+    /// refused with 404 `NOT_FOUND`.
     #[serde(rename = "policyId")]
     pub policy_id: String,
     /// The rules to check. Absent means every rule in the policy, read again each time a review
@@ -3139,9 +3151,10 @@ pub struct ToolSearchSettings {
     /// The search modes the agent may choose from, at least one.
     #[serde(rename = "modes")]
     pub modes: Vec<SearchMode>,
-    /// The version of this agent whose knowledge bases and search settings the tool uses. `draft` and
-    /// `live` follow their moving target: edits to the draft, and each publish, take effect without
-    /// this setting changing. A saved version's name never moves.
+    /// The version of this agent whose knowledge bases and search settings the tool uses: `live`, or
+    /// a saved version's name. `live` follows its moving target, so each publish takes effect without
+    /// this setting changing; a saved version's name never moves. `draft` is not accepted: saving a
+    /// configuration that names it is refused with 400 `VALIDATION_FAILED`.
     #[serde(rename = "version")]
     pub version: String,
     /// The JSON object this value was read from, unknown fields included (PROTOCOL.md 4.1). Empty on values
@@ -3249,7 +3262,7 @@ pub struct PhaseTool {
     pub name: Option<String>,
     /// An MCP server whose tools the phase may use. Exactly one of `name` and `mcpServerId`. With no
     /// `tools`, every tool on the server, including tools it adds later; otherwise only those
-    /// listed. Exported as a template variable.
+    /// listed. Exported as a template variable. The caller must be able to read the server.
     #[serde(rename = "mcpServerId", skip_serializing_if = "Option::is_none")]
     pub mcp_server_id: Option<String>,
     /// With `mcpServerId`: only these of the server's tools.
@@ -3600,7 +3613,8 @@ pub struct Phase {
     #[serde(rename = "action", skip_serializing_if = "Option::is_none")]
     pub action: Option<PhaseAction>,
     /// For `take_action`: the policy rules this phase checks, as `<policyId>/<ruleId>`. Each policy
-    /// must be in `policies`.
+    /// must be in `policies`. The caller must be able to read each policy, checked on every save as
+    /// for `policies`; one it cannot read is refused with 404 `NOT_FOUND`.
     #[serde(rename = "policyRules", skip_serializing_if = "Option::is_none")]
     pub policy_rules: Option<Vec<String>>,
     /// For `policy_review`: the policy the phase reviews against, and which of its rules.
@@ -4208,8 +4222,8 @@ pub struct HistoryEntry {
     #[serde(rename = "changedMembers", skip_serializing_if = "Option::is_none")]
     pub changed_members: Option<Vec<String>>,
     /// The configuration of `version`. Present only when the caller may read that version, as
-    /// GetAgentVersion checks: the permission to read versions, and the agent grant if it is live now
-    /// or the agent's version access grant if it is not. Absent otherwise, in a list, and when that
+    /// GetAgentVersion checks: the permission to read versions, and the agent grant and the agent's
+    /// version access grant. Absent otherwise, in a list, and when that
     /// version no longer exists.
     #[serde(rename = "configuration", skip_serializing_if = "Option::is_none")]
     pub configuration: Option<AgentConfiguration>,
@@ -5057,7 +5071,8 @@ pub struct IngestionItemInput {
     /// item is added.
     #[serde(rename = "fetchUrl", skip_serializing_if = "Option::is_none")]
     pub fetch_url: Option<String>,
-    /// The address a citation of the document links to. Defaults to `fetchUrl`.
+    /// The address a citation of the document links to. Defaults to `fetchUrl` when that is an `https`
+    /// address; with an `http` `fetchUrl` and no `sourceUrl`, the document has none.
     #[serde(rename = "sourceUrl", skip_serializing_if = "Option::is_none")]
     pub source_url: Option<String>,
     /// Values for the metadata fields the knowledge base defines, checked as CreateDocument checks
@@ -5565,7 +5580,8 @@ pub struct IngestionBatchItem {
     /// item is added.
     #[serde(rename = "fetchUrl", skip_serializing_if = "Option::is_none")]
     pub fetch_url: Option<String>,
-    /// The address a citation of the document links to. Defaults to `fetchUrl`.
+    /// The address a citation of the document links to. Defaults to `fetchUrl` when that is an `https`
+    /// address; with an `http` `fetchUrl` and no `sourceUrl`, the document has none.
     #[serde(rename = "sourceUrl", skip_serializing_if = "Option::is_none")]
     pub source_url: Option<String>,
     /// Values for the metadata fields the knowledge base defines, checked as CreateDocument checks
@@ -6859,7 +6875,7 @@ pub struct KnowledgeBase {
     #[serde(rename = "status")]
     pub status: KnowledgeBaseStatus,
     /// How many documents are processing, and how many failed, counting each document's latest
-    /// attempt.
+    /// attempt. Totals for the whole knowledge base, including documents the caller cannot read.
     #[serde(rename = "documentCounts", skip_serializing_if = "Option::is_none")]
     pub document_counts: Option<DocumentCounts>,
     /// The search settings an agent uses unless its binding says otherwise.
@@ -10687,8 +10703,9 @@ pub struct ConflictRules {
     /// The rule for a kind of conflict with no rule of its own. Defaults to `ask`.
     #[serde(rename = "default", skip_serializing_if = "Option::is_none")]
     pub default: Option<ConflictRule>,
-    /// The path and the `externalId` name different documents, or the path holds one the caller may
-    /// not read.
+    /// The path and the `externalId` name different documents. A path held by a document the caller
+    /// may not read is not a conflict: the item fails as in any write the caller may not make, so
+    /// this rule never reveals that document.
     #[serde(rename = "pathTaken", skip_serializing_if = "Option::is_none")]
     pub path_taken: Option<ConflictRule>,
     /// No `externalId`, and several current documents have these bytes.

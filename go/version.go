@@ -11,4 +11,4 @@ const SDKVersion = "0.11.0"
 const ModulePath = "github.com/caitlyn-ai/sdk/go"
 
 // ModelVersion is the Caitlyn release the SDK was generated from (the highest @since in the model), sent as Caitlyn-Sdk-Model.
-const ModelVersion = "5.115.0"
+const ModelVersion = "5.144.0"

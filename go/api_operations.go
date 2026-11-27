@@ -25,12 +25,14 @@ func newOperations(c *Client) *Operations {
 // List lists the Operations on one knowledge base, or one thing in it, newest first.
 //
 // The caller needs read access to the knowledge base. Narrow the list with the target, the kind and
-// the status.
+// the status. Rows are filtered to the Operations a direct GetOperation would return for this
+// caller: an Operation whose target the caller could not read is left out, not shown with its
+// details removed.
 //
 // It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
 // one.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *Operations) List(ctx context.Context, knowledgeBaseID string, in *ListOperationsInput, opts ...CallOption) iter.Seq2[Operation, error] {
 	return core.Items(s.ListPages(ctx, knowledgeBaseID, in, opts...), func(p *ListOperationsPage) []Operation { return p.Items })
 }
@@ -93,7 +95,7 @@ type listOperationsParams struct {
 var opListOperations = &core.Operation{
 	Name:      "ListOperations",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{

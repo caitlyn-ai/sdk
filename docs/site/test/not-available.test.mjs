@@ -1,5 +1,6 @@
 // "Not available yet" names the release the operation arrives in: model/model.lock.json's stampNext, the number the
-// SDKs' doc comments already show ("Since Caitlyn 5.115.0"), so the site and the SDKs agree. Reads the prepared model
+// SDKs' doc comments already show, so the site and the SDKs agree. A published snapshot has no "next", so no page has
+// the callout; the pre-release case is then tested with an operation marked unreleased here. Reads the prepared model
 // (scripts/docs-build.sh runs prepare-model first). Run: npm test (in docs/site).
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -17,20 +18,28 @@ const { doc } = publishedOpenapi(raw, { ops: [...reference.ops, ...reference.api
 const api = apiPages(doc, { ast, ops: [...reference.ops, ...reference.apiOnly], sdkPages: new Map(reference.pages.filter((p) => p.operation).map((p) => [p.operation.name, p])), typePages: reference.typePages, tree: reference.tree });
 const stampNext = JSON.parse(fs.readFileSync(path.join(root, 'model/model.lock.json'), 'utf8')).stampNext;
 
-test('the callout and the Stability row name the lock\'s stampNext, on every page of an operation no release serves', () => {
+test('the callout and the Stability row name the release, on every page of an operation no release serves', () => {
   const unreleased = unreleasedOperations();
   assert.equal(nextRelease(), stampNext ?? null);
-  const pages = [...reference.pages.filter((p) => p.operation), ...api.pages].filter((p) => unreleased.has(p.operation.name));
+  // A published snapshot (as now) has no "next": no page has the callout
+  if (unreleased.size === 0) {
+    for (const p of [...reference.pages, ...api.pages]) assert.doesNotMatch(p.body, /Not available yet/, p.slug);
+  }
+  // The pre-release case, from the same model: the snapshot's unreleased operations, or one marked so here, arriving
+  // in the lock's stampNext, or a release given here
+  const pre = unreleased.size ? unreleased : new Set(['GetDocument']);
+  const next = stampNext ?? '9.9.0';
+  const refs = referencePages(ast, { unreleased: pre, next });
+  const preApi = apiPages(doc, { ast, ops: [...refs.ops, ...refs.apiOnly], sdkPages: new Map(refs.pages.filter((p) => p.operation).map((p) => [p.operation.name, p])), typePages: refs.typePages, tree: refs.tree, unreleased: pre, next });
+  const pages = [...refs.pages.filter((p) => p.operation), ...preApi.pages].filter((p) => pre.has(p.operation.name));
   assert.ok(pages.length > 0);
   for (const p of pages) {
     const versions = [...p.body.matchAll(/Not available yet: arrives in Caitlyn (\d+\.\d+\.\d+)/g)].map((m) => m[1]);
-    if (stampNext) {
-      assert.ok(versions.length > 0, `${p.slug} names no release`);
-      for (const v of versions) assert.equal(v, stampNext, p.slug);
-    } else assert.equal(versions.length, 0, p.slug);
+    assert.ok(versions.length > 0, `${p.slug} names no release`);
+    for (const v of versions) assert.equal(v, next, p.slug);
   }
-  for (const p of stampNext ? reference.pages.filter((x) => x.operation && unreleased.has(x.operation.name)) : []) {
-    assert.match(p.body, new RegExp(`^\\| Stability \\| .*Not available yet: arrives in Caitlyn ${stampNext.replace(/\./g, '\\.')}`, 'm'), p.slug);
+  for (const p of refs.pages.filter((x) => x.operation && pre.has(x.operation.name))) {
+    assert.match(p.body, new RegExp(`^\\| Stability \\| .*Not available yet: arrives in Caitlyn ${next.replace(/\./g, '\\.')}`, 'm'), p.slug);
   }
 });
 
@@ -43,8 +52,8 @@ test('a released operation has no callout, and shows the release it arrived in',
   const lock = fixture('released.lock.json');
   const released = loadModel();
   for (const [id, s] of Object.entries(snapshot)) released.shapes[id].traits['ai.caitlyn.traits#since'] = s.traits['ai.caitlyn.traits#since'];
-  // Only the fixture's operations are released; the rest of the prepared model keeps its "next"
-  const unreleased = new Set([...unreleasedOperations()].filter((n) => !Object.keys(snapshot).some((id) => id.endsWith(`#${n}`))));
+  // Only the fixture's operations are released; GetDocument is marked unreleased here, whatever the snapshot says
+  const unreleased = new Set([...unreleasedOperations(), 'GetDocument'].filter((n) => !Object.keys(snapshot).some((id) => id.endsWith(`#${n}`))));
   assert.equal(unreleasedOperations(snapshot).size, 0);
   const next = nextRelease(lock);
   assert.equal(next, null);

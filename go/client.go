@@ -75,7 +75,7 @@ func (c *Client) KnowledgeBase(knowledgeBaseID string) *KnowledgeBaseScope {
 // credential before doing anything else. It only describes the credential that made the request;
 // it never reads another person's or client's record.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (c *Client) Me(ctx context.Context, opts ...CallOption) (*Caller, error) {
 	p := &getCallerParams{}
 	return c.callGetCaller(ctx, p, opts)
@@ -88,7 +88,7 @@ type getCallerParams struct {
 var opGetCaller = &core.Operation{
 	Name:      "GetCaller",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -171,7 +171,7 @@ func statusForCode(code string) int {
 		return 412
 	case "PAYLOAD_TOO_LARGE":
 		return 413
-	case "IDEMPOTENCY_KEY_REUSED", "METADATA_FIELD_UNDEFINED", "METADATA_VALUE_INVALID", "METADATA_FIELD_PASSAGE_SCOPED", "METADATA_LIMIT_EXCEEDED", "BATCH_ITEM_CONTENT_AMBIGUOUS", "CONTENT_REJECTED":
+	case "IDEMPOTENCY_KEY_REUSED", "METADATA_FIELD_UNDEFINED", "METADATA_VALUE_INVALID", "METADATA_FIELD_PASSAGE_SCOPED", "METADATA_LIMIT_EXCEEDED", "BATCH_ITEM_CONTENT_AMBIGUOUS", "CONTENT_REJECTED", "RBAC_NOT_GUEST_SAFE":
 		return 422
 	case "PRECONDITION_REQUIRED":
 		return 428
@@ -242,6 +242,8 @@ const (
 	ErrorCodePrimaryWorkspaceRequired ErrorCode = "PRIMARY_WORKSPACE_REQUIRED"
 	// ErrorCodeRateLimited is RATE_LIMITED, raised as *TooManyRequestsError (429).
 	ErrorCodeRateLimited ErrorCode = "RATE_LIMITED"
+	// ErrorCodeRbacNotGuestSafe is RBAC_NOT_GUEST_SAFE, raised as *UnprocessableContentError (422).
+	ErrorCodeRbacNotGuestSafe ErrorCode = "RBAC_NOT_GUEST_SAFE"
 	// ErrorCodeServiceUnavailable is SERVICE_UNAVAILABLE, raised as *ServiceUnavailableError (503).
 	ErrorCodeServiceUnavailable ErrorCode = "SERVICE_UNAVAILABLE"
 	// ErrorCodeTargetInUse is TARGET_IN_USE, raised as *ConflictError (409).

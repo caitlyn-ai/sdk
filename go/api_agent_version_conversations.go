@@ -30,7 +30,7 @@ func newAgentVersionConversations(c *Client, agentID, version string) *AgentVers
 //
 // It returns the new conversation's scope, with the response as Result.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *AgentVersionConversations) Create(ctx context.Context, in *CreateConversationInput, opts ...CallOption) (*CreatedConversation, error) {
 	p := &createConversationParams{}
 	if in != nil {

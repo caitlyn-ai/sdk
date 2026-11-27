@@ -28,6 +28,11 @@ export interface CancelDocumentProcessingCommandOutput extends CancelDocumentPro
  * A stopped first version removes the document; a stopped new version leaves the current one
  * serving. Until stopping running work is built, every call is refused with 409 `CONFLICT` ("This
  * document's processing can't be stopped yet"), so callers can build against it now.
+ *
+ * Needs the files update permission. Stopping a first version removes the document, so it also
+ * needs the files delete permission, and a caller without it is refused with 403
+ * `PERMISSION_DENIED`. The server checks this, because the permission trait follows input members,
+ * not the document's state.
  * @example
  * Use a bare-bones client and the command you need to make an API call.
  * ```javascript

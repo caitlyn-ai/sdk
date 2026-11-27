@@ -531,7 +531,8 @@ func (v *AttachmentSettings) RawJSON() json.RawMessage { return v.raw.JSON() }
 
 // ConnectorBinding: One of the workspace's connectors an agent version may use.
 type ConnectorBinding struct {
-	// Which of the workspace's connectors the version may use.
+	// Which of the workspace's connectors the version may use. The caller must be able to read the
+	// connector; one it cannot read is refused with 404 `NOT_FOUND`.
 	ConnectorID string `json:"connectorId"`
 
 	raw core.Raw
@@ -556,7 +557,8 @@ func (v *ConnectorBinding) RawJSON() json.RawMessage { return v.raw.JSON() }
 // ContentSafety is the guardrail that screens documents attached in chat.
 type ContentSafety struct {
 	// The ID of an entry in `GET /v3/guardrails`, `default` (the platform default, also used when
-	// absent) or `none`.
+	// absent) or `none`. The caller must be able to read the entry; one it cannot read is refused
+	// with 404 `NOT_FOUND`.
 	Guardrail *string `json:"guardrail,omitempty"`
 
 	raw core.Raw
@@ -1062,11 +1064,14 @@ func (v *AvatarVoiceTuning) RawJSON() json.RawMessage { return v.raw.JSON() }
 type LiveAvatarSettings struct {
 	// Which company's service runs the avatar. Defaults to `heygen`, the only one.
 	Provider *LiveAvatarProvider `json:"provider,omitempty"`
-	// The stored secret holding the provider's key. Exported as a template variable.
+	// The stored secret holding the provider's key. Exported as a template variable. The secret must
+	// belong to this workspace, and the caller must be allowed to update the agent's integrations,
+	// the permission v2 asks for when it stores the key.
 	SecretID string `json:"secretId"`
-	// The version of this agent that answers for the avatar. Absent means this version. `draft` and
-	// `live` follow their moving target: edits to the draft, and each publish, take effect without
-	// this setting changing. A saved version's name never moves.
+	// The version of this agent that answers for the avatar: `live`, or a saved version's name.
+	// Absent means this version. `live` follows its moving target, so each publish takes effect
+	// without this setting changing; a saved version's name never moves. `draft` is not accepted:
+	// saving a configuration that names it is refused with 400 `VALIDATION_FAILED`.
 	AnswerVersion *string `json:"answerVersion,omitempty"`
 	// Phrases that hand the conversation to the answering version when the avatar says one, at
 	// least one.
@@ -1119,7 +1124,8 @@ func (v *LiveAvatarSettings) RawJSON() json.RawMessage { return v.raw.JSON() }
 type MemorySettings struct {
 	// Whether the agent remembers. Defaults to false.
 	Enabled *bool `json:"enabled,omitempty"`
-	// The memory store, from `GET /v3/memory-stores`. Required when `enabled`.
+	// The memory store, from `GET /v3/memory-stores`. Required when `enabled`. The caller must be
+	// able to read the store.
 	MemoryStoreID *string `json:"memoryStoreId,omitempty"`
 	// The lowest relevance a memory needs to be recalled, from 0 to 1. Defaults to 0.4.
 	MinimumRelevance *float32 `json:"minimumRelevance,omitempty"`
@@ -1254,6 +1260,9 @@ func (v *AgentModels) RawJSON() json.RawMessage { return v.raw.JSON() }
 // PolicyBinding: One policy an agent version uses.
 type PolicyBinding struct {
 	// Which policy the version may review documents against.
+	// The caller must be able to read the policy. This is checked for every policy id sent, not only
+	// new ones, because the rules go into the cached prompt. A policy the caller cannot read is
+	// refused with 404 `NOT_FOUND`.
 	PolicyID string `json:"policyId"`
 
 	raw core.Raw
@@ -1783,6 +1792,9 @@ func (v *PhaseResponse) RawJSON() json.RawMessage { return v.raw.JSON() }
 // PolicyReviewSettings is the policy a `policy_review` phase reviews against.
 type PolicyReviewSettings struct {
 	// Which policy the phase reviews against. It must be in `policies`.
+	// The caller must be able to read the policy. This is checked for every policy id sent, not only
+	// new ones, because the rules go into the cached prompt. A policy the caller cannot read is
+	// refused with 404 `NOT_FOUND`.
 	PolicyID string `json:"policyId"`
 	// The rules to check. Absent means every rule in the policy, read again each time a review
 	// starts.
@@ -1890,9 +1902,10 @@ func (v SearchMode) Known() bool {
 type ToolSearchSettings struct {
 	// The search modes the agent may choose from, at least one.
 	Modes []SearchMode `json:"modes"`
-	// The version of this agent whose knowledge bases and search settings the tool uses. `draft` and
-	// `live` follow their moving target: edits to the draft, and each publish, take effect without
-	// this setting changing. A saved version's name never moves.
+	// The version of this agent whose knowledge bases and search settings the tool uses: `live`, or
+	// a saved version's name. `live` follows its moving target, so each publish takes effect without
+	// this setting changing; a saved version's name never moves. `draft` is not accepted: saving a
+	// configuration that names it is refused with 400 `VALIDATION_FAILED`.
 	Version string `json:"version"`
 
 	raw core.Raw
@@ -1941,7 +1954,7 @@ type PhaseTool struct {
 	Name *string `json:"name,omitempty"`
 	// An MCP server whose tools the phase may use. Exactly one of `name` and `mcpServerId`. With no
 	// `tools`, every tool on the server, including tools it adds later; otherwise only those
-	// listed. Exported as a template variable.
+	// listed. Exported as a template variable. The caller must be able to read the server.
 	McpServerID *string `json:"mcpServerId,omitempty"`
 	// With `mcpServerId`: only these of the server's tools.
 	Tools []string `json:"tools,omitzero"`
@@ -2141,7 +2154,8 @@ type Phase struct {
 	// For `take_action`: the action the phase takes.
 	Action *PhaseAction `json:"action,omitempty"`
 	// For `take_action`: the policy rules this phase checks, as `<policyId>/<ruleId>`. Each policy
-	// must be in `policies`.
+	// must be in `policies`. The caller must be able to read each policy, checked on every save as
+	// for `policies`; one it cannot read is refused with 404 `NOT_FOUND`.
 	PolicyRules []string `json:"policyRules,omitzero"`
 	// For `policy_review`: the policy the phase reviews against, and which of its rules.
 	Review *PolicyReviewSettings `json:"review,omitempty"`
@@ -2473,8 +2487,8 @@ type HistoryEntry struct {
 	// written. Lists are compared by their items' keys.
 	ChangedMembers []string `json:"changedMembers,omitzero"`
 	// The configuration of `version`. Present only when the caller may read that version, as
-	// GetAgentVersion checks: the permission to read versions, and the agent grant if it is live now
-	// or the agent's version access grant if it is not. Absent otherwise, in a list, and when that
+	// GetAgentVersion checks: the permission to read versions, and the agent grant and the agent's
+	// version access grant. Absent otherwise, in a list, and when that
 	// version no longer exists.
 	Configuration *AgentConfiguration `json:"configuration,omitempty"`
 
@@ -3067,7 +3081,8 @@ type IngestionItemInput struct {
 	// planning, at most 100 MB. Needs the files create permission, which the server checks when the
 	// item is added.
 	FetchURL *string `json:"fetchUrl,omitempty"`
-	// The address a citation of the document links to. Defaults to `fetchUrl`.
+	// The address a citation of the document links to. Defaults to `fetchUrl` when that is an `https`
+	// address; with an `http` `fetchUrl` and no `sourceUrl`, the document has none.
 	SourceURL *string `json:"sourceUrl,omitempty"`
 	// Values for the metadata fields the knowledge base defines, checked as CreateDocument checks
 	// them, and kept as sent.
@@ -3262,7 +3277,8 @@ type IngestionBatchItem struct {
 	// planning, at most 100 MB. Needs the files create permission, which the server checks when the
 	// item is added.
 	FetchURL *string `json:"fetchUrl,omitempty"`
-	// The address a citation of the document links to. Defaults to `fetchUrl`.
+	// The address a citation of the document links to. Defaults to `fetchUrl` when that is an `https`
+	// address; with an `http` `fetchUrl` and no `sourceUrl`, the document has none.
 	SourceURL *string `json:"sourceUrl,omitempty"`
 	// Values for the metadata fields the knowledge base defines, checked as CreateDocument checks
 	// them, and kept as sent.
@@ -4062,7 +4078,7 @@ type KnowledgeBase struct {
 	// Where the knowledge base is in its lifecycle.
 	Status KnowledgeBaseStatus `json:"status"`
 	// How many documents are processing, and how many failed, counting each document's latest
-	// attempt.
+	// attempt. Totals for the whole knowledge base, including documents the caller cannot read.
 	DocumentCounts *DocumentCounts `json:"documentCounts,omitempty"`
 	// The search settings an agent uses unless its binding says otherwise.
 	Retrieval *RetrievalDefaults `json:"retrieval,omitempty"`
@@ -6530,8 +6546,9 @@ func (v ConflictRule) Known() bool {
 type ConflictRules struct {
 	// The rule for a kind of conflict with no rule of its own. Defaults to `ask`.
 	Default *ConflictRule `json:"default,omitempty"`
-	// The path and the `externalId` name different documents, or the path holds one the caller may
-	// not read.
+	// The path and the `externalId` name different documents. A path held by a document the caller
+	// may not read is not a conflict: the item fails as in any write the caller may not make, so
+	// this rule never reveals that document.
 	PathTaken *ConflictRule `json:"pathTaken,omitempty"`
 	// No `externalId`, and several current documents have these bytes.
 	AmbiguousContent *ConflictRule `json:"ambiguousContent,omitempty"`

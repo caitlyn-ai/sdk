@@ -30,7 +30,7 @@ func newUploads(c *Client) *Uploads {
 // this, and their document and attachment helpers call it for you. Many files at once go through an
 // ingestion batch instead, which signs one upload policy for them all.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *Uploads) Reserve(ctx context.Context, in *CreateUploadInput, opts ...CallOption) (*CreateUploadResult, error) {
 	p := &createUploadParams{}
 	if in != nil {
@@ -57,11 +57,11 @@ type CreateUploadInput struct {
 	// The base64-encoded SHA-256 of the file's bytes. The upload URL accepts only these bytes.
 	SHA256 string `json:"sha256"`
 	// What the upload is for, when that decides whether it is accepted. Absent means a document.
-	// Since Caitlyn 5.115.0: refused before sending to an older server.
+	// Since Caitlyn 5.144.0: refused before sending to an older server.
 	Purpose *UploadPurpose `json:"purpose,omitempty"`
 	// How long the upload URL works: from a minute to an hour, and 15 minutes when absent. A short
 	// lifetime lets a test reach an expired upload within seconds.
-	// Since Caitlyn 5.115.0: refused before sending to an older server.
+	// Since Caitlyn 5.144.0: refused before sending to an older server.
 	ExpiresInSeconds *int32 `json:"expiresInSeconds,omitempty"`
 }
 
@@ -78,7 +78,7 @@ type createUploadParams struct {
 var opCreateUpload = &core.Operation{
 	Name:              "CreateUpload",
 	Method:            "POST",
-	Since:             "5.115.0",
+	Since:             "5.144.0",
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},

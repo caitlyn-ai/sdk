@@ -37,7 +37,7 @@ func (s *ItemScope) ID() string { return s.itemID }
 // Returns its outcome, its resolution and its status, and once it is done the document and version
 // it made or changed.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *ItemScope) Get(ctx context.Context, opts ...CallOption) (*IngestionBatchItem, error) {
 	p := &getIngestionBatchItemParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -52,11 +52,19 @@ func (s *ItemScope) Get(ctx context.Context, opts ...CallOption) (*IngestionBatc
 // 409 `CONFLICT`. A resolution that does not fit the outcome (for example `move` for a `new` item) is
 // refused with 400 `VALIDATION_FAILED`.
 //
+// Resolving to `remove`, an overwrite or `move` does not check the permission now: each item that
+// removes a document (`remove`, or an overwrite) is checked by the server for the files delete
+// permission, and each item that moves one, or adds a new version of one, for the files update
+// permission, and the token's scope covers it too. An item that fails the check is marked `failed`
+// with `PERMISSION_DENIED` and the rest carry on. This holds whether the batch starts through
+// StartIngestionBatch or by itself under `start: when_planned`, so the permission is checked per
+// item, not once on the call.
+//
 // caitlyn.WithIfMatch(etag) is optional: without it the change applies to the thing as it stands; with
 // it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
 // yourself: no helper fills it in.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *ItemScope) Resolve(ctx context.Context, in *UpdateIngestionBatchItemInput, opts ...CallOption) (*IngestionBatchItem, error) {
 	p := &updateIngestionBatchItemParams{}
 	if in != nil {
@@ -82,7 +90,7 @@ func (s *ItemScope) Resolve(ctx context.Context, in *UpdateIngestionBatchItemInp
 // it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
 // yourself: no helper fills it in.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *ItemScope) Cancel(ctx context.Context, opts ...CallOption) (*IngestionBatchItem, error) {
 	p := &cancelIngestionBatchItemParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -101,7 +109,7 @@ type cancelIngestionBatchItemParams struct {
 var opCancelIngestionBatchItem = &core.Operation{
 	Name:      "CancelIngestionBatchItem",
 	Method:    "POST",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -155,7 +163,7 @@ type getIngestionBatchItemParams struct {
 var opGetIngestionBatchItem = &core.Operation{
 	Name:      "GetIngestionBatchItem",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -217,7 +225,7 @@ type updateIngestionBatchItemParams struct {
 var opUpdateIngestionBatchItem = &core.Operation{
 	Name:      "UpdateIngestionBatchItem",
 	Method:    "PATCH",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,

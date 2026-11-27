@@ -33,7 +33,7 @@ func newFields(c *Client, knowledgeBaseID string) *Fields {
 // It yields every item, fetching pages as needed; ListPages yields whole pages, and ListPage reads
 // one.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *Fields) List(ctx context.Context, in *ListFieldsInput, opts ...CallOption) iter.Seq2[Field, error] {
 	return core.Items(s.ListPages(ctx, in, opts...), func(p *ListFieldsPage) []Field { return p.Items })
 }
@@ -62,7 +62,7 @@ func (s *Fields) ListPage(ctx context.Context, in *ListFieldsInput, opts ...Call
 //
 // It returns the new field's scope, with the response as Result.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *Fields) Create(ctx context.Context, in *CreateFieldInput, opts ...CallOption) (*CreatedField, error) {
 	p := &createFieldParams{}
 	if in != nil {
@@ -96,7 +96,7 @@ func (s *Fields) Create(ctx context.Context, in *CreateFieldInput, opts ...CallO
 //
 // It returns the response, as Result, with Wait, which follows the work the call started.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *Fields) FillIn(ctx context.Context, in *FillInFieldsInput, opts ...CallOption) (*FillInFieldsStarted, error) {
 	p := &fillInFieldsParams{}
 	if in != nil {
@@ -143,7 +143,7 @@ func (r *FillInFieldsStarted) Wait(ctx context.Context, opts ...WaitOption) (*Jo
 //
 // It takes FillIn's arguments and starts nothing.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *Fields) EstimateFillIn(ctx context.Context, in *FillInFieldsInput, opts ...CallOption) (*EstimateFillInFieldsResult, error) {
 	p := &estimateFillInFieldsParams{}
 	if in != nil {
@@ -202,7 +202,7 @@ type createFieldParams struct {
 var opCreateField = &core.Operation{
 	Name:              "CreateField",
 	Method:            "POST",
-	Since:             "5.115.0",
+	Since:             "5.144.0",
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},
@@ -253,7 +253,7 @@ type estimateFillInFieldsParams struct {
 var opEstimateFillInFields = &core.Operation{
 	Name:      "EstimateFillInFields",
 	Method:    "POST",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Errors:    errorForStatus,
@@ -309,7 +309,7 @@ type fillInFieldsParams struct {
 var opFillInFields = &core.Operation{
 	Name:              "FillInFields",
 	Method:            "POST",
-	Since:             "5.115.0",
+	Since:             "5.144.0",
 	RetrySafe:         true,
 	IdempotencyHeader: "Idempotency-Key",
 	Retryable:         []int{503, 429},
@@ -371,7 +371,7 @@ type listFieldsParams struct {
 var opListFields = &core.Operation{
 	Name:      "ListFields",
 	Method:    "GET",
-	Since:     "5.115.0",
+	Since:     "5.144.0",
 	RetrySafe: true,
 	Retryable: []int{503, 429},
 	Ranges: []core.Range{

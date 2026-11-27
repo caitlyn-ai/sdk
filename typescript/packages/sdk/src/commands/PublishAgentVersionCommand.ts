@@ -47,6 +47,7 @@ export interface PublishAgentVersionCommandOutput extends PublishAgentVersionOut
  * const input = { // PublishAgentVersionInput
  *   agentId: "STRING_VALUE", // required
  *   version: "STRING_VALUE", // required
+ *   idempotencyKey: "STRING_VALUE",
  *   ifMatch: "STRING_VALUE",
  *   expectedLive: "STRING_VALUE",
  *   name: "STRING_VALUE",
@@ -807,6 +808,16 @@ export interface PublishAgentVersionCommandOutput extends PublishAgentVersionOut
  *
  * @throws {@link PreconditionFailedError} (client fault)
  *  `If-Match` does not match the resource's current ETag: it changed since the caller read it.
+ *
+ * @throws {@link UnprocessableContentError} (client fault)
+ *  The idempotency key was already used with a different request body; supplied metadata does not
+ * fit the knowledge base's field definitions or limits (`METADATA_FIELD_UNDEFINED`,
+ * `METADATA_VALUE_INVALID`, `METADATA_FIELD_PASSAGE_SCOPED`, `METADATA_LIMIT_EXCEEDED`), with one
+ * entry per field in `errors`; an ingestion batch item gives both or neither of its content's
+ * description and a `fetchUrl` (`BATCH_ITEM_CONTENT_AMBIGUOUS`); or the document guardrail refused
+ * a file (`CONTENT_REJECTED`); or a grant of a knowledge base to a role that guests or anonymous
+ * visitors use is not safe for them (`RBAC_NOT_GUEST_SAFE`), refused for what the grant is, not
+ * for what the caller lacks.
  *
  * @throws {@link InternalError} (server fault)
  *  An unexpected server failure. Not retried by the SDKs.

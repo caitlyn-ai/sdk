@@ -229,10 +229,31 @@ fn sdk_version() -> String {
 }
 
 fn sdk_model() -> String {
-    read_json("model/model.lock.json")["stampNext"]
+    let next = read_json("model/model.lock.json")["stampNext"]
         .as_str()
         .unwrap_or_default()
-        .to_owned()
+        .to_owned();
+    if !next.is_empty() {
+        return next;
+    }
+    // A published model has no "next": the SDK's model version is its highest @since
+    let parse = |v: &str| v.split('.').map(|n| n.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>();
+    let model = read_json("model/model.json");
+    let mut highest = String::new();
+    let mut note = |t: &serde_json::Value| {
+        if let Some(s) = t["ai.caitlyn.traits#since"].as_str() {
+            if s != "next" && (highest.is_empty() || parse(s) > parse(&highest)) {
+                highest = s.to_owned();
+            }
+        }
+    };
+    for shape in model["shapes"].as_object().into_iter().flat_map(|m| m.values()) {
+        note(&shape["traits"]);
+        for member in shape["members"].as_object().into_iter().flat_map(|m| m.values()) {
+            note(&member["traits"]);
+        }
+    }
+    highest
 }
 
 /// GetAgentVersion's @since, as the SDK reads it: the model's release, or sdk_model() where the model says "next".
@@ -243,10 +264,15 @@ fn get_agent_version_since() -> String {
     }
 }
 
-/// The version the mock reports: 5.120.0, or the model's @since("next") stamp when that is later.
+/// The version the mock reports: 5.120.0, or the model's release when that is later (the lock's stampNext for an app
+/// branch build, its version for a published model).
 fn server_version() -> String {
     let parse = |v: &str| v.split('.').map(|n| n.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>();
-    let next = sdk_model();
+    let lock = read_json("model/model.lock.json");
+    let next = match lock["stampNext"].as_str().unwrap_or_default() {
+        "" => lock["version"].as_str().unwrap_or_default().to_owned(),
+        s => s.to_owned(),
+    };
     if !next.is_empty() && parse(&next) > parse("5.120.0") {
         next
     } else {

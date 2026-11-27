@@ -30,7 +30,12 @@ func newFolderAccess(c *Client, knowledgeBaseID, folderPath string) *FolderAcces
 // folder (`folder=/`, `kb.folders('/').access`) holds the readers every folder falls back to; its
 // readers are never inherited.
 //
-// Since Caitlyn 5.115.0; beta.
+// For a folder or document, the `readers` also come back on ListFolders, ListDocuments and
+// GetDocument too, with `inheritedFrom`, under the files list and read permissions. What GetAccess
+// adds is the access on its own, with the ETag that SetAccess's `If-Match` takes, and the root
+// folder's readers; reading it needs the files permissions list permission.
+//
+// Since Caitlyn 5.144.0; beta.
 func (s *FolderAccess) Get(ctx context.Context, opts ...CallOption) (*Access, error) {
 	p := &getAccessParams{}
 	p.KnowledgeBaseID = s.knowledgeBaseID
@@ -55,11 +60,17 @@ func (s *FolderAccess) Get(ctx context.Context, opts ...CallOption) (*Access, er
 // the passages a folder or document holds continues after the response; the returned access says
 // what is set, and the knowledge base's watch shows the work.
 //
+// Setting `roles` is refused in two cases, as in v2. A caller may give a role only a grant it
+// could make itself: any other is refused with 403 `PERMISSION_DENIED`. And a grant that is not
+// safe for guests, given to a role that guests or anonymous visitors use, is refused with 422
+// `RBAC_NOT_GUEST_SAFE`. Only the grants being added are judged, so a grant the role already holds
+// never blocks an unrelated change. Both checks are made by the server on the roles sent.
+//
 // caitlyn.WithIfMatch(etag) is optional: without it the change applies to the thing as it stands; with
 // it, a stale ETag is refused with 412. WithIfMatch("*") (any version) is sent only when you pass it
 // yourself: no helper fills it in.
 //
-// Since Caitlyn 5.115.0; beta.
+// Since Caitlyn 5.144.0; beta.
 func (s *FolderAccess) Set(ctx context.Context, in *PutAccessInput, opts ...CallOption) (*Access, error) {
 	p := &putAccessParams{}
 	if in != nil {

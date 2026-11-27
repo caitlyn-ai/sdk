@@ -36,8 +36,10 @@ test('dev mode reads the given model, skips the lock check, stamps stampNext and
   const before = fs.existsSync(snapshot) ? fs.statSync(snapshot).mtimeMs : undefined;
   const out = execFileSync(process.execPath, [script, '--dev', input, output], { encoding: 'utf8' });
   const ast = JSON.parse(fs.readFileSync(output, 'utf8'));
-  assert.equal(ast.shapes['ai.caitlyn.v3#Thing'].traits[SINCE], lock.stampNext, 'next is stamped with the lock\'s stampNext');
-  assert.equal(ast.shapes['ai.caitlyn.v3#Thing'].members.name.traits[SINCE], lock.stampNext);
+  // the lock's stampNext, or with a published lock (no stampNext) the minor release after its version
+  const want = lock.stampNext || `${lock.version.split('.')[0]}.${Number(lock.version.split('.')[1]) + 1}.0`;
+  assert.equal(ast.shapes['ai.caitlyn.v3#Thing'].traits[SINCE], want, 'next is stamped with the release it arrives in');
+  assert.equal(ast.shapes['ai.caitlyn.v3#Thing'].members.name.traits[SINCE], want);
   assert.equal(ast.shapes['ai.caitlyn.v3#Old'].traits[SINCE], '5.1.0', 'a release number is left alone');
   assert.deepEqual(ast.metadata, { kept: true }, 'the lint metadata is removed, the rest kept');
   assert.match(out, /from the dev model/);

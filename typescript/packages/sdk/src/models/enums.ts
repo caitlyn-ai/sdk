@@ -775,8 +775,9 @@ export const IngestionItemReason = {
    */
   FETCH_UNSUPPORTED_TYPE: "fetch_unsupported_type",
   /**
-   * The path and the `externalId` name different documents, or the path holds one the caller may
-   * not read.
+   * The path and the `externalId` name different documents. Never used for a path held by a
+   * document the caller may not read: that item is `failed` with `PERMISSION_DENIED`, and its
+   * detail says only that the path cannot be written, so the document is not revealed.
    */
   PATH_TAKEN: "path_taken",
 } as const;
