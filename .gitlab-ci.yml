@@ -117,6 +117,13 @@ variables:
   # and the runner allows no limit override anyway. The runner caps requests at 8 CPU and 8Gi.
   KUBERNETES_CPU_REQUEST: '500m'
   KUBERNETES_MEMORY_REQUEST: '1Gi'
+  # And its disk, which the runner also leaves unrequested. A pod with no ephemeral-storage request is the first the
+  # kubelet evicts when its node runs low on disk ("The node was low on resource: ephemeral-storage"), and the
+  # scheduler places it with no regard for disk. A job with the toolchain cache asks for more (.toolchain, below).
+  KUBERNETES_EPHEMERAL_STORAGE_REQUEST: '1Gi'
+  # The architecture a job runs on, for the caches that hold compiled output (.caches, below); a tier on another
+  # runner sets its own
+  CACHE_ARCH: 'amd64'
 
 .toolchain:
   image: $TOOLCHAIN_IMAGE
@@ -124,10 +131,46 @@ variables:
     - job: toolchain
       optional: true
   interruptible: true
-  cache:
-    key: 'toolchain-$TOOLCHAIN_VERSION'
-    paths:
-      - .cache/
+  # A job that builds asks for the most disk the shared runner allows (ephemeral_storage_request_overwrite_max_allowed,
+  # in cd-hosting-cluster-management's applications/gitlab-runner): its caches and build output reached 7.7 GB
+  # (rust) when every job restored all of them (pipeline 160279). No limit: a job past its request is evicted only when
+  # its node runs low, and after every pod that asked for nothing. A check that builds nothing extends .light instead.
+  variables:
+    KUBERNETES_EPHEMERAL_STORAGE_REQUEST: '8Gi'
+
+# One cache per tool, so a job restores only what it uses: a job lists its caches (at most four) with
+# !reference [.caches, <name>]. They were one 6.5 GB cache, which every toolchain job restored (about 50 seconds) and
+# saved. A job that saves a cache saves what it restored plus what it added, so jobs sharing one converge on it.
+# Restoring and saving a cache is free (the runner's cache bucket is internal); downloading a package is not (it goes
+# out through the NAT gateway), so the downloads (Gradle's, Go's modules, Cargo's registry, npm's, uv's) are kept
+# across toolchain versions, and only Go's build cache, which a new Go invalidates, is keyed by the toolchain. It is
+# keyed by architecture too (CACHE_ARCH), so jobs on amd64 and arm64 runners don't trade compiled output. The others
+# hold downloads, which serve either.
+.caches:
+  gradle:
+    key: 'gradle'
+    paths: [.cache/gradle/]
+  go-mod:
+    key: 'go-mod'
+    paths: [.cache/go-mod/]
+  go-build:
+    key: 'go-build-$TOOLCHAIN_VERSION-$CACHE_ARCH'
+    paths: [.cache/go-build/]
+  cargo:
+    key: 'cargo'
+    paths: [.cache/cargo/]
+  npm:
+    key: 'npm'
+    paths: [.cache/npm/]
+  uv:
+    key: 'uv'
+    paths: [.cache/uv/]
+
+# A toolchain job that builds nothing: it runs Node scripts with no packages, or a shell script, so it needs the image
+# and no cache, and little disk.
+.light:
+  variables:
+    KUBERNETES_EPHEMERAL_STORAGE_REQUEST: '1Gi'
 
 # Resource tiers (the light tier is the default, in variables above). Memory is each job's peak in a contended
 # pipeline (160268), plus the helper's cache unpack, plus about half again. A job whose peak is past its tier sets
@@ -187,6 +230,8 @@ toolchain:
 
 generate:
   extends: [.toolchain, .resources-medium]
+  cache:
+    - !reference [.caches, gradle]
   stage: generate
   script:
     - scripts/generate.sh
@@ -202,6 +247,8 @@ generate:
 
 typescript:
   extends: [.toolchain, .resources-heavy]
+  cache:
+    - !reference [.caches, npm]
   stage: test
   script:
     - scripts/test-typescript.sh
@@ -222,6 +269,9 @@ typescript:browser:
   image: containers.customd.com/custom-d/devops-platform/container-images/playwright/playwright-1.64.1:latest
   interruptible: true
   needs: []
+  variables:
+    # It ends at about 160 MB (npm's cache and node_modules); the browsers' profiles under /tmp come and go during the run
+    KUBERNETES_EPHEMERAL_STORAGE_REQUEST: '2Gi'
   cache:
     key: 'playwright-npm'
     paths:
@@ -240,6 +290,8 @@ typescript:browser:
 
 python:
   extends: [.toolchain, .resources-medium]
+  cache:
+    - !reference [.caches, uv]
   stage: test
   script:
     - scripts/test-python.sh
@@ -253,6 +305,9 @@ python:
 
 go:
   extends: [.toolchain, .resources-heavy]
+  cache:
+    - !reference [.caches, go-mod]
+    - !reference [.caches, go-build]
   stage: test
   script:
     - scripts/test-go.sh
@@ -264,6 +319,8 @@ go:
 
 rust:
   extends: [.toolchain, .resources-heavy]
+  cache:
+    - !reference [.caches, cargo]
   stage: test
   script:
     - scripts/test-rust.sh
@@ -274,7 +331,7 @@ rust:
   rules: !reference [.mr-and-main, rules]
 
 conformance:
-  extends: .toolchain
+  extends: [.toolchain, .light]
   stage: conformance
   needs: [typescript, 'typescript:browser', python, go, rust]
   script:
@@ -285,6 +342,9 @@ conformance:
 
 cli:vet:
   extends: [.toolchain, .resources-medium]
+  cache:
+    - !reference [.caches, go-mod]
+    - !reference [.caches, go-build]
   stage: test
   script:
     - cd cli
@@ -295,6 +355,9 @@ cli:vet:
 
 cli:test:
   extends: [.toolchain, .resources-heavy]
+  cache:
+    - !reference [.caches, go-mod]
+    - !reference [.caches, go-build]
   variables:
     KUBERNETES_MEMORY_REQUEST: '4Gi'  # peak 2.9 GB (go test -race)
   stage: test
@@ -317,6 +380,9 @@ cli:install-ps1:
 
 cli:snapshot:
   extends: [.toolchain, .resources-heavy]
+  cache:
+    - !reference [.caches, go-mod]
+    - !reference [.caches, go-build]
   stage: test
   script:
     - cd cli
@@ -337,6 +403,12 @@ cli:snapshot:
 # masks it in what the examples print). The results table is in the job log.
 examples:live:
   extends: [.toolchain, .resources-medium]
+  cache:
+    # Four at most: Go's build cache is left out, so the examples compile afresh
+    - !reference [.caches, go-mod]
+    - !reference [.caches, cargo]
+    - !reference [.caches, npm]
+    - !reference [.caches, uv]
   stage: test
   needs: []
   # One run at a time: every run changes the same agents' drafts and versions.
@@ -360,7 +432,7 @@ examples:live:
       allow_failure: true
 
 model:snapshot-only:
-  extends: .toolchain
+  extends: [.toolchain, .light]
   stage: generate
   script:
     - scripts/model-snapshot-check.sh
@@ -372,7 +444,7 @@ model:snapshot-only:
 # over it (scripts/docs-mr-title.mjs), so a title that would publish something internal fails while it can still be
 # edited. GitLab does not start a pipeline when only the title changes: rerun this job after editing it.
 docs:mr-title:
-  extends: .toolchain
+  extends: [.toolchain, .light]
   stage: generate
   script:
     - node scripts/docs-mr-title.mjs "$CI_MERGE_REQUEST_TITLE"
@@ -385,7 +457,7 @@ docs:mr-title:
 # `breaking` match the title, and that a model change that breaks callers is marked breaking. The preview's Changelog
 # shows the result as its Unreleased entry (docs:build). GitLab starts no pipeline for a title edit: rerun this job.
 changes:check:
-  extends: .toolchain
+  extends: [.toolchain, .light]
   stage: generate
   variables:
     # The model and the change files where the merge request branched, to compare with its own
@@ -398,7 +470,7 @@ changes:check:
 # Every timer in a test is deterministic (CONTRIBUTING.md, "Tests and time"): no file's tests may gain a wall-clock
 # sleep, timer or clock read over scripts/test-timers-baseline.json, which only goes down
 tests:timers:
-  extends: .toolchain
+  extends: [.toolchain, .light]
   stage: generate
   script:
     - node --test scripts/test-timers.test.mjs
@@ -408,7 +480,7 @@ tests:timers:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 model:version-check:
-  extends: .toolchain
+  extends: [.toolchain, .light]
   stage: generate
   # Inherits needs from .toolchain, so it waits for a rebuilt toolchain image instead of pulling a tag that
   # doesn't exist yet.
@@ -433,6 +505,12 @@ model:version-check:
 # time, and never cancelled part way through a push.
 model:main:
   extends: [.toolchain, .resources-heavy]
+  cache:
+    # Four at most: Go's build cache and uv's are left out (it compiles afresh, and uv downloads)
+    - !reference [.caches, gradle]
+    - !reference [.caches, go-mod]
+    - !reference [.caches, cargo]
+    - !reference [.caches, npm]
   stage: generate
   needs: []
   interruptible: false
@@ -449,6 +527,8 @@ model:main:
 
 docs:build:
   extends: [.toolchain, .resources-heavy]
+  cache:
+    - !reference [.caches, npm]
   stage: docs
   needs: []
   variables:
@@ -553,7 +633,7 @@ docs:publish:
 # Publishes the built pages into the ask.caitlyn.ai developer-docs knowledge base. A dry run until the publisher
 # is built on @caitlyn-ai/sdk (scripts/docs-kb-publish.mjs explains what it waits for).
 docs:knowledge-base:
-  extends: .toolchain
+  extends: [.toolchain, .light]
   stage: docs
   needs: [docs:build, docs:publish]
   script:
@@ -578,6 +658,9 @@ docs:knowledge-base:
 
 cli:agent-eval:offline:
   extends: .toolchain
+  cache:
+    - !reference [.caches, go-mod]
+    - !reference [.caches, go-build]
   stage: test
   needs: []
   script:
@@ -601,6 +684,10 @@ cli:agent-eval:offline:
 # CLI_AGENT_EVAL_MODEL.
 cli:agent-eval:
   extends: [.toolchain, .resources-heavy]
+  cache:
+    - !reference [.caches, go-mod]
+    - !reference [.caches, go-build]
+    - !reference [.caches, npm]
   stage: docs
   needs:
     - job: docs:build
@@ -632,6 +719,10 @@ cli:agent-eval:
 # opens an issue.
 cli:agent-eval:nightly:
   extends: [.toolchain, .resources-heavy]
+  cache:
+    - !reference [.caches, go-mod]
+    - !reference [.caches, go-build]
+    - !reference [.caches, npm]
   stage: docs
   needs: []
   timeout: 3h
@@ -680,6 +771,10 @@ cli:agent-eval:nightly:issue:
 # no secret is stored. Needs ASK_CAITLYN_AGENT (the docs agent) and a schedule with ASK_CAITLYN_EVAL set to "true".
 cli:ask-caitlyn-eval:nightly:
   extends: [.toolchain, .resources-heavy]
+  cache:
+    - !reference [.caches, go-mod]
+    - !reference [.caches, go-build]
+    - !reference [.caches, npm]
   stage: docs
   needs: []
   id_tokens:
@@ -726,7 +821,7 @@ fetch-semantic-version:
 
 # The artifact paths are every stamped file; scripts/version.mjs assets (in make generate) keeps this list complete.
 stamp-version:
-  extends: [.toolchain, .resources-medium]
+  extends: [.toolchain, .resources-medium, .light]
   stage: conformance
   needs:
     - job: fetch-semantic-version
@@ -786,7 +881,7 @@ release:
 # On the tag the release job made: the tag's tree must already carry its version in every stamped file (the release
 # commit). GitHub's release-npm checks the same before it stages anything.
 release:version:
-  extends: .toolchain
+  extends: [.toolchain, .light]
   stage: release
   needs: []
   script:
@@ -833,7 +928,7 @@ release:pypi:
 # release's commit is left alone. It refuses a release whose go/go.mod declares another module path: every release up
 # to v0.8.0 declares github.com/caitlyn-ai/caitlyn-go, so they have no Go release.
 release:go:
-  extends: .toolchain
+  extends: [.toolchain, .light]
   stage: release
   needs: []
   script:
@@ -883,6 +978,9 @@ release:homebrew:
 # manifest.
 cli:release:
   extends: [.toolchain, .cli-signing, .resources-heavy]
+  cache:
+    - !reference [.caches, go-mod]
+    - !reference [.caches, go-build]
   stage: release
   needs: []
   script:
@@ -938,7 +1036,7 @@ cli:publish:
 # `scoop` never see a release whose download isn't there yet. HOMEBREW_TAP_TOKEN and SCOOP_BUCKET_TOKEN are masked and
 # protected; a missing one skips that package manager.
 cli:packages:
-  extends: .toolchain
+  extends: [.toolchain, .light]
   stage: release
   needs:
     - job: cli:release
