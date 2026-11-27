@@ -77,8 +77,12 @@ SDK_VERSION: str = (ROOT / "VERSION").read_text().strip()
 MODEL_LOCK = json.loads((ROOT / "model" / "model.lock.json").read_text())
 
 
+# The release the generators stamp @since("next") as: the lock's stampNext, or none for a published model.
+STAMP_NEXT: str = MODEL_LOCK["stampNext"] or ""
+
+
 def _highest_since() -> str:
-    """A published model has no "next": the SDK's model version is its highest @since."""
+    """The model's highest @since, counting "next" as STAMP_NEXT."""
     shapes: dict[str, Any] = json.loads((ROOT / "model" / "model.json").read_text())["shapes"]
     found: list[str] = []
     for shape in shapes.values():
@@ -87,18 +91,22 @@ def _highest_since() -> str:
         traits += [(m.get("traits") or {}) for m in members.values()]
         for t in traits:
             since = t.get("ai.caitlyn.traits#since")
-            if isinstance(since, str) and since != "next":
+            if since == "next":
+                since = STAMP_NEXT
+            if isinstance(since, str) and since:
                 found.append(since)
     return max(found, key=lambda v: tuple(int(n) for n in v.split(".")), default="")
 
 
-SDK_MODEL: str = MODEL_LOCK["stampNext"] or _highest_since()
+# The model version the SDK sends in Caitlyn-Sdk-Model (PROTOCOL.md 3.1). The stamp alone is not it: a model:main
+# pre-release stamps the app's release, though nothing in its model may say "next".
+SDK_MODEL: str = _highest_since()
 # The version the mock reports: 5.120.0, or the model's release when that is later (the lock's stampNext for an app
 # branch build, its version for a published model).
 SERVER_VERSION: str = max("5.120.0", MODEL_LOCK["stampNext"] or MODEL_LOCK.get("version") or "0", key=lambda v: tuple(int(n) for n in v.split(".")))
-# GetAgentVersion's @since, as the SDK reads it: the model's release, or SDK_MODEL where the model says "next".
+# GetAgentVersion's @since, as the SDK reads it: the model's release, or STAMP_NEXT where the model says "next".
 _GAV_SINCE = json.loads((ROOT / "model" / "model.json").read_text())["shapes"]["ai.caitlyn.v3#GetAgentVersion"].get("traits", {}).get("ai.caitlyn.traits#since")
-GET_AGENT_VERSION_SINCE: str = SDK_MODEL if _GAV_SINCE in (None, "next") else _GAV_SINCE
+GET_AGENT_VERSION_SINCE: str = STAMP_NEXT if _GAV_SINCE in (None, "next") else _GAV_SINCE
 EXAMPLES: list[dict[str, Any]] = json.loads((ROOT / "conformance" / "cases" / "examples.json").read_text())["cases"]
 T = TypeVar("T")
 
