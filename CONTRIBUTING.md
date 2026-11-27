@@ -129,6 +129,7 @@ before each test and drives it through `/__mock/`:
 | `POST /__mock/reset` | Clear state, faults, the request log and any primed example |
 | `POST /__mock/faults` | Inject faults: status codes per operation with `Retry-After`, dropped or cut streams, `message.failed`, unknown events, enum values and fields, `X-Amzn-Errortype`, a different `Caitlyn-Api-Version` |
 | `GET /__mock/requests` | The request log, to assert on what the SDK sent |
+| `GET /__mock/answered?path=…&status=…` | Answers once a request whose path contains `path` has been answered with `status`, so a case waits on that event rather than polling the log |
 | `POST /__mock/example` | Answer the next request with an example case, after checking the request matches it |
 | `GET /__mock/example` | Whether the primed case was served, and how the request differed |
 
