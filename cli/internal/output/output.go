@@ -98,6 +98,19 @@ func New(f *cmdutil.Factory, u *ui.UI) (*Printer, error) {
 	return p, nil
 }
 
+// NewStream is New for a command people follow as it happens: chat, the watch commands, events tail. Such a
+// command is a conversation, not data, so on a terminal, outside CI and an AI agent's session, it renders for people
+// whatever output the configuration or the environment sets: only -o/--output, --query or --jq on the command line
+// asks for its events as data. Anywhere else it's New.
+func NewStream(f *cmdutil.Factory, u *ui.UI) (*Printer, error) {
+	g := f.Globals
+	explicit := (g.Output != "" && strings.ToLower(strings.TrimSpace(g.Output)) != "auto") || g.Query != "" || g.JQ != ""
+	if explicit || !f.IO.IsStdoutTTY() || f.Agent.On || f.CI.In() {
+		return New(f, u)
+	}
+	return &Printer{F: f, U: u, Format: Table, Human: true, m: f.Manifest(), o: f.Overlay()}, nil
+}
+
 func (p *Printer) out() io.Writer { return p.F.IO.Out }
 
 // Filtered reports whether --query or --jq is in use.

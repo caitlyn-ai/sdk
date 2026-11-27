@@ -212,11 +212,24 @@ func runSync(ctx context.Context, f *cmdutil.Factory, o *syncOptions, args []str
 		}
 	}
 	if o.estimate {
-		plan, err := tc.KnowledgeBase(kb).Ingestion.EstimateSync(ctx, caitlyn.Dir(dir), opts)
-		phaseEnd(err != nil)
-		if err != nil {
+		// Sync with a confirm that keeps the plan and declines it: the confirm gets the plan even when pricing is
+		// unavailable (with estimateError, PROTOCOL.md 15), where EstimateSync would only raise the error. Declining
+		// cancels the batch before anything is uploaded.
+		var plan *caitlyn.SyncPlan
+		opts.Confirm = func(_ context.Context, pl *caitlyn.SyncPlan) (bool, error) {
+			plan = pl
+			return false, nil
+		}
+		_, err := tc.KnowledgeBase(kb).Ingestion.Sync(ctx, caitlyn.Dir(dir), opts)
+		var declined *caitlyn.SyncDeclinedError
+		if plan == nil || !errors.As(err, &declined) {
+			phaseEnd(true)
+			if err == nil {
+				err = fmt.Errorf("the sync ended without a plan")
+			}
 			return syncError(err, kb)
 		}
+		phaseEnd(false)
 		return printPlan(f, u, p, plan)
 	}
 	opts.Confirm = func(ctx context.Context, plan *caitlyn.SyncPlan) (bool, error) {
@@ -314,8 +327,13 @@ func describePlan(f *cmdutil.Factory, u *ui.UI, plan *caitlyn.SyncPlan) {
 		parts = []string{"nothing to do"}
 	}
 	u.Successf("Planned: %s", strings.Join(parts, ", "))
+	if n := planBytes(plan); n > 0 {
+		u.Infof("  To upload: %s", humanBytes(n))
+	}
 	if e := plan.Estimate; e != nil {
 		u.Infof("  Estimate: %s", estimateLine(e))
+	} else if plan.EstimateErr != nil {
+		u.Infof("  Price unavailable: %s", cmdutil.FromError(plan.EstimateErr).Title)
 	}
 }
 
@@ -357,10 +375,43 @@ func estimateLine(e *caitlyn.EstimateIngestionResult) string {
 func printPlan(f *cmdutil.Factory, u *ui.UI, p *output.Printer, plan *caitlyn.SyncPlan) error {
 	if p.Human {
 		describePlan(f, u, plan)
-		u.Infof("Nothing was uploaded. The batch is left planned and expires unless it is started.")
+		u.Infof("Nothing was uploaded, and the plan's batch was cancelled.")
 		return nil
 	}
-	return p.Value(plan, "")
+	out := struct {
+		Batch       *caitlyn.IngestionBatch
+		Items       []caitlyn.IngestionBatchItem
+		Bytes       int64                            `json:"bytes"`
+		Estimate    *caitlyn.EstimateIngestionResult `json:"Estimate"`
+		EstimateErr *estimateError                   `json:"estimateError,omitempty"`
+	}{Batch: plan.Batch, Items: plan.Items, Bytes: planBytes(plan), Estimate: plan.Estimate}
+	if plan.EstimateErr != nil {
+		e := cmdutil.FromError(plan.EstimateErr)
+		out.EstimateErr = &estimateError{Code: e.Code, Message: e.Title}
+	}
+	return p.Value(out, "")
+}
+
+// estimateError is why a plan has no price, in --estimate's JSON.
+type estimateError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// planBytes is the most the plan would upload: the bytes of its new and changed items, and of its conflicts, which
+// may need them.
+func planBytes(plan *caitlyn.SyncPlan) int64 {
+	var n int64
+	for _, it := range plan.Items {
+		if it.ByteSize == nil || it.Outcome == nil {
+			continue
+		}
+		switch *it.Outcome {
+		case caitlyn.IngestionItemOutcomeNew, caitlyn.IngestionItemOutcomeChanged, caitlyn.IngestionItemOutcomeConflict:
+			n += *it.ByteSize
+		}
+	}
+	return n
 }
 
 func finishSync(f *cmdutil.Factory, u *ui.UI, p *output.Printer, r *caitlyn.SyncReport, run *cisession.Run, kb string) error {
@@ -429,4 +480,19 @@ func finishSync(f *cmdutil.Factory, u *ui.UI, p *output.Printer, r *caitlyn.Sync
 		run.Hold("skipped")
 	}
 	return run.Finish(0)
+}
+
+// humanBytes is a byte count for people: "820 bytes", "1.4 MB" (decimal units).
+func humanBytes(n int64) string {
+	if n < 1000 {
+		return fmt.Sprintf("%d bytes", n)
+	}
+	v, units := float64(n), []string{"kB", "MB", "GB", "TB"}
+	for i, unit := range units {
+		v /= 1000
+		if v < 1000 || i == len(units)-1 {
+			return fmt.Sprintf("%.1f %s", v, unit)
+		}
+	}
+	return ""
 }

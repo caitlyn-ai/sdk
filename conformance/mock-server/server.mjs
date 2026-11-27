@@ -807,6 +807,7 @@ const routes = [
   ['GET', /^\/v3\/events\/stream$/, watchWorkspaceEvents],
   ['POST', /^\/v3\/uploads$/, createUpload],
   ['GET', /^\/v3\/uploads\/([^/]+)$/, getUpload],
+  ['GET', /^\/__s3\/content\/([^/]+)$/, getDocumentBytes],
   ['PUT', /^\/__s3\/([^/]+)$/, putUploadBytes],
   ['POST', /^\/__s3\/$/, postObjectForm],
   ['GET', /^\/v3\/agents$/, listAgents],
@@ -1194,6 +1195,18 @@ async function putUploadBytes(req, res, rid, [id], url, body) {
   if (up.status === 'awaiting_bytes') up.status = 'received';
   res.writeHead(200, { ETag: `"${sha}"` });
   res.end();
+}
+
+// GET /__s3/content/<document>: the bytes GetDocumentDownload's url names, as S3 serves an object: the document's
+// content type, and bytes made from its id and version (the mock keeps no uploaded bytes). Faults: `GetObject`.
+async function getDocumentBytes(req, res, rid, [documentId], url) {
+  if (s3StatusFault('GetObject', res)) return;
+  const id = decodeURIComponent(documentId);
+  const doc = [...state.knowledgeBases.values()].flat().find((d) => d.id === id);
+  if (!doc) return s3Error(res, 404, 'NoSuchKey', 'The specified key does not exist.');
+  const bytes = Buffer.from(`mock bytes of ${doc.id}, version ${url.searchParams.get('version') ?? 'current'}\n`);
+  res.writeHead(200, { 'Content-Type': doc.contentType ?? 'application/octet-stream', 'Content-Length': String(bytes.length) });
+  res.end(bytes);
 }
 
 /** Takes an upload for an operation: 404 when unknown, 409 when it has no bytes or was used. */

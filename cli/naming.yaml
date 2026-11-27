@@ -399,7 +399,8 @@ commands:
       each answer streams in with its sources, /attach <file> sends a file with the next message, /new starts a new
       conversation and /quit (or Ctrl-D) ends it. Give a message to ask one question and exit, which is what scripts
       and CI use, or - to read it from stdin. AGENT@draft talks to the draft, so you can try a change before
-      publishing it.
+      publishing it. On a terminal, chat renders the answer whatever output your configuration sets: give
+      --output jsonl on the command for its events as data.
     recipe: "Recipe: https://build.caitlyn.ai/cli/recipes/ask-an-agent/"
     examples:
       - '# A conversation, on a terminal'
@@ -408,6 +409,13 @@ commands:
       - caitlyn chat GHT7YRWXPL@draft "Can I carry leave over to next year?"
       - '# From a script: every event as JSON Lines'
       - caitlyn chat GHT7YRWXPL "Who approves leave?" --output jsonl
+  knowledge-bases documents download:
+    short: Save a document's bytes to a file
+    long: |
+      Saves the document to a file: by default its own name, in the current folder, and never over an existing file
+      without --force. --out - writes it to stdout, but not to a terminal unless it is text. --url-only prints the
+      short-lived address of the bytes and when it expires instead, as -o json, yaml or jsonl does without --out; -o
+      is always the output format, never a file.
   knowledge-bases sync:
     about: |
       The way to keep a knowledge base matching a folder you own, such as a handbook in a repository: run it again

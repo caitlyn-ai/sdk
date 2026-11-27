@@ -48,6 +48,10 @@ type Hook func(c *Command)
 
 var hooks = map[string][]Hook{}
 
+// AnnotationOwnExamples marks a generated command whose hook gives it examples of its own (its cobra Example): the
+// docs show them in place of the model's, keeping only the model's examples of errors.
+const AnnotationOwnExamples = "help.examples.own"
+
 // Extend registers a hook for the generated command at path ("knowledge-bases documents create").
 func Extend(path string, h Hook) { hooks[path] = append(hooks[path], h) }
 
