@@ -62,6 +62,14 @@ workflow:
     # GitHub Actions would then skip the tag's release-npm run (CONTRIBUTING.md, "Releasing").
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_MESSAGE =~ /^chore\(release\): /'
       when: never
+    # A merge request that changes the toolchain image builds its own tag and uses it throughout its pipeline, so
+    # main and every other merge request keep the image they had until it merges (the toolchain job, below)
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - docker/Dockerfile
+        - scripts/install-smithy-cli.sh
+      variables:
+        TOOLCHAIN_TAG: '$TOOLCHAIN_VERSION-mr$CI_MERGE_REQUEST_IID'
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_PIPELINE_SOURCE == "pipeline" # triggered by an app merge to main (model:main)
     - if: $CI_PIPELINE_SOURCE == "schedule"
@@ -85,9 +93,12 @@ stages:
   - release
 
 variables:
-  # Bump when docker/Dockerfile or scripts/install-smithy-cli.sh changes; the toolchain job pushes this tag.
+  # Bump when docker/Dockerfile or scripts/install-smithy-cli.sh changes; the toolchain job pushes this tag on main.
   TOOLCHAIN_VERSION: '3'
-  TOOLCHAIN_IMAGE: '$CI_REGISTRY_IMAGE/toolchain:$TOOLCHAIN_VERSION'
+  # The image's tag: TOOLCHAIN_VERSION, or a merge request's own (<version>-mr<iid>) when it changes the image
+  # (the workflow rules, above)
+  TOOLCHAIN_TAG: '$TOOLCHAIN_VERSION'
+  TOOLCHAIN_IMAGE: '$CI_REGISTRY_IMAGE/toolchain:$TOOLCHAIN_TAG'
   # The app project's package registry, where each app release publishes caitlyn-v3-model/<version>/.
   MODEL_PROJECT_ID: '653'
   MODEL_PACKAGE: 'caitlyn-v3-model'
@@ -122,13 +133,19 @@ toolchain:
     name: gcr.io/kaniko-project/executor:v1.23.2-debug
     entrypoint: ['']
   script:
-    - /kaniko/executor --context "$CI_PROJECT_DIR" --dockerfile "$CI_PROJECT_DIR/docker/Dockerfile" --destination "$TOOLCHAIN_IMAGE"
+    # Layers are cached in the project's registry, so a rebuild redoes only the layers whose inputs changed (the Go
+    # release tools alone took about ten minutes to compile and snapshot from nothing)
+    - >-
+      /kaniko/executor --context "$CI_PROJECT_DIR" --dockerfile "$CI_PROJECT_DIR/docker/Dockerfile"
+      --destination "$TOOLCHAIN_IMAGE"
+      --cache=true --cache-repo="$CI_REGISTRY_IMAGE/toolchain-cache" --snapshot-mode=redo
+  # Only when the image's own inputs change. A merge request builds its own tag (the workflow rules, above); main
+  # builds TOOLCHAIN_VERSION once it merges.
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event" || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       changes:
         - docker/Dockerfile
         - scripts/install-smithy-cli.sh
-        - .gitlab-ci.yml
 
 # ---------------------------------------------------------------------------- generate and test
 
