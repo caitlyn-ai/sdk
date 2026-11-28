@@ -51,8 +51,8 @@ function setup(name) {
   return { dir, bare, job, base };
 }
 
-const publish = ({ job, base, bare }) =>
-  spawnSync('bash', ['scripts/model-main-publish.sh', VERSION, base, bare, 'main'], { cwd: job, env, encoding: 'utf8' });
+const publish = ({ job, base, bare }, version = VERSION) =>
+  spawnSync('bash', ['scripts/model-main-publish.sh', version, base, bare, 'main'], { cwd: job, env, encoding: 'utf8' });
 const refs = (bare) => git(bare, 'for-each-ref', '--format=%(refname) %(objectname)');
 const hasTag = (bare) => refs(bare).includes(`refs/tags/v${VERSION}`);
 
@@ -98,7 +98,7 @@ test('when the server refuses main after the check, the atomic push refuses the 
   fs.writeFileSync(hook, '#!/bin/sh\n[ "$1" = refs/heads/main ] && { echo "main moved" >&2; exit 1; }\nexit 0\n', { mode: 0o755 });
   const run = publish(r);
   assert.notEqual(run.status, 0);
-  assert.ok(run.stderr.includes(`neither main nor v${VERSION} changed`), run.stderr);
+  assert.match(run.stderr, new RegExp(`nothing changed: not main \\w+ and v${VERSION.replace(/\./g, '\\.')} \\(an atomic push\\)`));
   assert.equal(git(r.bare, 'rev-parse', 'refs/heads/main'), r.base);
   assert.ok(!hasTag(r.bare), refs(r.bare));
   // The first model:main run's push, without --atomic: the tag lands and main is refused, as in job 1164684
@@ -119,3 +119,20 @@ test('a tracked file the job changed but does not commit stops it before anythin
 });
 
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+test("`-` commits a model change that changes no package as docs(model), and pushes main with no tag", () => {
+  const r = setup('docs');
+  // No version stamped: the docs(model) case leaves every package as it is
+  execFileSync('git', ['checkout', '-q', '--', '.'], { cwd: r.job, env });
+  fs.rmSync(path.join(r.job, 'go/new_operation.go'));
+  fs.appendFileSync(path.join(r.job, 'model/model.lock.json'), '\n');
+  fs.mkdirSync(path.join(r.job, 'model/changes'), { recursive: true });
+  fs.writeFileSync(path.join(r.job, 'model/changes/next.json'), '{}\n');
+  const run = publish(r, '-');
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /^Pushed main \w+\.$/m);
+  assert.match(git(r.bare, 'log', '-1', '--format=%s', 'refs/heads/main'), /^docs\(model\): the model of app commit e2b58500d962, which changes no package$/);
+  assert.equal(git(r.bare, 'rev-parse', 'refs/heads/main^'), r.base);
+  assert.deepEqual(git(r.bare, 'show', '--name-only', '--format=', 'refs/heads/main').split('\n').sort(), ['model/changes/next.json', 'model/model.lock.json']);
+  assert.ok(!refs(r.bare).includes('refs/tags/'), refs(r.bare));
+});

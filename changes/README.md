@@ -8,6 +8,14 @@ notes: the next release's section of `CHANGELOG.md`, its GitLab and GitHub relea
 A merge request needs one when its title makes a release: `feat`, `fix`, `perf` or `revert`, or any type with `!`.
 A `docs` or `ci` scope needs none. The `changes:check` job says when one is missing or doesn't match the title.
 
+A release happens if and only if a package changes (CONTRIBUTING.md, "What makes a release"), so the title must
+agree with what the merge request changes, and `changes:check` holds it to that both ways:
+
+- a releasing title that changes no package (`fix(docs): a typo`, `feat: a faster pipeline`) fails: use `docs`,
+  `ci`, `chore`, `test`, `build` or `refactor`, and add no change file;
+- a change to what a package is built from (`node scripts/package-inputs.mjs list`) under any other type fails:
+  use `fix`, `feat` or `perf`, with a change file.
+
 ## The format
 
 Name it after the change (`changes/list-pages.md`). Front matter, then a list of highlights:

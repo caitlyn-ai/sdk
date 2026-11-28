@@ -510,6 +510,24 @@ changes:check:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
+# What each package is built from (scripts/package-inputs.mjs), checked against what the packaging tools say each one
+# ships: cargo package --list, the sdists and wheels uv builds, and go list for the Go module and the CLI's binary. A
+# release happens if and only if one of those inputs changed, so a file a package ships but the list misses would
+# let a change to it go unreleased.
+release:package-inputs:
+  extends: [.toolchain, .resources-medium]
+  cache:
+    - !reference [.caches, cargo]
+  stage: generate
+  needs:
+    - job: toolchain
+      optional: true
+  script:
+    - node scripts/package-inputs.mjs verify
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
 # The GitHub release workflows' tag check: release-pypi, release-crates and release-github take a release tag
 # (vX.Y.Z) or a beta tag (vX.Y.Z-beta.N), with PyPI's spelling of a beta, and refuse any other
 release:workflows:
@@ -545,7 +563,7 @@ release:scripts:
     - job: toolchain
       optional: true
   script:
-    - node --test scripts/model-main-publish.test.mjs
+    - node --test scripts/model-main-publish.test.mjs scripts/model-main.test.mjs scripts/model-main-suites.test.mjs scripts/release-analyzer.test.mjs
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
@@ -576,13 +594,20 @@ model:version-check:
 # time, and never cancelled part way through a push. It shares the resource group `main-push` with `release`, the
 # other job that pushes to main, so neither moves main under the other. A main that moves anyway (a merge request
 # merging while the suites run) makes it push nothing, with neither the commit nor the tag: scripts/model-main-publish.sh
-# checks main before an atomic push, and the job is retried.
+# checks main before an atomic push, and the job is retried. A beta only when a package changed: an app model that
+# changes none is committed untagged as docs(model), or not at all when only its lock would change
+# (scripts/model-main.sh). The four suites run at once (scripts/model-main-suites.sh): about 220 s on this runner,
+# against about 620 s one after another (pipeline 160320).
 model:main:
-  extends: [.toolchain, .resources-heavy]
+  # On the Graviton runner, as generate and the suites' own jobs: what it commits is the generated code and the
+  # snapshot, which don't depend on the architecture (generate checks the committed tree on arm64 every pipeline).
+  extends: [.toolchain, .resources-heavy-arm64]
   cache:
-    # Four at most: Go's build cache and uv's are left out (it compiles afresh, and uv downloads)
+    # Four at most (GitLab's limit for a job's caches). Go's modules and uv's downloads are left out: the Go SDK, its
+    # examples and the harness need four small modules (under a second to download), and uv downloads. Go's build
+    # cache is kept: the Go suite's builds, vet, staticcheck and race-detector tests otherwise compile everything afresh.
     - !reference [.caches, gradle]
-    - !reference [.caches, go-mod]
+    - !reference [.caches, go-build]
     - !reference [.caches, cargo]
     - !reference [.caches, npm]
   stage: generate
@@ -595,6 +620,11 @@ model:main:
     GIT_DEPTH: '0'
   script:
     - scripts/model-main.sh
+  artifacts:
+    when: always
+    expire_in: 1 week
+    # Each suite's log, as scripts/model-main-suites.sh printed them in turn
+    paths: [build/model-main/]
   rules:
     - if: $CI_PIPELINE_SOURCE == "pipeline" && $APP_COMMIT
     - if: $CI_PIPELINE_SOURCE == "web" && $APP_COMMIT

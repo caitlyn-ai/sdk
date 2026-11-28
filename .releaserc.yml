@@ -12,26 +12,22 @@
 # .github/workflows/release-github.yml creates the GitHub release from the tag's CHANGELOG.md (CONTRIBUTING.md,
 # "Releasing").
 #
-# Only commits that change what the SDKs do release: feat, fix, perf and revert, and breaking changes. docs, ci,
-# chore, test, refactor, style and build commits never do, so the release commit (chore) cannot start another
-# release. Its message carries no [skip ci]: GitHub Actions would then skip the tag's release-npm run. GitLab skips
-# the main pipeline for it with a workflow rule instead.
+# A release happens if and only if a package changed: scripts/release-analyzer.mjs, in place of
+# @semantic-release/commit-analyzer, counts only the commits since the last release that changed a package input
+# (scripts/package-inputs.mjs: what a user's build of a package uses, never tests, docs, tooling or CI). Their types
+# set the bump: a breaking change is minor before 1.0 (0.x semantics) and major after, feat is minor, fix, perf and
+# revert are patch, and a package change under any other type is a patch. So a `fix(docs)` makes no release, and the
+# release commit (chore) cannot start another: it is the tagged commit. Its message carries no [skip ci]: GitHub
+# Actions would then skip the tag's release-npm run. GitLab skips the main pipeline for it with a workflow rule
+# instead.
 #
 # Merge requests are squashed, and the squash commit is the merge request's title alone, so a breaking change must be
-# marked in the title: `feat(typescript)!: …`. The release image has only the angular preset, whose parser does not
-# read the `!`, so parserOpts teaches the analyser to: a `!` before the colon is a breaking change. A BREAKING
-# CHANGE footer still works too. The notes list a breaking change under BREAKING CHANGES from its change file's
-# `breaking: true`, which the changes:check job keeps in step with the title's `!`.
+# marked in the title: `feat(typescript)!: …`; the analyzer reads the `!` before the colon, and a BREAKING CHANGE
+# footer. The notes list a breaking change under BREAKING CHANGES from its change file's `breaking: true`, which the
+# changes:check job keeps in step with the title's `!`. changes:check also holds a merge request's title to the
+# package rule: a releasing title must change a package, and a change to a package needs a releasing title.
 plugins:
-  - - '@semantic-release/commit-analyzer'
-    - releaseRules:
-        # Before 1.0, a breaking change raises the minor version (0.x semantics); feat is minor and fix, perf and
-        # revert are patch, as the default rules say. Going to 1.0 is a deliberate decision: remove this rule then.
-        - breaking: true
-          release: minor
-      parserOpts:
-        headerPattern: '^(\w*)(?:\((.*)\))?!?: (.*)$'
-        breakingHeaderPattern: '^(\w*)(?:\((.*)\))?!: (.*)$'
+  - './scripts/release-analyzer.mjs'
   # The notes are scripts/release-notes.mjs's (generateNotesCmd, in the exec step below), not the angular preset's: each
   # change file (changes/*.md) added since the last release, with its highlights; a line for each releasing commit
   # that added none; and what changed in the public API, from the model at the last release tag to this one, each

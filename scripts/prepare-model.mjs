@@ -59,7 +59,12 @@ for (const shape of Object.values(ast.shapes)) {
   for (const member of Object.values(shape.members ?? {})) stamp(member.traits);
 }
 fs.mkdirSync(path.dirname(output), { recursive: true });
-fs.writeFileSync(output, JSON.stringify(ast, null, 2));
+// Atomically: the language suites run at once in model:main (scripts/model-main-suites.sh), and each prepares the
+// model again while the others read it. A rename replaces the file whole, so a reader sees the old file or the new
+// one, never part of one.
+const partial = `${output}.${process.pid}.partial`;
+fs.writeFileSync(partial, JSON.stringify(ast, null, 2));
+fs.renameSync(partial, output);
 const from = dev ? `the dev model ${path.relative(root, input)}` : (lock.version ?? 'an unpublished model');
 console.log(`prepare-model: ${path.relative(root, output)} from ${from} (${sha.slice(0, 12)})` +
   (stamped ? `, ${stamped} @since("next") stamped as ${stampNext}` : ''));

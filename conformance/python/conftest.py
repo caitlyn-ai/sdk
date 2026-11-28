@@ -61,7 +61,9 @@ class Mock:
 
 @pytest.fixture(scope="session")
 def mock_server() -> Iterator[Mock]:
-    port = 4600 + random.randint(0, 300)
+    # 4600 to 4899: the suites run at once in model:main, and each harness keeps to its own range of ports
+    # (scripts/model-main-suites.sh)
+    port = 4600 + random.randint(0, 299)
     proc = subprocess.Popen(["node", str(ROOT / "conformance" / "mock-server" / "server.mjs")], env={**os.environ, "PORT": str(port)}, stdout=subprocess.PIPE)
     assert proc.stdout is not None
     proc.stdout.readline()

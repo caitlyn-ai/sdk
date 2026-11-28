@@ -30,6 +30,7 @@ import path from 'node:path';
 import { isBreaking, modelChanges, widens } from './model-diff.mjs';
 import { apiSections, errorLinks } from './docs-changelog.mjs';
 import { lineProblems } from './docs-wording.mjs';
+import { changedFiles, commitFiles, touched as packagesTouched } from './package-inputs.mjs';
 
 export const root = path.resolve(import.meta.dirname, '..');
 export const CHANGES_DIR = 'changes';
@@ -221,7 +222,9 @@ export function apiGroups(changes, { pages, errorCodes = {}, codeOperations = {}
  * (a merge request's title, which becomes its squash commit).
  */
 export function collect({ from, to = 'HEAD', files = null, extra = [], modelFrom = from, modelTo = to, site }) {
-  const commits = [...commitsIn(from, to).map((c) => parseCommit(c)), ...extra].filter(releases);
+  // A release is the commits that changed a package (scripts/release-analyzer.mjs): one that changed none makes no
+  // line, whatever its type. `extra` are commits not yet made (a merge request's title), which say for themselves.
+  const commits = [...commitsIn(from, to).map((c) => ({ ...parseCommit(c), changesPackage: packagesTouched(commitFiles(c.hash)).length > 0 })), ...extra].filter((c) => releases(c) && c.changesPackage !== false);
   // A file that names the commit it describes (one written after its change merged) stands for that commit
   const changeFiles = (files ?? changeFilesAt(to).filter((f) => !changeFilesAt(from).includes(f)).map((f) => ({ ...parseChangeFile(show(to, f), f), commit: addedBy(from, to, f) }))).map((f) =>
     f.describes ? { ...f, commit: resolveCommit(f.describes) ?? f.describes } : f,
@@ -314,7 +317,8 @@ export function unreleased({ site, env = process.env, date = utcDate(Date.now())
   const replaced = new Set(own.map((f) => f.commit).filter(Boolean));
   onMain.entries = onMain.entries.filter((e) => e.file || !replaced.has(e.commit));
   const title = parseCommit({ subject: mr.title });
-  const titleEntry = !own.some((f) => !f.describes) && releases(title) && !HIDDEN_SCOPES.has(title.scope) ? [{ type: TYPE_HEADINGS[title.type] ? title.type : 'feat', scope: title.scope, breaking: title.breaking, subject: title.subject, highlights: [], commit: null }] : [];
+  const changesPackage = packagesTouched(changedFiles(mr.base)).length > 0;
+  const titleEntry = !own.some((f) => !f.describes) && releases(title) && changesPackage && !HIDDEN_SCOPES.has(title.scope) ? [{ type: TYPE_HEADINGS[title.type] ? title.type : 'feat', scope: title.scope, breaking: title.breaking, subject: title.subject, highlights: [], commit: null }] : [];
   const mine = [...own.map((f) => ({ type: f.type, scope: f.scope, breaking: f.breaking, subject: f.summary, highlights: f.highlights, commit: f.commit })), ...titleEntry];
   // The model's changes this merge request makes: from where it branched to its own tree
   const ownApi = apiGroups(apiChanges(modelAt(mr.base), workModel()), site).flatMap((g) => g.items.map((i) => i.subject));
@@ -328,9 +332,18 @@ export function unreleased({ site, env = process.env, date = utcDate(Date.now())
  * title comes with a change file of its type, a `!` with a breaking file and the other way round, and a model change
  * that breaks callers is marked breaking. `added` are parsed change files; `breakingApi` the model's breaking changes.
  */
-export function agreementProblems({ title: raw, added = [], breakingApi = [] }) {
+export function agreementProblems({ title: raw, added = [], breakingApi = [], packages = null }) {
   const problems = [];
   const title = parseCommit({ subject: raw });
+  // A release happens if and only if a package input changes (scripts/package-inputs.mjs): the title must say which.
+  // `packages` is [{ name, files }], the packages the merge request changes; null skips this (a caller that can't tell).
+  if (packages && title) {
+    if (releases(title) && !packages.length) problems.push(`the title "${raw}" makes a release, but this merge request changes no package (scripts/package-inputs.mjs): use a type that makes none, such as docs, ci, chore, test, build or refactor`);
+    if (!releases(title) && packages.length) {
+      const what = packages.map((p) => `${p.name} (${p.files.slice(0, 3).join(', ')}${p.files.length > 3 ? ', …' : ''})`);
+      problems.push(`this merge request changes what packages ship, ${what.join('; ')}, so it makes a release: use fix, feat or perf in the title (with a change file), not ${title.type}`);
+    }
+  }
   const releasing = releases(title) && !HIDDEN_SCOPES.has(title.scope);
   if (releasing && !added.length) problems.push(`the title "${raw}" makes a release, so add a change file, changes/<name>.md, saying what changed and why (CONTRIBUTING.md, "Release notes")`);
   if (!releasing && added.length && title && !HIDDEN_SCOPES.has(title.scope)) problems.push(`${added.map((f) => f.file).join(', ')} describe a release, but the title's type "${title.type}" makes none: use ${[...new Set(added.map((f) => f.type))].join(' or ')} in the title`);
@@ -375,7 +388,7 @@ export function mrProblems({ env = process.env } = {}) {
   return [
     ...parsed.flatMap((f) => f.problems),
     ...lateProblems(described),
-    ...agreementProblems({ title: mr.title, added: added.filter((f) => !f.describes), breakingApi }),
+    ...agreementProblems({ title: mr.title, added: added.filter((f) => !f.describes), breakingApi, packages: packagesTouched(changedFiles(mr.base)) }),
   ];
 }
 

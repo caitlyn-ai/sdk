@@ -168,6 +168,25 @@ test('a releasing title needs a change file of its type, and ! and breaking: tru
   assert.deepEqual(agreementProblems({ title: 'feat!: pages', added: [breaking], breakingApi: dropped }), []);
 });
 
+// A release happens if and only if a package input changes (scripts/package-inputs.mjs), so the title has to agree
+// with what the merge request changes, both ways
+test('a releasing title must change a package, and a change to a package needs a releasing title', () => {
+  const feat = parseChangeFile(FILE, 'changes/pages.md');
+  const rust = [{ name: 'caitlyn-sdk-core', files: ['rust/caitlyn-sdk-core/src/client.rs'] }];
+  const none = [];
+  assert.deepEqual(agreementProblems({ title: 'feat(typescript): pages', added: [feat], packages: rust }), []);
+  assert.deepEqual(agreementProblems({ title: 'docs: a typo', added: [], packages: none }), []);
+  assert.deepEqual(agreementProblems({ title: 'ci: a faster pipeline', added: [], packages: none }), []);
+  // A releasing title that changes no package: what fix(docs) and feat on tooling used to release
+  for (const title of ['fix(docs): a typo', 'feat: a faster model:main', 'perf(ci): cache cargo', 'feat!: drop a guide']) {
+    assert.match(agreementProblems({ title, added: [], packages: none }).join(), /makes a release, but this merge request changes no package/, title);
+  }
+  // A non-releasing title that changes a package
+  for (const title of ['chore: bump reqwest', 'ci: retry a 503', 'docs(rust): a comment', 'test: a case', 'build: a lock file', 'refactor(rust): split client.rs', 'style: format']) {
+    assert.match(agreementProblems({ title, added: [], packages: rust }).join(), /changes what packages ship, caitlyn-sdk-core \(rust\/caitlyn-sdk-core\/src\/client\.rs\), so it makes a release: use fix, feat or perf/, title);
+  }
+});
+
 test('a file written after its change merged names the commit, and is checked against that commit, not the title', () => {
   const late = parseChangeFile(FILE.replace('type: feat\n', 'type: feat\ncommit: c3b60ec0\n'), 'changes/ranges.md');
   assert.equal(late.describes, 'c3b60ec0');
