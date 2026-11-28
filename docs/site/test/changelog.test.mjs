@@ -237,7 +237,7 @@ test('an error code an error class adds is a change to the operations that give 
   assert.deepEqual(dropped.sections[0].items, ['- `DeleteDocumentVersion`: no longer returns [`VERSIONS_NOT_NUMBERED`](/errors/VERSIONS_NOT_NUMBERED/) (409).']);
 });
 
-test('stability changes have their own section, and a change a GA operation reaches is not marked beta', () => {
+test('stability changes have their own section, and a change a GA operation reaches is not marked preview', () => {
   const release = {
     api: true, version: '5.120.0', previousVersion: '5.119.0', date: '2026-12-10',
     changes: [
@@ -252,7 +252,7 @@ test('stability changes have their own section, and a change a GA operation reac
     '- Every operation: can now return [`PRECONDITION_REQUIRED`](/errors/PRECONDITION_REQUIRED/) (428).',
     '- [`AgentConfiguration`](/sdk/types/agent-configuration/): adds `notes` (`String`).',
   ]);
-  assert.deepEqual(sections[1].items, ['- [`DeleteAgentVersion`](/sdk/delete-agent-version/): from beta to GA.']);
+  assert.deepEqual(sections[1].items, ['- [`DeleteAgentVersion`](/sdk/delete-agent-version/): from preview to GA.']);
 });
 
 test('an API release links every operation, type and error code to its page, and an operation with no page yet is named, not linked', () => {

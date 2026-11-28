@@ -9,6 +9,7 @@ import path from 'node:path';
 import { C, T, allErrors, binding, callOption, eventsUnion, kebab, local, names, namespacePath, nextRelease, notYetNote, notYetWords, operations, retrySafe, root, unreleasedOperations } from './docs-model.mjs';
 import { namespaceTree, operationTitle, walkTree } from './docs-api.mjs';
 import { LANGUAGES, goChain, snippets } from './docs-snippets.mjs';
+import { BETA_TITLE, REMOVED_TITLE, betaLabel, betaWords, channelSpan, channelSwitch, removedWords } from './docs-releases.mjs';
 import { placement } from './docs-scopes.mjs';
 import { OPTIONS, sinceVersion } from './docs-metadata.mjs';
 import { ERROR_CODES, ROUTING_CODES } from '../docs/error-codes.mjs';
@@ -18,7 +19,8 @@ import { ERROR_CODES, ROUTING_CODES } from '../docs/error-codes.mjs';
 /** Each stability level the model has: the badge's word and what it means (the Stability row shows both) */
 export const STABILITY = {
   ga: { badge: 'GA', text: 'Generally available' },
-  beta: { badge: 'Beta', text: 'Public, and may still change before it is generally available' },
+  preview: { badge: 'Preview', text: 'Public, and may still change before it is generally available' },
+  experimental: { badge: 'Experimental', text: 'In the SDK betas only, and may change or go before it is a preview' },
   internal: { badge: 'Internal', text: 'For Caitlyn itself; not in the public SDKs' },
 };
 /** A stability level as its badge (src/styles/components.css .caitlyn-stability) */
@@ -46,6 +48,8 @@ export function members(ast, id) {
   const out = {};
   for (const { target } of s.mixins ?? []) Object.assign(out, members(ast, target));
   for (const [k, m] of Object.entries(s.members ?? {})) out[k] = out[k] ? { ...out[k], ...m, traits: { ...out[k].traits, ...m.traits } } : m;
+  // Each member says which structure it is shown in (a mixin's member is the structure's), for the release labels
+  for (const k of Object.keys(out)) out[k] = { ...out[k], owner: local(id) };
   return out;
 }
 
@@ -139,14 +143,24 @@ function where(b) {
 
 /** A Markdown table of members: name, type, where it is sent (when asked) and description. */
 function memberTable(ast, mems, typePages, { showWhere = false, wireNames = false } = {}) {
-  const rows = Object.entries(mems)
+  const rows = withRemoved(ast, mems)
     .filter(([, m]) => binding(m).in !== 'status')
     .map(([name, m]) => {
       const t = m.traits ?? {};
       const shown = wireNames ? (t[T('jsonName')] ?? name) : name;
       const req = t[T('required')] ? ' (required)' : '';
-      const doc = [cell(t[T('documentation')]), constraints(ast, m)].filter(Boolean).join(' ');
-      const cols = [`\`${shown}\`${req}`, typeText(ast, m.target, typePages)];
+      const doc = [cell(t[T('documentation')]), constraints(m.removed ? ast.channels.stableModel : ast, m)].filter(Boolean).join(' ');
+      // A member the latest stable release lacks has the Beta label; one it has in another form shows that form,
+      // then the beta's (scripts/docs-releases.mjs)
+      const ch = memberChannel(ast, m, name);
+      const label = ch.label ? ` ${ch.label}` : m.removed ? ` (${removedWords(m.removed, { stable: ast.channels.stable }).toLowerCase()})` : '';
+      const stableAst = ast.channels?.stableModel ?? ast;
+      // The stable side links to the pages of the types only the stable release has, too (stableOnlyTypes)
+      const stablePages = ast.channels?.typePages ?? typePages;
+      const type = ch.changed
+        ? `${typeText(stableAst, ch.changed.from.target, stablePages)}${ch.changed.from.required ? ' (required)' : ''} (beta ${ch.changed.beta}: ${typeText(ast, m.target, typePages)}${t[T('required')] ? ', required' : ''})`
+        : m.removed ? typeText(stableAst, m.target, stablePages) : typeText(ast, m.target, typePages);
+      const cols = [`\`${shown}\`${ch.changed ? '' : req}${label}`, type];
       if (showWhere) cols.push(where(binding(m)));
       cols.push(doc);
       return `| ${cols.join(' | ')} |`;
@@ -175,7 +189,7 @@ const GROUPS = [
 export const groupLabel = (icon, label) => `<p class="caitlyn-param-group"><span class="caitlyn-icon" data-icon="${icon}" aria-hidden="true"></span>${label}</p>`;
 
 export function memberTree(ast, mems, typePages, { grouped = false, bodyLabel = 'Body', wireNames = false, depth = 0, seen = new Set(), extraMeta = null } = {}) {
-  const rows = Object.entries(mems).filter(([, m]) => binding(m).in !== 'status');
+  const rows = withRemoved(ast, mems).filter(([, m]) => binding(m).in !== 'status');
   if (!rows.length) return '';
   const where = (m) => { const b = binding(m).in; return b === 'payload' ? 'body' : b; };
   const sets = grouped ? GROUPS.map((g) => ({ ...g, label: g.in === 'body' ? bodyLabel : g.label, rows: rows.filter(([, m]) => where(m) === g.in) })).filter((g) => g.rows.length) : [{ rows }];
@@ -189,7 +203,43 @@ export function memberTree(ast, mems, typePages, { grouped = false, bodyLabel = 
   return out.join('\n');
 }
 
+/**
+ * A member's release labels (ast.channels, scripts/docs-releases.mjs apiChannels): { label } with the Beta label when
+ * the latest stable release lacks it, or { changed: { from, beta } } when that release has it in another form.
+ */
+/**
+ * A structure's members with the ones main dropped since the latest stable release added back, each marked
+ * `removed` (its arrival): the site describes the stable release, so they stay, behind the Stable | Beta switch.
+ */
+function withRemoved(ast, mems) {
+  const rows = Object.entries(mems);
+  const owner = rows[0]?.[1].owner;
+  const gone = owner ? ast.channels?.removedMembers.get(owner) ?? [] : [];
+  return [...rows, ...gone.filter((r) => r.member && !mems[r.name]).map((r) => [r.name, { ...r.member, owner, removed: r.arrival }])];
+}
+
+function memberChannel(ast, m, name) {
+  const c = ast.channels;
+  if (!c || !m.owner) return {};
+  const key = `${m.owner}$${name}`;
+  if (c.members.has(key)) return { label: betaLabel(c.members.get(key), { stable: c.stable }) };
+  const ch = c.changed.get(key);
+  // The stable side is read from the stable model: its type may not be in main's
+  if (ch) return { changed: { from: ch.from, beta: ch.arrival.beta ?? `since ${c.stable}` } };
+  return {};
+}
+
 function memberRow(ast, name, m, typePages, { wireNames, depth, seen, extraMeta }) {
+  // A member main dropped: as the stable release has it (from its model), on the stable side; a note on the beta's
+  if (m.removed) {
+    const c = ast.channels;
+    const beta = m.removed.beta ?? `since ${c.stable}`;
+    const names = { stable: c.stable, beta };
+    const { removed, ...member } = m;
+    const was = memberRow(c.stableModel, name, member, c.typePages ?? typePages, { wireNames, depth, seen, extraMeta });
+    const note = paramRow({ name: wireNames || depth ? (m.traits?.[T('jsonName')] ?? name) : name, meta: [channelSwitch(names), removedWords(removed, { stable: c.stable })], doc: '' });
+    return ['<div data-channel-only="stable">', '', ...withSwitch(was, names), '</div>', '<div data-channel-only="beta">', '', ...note, '</div>', ''];
+  }
   const S = ast.shapes;
   const t = m.traits ?? {};
   const b = binding(m);
@@ -203,12 +253,23 @@ function memberRow(ast, name, m, typePages, { wireNames, depth, seen, extraMeta 
   const def = t[T('default')];
   const hasDefault = def !== undefined && def !== null && !(typeof def === 'object' && !Object.keys(def).length);
   const unit = shape?.type === 'list' ? 'items' : shape?.type === 'map' ? 'entries' : 'characters';
-  const meta = [typeText(ast, m.target, typePages), ...limitParts({ len, range, def: hasDefault ? def : undefined, pattern: all[T('pattern')], unit })];
+  const ch = memberChannel(ast, m, name);
+  const typeLine = ch.changed
+    ? `${channelSwitch({ stable: ast.channels.stable, beta: ch.changed.beta })} ${channelSpan('stable', `${typeText(ast.channels.stableModel ?? ast, ch.changed.from.target, ast.channels.typePages ?? typePages)}${ch.changed.from.required ? ' · required' : ''}`)}${channelSpan('beta', `${typeText(ast, m.target, typePages)}${t[T('required')] ? ' · required' : ''}`, `Beta ${ch.changed.beta}`)}`
+    : typeText(ast, m.target, typePages);
+  const meta = [typeLine, ...limitParts({ len, range, def: hasDefault ? def : undefined, pattern: all[T('pattern')], unit })];
   if (extraMeta) meta.push(...extraMeta(m));
   const doc = withoutRepeats(oneLine(t[T('documentation')] ?? ''), { len, range, def: hasDefault ? def : undefined });
   const inner = nestedTarget(ast, m.target);
   const children = inner && depth < 3 && !seen.has(inner) ? memberTree(ast, members(ast, inner), typePages, { depth: depth + 1, seen: new Set([...seen, inner]) }) : '';
-  return paramRow({ name: shown, chip: wire ? { text: wire, title: 'Sent as', sr: 'sent as' } : null, required: !!t[T('required')], meta, doc, values: enumValues(ast, m), children });
+  return paramRow({ name: shown, chip: wire ? { text: wire, title: 'Sent as', sr: 'sent as' } : null, required: !ch.changed && !!t[T('required')], meta, doc, values: enumValues(ast, m), children, label: ch.label });
+}
+
+/** A row's lines (paramRow) with the Stable | Beta switch at the start of its muted line. */
+function withSwitch(lines, names) {
+  const at = lines.findIndex((l) => l.startsWith('<span class="caitlyn-param-meta">'));
+  if (at < 0) return lines;
+  return lines.map((l, i) => (i === at ? l.replace('<span class="caitlyn-param-meta">', `<span class="caitlyn-param-meta">${channelSwitch(names)} `) : l));
 }
 
 /** A member's limits for the muted line, each said once: length, range, default and pattern. Shared with the API
@@ -227,14 +288,18 @@ export function limitParts({ len, range, def, pattern, unit = 'characters' }) {
  * reference, the SDK's name on the API reference), Required, the muted type and limits line, the description, an
  * enum's values as chips, and the row's own members, which it opens in place to show.
  */
-export function paramRow({ name, chip = null, required = false, meta = [], doc = '', values = [], children = '' }) {
+export function paramRow({ name, chip = null, required = false, meta = [], doc = '', values = [], children = '', label = '' }) {
   const head = [`<span class="caitlyn-param-name">\`${name}\`</span>`];
   if (chip) head.push(`<span class="caitlyn-param-wire" title="${chip.title}"><span class="caitlyn-icon" data-icon="${chip.icon ?? 'wire'}" aria-hidden="true"></span><span class="sr-only">${chip.sr} </span>\`${chip.text}\`</span>`);
   if (required) head.push('<span class="caitlyn-param-required">Required</span>');
+  // The Beta label (scripts/docs-releases.mjs betaLabel), as a Markdown link the site styles
+  if (label) head.push(label);
   const lines = [head.join(' '), ''];
   if (meta.length) lines.push(`<span class="caitlyn-param-meta">${meta.join(' · ')}</span>`, '');
   if (doc) lines.push(`<span class="caitlyn-param-doc">${doc}</span>`, '');
-  if (values.length) lines.push(`<span class="caitlyn-param-values">${values.map((v) => `\`${v}\``).join(' ')}</span>`, '');
+  const removed = values.find((v) => v?.removed);
+  const value = (v) => (typeof v === 'string' ? `\`${v}\`` : v.removed ? `${channelSpan('stable', `\`${v.value}\``)}${channelSpan('beta', `\`${v.value}\` ${v.removed.words.toLowerCase()}`, `Beta ${v.removed.names.beta}`)}` : `\`${v.value}\`${v.label ? ` ${v.label}` : ''}`);
+  if (values.length) lines.push(`<span class="caitlyn-param-values">${removed ? `${channelSwitch(removed.removed.names)} ` : ''}${values.map(value).join(' ')}</span>`, '');
   if (children) return ['<details class="caitlyn-param">', '<summary>', '', head.join(' '), '', '</summary>', '', ...lines.slice(2), children, '</details>', ''];
   return ['<div class="caitlyn-param">', '', ...lines, '</div>', ''];
 }
@@ -279,10 +344,21 @@ export function withoutRepeats(doc, { len, range, def }) {
 
 /** An enum member's values (through a list), or none. */
 function enumValues(ast, member) {
-  let s = ast.shapes[member.target];
-  if (s?.type === 'list') s = ast.shapes[s.member.target];
+  let id = member.target;
+  let s = ast.shapes[id];
+  if (s?.type === 'list') s = ast.shapes[(id = s.member.target)];
   if (s?.type !== 'enum') return [];
-  return Object.values(s.members).map((m) => m.traits?.[T('enumValue')]);
+  // A value the latest stable release lacks has the Beta label (scripts/docs-releases.mjs)
+  const owner = local(id);
+  const added = ast.channels?.enumValues;
+  const values = Object.entries(s.members).map(([n, m]) => {
+    const value = m.traits?.[T('enumValue')] ?? n;
+    const a = added?.get(`${owner}$${value}`);
+    return a ? { value, label: betaLabel(a, { stable: ast.channels.stable }) } : value;
+  });
+  // A value main dropped stays, as the stable release has it, with the beta's note behind the switch
+  const gone = ast.channels?.removedValues.get(owner) ?? [];
+  return [...values, ...gone.map((r) => ({ value: r.value, removed: { names: { stable: ast.channels.stable, beta: r.arrival.beta ?? `since ${ast.channels.stable}` }, words: removedWords(r.arrival, { stable: ast.channels.stable }) } }))];
 }
 
 /** The structure a member's members come from, through a list or a map, or null for a simple type. */
@@ -508,6 +584,20 @@ function cliLineFor(cli, opName, title) {
   return cli?.examples.get(opName)?.find((e) => e.title === title)?.line ?? null;
 }
 
+/**
+ * An operation's release channel: { markdown, words, link } for the Beta label when the latest stable release lacks it
+ * (ast.channels), or when it is experimental, which only the betas have; else null.
+ */
+export function operationChannel(ast, op) {
+  const c = ast.channels;
+  const a = c?.operations.get(op.name);
+  if (!a && op.stability !== 'experimental') return null;
+  const words = a ? betaWords(a, { stable: c.stable }) : 'In the SDK betas only';
+  if (!words) return null;
+  const markdown = a ? betaLabel(a, { stable: c.stable }) : `[${words}](/getting-started/#install-a-beta "${BETA_TITLE}")`;
+  return { markdown, words, link: '/getting-started/#install-a-beta', title: BETA_TITLE };
+}
+
 function operationPage(ast, op, typePages, examples, opsUsingError) {
   const t = op.shape.traits ?? {};
   // An operation no release serves yet (scripts/docs-model.mjs: the pre-release case) says so, with the release it
@@ -521,18 +611,27 @@ function operationPage(ast, op, typePages, examples, opsUsingError) {
   const siteParts = new Map();
   out.push(op.doc, '');
   if (!released) out.push(notYetNote(opsUsingError.next), '');
+  // The release channel (scripts/docs-releases.mjs): an operation the latest stable release lacks has the Beta label,
+  // beside its stability badge in the page's header (src/components/PageTitle.astro); the Markdown copy has it under
+  // the description. An experimental operation is only ever in the betas.
+  const channel = operationChannel(ast, op);
+  if (channel) {
+    out.push(channel.markdown, '');
+    siteParts.set(channel.markdown, '');
+  }
   const calls = sdkCalls(ast, op);
   out.push('| | |', '| --- | --- |');
   out.push(`| HTTP | \`${op.http.method} /api${op.http.uri}\` |`);
   for (const [lang, call] of Object.entries(calls)) out.push(`| ${lang} | \`${call}\` |`);
   // An operation no workspace serves cannot be generally available, whatever the model says.
-  const stability = released && STABILITY[op.stability] ? op.stability : 'beta';
+  const stability = released && STABILITY[op.stability] ? op.stability : 'preview';
   // An operation no release serves yet says so here too, with the release it arrives in
   const meaning = `${STABILITY[stability].text}${released ? '' : `. ${notYetWords(opsUsingError.next)}`}`;
-  const stabilityRow = `| Stability | ${STABILITY[stability].badge}: ${meaning} |`;
+  // A generally available operation has no badge: the badge marks what may still change
+  const stabilityRow = stability === 'ga' ? `| Stability | ${meaning} |` : `| Stability | ${STABILITY[stability].badge}: ${meaning} |`;
   out.push(stabilityRow);
   // The site's row shows the level as its badge, its meaning beside it
-  siteParts.set(stabilityRow, `| Stability | ${stabilityBadge(stability)} ${meaning} |`);
+  if (stability !== 'ga') siteParts.set(stabilityRow, `| Stability | ${stabilityBadge(stability)} ${meaning} |`);
   if (released) out.push(`| Since | Caitlyn ${op.since} |`);
   out.push(`| Retried by the SDKs | ${retrySafe(op, ast) ? 'Yes, on 429, 503 and connection failures ([Retries](/retries/))' : 'No: it is not safe to repeat ([Retries](/retries/))'} |`);
   if (t[C('audit')]) out.push(`| Audited | As a write: ${cell(t[C('audit')].reason ?? '')} The call is refused with 503 when its audit event cannot be recorded. |`);
@@ -722,6 +821,8 @@ function operationPage(ast, op, typePages, examples, opsUsingError) {
   const operation = {
     name: op.name,
     stability,
+    // The Beta label beside the badge (src/components/PageTitle.astro)
+    ...(channel ? { channel: { text: channel.words, link: channel.link, title: channel.title } } : {}),
     ...(cliCommand ? { cli: { command: `caitlyn ${cliCommand.name}`, link: cliCommand.docs } } : {}),
     responses,
     method: opsUsingError.tree.callOf.get(op.name),
@@ -749,12 +850,26 @@ function typePage(ast, id, typePages, usedBy) {
     const lead = `A string. ${open ? '' : ''}The SDKs keep a value they do not know yet as the string itself (Python: an unknown member carrying it), so a newer server never breaks an older SDK.`;
     out.push(lead, '');
     out.push('| Value | Description |', '| --- | --- |');
-    for (const [, m] of Object.entries(s.members)) out.push(`| \`${m.traits?.[T('enumValue')]}\` | ${cell(m.traits?.[T('documentation')])} |`);
+    // A value the latest stable release lacks has the Beta label (scripts/docs-releases.mjs)
+    const label = (m) => {
+      const a = ast.channels?.enumValues.get(`${name}$${m.traits?.[T('enumValue')]}`);
+      return a ? ` ${betaLabel(a, { stable: ast.channels.stable })}` : '';
+    };
+    for (const [, m] of Object.entries(s.members)) out.push(`| \`${m.traits?.[T('enumValue')]}\`${label(m)} | ${cell(m.traits?.[T('documentation')])} |`);
+    // A value main dropped stays, as the stable release has it, with the beta's note (scripts/docs-releases.mjs)
+    const gone = ast.channels?.removedValues.get(name) ?? [];
+    const goneNames = (r) => ({ stable: ast.channels.stable, beta: r.arrival.beta ?? `since ${ast.channels.stable}` });
+    for (const r of gone) out.push(`| \`${r.value}\` (${removedWords(r.arrival, { stable: ast.channels.stable }).toLowerCase()}) | ${cell(r.doc)} |`);
     out.push('');
     site.push(lead, '', groupLabel('values', 'Values'), '', '<div class="caitlyn-params">', '');
     for (const [, m] of Object.entries(s.members)) {
       const d = oneLine(m.traits?.[T('documentation')] ?? '');
-      site.push('<div class="caitlyn-param">', '', `<span class="caitlyn-param-name">\`${m.traits?.[T('enumValue')]}\`</span>`, '', ...(d ? [`<span class="caitlyn-param-doc">${d}</span>`, ''] : []), '</div>', '');
+      site.push('<div class="caitlyn-param">', '', `<span class="caitlyn-param-name">\`${m.traits?.[T('enumValue')]}\`</span>${label(m)}`, '', ...(d ? [`<span class="caitlyn-param-doc">${d}</span>`, ''] : []), '</div>', '');
+    }
+    for (const r of gone) {
+      const d = oneLine(r.doc);
+      const head = `<span class="caitlyn-param-name">\`${r.value}\`</span>`;
+      site.push('<div class="caitlyn-param">', '', head, '', `<span class="caitlyn-param-meta">${channelSwitch(goneNames(r))} ${channelSpan('beta', removedWords(r.arrival, { stable: ast.channels.stable }), `Beta ${goneNames(r).beta}`)}</span>`, '', ...(d ? [`<span class="caitlyn-param-doc" data-channel-only="stable">${d}</span>`, ''] : []), '</div>', '');
     }
     site.push('</div>', '');
   } else if (s.type === 'union') {
@@ -832,6 +947,10 @@ export function referencePages(ast, { unreleased = unreleasedOperations(), next 
   const apiOnly = all.filter((o) => o.noClientMethod);
   const types = typeShapes(ast, ops);
   const typePages = new Set(types);
+  // The types only what main dropped reaches, from the stable model, each with a page of its own; what is drawn from
+  // the stable model links to them (ast.channels.typePages)
+  const stableTypes = stableOnlyTypes(ast, typePages);
+  if (ast.channels) ast.channels.typePages = new Set([...typePages, ...stableTypes.keys()]);
   const usedBy = new Map();
   const note = (typeId, op) => {
     const list = usedBy.get(typeId) ?? [];
@@ -878,7 +997,94 @@ export function referencePages(ast, { unreleased = unreleasedOperations(), next 
     if (errors.some((e) => e.codes.includes(code))) throw new Error(`docs-reference: ${code} is a model code; take it out of ROUTING_CODES`);
     pages.push(routingErrorPage(ast, code, text));
   }
+  pages.push(...removedOperationPages(ast, pages, ast.channels?.typePages ?? typePages));
+  pages.push(...stableTypePages(ast, stableTypes));
   return { pages, ops, apiOnly, examples, typePages, tree, helpers, unreleased, next };
+}
+
+/**
+ * The pages of the operations main dropped since the latest stable release (ast.channels.removedOperations): the site
+ * describes that release, so each keeps its page, from the stable release's model, saying the betas no longer have
+ * it: its description, its HTTP call and stability, and its request and response members. It is built here, not as a
+ * full operation page, because main's examples and scope tree no longer know the operation. A link to a page main
+ * does not have is left as its text. Each is marked `removed`, with the note as its `channel` (beside its title,
+ * src/components/PageTitle.astro), and scripts/docs-build.mjs lists them in the SDK reference's sidebar.
+ */
+function removedOperationPages(ast, pages, typePages) {
+  const c = ast.channels;
+  if (!c?.removedOperations.size || !c.stableModel) return [];
+  const old = c.stableModel;
+  // The pages that are built: main's, and the stable-only types' (stableTypePages)
+  const slugs = new Set([...pages.map((p) => p.slug), ...[...typePages].map(typeSlug)]);
+  const unlink = (md) => md.replace(/\[([^\]]+)\]\(\/(reference\/[^)#\s]+?)\/(#[^)\s]*)?\)/g, (all, text, slug) => (slugs.has(slug) ? all : text));
+  const ops = operations(old);
+  return [...c.removedOperations].flatMap(([name, a]) => {
+    const op = ops.find((o) => o.name === name);
+    // An operation the stable release's SDK reference could not have documented is no page here either
+    if (!op || op.stability === 'experimental' || op.noClientMethod) return [];
+    const words = removedWords(a, { stable: c.stable });
+    const stability = STABILITY[op.stability] ? op.stability : 'preview';
+    const out = [op.doc, '', `[${words}](/changelog/ "${REMOVED_TITLE}")`, '', `The betas no longer have this operation; the latest stable release, ${c.stable}, still does.`, ''];
+    out.push('| | |', '| --- | --- |', `| HTTP | \`${op.http.method} /api${op.http.uri}\` |`);
+    out.push(stability === 'ga' ? `| Stability | ${STABILITY.ga.text} |` : `| Stability | ${STABILITY[stability].badge}: ${STABILITY[stability].text} |`, '');
+    const request = memberTable(old, members(old, op.shape.input.target), typePages, { showWhere: true });
+    const response = memberTable(old, members(old, op.shape.output.target), typePages, { showWhere: true });
+    if (request) out.push('## Request', '', request, '');
+    if (response) out.push('## Response', '', response, '');
+    const body = unlink(out.join('\n'));
+    const since = /^\d+\.\d+\.\d+$/.test(op.since ?? '') ? sinceVersion(op.since) : 0;
+    return [{ slug: `reference/${kebab(name)}`, title: operationTitle(op), subtitle: name, label: operationTitle(op), metadata: { pageType: 'reference', sinceVersion: since, resources: [], integrations: [], operations: [name] }, body, channel: { text: words, link: '/changelog/', title: REMOVED_TITLE }, removed: true }];
+  });
+}
+
+/**
+ * The types only what main dropped reaches (an operation, a member, or a member's old type), from the stable model:
+ * structures, enums and unions with no page in main (typePages), as typeShapes picks them, mapped to { arrival,
+ * ops }, the first dropped thing that reaches each and the dropped operations that use it.
+ */
+function stableOnlyTypes(ast, typePages) {
+  const c = ast.channels;
+  const found = new Map();
+  if (!c?.stableModel) return found;
+  const old = c.stableModel;
+  const S = old.shapes;
+  const ops = c.removedOperations.size ? operations(old).filter((o) => c.removedOperations.has(o.name) && o.stability !== 'experimental' && !o.noClientMethod) : [];
+  const skip = new Set(ops.flatMap((o) => [o.shape.input.target, o.shape.output.target]));
+  const walk = (id, arrival, op, seen = new Set()) => {
+    const s = S[id];
+    if (!s || seen.has(id) || !id.startsWith('ai.caitlyn.v3#') || s.traits?.[T('error')]) return;
+    seen.add(id);
+    if (['structure', 'union', 'enum', 'intEnum'].includes(s.type) && !skip.has(id) && !s.traits?.[T('mixin')] && !typePages.has(id)) {
+      const entry = found.get(id) ?? found.set(id, { arrival, ops: [] }).get(id);
+      if (op && !entry.ops.includes(op)) entry.ops.push(op);
+    }
+    if (s.type === 'list') return walk(s.member.target, arrival, op, seen);
+    if (s.type === 'map') return walk(s.value.target, arrival, op, seen);
+    for (const m of Object.values(members(old, id))) walk(m.target, arrival, op, seen);
+  };
+  for (const op of ops) {
+    const arrival = c.removedOperations.get(op.name);
+    for (const io of [op.shape.input.target, op.shape.output.target]) for (const m of Object.values(members(old, io))) walk(m.target, arrival, op);
+  }
+  for (const list of c.removedMembers.values()) for (const r of list) if (r.member) walk(r.member.target, r.arrival, null);
+  for (const ch of c.changed.values()) walk(ch.from.target, ch.arrival, null);
+  return found;
+}
+
+/**
+ * The pages of the types only the stable release has (stableOnlyTypes), from its model, each saying the betas no
+ * longer have it. Their operations' since stamps may be unreleased in that model ("next"): those count as none.
+ */
+function stableTypePages(ast, stableTypes) {
+  const c = ast.channels;
+  if (!stableTypes.size) return [];
+  const usedBy = new Map([...stableTypes].map(([id, t]) => [id, t.ops.map((o) => ({ ...o, since: /^\d+\.\d+\.\d+$/.test(o.since ?? '') ? o.since : '0.0.0' }))]));
+  return [...stableTypes].map(([id, t]) => {
+    const page = typePage(c.stableModel, id, c.typePages, usedBy);
+    const words = removedWords(t.arrival, { stable: c.stable });
+    const note = `[${words}](/changelog/ "${REMOVED_TITLE}")\n\nThe betas no longer have this type; the latest stable release, ${c.stable}, still does.\n\n`;
+    return { ...page, body: `${note}${page.body}`, siteBody: page.siteBody ? `${note}${page.siteBody}` : undefined, channel: { text: words, link: '/changelog/', title: REMOVED_TITLE }, removed: true };
+  });
 }
 
 /** A page for a code the server's routing sends (docs/error-codes.mjs ROUTING_CODES): no operation declares it. */

@@ -63,7 +63,7 @@ test('a released operation has no callout, and shows the release it arrived in',
     const page = pages.pages.find((p) => p.operation?.name === name);
     assert.doesNotMatch(page.body, /Not available yet/, name);
     assert.match(page.body, new RegExp(`^\\| Since \\| Caitlyn ${s.traits['ai.caitlyn.traits#since'].replace(/\./g, '\\.')} \\|$`, 'm'), name);
-    assert.match(page.body, /^\| Stability \| Beta: Public, and may still change before it is generally available \|$/m, name);
+    assert.match(page.body, /^\| Stability \| Preview: Public, and may still change before it is generally available \|$/m, name);
   }
   // An operation still "next" with no stampNext says only "Not available yet"
   const other = pages.pages.find((p) => p.operation?.name === 'GetDocument');

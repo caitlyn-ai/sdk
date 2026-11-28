@@ -12,6 +12,8 @@ import remarkLangTabs from './src/plugins/remark-lang-tabs.mjs';
 import rehypeTables from './src/plugins/rehype-tables.mjs';
 import rehypeLead from './src/plugins/rehype-lead.mjs';
 import rehypeLanding from './src/plugins/rehype-landing.mjs';
+import rehypeChannels from './src/plugins/rehype-channels.mjs';
+import { CHANNEL_HEAD } from './src/channel-head.mjs';
 import { caitlynCodeTheme } from './src/code-theme.mjs';
 import { isLive, robotsMeta } from '../../scripts/docs-sitemap.mjs';
 
@@ -31,7 +33,7 @@ export default defineConfig({
   markdown: {
     processor: unified({
       remarkPlugins: [remarkHeadingIds, remarkLangTabs],
-      rehypePlugins: [rehypeTables, rehypeLead, rehypeLanding],
+      rehypePlugins: [rehypeTables, rehypeLead, rehypeLanding, rehypeChannels],
       // Text stays as written: a `:~:text=` quote taken from the Markdown must match the page, so no curly
       // quotes or dashes are substituted.
       smartypants: false,
@@ -115,6 +117,8 @@ export default defineConfig({
           content:
             "(()=>{const L=['typescript','python','go','rust','curl','cli'];let k=new URLSearchParams(location.search).get('lang');if(!L.includes(k)){try{k=localStorage.getItem('caitlyn-docs-lang')}catch{}}document.documentElement.dataset.lang=L.includes(k)?k:L[0]})()",
         },
+        // The release the page shows where the stable release and a beta differ, before the page paints (src/channel-head.mjs)
+        { tag: 'script', content: CHANNEL_HEAD },
         // Only the live build is indexed; a merge request's preview, or any build not marked live, carries noindex on
         // every page (scripts/docs-sitemap.mjs)
         { tag: 'meta', attrs: { name: 'robots', content: robotsMeta(isLive()) } },

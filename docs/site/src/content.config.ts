@@ -19,6 +19,8 @@ export const collections = {
         section: z.string().optional(),
         // An operation's or SDK helper's name, under its title (the title is the job: "Add a document")
         subtitle: z.string().optional(),
+        // A page's release-channel note beside its title (an operation the betas dropped: "Removed in 0.12.0-beta.1")
+        channel: z.object({ text: z.string(), link: z.string(), title: z.string() }).optional(),
         whatsNext: z.array(z.object({ link: z.string(), title: z.string(), description: z.string(), section: z.string(), icon: z.string() })).optional(),
         whatsNextNotes: z.array(z.string()).optional(),
         // The API reference's overview: its Workspace box, and the old addresses of its operations (#tag/...) to send on
@@ -26,7 +28,10 @@ export const collections = {
         apiAnchors: z.record(z.string(), z.string()).optional(),
         // An operation's header strip (src/components/OperationHeader.astro), in the SDK reference or the API reference
         operation: z
-          .object({ kind: z.enum(['sdk', 'api']).optional(), name: z.string(), stability: z.string().optional(), method: z.string(), calls: z.record(z.string(), z.string()), http: z.object({ method: z.string(), path: z.string() }),
+          .object({ kind: z.enum(['sdk', 'api']).optional(), name: z.string(), stability: z.string().optional(),
+            // The release channel: the Beta label beside the stability badge, for an operation no stable release has
+            channel: z.object({ text: z.string(), link: z.string(), title: z.string() }).optional(),
+            method: z.string(), calls: z.record(z.string(), z.string()), http: z.object({ method: z.string(), path: z.string() }),
             // The same operation in the other reference
             other: z.object({ label: z.string(), link: z.string() }),
             // Each example's code per language, its response status and body (or, in the API reference, the HTTP

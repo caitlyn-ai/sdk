@@ -31,7 +31,7 @@ make docs                                   # or, with Node 24 on your machine:
 | Icons | Material Symbols Rounded (outlined, weight 400; the Caitlyn app's set) for the sections and the sidebar's groups, and Simple Icons' monochrome logos for the languages on code blocks and tabs, from the installed Iconify sets (`@iconify-json/*`). `scripts/docs-build.mjs` writes them into `src/generated/icons.css` as CSS masks in the text colour; the mapping is `TOPIC_ICONS`, `GROUP_ICONS` and `LANGUAGE_ICONS` there. Page links have none. |
 | `scripts/docs-api.mjs` | The HTTP API's reference at `/api/`, built from the site's copy of `model/openapi.json`: an overview (the server, authentication, every operation by resource with its method, and a link to download the document) and a page per operation at `/api/<operation>/`. The pages use the SDK reference's layout and row builder (`paramRow` in `scripts/docs-reference.mjs`): wire names first, the SDK's name as a chip, the same limit wording; responses as a success row with its fields and a row per error status listing its codes. The code panel has curl (the reader's workspace, `$CAITLYN_TOKEN`) and the four SDKs, beside the HTTP response or, for a stream, a sample sequence of events. What the document does not carry (a `$ref` member's description, SDK names, error codes, a stream's events) comes from the model. The site's copy is published at `/api/openapi.json` (`docs/site/public/api/`, generated): grouped and titled as in the SDK reference, each operation opening with a link to it there and carrying its SDK examples as `x-codeSamples`. Scalar's old addresses (`/api/#tag/...`) go on to the operation's page. |
 | `scripts/docs-wording.mjs` | The public-wording check, over every page and the published OpenAPI document. |
-| `scripts/docs-changelog.mjs` | The Changelog (`/changelog/`, a start page) and its Atom feed (`/changelog/feed.xml`, named in every page's head), both from `CHANGELOG.md`, which semantic-release writes with each SDK release: one entry per release with its date, version and changes, breaking changes marked, each change linked to the pages it touches (its scope's page, the topic its words are about, and any operation, type or error code it names). A release heading or change it cannot read fails the build, and so does release-note text the public-wording check refuses. |
+| `scripts/docs-changelog.mjs` | The Changelog (`/changelog/`, a start page) and its Atom feed (`/changelog/feed.xml`, named in every page's head): every stable SDK release, from `CHANGELOG.md`, which semantic-release writes with each release, and every API release kept in `model/changes/`. One entry per release with its date, version and changes, breaking changes marked, each change linked to the pages it touches (its scope's page, the topic its words are about, and any operation, type or error code it names). While a beta is newer than the latest stable release, the page opens with one **In beta** row: the newest beta's notes (`scripts/release-notes.mjs` `betaNotes`, the same notes as its GitHub pre-release) and the commands that install it. The feed has no entry for a beta, nor for a merge request's Unreleased entry. A release heading or change it cannot read fails the build, and so does release-note text the public-wording check refuses. |
 | `scripts/docs-mr-title.mjs` | The public-wording check over a merge request's title (the `docs:mr-title` job, every merge request). A releasing title (feat, fix, perf, revert, or any type with `!`) becomes a Changelog line, so its subject and scope must pass the same rules as a page; a draft marker is ignored. GitLab starts no pipeline for a title edit, so rerun the job after one. |
 | `scripts/docs-sitemap.mjs` | What the site tells search engines. Only the live build (`DOCS_LIVE=on`, which `docs:build` sets on `main` and on a release's `v*` tag alone) writes `sitemap.xml`, every page at its `build.caitlyn.ai` address with `lastmod` its source's newest commit (the build's date where git cannot say, as in `make docs` from a worktree), and names it in `robots.txt`. Any other build, a merge request's preview above all, writes no sitemap and gives every page `noindex, nofollow`; the build checks each page's robots meta. |
 | `docs/site/src/components/ServerBlock.astro`, `docs/site/src/scripts/workspace.ts` | The Workspace box (`https://{workspace}/api` with the workspace as a field, labelled Workspace) on every operation page and the API reference's overview. What the reader types is one setting for the whole site, kept in the browser: every code block and copy button shows it in place of `your-company.caitlyn.ai`. |
@@ -49,7 +49,7 @@ token in CI, or `GITLAB_TOKEN` or glab locally) before the build. An operation t
 and the Stability row name the release it arrives in from `model/model.lock.json`'s `stampNext` ("Not available yet:
 arrives in Caitlyn 5.158.0. The SDKs have this operation, but workspaces serve it only from that release."), the
 number `scripts/prepare-model.mjs` stamps on it and the SDKs' doc comments show, so the site and the SDKs agree; with
-no `stampNext` the callout says only "Not available yet", and the operation shows as beta. If the published model
+no `stampNext` the callout says only "Not available yet", and the operation shows as Preview. If the published model
 can't be read, the build warns and falls back to the snapshot: an operation still `"next"` in the raw
 `model/model.json` is the unreleased one.
 A hand-written page gets the same callout from a `<!-- not-available -->` line (its front matter's `operations`, or
@@ -58,6 +58,62 @@ all are (`fillNotAvailable`). `publishedModel()`, `unreleasedOperations()` and `
 `scripts/docs-model.mjs` decide it; `docs/site/test/published-model.test.mjs` checks the published model's part, and
 `docs/site/test/not-available.test.mjs` the callout, the released case with a fixture lock and model
 (`docs/site/test/fixtures/released.*.json`).
+
+**Stability and the release channel.** Two separate things, which never share a word or a style
+(`scripts/docs-releases.mjs` says how each is decided):
+
+- **Stability** is the model's `@stability`: experimental, then preview, then GA (and internal, which the site leaves
+  out). The model's older `beta` is preview. A preview operation has a quiet outline **Preview** badge, under its
+  title and in its Stability row; an experimental one its own **Experimental** badge; a generally available one none.
+- **The release channel** is the **Beta label**: "New in 0.12.0-beta.1" in the accent fill, linking to
+  [Install a beta](/getting-started/#install-a-beta). It is only for what no stable release has yet, so an operation
+  can show both: "Preview · New in 0.12.0-beta.1". It is written as a Markdown link titled `Beta: …` (`betaLabel`),
+  which `src/plugins/rehype-channels.mjs` styles on the site, so the Markdown copies keep an ordinary link.
+
+The site is built from `main` but describes the latest stable release, the one a package manager installs. What only a
+beta has stays where it belongs, with the Beta label, and its page has a small Beta marker in the sidebar:
+
+- **The reference** compares the model at the latest stable tag with main's (`apiChannels`, through
+  `scripts/model-diff.mjs`): an operation, member or enum value main adds gets the label, from the first beta tag
+  that has it ("New since 0.11.0" when only main has it). A member main changes shows its stable form, with a
+  switch, "Stable 0.11.0 | Beta 0.12.0-beta.1", to the beta's, read from the stable model (its type may not be in
+  main's); the Markdown copy gives both. A member or enum value main drops stays as the stable release has it, with
+  "Removed in 0.12.0-beta.1" on the beta side of the switch, and an operation main drops keeps a page built from the
+  stable model, saying the betas no longer have it, under "Not in the betas" in the sidebar. An experimental
+  operation always has the label, since only the betas have it. Preview (or `beta`) and experimental operations are
+  all public to the diff (`scripts/model-diff.mjs`), so renaming `beta` changes nothing.
+- **A hand-written section that is new** has `<!-- sdk-release: <change file> -->` under its heading: the label for the
+  release that change file arrived in (the tags that contain the commit that added it, or the one its `commit:`
+  names), and nothing once a stable release has it. **A section a beta changes** is written both ways:
+
+  ```markdown
+  <!-- channel-toggle: <change file> -->
+  <!-- stable -->
+  … as the stable release has it …
+  <!-- beta -->
+  … as the beta has it …
+  <!-- /channel-toggle -->
+  ```
+
+  which shows the stable side with the switch, and only the beta side once a stable release has the change. The
+  switch sets the whole page and is remembered (`src/scripts/channel-switch.ts`); the Markdown copy gives both sides,
+  each under its name. A marker or block naming no change file fails the build.
+- **Installing.** Getting started's `<!-- install -->` line is each language's stable commands with the newest beta's
+  beside them, and `<!-- install-beta -->` the Install a beta section: that beta's version on each registry and its
+  commands (`npm install @caitlyn-ai/sdk@beta`, `pip install --pre caitlyn`, `go get …@v<beta>`,
+  `cargo add caitlyn-sdk@<beta>`). The Changelog opens with the newest beta's notes as one **In beta** row.
+- **The CLI.** `scripts/docs-build.sh` reads its channel pointers (`scripts/cli-channels.sh`, from
+  `https://build.caitlyn.ai/releases/cli/channels/`). Until the CLI has a stable release, every CLI page carries the
+  Beta label after its lead (the CLI beta's version, else the SDK beta the CLI arrived in), linking to
+  [Installing the CLI](/cli/install/); until it has any release, a callout says there is none to install yet, as
+  Getting started's `<!-- cli-release -->` line does. `{{cliVersion}}` and `{{cliMinor}}` are its stable release's
+  version and minor line (the container tag), or `X.Y.Z` and `X.Y` before it.
+
+In CI the build fetches the whole history and every tag first: docs:build's checkouts have been 20 commits deep,
+whatever GIT_DEPTH it asks for. A build that publishes (`DOCS_LIVE=on`, or any build on main or a tag) fails when it
+can't read the whole history, a stable tag or the CLI's channel pointers (a 404 is "no release yet"; anything else is
+a failure); any other build warns. A local checkout without tags has no stable release to compare with, so nothing
+is labelled.
 
 **Markdown is the canonical output.** Each page is first written as Markdown with its knowledge-base front matter,
 and that is its `.md` copy; the HTML is built from the same text. The title is written `# Title {#_top}`, the id

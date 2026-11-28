@@ -8,12 +8,14 @@
 // CHANGELOG.md has one heading per release, `# [0.8.0](compare url) (2026-11-15)` (a patch release's is `##`), then
 // `### Features`, `### Bug Fixes` or `### BREAKING CHANGES`, each a list of `* **scope:** subject ([hash](url))`.
 //
-// A changes.json is { model, version, date, previousVersion, changes: [{ kind, surface: 'ga' | 'beta', ... }] }, its
+// A changes.json is { model, version, date, previousVersion, changes: [{ kind, surface: 'ga' | 'preview' |
+// 'experimental' (or 'beta', preview's older name), ... }] }, its
 // kinds operationAdded, operationRemoved, stabilityChanged, errorAdded, errorRemoved, serviceErrorAdded,
 // serviceErrorRemoved, errorCodeAdded, errorCodeRemoved, memberAdded, memberRemoved, memberChanged, enumValueAdded and enumValueRemoved.
 import fs from 'node:fs';
 import path from 'node:path';
 import { allErrors } from './docs-model.mjs';
+import { INSTALL_BETA, betaCommandsInline } from './docs-releases.mjs';
 
 const SECTION_NAMES = {
   Features: 'New',
@@ -64,7 +66,8 @@ const idOf = (r) => (r.api ? apiReleaseId(r.version) : r.unreleased ? UNRELEASED
  * The releases in CHANGELOG.md, newest first: { version, date, compare, changes: [{ section, scope, subject, commit, url,
  * breaking, highlights }] }. A change's `highlights` are the indented list under it: its change file's highlights
  * (scripts/release-notes.mjs), each linking its page. An `# Unreleased (date)` heading, which only a merge request's
- * preview has, is a release with `unreleased: true`.
+ * preview has, is a release with `unreleased: true`; a beta's heading (`# [0.12.0-beta.1](compare url) (date)`, the
+ * notes scripts/release-notes.mjs betaNotes writes for the Changelog's "In beta" row) is one with `beta: true`.
  */
 export function parseChangelog(markdown) {
   const releases = [];
@@ -72,10 +75,11 @@ export function parseChangelog(markdown) {
   let section = null;
   let last = null;
   for (const line of markdown.split('\n')) {
-    const head = /^#{1,2} (?:\[(\d+\.\d+\.\d+)\]\(([^)]+)\)|(\d+\.\d+\.\d+|Unreleased))(?: "[^"]*")? \((\d{4}-\d{2}-\d{2})\)\s*$/.exec(line);
+    const head = /^#{1,2} (?:\[(\d+\.\d+\.\d+(?:-beta\.\d+)?)\]\(([^)]+)\)|(\d+\.\d+\.\d+(?:-beta\.\d+)?|Unreleased))(?: "[^"]*")? \((\d{4}-\d{2}-\d{2})\)\s*$/.exec(line);
     if (head) {
       release = { version: head[1] ?? head[3], compare: head[2] ?? null, date: head[4], changes: [] };
       if (release.version === 'Unreleased') release.unreleased = true;
+      if (/-beta\./.test(release.version)) release.beta = true;
       releases.push(release);
       section = null;
       continue;
@@ -199,7 +203,7 @@ export function errorLinks(ast) {
 
 const code = (s) => `\`${s}\``;
 const list = (items) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
-const STABILITY_NAMES = { ga: 'GA', beta: 'beta' };
+const STABILITY_NAMES = { ga: 'GA', beta: 'preview', preview: 'preview', experimental: 'experimental' };
 const stabilityName = (s) => STABILITY_NAMES[s] ?? s;
 
 /**
@@ -254,15 +258,16 @@ const CHANGED_KINDS = ['serviceErrorAdded', 'serviceErrorRemoved', 'errorAdded',
 /**
  * An API release's sections, in the order a reader acts on them: { title, slug, badge, items: [Markdown] }. New
  * operations; changed operations and types (errors, error codes, members and enum values added, removed or changed);
- * stability changes; removed operations. A change that reaches only beta operations says so. An error code an error
+ * stability changes; removed operations. A change that reaches only preview operations (stability beta) says so. An error code an error
  * class adds or drops is a change to each operation `codeOperations` names for it (the operations whose examples or
  * documentation give that code); a code no operation names is a change to the operations that return its class.
  */
 export function apiSections(release, pages, { errorCodes, codeOperations = {} } = {}) {
   const link = apiLinker(pages, errorCodes);
-  // "(beta)" tells a beta change from a GA one, so a release whose changes are all beta (the whole API, today) needs none
-  const mixed = release.changes.some((c) => c.surface !== 'beta');
-  const beta = (changes) => (mixed && changes.every((c) => c.surface === 'beta') ? ' (beta)' : '');
+  // "(preview)" tells a change to a preview operation (the model's `beta` stability) from a GA one, so a release whose
+  // changes are all to preview operations (the whole API, today) needs none
+  const mixed = release.changes.some((c) => c.surface === 'ga');
+  const beta = (changes) => (!mixed || changes.some((c) => c.surface === 'ga') ? '' : changes.every((c) => c.surface === 'experimental') ? ' (experimental)' : ' (preview)');
   const of = (kind) => release.changes.filter((c) => c.kind === kind);
   const sections = [];
 
@@ -445,6 +450,17 @@ export function releaseViews(releases, pages, { errorCodes = {}, codeOperations 
     const order = (g) => GROUP_ORDER.indexOf(g.slug) + 1 || 99;
     groups.sort((a, b) => order(a) - order(b));
     const previous = r.compare && /\/compare\/v?([\d.]+)\.\.\./.exec(r.compare)?.[1];
+    if (r.beta) {
+      return {
+        id: releaseId(r.version),
+        kind: 'Beta',
+        version: r.version,
+        date: r.date,
+        intro: `${BETA_INTRO(r.version, previous)}${groups.length ? '' : ' No change to the SDKs themselves.'}`,
+        compare: r.compare ? { link: r.compare, text: 'Show diff', label: previous ? `The code changes since ${previous}, on GitHub` : 'The code changes in this beta, on GitHub' } : null,
+        groups,
+      };
+    }
     if (r.unreleased) {
       return {
         id: UNRELEASED_ID,
@@ -468,6 +484,10 @@ export function releaseViews(releases, pages, { errorCodes = {}, codeOperations 
   });
   return { views, operations: [...operations].sort() };
 }
+
+// What the "In beta" row says above its entries: what a beta is, and the commands that install it
+const BETA_INTRO = (version, since) =>
+  `A beta, not a stable release${since ? `: every change since ${since} so far` : ''}. A package manager installs it only when you ask for it: ${betaCommandsInline(version)} ([Install a beta](${INSTALL_BETA})).`;
 
 // What a merge request's preview says above its Unreleased entry
 const UNRELEASED_INTRO = (since, allMine) =>
@@ -500,17 +520,17 @@ export function changelogPage(releases, pages, { feed = '/changelog/feed.xml', f
   const md = [INTRO(feed), '', FOLLOW(feedUrl), ''];
   const site = [INTRO(feed), '', followHtml(feedUrl), '', '<div class="caitlyn-releases">', ''];
   for (const v of views) {
-    const when = v.kind === 'Unreleased' ? '' : `${v.kind === 'API' ? 'API' : 'SDK'} release, ${longDate(v.date)}.`;
-    md.push(`## ${v.kind === 'API' ? 'API ' : ''}${v.version} {#${v.id}}`, '', [when, v.intro, v.compare ? `[${v.compare.text}](${v.compare.link}).` : ''].filter(Boolean).join(' '), '');
+    const when = v.kind === 'Unreleased' ? '' : v.kind === 'Beta' ? `SDK beta, ${longDate(v.date)}.` : `${v.kind === 'API' ? 'API' : 'SDK'} release, ${longDate(v.date)}.`;
+    md.push(`## ${v.kind === 'API' ? 'API ' : v.kind === 'Beta' ? 'In beta: ' : ''}${v.version} {#${v.id}}`, '', [when, v.intro, v.compare ? `[${v.compare.text}](${v.compare.link}).` : ''].filter(Boolean).join(' '), '');
     for (const g of v.groups) md.push(`### ${g.label} {#${v.id}-${g.slug}}`, '', ...g.items.map(plainMark), '');
 
     site.push(
       `<section class="caitlyn-release" data-kind="${v.kind.toLowerCase()}"${v.groups.some((g) => g.badge === 'breaking') ? ' data-breaking' : ''}>`,
       '<div class="caitlyn-release-meta">',
       '',
-      v.kind === 'Unreleased' ? `## Unreleased {#${v.id}}` : `## ${v.version} <span class="caitlyn-release-kind">${v.kind}</span> {#${v.id}}`,
+      v.kind === 'Unreleased' ? `## Unreleased {#${v.id}}` : v.kind === 'Beta' ? `## In beta: ${v.version} <span class="caitlyn-release-kind">SDK</span> {#${v.id}}` : `## ${v.version} <span class="caitlyn-release-kind">${v.kind}</span> {#${v.id}}`,
       '',
-      ...(v.kind === 'Unreleased' ? [`<p class="caitlyn-release-date">Preview, ${longDate(v.date)}</p>`] : [`<p class="caitlyn-release-date"><time datetime="${v.date}">${longDate(v.date)}</time></p>`]),
+      ...(v.kind === 'Unreleased' ? [`<p class="caitlyn-release-date">Preview, ${longDate(v.date)}</p>`] : v.kind === 'Beta' ? [`<p class="caitlyn-release-date">Beta, <time datetime="${v.date}">${longDate(v.date)}</time></p>`] : [`<p class="caitlyn-release-date"><time datetime="${v.date}">${longDate(v.date)}</time></p>`]),
       ...(v.compare ? [`<p class="caitlyn-release-compare"><a href="${v.compare.link}"${v.compare.label ? ` title="${v.compare.label}"` : ''}>${v.compare.text}</a></p>`] : []),
       '',
       '</div>',
@@ -583,8 +603,9 @@ function feedSummary(r) {
 
 export function atomFeed(releases, pages, { base, path: pagePath = '/changelog/', feed = '/changelog/feed.xml', errorCodes = {}, codeOperations = {} }) {
   const page = `${base}${pagePath}`;
-  // A merge request's Unreleased entry is a preview, never a release a reader follows
-  releases = releases.filter((r) => !r.unreleased);
+  // A merge request's Unreleased entry is a preview, and the In beta row a pre-release: neither is a release a reader
+  // follows (betas come with each API change, several a day at times; GitHub's releases feed has them)
+  releases = releases.filter((r) => !r.unreleased && !r.beta);
   const updated = releases[0] ? `${releases[0].date}T00:00:00Z` : '1970-01-01T00:00:00Z';
   const entries = releases.map((r) => {
     let html;

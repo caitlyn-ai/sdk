@@ -251,6 +251,9 @@ export const names = {
   },
 };
 
+/** The model's @stability values, as the docs name them: `beta` is the old name for preview. */
+const STABILITY_OF = { experimental: 'experimental', preview: 'preview', beta: 'preview', ga: 'ga', internal: 'internal' };
+
 /**
  * Every public operation, in a stable order, with the resource it is bound to and its client method:
  * { id, name, shape, resource, namespace, method, positional, http, stability, since, doc }.
@@ -301,7 +304,8 @@ export function operations(ast) {
         method,
         positional: label,
         http: t[T('http')],
-        stability: t[C('stability')] ?? 'beta',
+        // Preview was `beta` in the model until the app renamed it; both mean the same
+        stability: STABILITY_OF[t[C('stability')] ?? 'preview'] ?? t[C('stability')],
         since: t[C('since')],
         doc: (t[T('documentation')] ?? '').trim(),
         // @noClientMethod(reason): a public operation the SDKs give no method (a webhook delivery, sent by a system
@@ -310,7 +314,7 @@ export function operations(ast) {
       };
     })
     .map((o) => {
-      if (!['ga', 'beta', 'internal'].includes(o.stability)) throw new Error(`${o.name}: @stability is ${o.stability}; every operation declares ga, beta or internal`);
+      if (!['ga', 'preview', 'experimental', 'internal'].includes(o.stability)) throw new Error(`${o.name}: @stability is ${o.stability}; every operation declares experimental, preview (or beta), ga or internal`);
       return o;
     })
     .filter((o) => o.stability !== 'internal')
