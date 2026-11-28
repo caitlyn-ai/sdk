@@ -25,7 +25,9 @@ var (
 
 func TestMain(m *testing.M) {
 	root, _ = filepath.Abs("../..")
-	port := 4900 + rand.IntN(300)
+	// 4900 to 5049: the suites run at once in model:main, and each harness keeps to its own range of ports
+	// (scripts/model-main-suites.sh)
+	port := 4900 + rand.IntN(150)
 	cmd := exec.Command("node", filepath.Join(root, "conformance", "mock-server", "server.mjs"))
 	cmd.Env = append(os.Environ(), fmt.Sprintf("PORT=%d", port))
 	out, err := cmd.StdoutPipe()

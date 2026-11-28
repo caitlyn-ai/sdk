@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 # The model:main job: the app's main pipeline triggers it after a merge that changes the app's Smithy model, with
 # APP_COMMIT set to that app commit. It builds the model from that commit, regenerates every SDK from it, runs the
-# TypeScript, Python, Go and Rust suites and the conformance check, and only when all of them pass commits the new
-# snapshot and generated code straight to main and tags that commit with a beta version, v<next>-beta.<n>.
+# TypeScript, Python, Go and Rust suites (at once) and the conformance check, and only when all of them pass commits
+# the new snapshot and generated code straight to main and tags that commit with a beta version, v<next>-beta.<n>.
+#
+# A beta only when a package changed (scripts/package-inputs.mjs): after generating, it compares what each package
+# is built from with main.
+#   - A package differs: the beta, as above.
+#   - No package differs, but the model does (model/ apart from its lock, such as a trait only the docs read): the
+#     snapshot is committed with no tag, as docs(model), once the suites pass, so the docs read it. No release.
+#   - Neither differs (the app's model is main's, and only the lock's record of where it came from would change):
+#     nothing is committed, and the job passes. The lock already describes that model, and a commit would be noise.
 #
 # The model belongs to the app; this job is the only way a model change reaches the SDK's main. A change to the
 # SDK's own code (generator, runtimes, docs) goes through a merge request as usual.
@@ -20,7 +28,8 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 app_repo="${APP_REPO:-https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/custom-d/caitlyn/platform/caitlyn.git}"
-push_url="https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+# PUSH_URL: another repository to fetch from and push to (scripts/model-main.test.mjs uses a local one)
+push_url="${PUSH_URL:-https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git}"
 
 # Start from the newest main: the job runs one at a time (resource_group), but main may have moved since it started.
 # It may move again while the suites run; scripts/model-main-publish.sh then pushes nothing.
@@ -39,26 +48,34 @@ git -C "$app" checkout -q FETCH_HEAD
 (cd "$app" && bash smithy/scripts/build.sh)
 
 scripts/model-pull.sh --prerelease "$app/smithy"
-if git diff --quiet -- model; then
-  echo "main already has the model of app commit ${APP_COMMIT}; nothing to do."
+# Generated at main's version (VERSION), so what differs from main is what the model changed
+scripts/generate.sh
+# The CLI's description of itself for the docs (docs/cli/tree.json), which names the commands the model gives it
+scripts/cli-tree.sh
+changed="$(node scripts/package-inputs.mjs changed "$base")"
+if [ -n "$changed" ]; then
+  stable="$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 | sed 's/^v//')"
+  next="$(node -p "const [a, b] = '${stable}'.split('.').map(Number); \`\${a}.\${b + 1}.0\`")"
+  count="$(git tag -l "v${next}-beta.*" | wc -l | tr -d ' ')"
+  version="${next}-beta.$((count + 1))"
+  echo "Beta ${version}, from app commit ${APP_COMMIT}. The packages it changes:"
+  while IFS= read -r line; do echo "  $line"; done <<<"$changed"
+  node scripts/version.mjs release "$version"
+elif ! git diff --quiet -- model ':(exclude)model/model.lock.json' || [ -n "$(git ls-files --others --exclude-standard -- model)" ]; then
+  version=-
+  echo "App commit ${APP_COMMIT} changes the model but no package: it is committed as docs(model), with no beta."
+else
+  echo "App commit ${APP_COMMIT}'s model changes no package and nothing in model/ apart from the lock's record of"
+  echo "where it came from: main already has it. Nothing to commit or tag."
   exit 0
 fi
 
-stable="$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 | sed 's/^v//')"
-next="$(node -p "const [a, b] = '${stable}'.split('.').map(Number); \`\${a}.\${b + 1}.0\`")"
-count="$(git tag -l "v${next}-beta.*" | wc -l | tr -d ' ')"
-version="${next}-beta.$((count + 1))"
-echo "Beta ${version}, from app commit ${APP_COMMIT}."
-
-scripts/generate.sh
-node scripts/version.mjs release "$version"
-scripts/test-typescript.sh
-scripts/test-python.sh
-scripts/test-go.sh
-scripts/test-rust.sh
+# The suites, at once, each with its own log (scripts/model-main-suites.sh), then the conformance check
+node scripts/prepare-model.mjs
+scripts/model-main-suites.sh
 node scripts/check-conformance.mjs
 git config user.name "Caitlyn SDK bot"
 git config user.email "sdk-bot@noreply.${CI_SERVER_HOST}"
 # Commits what the suites tested and pushes main and the tag atomically, only if main is still at $base
 scripts/model-main-publish.sh "$version" "$base" "$push_url" "$CI_DEFAULT_BRANCH"
-node scripts/go-tag.mjs "$version"
+[ "$version" = - ] || node scripts/go-tag.mjs "$version"

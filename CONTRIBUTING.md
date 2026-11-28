@@ -252,17 +252,29 @@ app repository: a merge to main that changes smithy/
   │  triggers this project with APP_COMMIT
   ▼
 this repository: model:main (scripts/model-main.sh)
-  build the app's model at APP_COMMIT → model-pull.sh --prerelease → make generate
-  → the TypeScript, Python, Go and Rust suites and the conformance check
-  → only if every one passes: commit to main, tag v<next>-beta.<n>
+  build the app's model at APP_COMMIT → model-pull.sh --prerelease → make generate → docs/cli/tree.json
+  → did a package change? (scripts/package-inputs.mjs, against main)
+      no, and nothing in model/ but the lock: stop, nothing to commit
+  → the TypeScript, Python, Go and Rust suites at once, and the conformance check
+  → only if every one passes: commit to main, and tag v<next>-beta.<n> if a package changed
+      (no package changed: the commit is docs(model), with no tag)
   ▼
 the beta tag: PyPI and crates.io from the GitHub mirror, and go/v<next>-beta.<n> for Go
 ```
 
 - **No merge request.** The commit goes straight to `main` because it is generated from a model the app has
   already merged, and it is pushed only once every suite has passed on it. `model:main` runs one at a time, and
-  never alongside the `release` job (both are in the `main-push` resource group), starts from the newest `main`, and
-  does nothing when `main` already has that model.
+  never alongside the `release` job (both are in the `main-push` resource group), and starts from the newest `main`.
+- **A beta only when a package changed** ("What makes a release", below). It generates at `main`'s version and
+  compares each package's inputs with `main`. A package differs: the beta. None does, but the model does (a trait
+  only the docs read, a new `model/changes/` file): the snapshot is committed untagged as `docs(model): …`, so the
+  docs read it, and nothing is released. Neither: only the lock's record of where the model came from would change,
+  so the job commits nothing and passes; the lock already describes that model. The first `model:main` run tagged
+  `v0.12.0-beta.1` for a model byte for byte main's (SHA-256 86a466e5), because the lock had changed.
+- **The suites run at once** (`scripts/model-main-suites.sh`), each to its end with its own log, printed in turn
+  and kept as the job's artifacts (`build/model-main/`); the job fails, naming them, if any fails. Each conformance
+  harness's mock server has its own range of ports, and `scripts/prepare-model.mjs` writes `build/model/model.json`
+  atomically, so no suite reads another's half-written model (`scripts/model-main-suites.test.mjs`).
 - **Main or nothing.** It pushes the commit and its beta tag together (`git push --atomic`), and only while `main` is
   still the commit it started from (`scripts/model-main-publish.sh`). If a merge request merges while the suites run,
   the job fails saying so and pushes nothing, neither the commit nor the tag: retry it, and it starts again from the
@@ -305,6 +317,32 @@ same pipeline through the API:
 glab api -X POST projects/857/pipeline -H 'Content-Type: application/json' \
   --input - <<< '{"ref": "main", "variables": [{"key": "APP_COMMIT", "value": "<app commit>"}]}'
 ```
+
+## What makes a release
+
+A release, stable or beta, happens **if and only if** something a package is built from changed: the SDKs' sources,
+generated or hand-written, in any language, the files a package ships with them (its manifest, README, licence), the
+tools that shape a build's output (the npm build and its lock file), or the CLI's binary and what is published with
+it. A change to the docs, the tests or test data, the tooling, CI or the model alone releases nothing.
+
+`scripts/package-inputs.mjs` says what each package is built from (`node scripts/package-inputs.mjs list`), from the
+packages' own manifests where they say it, and the `release:package-inputs` job checks it against what the
+packaging tools report each package ships (`cargo package --list`, `uv build`, `go list`). The rule holds in three
+places:
+
+- **The stable release** (`release`, semantic-release): `scripts/release-analyzer.mjs` counts only the commits since
+  the last release that changed a package input, and their types set the bump (feat minor, fix, perf and revert
+  patch, a breaking change minor before 1.0). No such commit, no release; the release notes leave out the others.
+- **Betas** (`model:main`): a beta only when a regenerated package differs from `main` ("How a model change reaches
+  the SDK").
+- **Merge request titles** (`changes:check`): a releasing title (feat, fix, perf, revert, or `!`) must change a
+  package input, and a change to one needs a releasing title, with its change file (`changes/README.md`).
+
+The versions are one line: every package has the version in `VERSION`, so a change to any one package releases them
+all. The packages ship no tests: the crates, the sdists and wheels and the npm tarballs carry none (the
+`release:package-inputs` job fails if one does). The Go module is the exception: a module zip always carries its
+directory's `_test.go` files, and Go has no way to leave them out, so `go/core/version_test.go` ships, though no
+user's build compiles it and a change to it releases nothing.
 
 ## Releasing
 

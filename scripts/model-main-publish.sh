@@ -3,9 +3,11 @@
 # both, or neither.
 #
 #   scripts/model-main-publish.sh <version> <base> <push-url> <branch>
+#   scripts/model-main-publish.sh - <base> <push-url> <branch>
 #
 # <version> is the beta (0.12.0-beta.1), <base> the commit of <branch> the job started from, and <push-url> the
-# repository it pushes to. scripts/model-main-publish.test.mjs runs it against a local bare repository.
+# repository it pushes to. `-` in place of a version commits a model change that changes no package as
+# `docs(model): …`, with no tag: a release happens only when a package changes (scripts/package-inputs.mjs). scripts/model-main-publish.test.mjs runs it against a local bare repository.
 #
 # What it commits is what the suites tested. It stages the generated code, the model and every file
 # scripts/version.mjs stamps (`node scripts/version.mjs files`, so a file added there is committed with no change
@@ -33,7 +35,7 @@ cd "$(dirname "$0")/.."
 
 # One path a line, none with a space, split into words below
 stamped="$(node scripts/version.mjs files)"
-node scripts/version.mjs check "$version"
+if [ "$version" = - ]; then node scripts/version.mjs check; else node scripts/version.mjs check "$version"; fi
 # shellcheck disable=SC2086
 git add -A -- model typescript python go rust conformance/cases codegen cli/internal/spec $stamped
 unstaged="$(git diff --name-only)"
@@ -45,23 +47,31 @@ if [ -n "$unstaged" ]; then
   exit 1
 fi
 
-git commit -q -m "feat(model): regenerate the SDKs from app commit ${APP_COMMIT:0:12}" \
-  -m "Built from the app's model by the model:main job (pipeline ${CI_PIPELINE_ID:-local}); every suite passed." \
-  -m "Beta: v${version}"
-git tag -a "v${version}" -m "Beta ${version}, from app commit ${APP_COMMIT}" HEAD
+if [ "$version" = - ]; then
+  git commit -q -m "docs(model): the model of app commit ${APP_COMMIT:0:12}, which changes no package" \
+    -m "Pulled by the model:main job (pipeline ${CI_PIPELINE_ID:-local}); every suite passed. No package's inputs changed (scripts/package-inputs.mjs), so there is no beta: the docs read the new model."
+  refs=("HEAD:refs/heads/${branch}")
+else
+  git commit -q -m "feat(model): regenerate the SDKs from app commit ${APP_COMMIT:0:12}" \
+    -m "Built from the app's model by the model:main job (pipeline ${CI_PIPELINE_ID:-local}); every suite passed." \
+    -m "Beta: v${version}"
+  git tag -a "v${version}" -m "Beta ${version}, from app commit ${APP_COMMIT}" HEAD
+  refs=("HEAD:refs/heads/${branch}" "refs/tags/v${version}")
+fi
+what="${branch} $(git rev-parse --short HEAD)"; [ "$version" = - ] || what="${what} and v${version}"
 
 remote="$(git ls-remote "$push_url" "refs/heads/${branch}" | cut -f1)"
 if [ "$remote" != "$(git rev-parse "$base")" ]; then
   echo "${branch} moved while this job ran: it was ${base:0:12} and is now ${remote:0:12}. The suites tested a tree on" >&2
-  echo "${base:0:12}, so nothing was pushed: no commit and no tag v${version}. Retry this job: it starts again from the" >&2
+  echo "${base:0:12}, so nothing was pushed: no commit and no tag. Retry this job: it starts again from the" >&2
   echo "newest ${branch}, and does nothing if that already has the model of app commit ${APP_COMMIT}." >&2
   exit 1
 fi
 
 # Both refs, or neither: a ref the server refuses (main moved after the check above) refuses the tag with it
-if ! git push --atomic -q "$push_url" "HEAD:refs/heads/${branch}" "refs/tags/v${version}"; then
-  echo "The push was refused, so neither ${branch} nor v${version} changed (an atomic push). If ${branch} moved after the" >&2
+if ! git push --atomic -q "$push_url" "${refs[@]}"; then
+  echo "The push was refused, so nothing changed: not ${what} (an atomic push). If ${branch} moved after the" >&2
   echo "check, retry this job: it starts again from the newest ${branch}." >&2
   exit 1
 fi
-echo "Pushed ${branch} $(git rev-parse --short HEAD) and v${version}."
+echo "Pushed ${what}."

@@ -8611,7 +8611,9 @@ async fn main() {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let filter = std::env::args().skip(1).find(|a| !a.starts_with('-')).unwrap_or_default();
 
-    let port = 4900 + (std::process::id() % 300);
+    // 5050 to 5199: the suites run at once in model:main, and each harness keeps to its own range of ports
+    // (scripts/model-main-suites.sh)
+    let port = 5050 + (std::process::id() % 150);
     let mut server = tokio::process::Command::new("node")
         .arg(root().join("conformance/mock-server/server.mjs"))
         .env("PORT", port.to_string())
