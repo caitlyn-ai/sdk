@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": "0.11.0",
+  "version": "0.12.0-beta.1",
   "modelVersion": "5.149.0",
   "service": "Caitlyn",
   "permissions": {

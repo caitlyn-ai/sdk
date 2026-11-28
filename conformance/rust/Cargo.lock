@@ -83,7 +83,7 @@ dependencies = [
 
 [[package]]
 name = "caitlyn-sdk"
-version = "0.11.0"
+version = "0.12.0-beta.1"
 dependencies = [
  "caitlyn-sdk-core",
  "chrono",
@@ -93,7 +93,7 @@ dependencies = [
 
 [[package]]
 name = "caitlyn-sdk-core"
-version = "0.11.0"
+version = "0.12.0-beta.1"
 dependencies = [
  "base64 0.22.1",
  "bytes",

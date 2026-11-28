@@ -1,8 +1,9 @@
 {
   "package": "caitlyn-v3-model",
   "registryProject": "custom-d/caitlyn/platform/caitlyn",
-  "version": "5.158.1",
-  "source": "package registry caitlyn-v3-model/latest",
+  "version": null,
+  "source": "prerelease: local build of branch HEAD at commit e2b58500 (not published), app 5.158.1",
   "sha256": "86a466e5d7743eb296c08c5b746c6e1cc600363dcec71a12063de0f3971437a3",
-  "stampNext": null
+  "stampNext": "5.158.1",
+  "prerelease": {"appVersion": "5.158.1", "appCommit": "e2b58500"}
 }
