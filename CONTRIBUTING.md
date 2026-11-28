@@ -260,8 +260,14 @@ the beta tag: PyPI and crates.io from the GitHub mirror, and go/v<next>-beta.<n>
 ```
 
 - **No merge request.** The commit goes straight to `main` because it is generated from a model the app has
-  already merged, and it is pushed only once every suite has passed on it. `model:main` runs one at a time
-  (`resource_group`), starts from the newest `main`, and does nothing when `main` already has that model.
+  already merged, and it is pushed only once every suite has passed on it. `model:main` runs one at a time, and
+  never alongside the `release` job (both are in the `main-push` resource group), starts from the newest `main`, and
+  does nothing when `main` already has that model.
+- **Main or nothing.** It pushes the commit and its beta tag together (`git push --atomic`), and only while `main` is
+  still the commit it started from (`scripts/model-main-publish.sh`). If a merge request merges while the suites run,
+  the job fails saying so and pushes nothing, neither the commit nor the tag: retry it, and it starts again from the
+  newest `main`. The commit carries every file the suites tested; the job fails before committing if a tracked file
+  changed that it would leave out.
 - **The version.** `<next>` is the minor version after the last stable tag; `<n>` counts that version's betas. The
   commit stamps the beta's version into every file that carries one, so `main` always names the newest beta.
 - **A change to the SDK's own code** (the generator, a runtime, conformance cases, docs) goes through a merge

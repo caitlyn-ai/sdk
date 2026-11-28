@@ -75,16 +75,33 @@ test('a released operation has no callout, and shows the release it arrived in',
 });
 
 // The hand-written pages' callouts come from the same source: a `<!-- not-available -->` line becomes the callout,
-// naming stampNext, while any of the page's operations is unreleased, and nothing once they all are.
+// naming stampNext, while any of the page's operations is unreleased, and nothing once they all are. An operation is
+// unreleased when no release serves it (unreleasedOperations: the published model has no release for it, or, without
+// that model, its @since is still "next"). The lock's stampNext alone says nothing about that: a model:main
+// pre-release always has one, the app's release, even when every operation it has is already served (after app
+// !2158 every v3 operation is @since 5.149.0), so its pages have no callout. The conformance harnesses read the
+// SDK's model version by the same rule: the highest @since, with "next" counted as stampNext.
 test('a guide\'s callout names stampNext while its operations are unreleased, and is gone once they are released', () => {
   const marked = readPages().filter((p) => /^<!-- not-available/m.test(p.markdown));
   assert.ok(marked.some((p) => p.slug.startsWith('guides/')), 'no guide has the marker');
   assert.ok(!readPages().some((p) => /^> \*\*Not available yet/m.test(p.markdown) && !/sign-in|authentication/.test(p.slug)), 'a hand-written callout about operations is left');
+  const unreleased = unreleasedOperations();
+  const named = (next) => new RegExp(`> \\*\\*Not available yet: arrives in Caitlyn ${next.replace(/\./g, '\\.')}\\.\\*\\*`);
   for (const p of marked) {
-    const pending = fillNotAvailable(p.markdown, { operations: p.metadata.operations });
-    assert.doesNotMatch(pending, /<!-- not-available/, p.file);
-    if (stampNext) assert.match(pending, new RegExp(`> \\*\\*Not available yet: arrives in Caitlyn ${stampNext.replace(/\./g, '\\.')}\\.\\*\\*`), p.file);
-    const released = fillNotAvailable(p.markdown, { operations: p.metadata.operations, unreleased: new Set(), next: null });
+    const listed = p.markdown.match(/^<!-- not-available(?::\s*([\w,\s]+?))?\s*-->$/m)[1];
+    const ops = listed ? listed.split(/[,\s]+/).filter(Boolean) : p.metadata.operations;
+    assert.ok(ops?.length, `${p.file}: the marker names no operations`);
+    // As the build fills it: a callout only while one of its operations is unreleased, naming the lock's stampNext
+    const built = fillNotAvailable(p.markdown, { operations: p.metadata.operations });
+    assert.doesNotMatch(built, /<!-- not-available/, p.file);
+    if (!ops.some((op) => unreleased.has(op))) assert.doesNotMatch(built, /Not available yet/, p.file);
+    else if (stampNext) assert.match(built, named(stampNext), p.file);
+    else assert.match(built, /> \*\*Not available yet\.\*\*/, p.file);
+    // Unreleased operations, arriving in a known release: the callout names it
+    const pending = fillNotAvailable(p.markdown, { operations: p.metadata.operations, unreleased: new Set(ops), next: '9.9.0' });
+    assert.match(pending, named('9.9.0'), p.file);
+    // A pre-release lock (stampNext set) whose operations are all released: no callout, as on main after app !2158
+    const released = fillNotAvailable(p.markdown, { operations: p.metadata.operations, unreleased: new Set(), next: '9.9.0' });
     assert.doesNotMatch(released, /Not available yet|<!-- not-available/, p.file);
   }
 });
