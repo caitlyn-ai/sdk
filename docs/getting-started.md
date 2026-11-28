@@ -42,8 +42,8 @@ Every SDK has the same version number. See [Releases](https://github.com/caitlyn
 version and what changed, or the [Changelog](/changelog/).
 
 Between releases, each change to the API is published as a beta of the next version once every SDK's tests pass on
-it: `0.13.0b1` on PyPI, `0.13.0-beta.1` on crates.io and as a Go tag. A package manager installs a beta only when you
-name it, or allow pre-releases.
+it: `0.13.0b1` on PyPI, `0.13.0-beta.1` on npm (`npm install @caitlyn-ai/sdk@beta`), on crates.io and as a Go tag.
+A package manager installs a beta only when you name it, or allow pre-releases.
 
 ## Install the CLI
 

@@ -12,7 +12,9 @@ import os from 'node:os';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
-const VERSION = '0.12.0-beta.1';
+// A version VERSION can never already name (the next major's first beta), so the stamp changes every stamped file
+// whatever version main is at
+const VERSION = `${Number(fs.readFileSync(path.join(root, 'VERSION'), 'utf8').trim().split('.')[0]) + 1}.0.0-beta.1`;
 const stamped = execFileSync('node', [path.join(root, 'scripts/version.mjs'), 'files'], { encoding: 'utf8' }).trim().split('\n');
 
 // Git with no user or system configuration (no signing, hooks or default branch from the machine running the test)
@@ -96,7 +98,7 @@ test('when the server refuses main after the check, the atomic push refuses the 
   fs.writeFileSync(hook, '#!/bin/sh\n[ "$1" = refs/heads/main ] && { echo "main moved" >&2; exit 1; }\nexit 0\n', { mode: 0o755 });
   const run = publish(r);
   assert.notEqual(run.status, 0);
-  assert.match(run.stderr, /neither main nor v0\.12\.0-beta\.1 changed/);
+  assert.ok(run.stderr.includes(`neither main nor v${VERSION} changed`), run.stderr);
   assert.equal(git(r.bare, 'rev-parse', 'refs/heads/main'), r.base);
   assert.ok(!hasTag(r.bare), refs(r.bare));
   // The first model:main run's push, without --atomic: the tag lands and main is refused, as in job 1164684

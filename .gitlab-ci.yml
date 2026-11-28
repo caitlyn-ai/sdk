@@ -35,7 +35,8 @@
 #                          and the Scoop manifest that point at it (cli/scripts/release-packages.sh).
 #   model:main             Triggered by a merge to the app's main that changes its model: builds that model, regenerates
 #                          every SDK, and only once all four conformance suites pass commits it to main with a beta tag
-#                          (scripts/model-main.sh); the tag publishes the Python, Rust and Go betas.
+#                          (scripts/model-main.sh); the tag publishes the Python, Rust and Go betas, and stages npm's
+#                          for a maintainer to approve.
 #
 # CI variables this file reads (set on the project, never in this file):
 #   DOCS_ENABLED, DOCS_PUBLISH_ROLE_ARN (protected), DOCS_PREVIEW_ROLE_ARN, DOCS_DISTRIBUTION_ID (protected),
@@ -946,6 +947,7 @@ stamp-version:
       - rust/caitlyn-sdk/Cargo.toml # stamped
       - rust/caitlyn-sdk/src/lib.rs # stamped
       - cli/internal/spec/commands.json # stamped
+      - docs/cli/tree.json # stamped
   rules:
     - !reference [fetch-semantic-version, rules]
 

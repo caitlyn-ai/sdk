@@ -372,18 +372,24 @@ README, https://git.customd.com/custom-d/devops-platform/ci-templates/semantic-v
 ### Betas
 
 `model:main` tags a beta, `v<next>-beta.<n>`, with each model change it commits ("How a model change reaches the
-SDK"). A beta tag publishes, with no one involved:
+SDK"). A beta tag publishes, with no one involved apart from the npm approval:
 
 - **Python**: `caitlyn-core` and `caitlyn` to PyPI as `<next>b<n>` (PEP 440's spelling), which `pip` installs only
   when asked for a pre-release;
 - **Rust**: the crates to crates.io as `<next>-beta.<n>`, which Cargo picks only when asked for exactly;
 - **Go**: the tag `go/v<next>-beta.<n>`, which `go get …@latest` passes over;
 - **GitHub**: a release marked as a pre-release, never the latest, with every change since the last stable release as
-  its notes.
+  its notes;
+- **npm**: `release-npm` stages both packages as `<next>-beta.<n>` under the `beta` dist-tag, so `latest` stays the
+  last stable release. As for a release, a maintainer approves them on npmjs.com with two-factor authentication
+  ("npm", below), the one step that is not automatic.
 
-npm is not automatic. To put a beta on npm, run `release-npm` by hand on the GitHub mirror (Actions → release-npm
-→ Run workflow) with the beta's tag; it stages both packages under the `beta` dist-tag, for a maintainer to approve
-on npmjs.com with two-factor authentication, and `latest` stays the last stable release.
+To run `release-npm` again by hand for a tag whose run failed, start it from the tag, not from `main`: the `npm`
+environment allows only `v*` tags, so a run from `main` is refused before it starts.
+
+```
+gh workflow run release-npm.yml --repo caitlyn-ai/sdk --ref v<next>-beta.<n> -f tag=v<next>-beta.<n>
+```
 
 A stable release is the manual `release` job on a `main` pipeline (above).
 

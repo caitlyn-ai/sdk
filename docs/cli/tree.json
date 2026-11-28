@@ -3,7 +3,7 @@
   "tree": {
     "schemaVersion": 1,
     "cli": {
-      "version": "0.11.0",
+      "version": "0.12.0-beta.1",
       "modelVersion": "5.149.0"
     },
     "agentMode": {

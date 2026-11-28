@@ -8,15 +8,19 @@
 # `npm` environment is described in CONTRIBUTING.md, "Releasing".
 #
 # semantic-release on GitLab's main commits the version into every SDK file that carries it (chore(release): x.y.z)
-# and tags that commit v<version> (.releaserc.yml); nobody tags by hand. This job checks that the tag's files name its
+# and tags that commit v<version> (.releaserc.yml), and the GitLab model:main job commits and tags each beta,
+# v<version>-beta.<n>; nobody tags by hand. Both start it. This job checks that the tag's files name its
 # version (scripts/version.mjs check), then tests, builds and stages that version.
 # The job runs in the `npm` environment because the trusted publishers are bound to that name; it has no required
 # reviewer, since the one approval is on npmjs.com.
 name: release-npm
 
-# A beta tag (v<version>-beta.<n>, made by the GitLab model:main job) does not start it: npm betas are a
-# maintainer's choice, made by running this workflow by hand with that tag (CONTRIBUTING.md, "Betas"). A beta
-# goes to npm's `beta` dist-tag, so `latest` stays the last stable release.
+# A release goes to npm's `latest` dist-tag and a beta to `beta`, so `latest` stays the last stable release. Either
+# waits, staged, for the maintainer's approval on npmjs.com. Any other tag is refused before anything is built.
+#
+# By hand (to stage a tag whose run failed), start it from the tag itself, not from main: the `npm` environment
+# allows only v* tags, so a run from main is refused before it starts.
+#   gh workflow run release-npm.yml --repo caitlyn-ai/sdk --ref v0.12.0-beta.3 -f tag=v0.12.0-beta.3
 on:
   push:
     tags: ['v*.*.*']
@@ -31,7 +35,6 @@ permissions:
 
 jobs:
   stage:
-    if: github.event_name == 'workflow_dispatch' || !contains(github.ref_name, '-')
     runs-on: ubuntu-24.04
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
@@ -43,6 +46,18 @@ jobs:
       run:
         working-directory: typescript
     steps:
+      # The same check as release-pypi, release-crates and release-github (scripts/release-workflows.test.mjs)
+      - name: Choose the tag
+        id: tag
+        working-directory: ${{ github.workspace }}
+        run: |
+          # A release (vX.Y.Z, semantic-release's) or a beta (vX.Y.Z-beta.N, the GitLab model:main job's)
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]] || { echo "\"$TAG\" is not a release tag (vX.Y.Z) or a beta tag (vX.Y.Z-beta.N)" >&2; exit 1; }
+          {
+            echo "tag=$TAG"
+            # npm's dist-tag: a beta never becomes `latest`
+            if [[ "$TAG" == *-beta.* ]]; then echo "dist_tag=beta"; else echo "dist_tag=latest"; fi
+          } >> "$GITHUB_OUTPUT"
       # v7 of both run on Node 24 (v4 ran on the deprecated Node 20).
       - uses: actions/checkout@v7
         with:
@@ -72,8 +87,12 @@ jobs:
         run: ../scripts/test-typescript.sh
       # sdk-core first: the SDK depends on that exact version.
       - name: Stage @caitlyn-ai/sdk-core
-        run: npm stage publish --provenance --access public --tag "$(case "$TAG" in *-*) echo beta;; *) echo latest;; esac)"
+        run: npm stage publish --provenance --access public --tag "$DIST_TAG"
+        env:
+          DIST_TAG: ${{ steps.tag.outputs.dist_tag }}
         working-directory: typescript/packages/sdk-core
       - name: Stage @caitlyn-ai/sdk
-        run: npm stage publish --provenance --access public --tag "$(case "$TAG" in *-*) echo beta;; *) echo latest;; esac)"
+        run: npm stage publish --provenance --access public --tag "$DIST_TAG"
+        env:
+          DIST_TAG: ${{ steps.tag.outputs.dist_tag }}
         working-directory: typescript/packages/sdk

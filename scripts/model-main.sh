@@ -8,7 +8,7 @@
 # SDK's own code (generator, runtimes, docs) goes through a merge request as usual.
 #
 # The beta tag publishes Python (PyPI) and Rust (crates.io) from the GitHub mirror, and tags Go (go/v<version>), with
-# no one involved. npm is never published by a beta tag: a maintainer starts it by hand (CONTRIBUTING.md,
+# no one involved. It stages npm under the `beta` dist-tag, for a maintainer to approve on npmjs.com (CONTRIBUTING.md,
 # "Betas"). A stable release is the manual `release` job on a main pipeline.
 #
 # <next> is the minor version after the last stable tag; <n> counts that version's beta tags. Needs
