@@ -4,7 +4,11 @@
 # scripts/changelog-section.mjs --github points any link left to this repository on git.customd.com at the mirror,
 # and the run fails rather than publish any other git.customd.com address.
 #
-# Runs on every release tag the push mirror brings from GitLab, and by hand (Actions → release-github → Run workflow,
+# A beta tag (v<version>-beta.<n>, the GitLab model:main job's) has no section in CHANGELOG.md: only a stable release
+# writes one. Its notes are what the next release's would say so far, every change since the last stable release, from
+# scripts/release-notes.mjs on the beta's tree. A beta's release is a pre-release and never the latest.
+#
+# Runs on every release and beta tag the push mirror brings from GitLab, and by hand (Actions → release-github → Run workflow,
 # from main) with a tag, to backfill a release. A tag made before CHANGELOG.md existed (v0.8.0 and earlier) has no
 # CHANGELOG.md in its tree, so the notes then come from the copy on the branch the run starts from (main).
 #
@@ -43,13 +47,16 @@ jobs:
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "\"$TAG\" is not a release tag (vX.Y.Z)" >&2; exit 1; }
+          # A release (vX.Y.Z, semantic-release's) or a beta (vX.Y.Z-beta.N, the GitLab model:main job's)
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]] || { echo "\"$TAG\" is not a release tag (vX.Y.Z) or a beta tag (vX.Y.Z-beta.N)" >&2; exit 1; }
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
       # The ref the run started from: the tag on a push, main on a run by hand. Its scripts/changelog-section.mjs reads
       # the notes, and its CHANGELOG.md is the fallback for a tag without one.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The whole history, with its tags: a beta's notes run from the last stable tag to the beta
+          fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
@@ -58,6 +65,20 @@ jobs:
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
+          if [[ "$TAG" == *-* ]]; then
+            # A beta: the notes so far since the last stable release, from the beta's own tree (scripts/release-notes.mjs
+            # writes the mirror's links). A run by hand starts from main, so move to the tag first.
+            git fetch --quiet origin "refs/tags/$TAG:refs/tags/$TAG"
+            git checkout --quiet "refs/tags/$TAG"
+            node scripts/release-notes.mjs notes "${TAG#v}" > "$RUNNER_TEMP/notes.md"
+            echo "Notes for the beta $TAG: every change since the last stable release."
+            if grep -qi 'git\.customd\.com' "$RUNNER_TEMP/notes.md"; then
+              echo "The notes still name git.customd.com; not publishing them." >&2
+              exit 1
+            fi
+            cat "$RUNNER_TEMP/notes.md"
+            exit 0
+          fi
           git fetch --quiet --no-tags --depth=1 origin "refs/tags/$TAG:refs/tags/$TAG"
           # --github points any link to this repository on git.customd.com at the mirror, and fails (exit 3) on any
           # other git.customd.com address. Only a missing section (exit 1) falls back to the branch's copy.

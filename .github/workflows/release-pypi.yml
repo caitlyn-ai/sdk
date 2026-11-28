@@ -6,8 +6,10 @@
 # git.customd.com. Setting up the PyPI publishers and the `pypi` and `pypi-core` environments is in CONTRIBUTING.md,
 # "Releasing", "PyPI".
 #
-# Runs on every release tag semantic-release pushes (v<version>), and by hand (Actions → release-pypi → Run workflow,
-# from main) with a tag, to publish a release whose run failed. Either way it builds from the tag's tree, which
+# Runs on every release tag semantic-release pushes (v<version>) and every beta tag the GitLab model:main job pushes
+# (v<version>-beta.<n>), and by hand (Actions → release-pypi → Run workflow, from main) with a tag, to publish a
+# release whose run failed. A beta goes up in PEP 440's spelling, 0.12.0-beta.3 as 0.12.0b3, which pip installs only
+# when asked for a pre-release (--pre, or the exact version). Either way it builds from the tag's tree, which
 # already carries its version in every stamped file (the release commit): the job fails unless every one of them,
 # and every built file, names the tag's version.
 #
@@ -37,15 +39,21 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.tag.outputs.version }}
+      pyversion: ${{ steps.tag.outputs.pyversion }}
     steps:
       - name: Choose the tag
         id: tag
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "\"$TAG\" is not a release tag (vX.Y.Z)" >&2; exit 1; }
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          # A release (vX.Y.Z, semantic-release's) or a beta (vX.Y.Z-beta.N, the GitLab model:main job's)
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]] || { echo "\"$TAG\" is not a release tag (vX.Y.Z) or a beta tag (vX.Y.Z-beta.N)" >&2; exit 1; }
+          {
+            echo "tag=$TAG"
+            echo "version=${TAG#v}"
+            # Python spells a beta as PEP 440 does: 0.12.0-beta.3 is 0.12.0b3
+            echo "pyversion=$(printf '%s' "${TAG#v}" | sed -E 's/-beta\.([0-9]+)$/b\1/')"
+          } >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/tags/${{ steps.tag.outputs.tag }}
@@ -73,9 +81,9 @@ jobs:
       - name: Check the built files carry the tag's version
         env:
           VERSION: ${{ steps.tag.outputs.version }}
+          # 0.12.0b3 for the beta 0.12.0-beta.3: PEP 440's normal form, which the file names carry and PyPI shows
+          PYV: ${{ steps.tag.outputs.pyversion }}
         run: |
-          # Python spells a beta as PEP 440 does: 0.12.0-beta.3 is 0.12.0b3 in file names and metadata.
-          PYV="$(printf '%s' "$VERSION" | sed -E 's/-beta\.([0-9]+)$/b\1/')"
           expect() {
             local dir="$1"; shift
             local want; want="$(printf '%s\n' "$@" | sort)"
@@ -84,9 +92,15 @@ jobs:
           }
           expect dist/caitlyn-core "caitlyn_core-$PYV.tar.gz" "caitlyn_core-$PYV-py3-none-any.whl"
           expect dist/caitlyn "caitlyn-$PYV.tar.gz" "caitlyn-$PYV-py3-none-any.whl"
+          # The metadata keeps the version as the tag's files spell it (0.12.0-beta.3), which PEP 440 reads as
+          # 0.12.0b3 and PyPI records as that; a stable version is the same in both.
+          for whl in "dist/caitlyn-core/caitlyn_core-$PYV-py3-none-any.whl" "dist/caitlyn/caitlyn-$PYV-py3-none-any.whl"; do
+            unzip -p "$whl" '*.dist-info/METADATA' | grep -qx "Version: $VERSION" \
+              || { echo "$whl's metadata does not say Version: $VERSION" >&2; exit 1; }
+          done
           unzip -p "dist/caitlyn/caitlyn-$PYV-py3-none-any.whl" '*.dist-info/METADATA' \
-            | grep -qx "Requires-Dist: caitlyn-core==$PYV" \
-            || { echo "caitlyn's wheel does not pin caitlyn-core==$PYV" >&2; exit 1; }
+            | grep -qx "Requires-Dist: caitlyn-core==$VERSION" \
+            || { echo "caitlyn's wheel does not pin caitlyn-core==$VERSION" >&2; exit 1; }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python-dists
@@ -105,7 +119,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment:
       name: pypi-core
-      url: https://pypi.org/project/caitlyn-core/${{ needs.build.outputs.version }}/
+      url: https://pypi.org/project/caitlyn-core/${{ needs.build.outputs.pyversion }}/
     permissions:
       id-token: write # the OpenID Connect token PyPI exchanges for a short-lived upload token
     steps:
@@ -125,7 +139,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment:
       name: pypi
-      url: https://pypi.org/project/caitlyn/${{ needs.build.outputs.version }}/
+      url: https://pypi.org/project/caitlyn/${{ needs.build.outputs.pyversion }}/
     permissions:
       id-token: write # the OpenID Connect token PyPI exchanges for a short-lived upload token
     steps:

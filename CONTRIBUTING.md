@@ -328,7 +328,9 @@ To run it by hand for an app commit: Build → Pipelines → Run pipeline on `ma
 **GitHub releases.** On the same tag, `.github/workflows/release-github.yml` creates the GitHub release for it on the
 mirror, titled with the tag, with the version's section of the tag's `CHANGELOG.md` as its notes
 (`scripts/changelog-section.mjs`). Only the highest version
-tag is marked the latest release. Running it again edits the release rather than failing. It uses the workflow's
+tag is marked the latest release. A beta tag (see "Betas") has no section in `CHANGELOG.md`, which only a stable
+release writes: its release is a pre-release, never the latest, and its notes are every change since the last
+stable release, from `scripts/release-notes.mjs notes` on the beta's tree. Running it again edits the release rather than failing. It uses the workflow's
 own `GITHUB_TOKEN` with `contents: write`; there is nothing to set up.
 
 To create or correct a GitHub release by hand, run the workflow from `main` with the tag: in GitHub, Actions →
@@ -370,7 +372,8 @@ SDK"). A beta tag publishes, with no one involved:
   when asked for a pre-release;
 - **Rust**: the crates to crates.io as `<next>-beta.<n>`, which Cargo picks only when asked for exactly;
 - **Go**: the tag `go/v<next>-beta.<n>`, which `go get …@latest` passes over;
-- **GitHub**: a release marked as a pre-release.
+- **GitHub**: a release marked as a pre-release, never the latest, with every change since the last stable release as
+  its notes.
 
 npm is not automatic. To put a beta on npm, run `release-npm` by hand on the GitHub mirror (Actions → release-npm
 → Run workflow) with the beta's tag; it stages both packages under the `beta` dist-tag, for a maintainer to approve
@@ -433,7 +436,8 @@ environment `pypi`). Each package has its own environment because PyPI takes onl
 repository, workflow and environment. It skips files PyPI already has, so running it again after a part-failed upload finishes
 the release.
 
-It runs on every release tag, and by hand: in GitHub, Actions → `release-pypi` → Run workflow, from `main`, with the
+It runs on every release tag and every beta tag (a beta as `<next>b<n>`: see "Betas"), and by hand: in GitHub,
+Actions → `release-pypi` → Run workflow, from `main`, with the
 tag (such as `v0.9.0`). Running it by hand publishes a release whose run failed. Either way it builds the tag's tree.
 
 **The first PyPI release was 0.8.1.** Releases up to v0.8.0 are not on PyPI: their `pyproject.toml` files have no
@@ -469,7 +473,7 @@ Connect token for a publish token that lasts 30 minutes and is revoked when the 
 
 The workflow has two jobs:
 
-- `package` runs on every release tag. It checks the versions, then packages both crates and builds each from its
+- `package` runs on every release tag and every beta tag (see "Betas"). It checks the versions, then packages both crates and builds each from its
   package (`cargo publish --dry-run --workspace`, which builds `caitlyn-sdk` against the packaged
   `caitlyn-sdk-core`), so a crate that would not build from crates.io fails before anything is published.
 - `publish` runs only when the repository variable `CRATES_IO_TRUSTED_PUBLISHING` is `true`. crates.io lets a
