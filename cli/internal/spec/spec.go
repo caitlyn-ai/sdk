@@ -92,12 +92,13 @@ type Creates struct {
 
 // Operation is one modelled operation with its HTTP bindings.
 type Operation struct {
-	Name          string              `json:"name"`
-	Title         string              `json:"title,omitempty"`
-	Documentation string              `json:"documentation,omitempty"`
-	Method        string              `json:"method"`
-	URI           string              `json:"uri"`
-	Code          int                 `json:"code"`
+	Name          string `json:"name"`
+	Title         string `json:"title,omitempty"`
+	Documentation string `json:"documentation,omitempty"`
+	Method        string `json:"method"`
+	URI           string `json:"uri"`
+	Code          int    `json:"code"`
+	// Stability is the model's: ga, preview (beta, its earlier name), experimental or internal. Maturity reads it.
 	Stability     string              `json:"stability"`
 	Since         string              `json:"since,omitempty"`
 	Readonly      bool                `json:"readonly,omitempty"`
@@ -368,4 +369,25 @@ func (o *Operation) Codes() map[string]int {
 		}
 	}
 	return out
+}
+
+// Maturity is how the CLI labels a stability level: "preview" for preview and for beta (the same level, under the
+// name the model used before), "experimental" for experimental (beta builds only), and "" for anything else, ga
+// included.
+func Maturity(stability string) string {
+	switch stability {
+	case "preview", "beta":
+		return "preview"
+	case "experimental":
+		return "experimental"
+	}
+	return ""
+}
+
+// MaturityMarker is the help's marker for a maturity: "[Preview]", "[Experimental]", or "" for none.
+func MaturityMarker(maturity string) string {
+	if maturity == "" {
+		return ""
+	}
+	return "[" + strings.ToUpper(maturity[:1]) + maturity[1:] + "]"
 }

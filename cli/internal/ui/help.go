@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/caitlyn-ai/sdk/cli/internal/cmdutil"
 	"github.com/caitlyn-ai/sdk/cli/internal/exitcode"
 )
 
@@ -29,6 +30,10 @@ func (u *UI) Help(cmd *cobra.Command) string {
 	parts := splitLong(cmd.Long)
 	if parts.description != "" && strings.TrimSpace(parts.description) != short {
 		b.WriteString("\n" + parts.description + "\n")
+	}
+	// The CLI's maturity, on the root's rendered help only: never in describe's JSON or Markdown, nor another command
+	if note := cmdutil.StabilityNote(); note != "" && !cmd.HasParent() {
+		b.WriteString("\n" + note + "\n")
 	}
 	section("Usage:")
 	if cmd.Runnable() {

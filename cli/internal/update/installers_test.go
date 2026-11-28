@@ -192,3 +192,56 @@ func TestInstallShChecksThePointerAgainstTheManifest(t *testing.T) {
 		})
 	}
 }
+
+// After an install, install.sh says the CLI is in preview when the installed binary's version --json says so, and says
+// nothing about it for a stable CLI (or one too old to say).
+func TestInstallShSaysTheCLIIsInPreview(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("install.sh is for macOS and Linux")
+	}
+	if _, err := exec.LookPath("curl"); err != nil {
+		t.Skip("curl isn't on this machine")
+	}
+	script, _ := filepath.Abs(filepath.Join("..", "..", "scripts", "install.sh"))
+	install := func(t *testing.T, versionJSON string) string {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "caitlyn"), []byte("#!/bin/sh\ncat <<'JSON'\n"+versionJSON+"\nJSON\n"), 0o755)
+		tgz, err := exec.Command("tar", "-czf", "-", "-C", dir, "caitlyn").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(tgz)
+		manifest := fmt.Sprintf("{\n  \"version\": \"1.2.3\",\n  \"channel\": \"stable\",\n  \"date\": \"2026-11-25\",\n  \"platforms\": [\n    {\"os\": \"%s\", \"arch\": \"%s\", \"url\": \"caitlyn.tar.gz\", \"size\": %d, \"sha256\": \"%s\"}\n  ]\n}\n",
+			runtime.GOOS, runtime.GOARCH, len(tgz), hex.EncodeToString(sum[:]))
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.URL.Path == "/channels/stable.json":
+				io.WriteString(w, `{"version": "1.2.3", "manifest": "1.2.3/manifest.json"}`)
+			case strings.HasSuffix(r.URL.Path, "/manifest.json"):
+				io.WriteString(w, manifest)
+			case strings.HasSuffix(r.URL.Path, "/caitlyn.tar.gz"):
+				w.Write(tgz)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer srv.Close()
+		home := t.TempDir()
+		cmd := exec.Command("sh", script)
+		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "CAITLYN_BASE_URL=" + srv.URL + "/", "CAITLYN_INSTALL_DIR=" + filepath.Join(home, "bin")}
+		out, _ := cmd.CombinedOutput()
+		if !strings.Contains(string(out), "Installed caitlyn 1.2.3") {
+			t.Fatalf("installs:\n%s", out)
+		}
+		return string(out)
+	}
+	// version --json is indented, as the CLI prints it
+	if out := install(t, "{\n  \"version\": \"1.2.3\",\n  \"stability\": \"preview\"\n}"); !strings.Contains(out, "The Caitlyn CLI is in preview: its commands, flags and output may still change.") {
+		t.Fatalf("preview says so:\n%s", out)
+	}
+	for _, v := range []string{"{\n  \"version\": \"1.2.3\",\n  \"stability\": \"stable\"\n}", `{"version": "1.2.3"}`} {
+		if out := install(t, v); strings.Contains(out, "preview") {
+			t.Fatalf("nothing about it for %s:\n%s", v, out)
+		}
+	}
+}

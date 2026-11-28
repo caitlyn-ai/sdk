@@ -165,8 +165,8 @@ func writeTreeText(w io.Writer, t *Tree) {
 	for _, c := range t.Commands {
 		name := strings.Repeat("  ", len(c.Path)-1) + c.Path[len(c.Path)-1]
 		var marks []string
-		if c.Beta {
-			marks = append(marks, "beta")
+		if c.Stability != "" {
+			marks = append(marks, c.Stability)
 		}
 		if c.Impact == "user-facing" || c.Impact == "destructive" {
 			marks = append(marks, c.Impact)

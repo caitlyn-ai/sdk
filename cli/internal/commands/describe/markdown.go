@@ -51,8 +51,8 @@ func Markdown(d *Command, t *Tree, level int) string {
 	}
 	b.WriteString(h(0) + title + "\n\n")
 	summary := d.Summary
-	if d.Beta {
-		summary += " (beta)"
+	if d.Stability != "" {
+		summary += " (" + d.Stability + ")"
 	}
 	b.WriteString(prose(sentence(summary)) + "\n\n")
 	b.WriteString("```sh\n" + d.Usage + "\n```\n\n")
@@ -186,8 +186,10 @@ func factsTable(d *Command) string {
 	if d.InteractiveOnly {
 		rows = append(rows, [2]string{"Interactive only", "Only in the Caitlyn app while signed in: no token can call it, the CLI's included. The CLI refuses it before sending, with exit code 5"})
 	}
-	if d.Beta {
-		rows = append(rows, [2]string{"Stability", "Beta: it may change before it is generally available"})
+	if d.Stability == "experimental" {
+		rows = append(rows, [2]string{"Stability", "Experimental: only in beta builds, and it may change or be removed"})
+	} else if d.Stability != "" {
+		rows = append(rows, [2]string{"Stability", "Preview: it may change before it is generally available"})
 	} else if d.Generated && d.Operation != "" {
 		rows = append(rows, [2]string{"Stability", "Generally available"})
 	}
@@ -585,8 +587,8 @@ func splitGroupMarkdown(d *Command, t *Tree) string {
 			continue
 		}
 		summary := sentence(sub.Summary)
-		if sub.Beta {
-			summary += " (beta)"
+		if sub.Stability != "" {
+			summary += " (" + sub.Stability + ")"
 		}
 		fmt.Fprintf(&b, "## %s\n\n%s.\n\n```sh\n%s\n```\n\n", name, strings.TrimSuffix(summary, "."), sub.Usage)
 		if sub.Impact != "" {

@@ -46,7 +46,7 @@ const (
 	AnnotationScope = "scope"
 	// AnnotationOperations is a comma-separated list of the operations a hand-written command calls.
 	AnnotationOperations = "operations"
-	// AnnotationStability is "beta" for a beta command.
+	// AnnotationStability is the stability level of a command's operation (spec.Maturity reads it).
 	AnnotationStability = "stability"
 )
 
@@ -133,11 +133,14 @@ type Command struct {
 	Confirm     string `json:"confirm,omitempty"`
 	LongRunning bool   `json:"longRunning,omitempty"`
 	// Stream is true for a command that prints a stream of events, one JSON object per line with --output jsonl.
-	Stream          bool        `json:"stream,omitempty"`
-	InteractiveOnly bool        `json:"interactiveOnly,omitempty"`
-	Beta            bool        `json:"beta,omitempty"`
-	Since           string      `json:"since,omitempty"`
-	Permission      *Permission `json:"permission,omitempty"`
+	Stream          bool `json:"stream,omitempty"`
+	InteractiveOnly bool `json:"interactiveOnly,omitempty"`
+	// Beta is true for a command that isn't generally available yet: Stability says how (kept for readers of beta).
+	Beta bool `json:"beta,omitempty"`
+	// Stability is preview or experimental (spec.Maturity), and empty for a generally available command.
+	Stability  string      `json:"stability,omitempty"`
+	Since      string      `json:"since,omitempty"`
+	Permission *Permission `json:"permission,omitempty"`
 	// Operation is the API operation behind a generated command; Operations the ones a hand-written one calls.
 	Operation  string   `json:"operation,omitempty"`
 	Operations []string `json:"operations,omitempty"`
@@ -330,7 +333,7 @@ func Describe(c *cobra.Command, f *cmdutil.Factory, m *spec.Manifest) *Command {
 		Name:      strings.Join(path, " "),
 		Kind:      "command",
 		Aliases:   append([]string(nil), c.Aliases...),
-		Summary:   strings.TrimSpace(strings.TrimSuffix(c.Short, "  [Beta]")),
+		Summary:   strings.TrimSpace(withoutMarker(c.Short)),
 		Hidden:    hidden(c),
 		Generated: gen.Of(c) != nil,
 		Docs:      gen.DocsURL(path),
@@ -452,7 +455,8 @@ func describeGenerated(d *Command, g *gen.Command, m *spec.Manifest) {
 	}
 	op := g.Op
 	d.Operation = op.Name
-	d.Beta = op.Stability == "beta"
+	d.Stability = spec.Maturity(op.Stability)
+	d.Beta = d.Stability != ""
 	d.Since = op.Since
 	d.InteractiveOnly = op.Interactive
 	d.LongRunning = g.Spec.LongRunning != nil || op.SSE != nil || (g.Spec.ScopeWatch != nil && g.Impact != "read")
@@ -508,7 +512,8 @@ func describeHandWritten(d *Command, c *cobra.Command) {
 	}
 	d.LongRunning = a[AnnotationLongRunning] == "true"
 	d.InteractiveOnly = a[AnnotationInteractive] == "true"
-	d.Beta = a[AnnotationStability] == "beta"
+	d.Stability = spec.Maturity(a[AnnotationStability])
+	d.Beta = d.Stability != ""
 	if s := a[AnnotationScope]; s != "" {
 		d.Permission = &Permission{Scope: s}
 	}
@@ -867,4 +872,12 @@ func alternatives(workspace string) Alternatives {
 			Status: "planned",
 		},
 	}}
+}
+
+// withoutMarker is a command's one line without its maturity marker ("  [Preview]", "  [Experimental]").
+func withoutMarker(short string) string {
+	for _, m := range []string{"preview", "experimental"} {
+		short = strings.TrimSuffix(short, "  "+spec.MaturityMarker(m))
+	}
+	return short
 }

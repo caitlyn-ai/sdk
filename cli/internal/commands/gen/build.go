@@ -294,8 +294,10 @@ func newCommand(f *cmdutil.Factory, m *spec.Manifest, o *spec.Overlay, sc *spec.
 	if sc.Verb() == "watch" && op != nil && len(sc.Args) > 0 && sc.Place != "" && !strings.HasSuffix(sc.Place, ".watch") {
 		short = "Watch it change"
 	}
-	if op != nil && op.Stability == "beta" {
-		short += "  [Beta]"
+	if op != nil {
+		if marker := spec.MaturityMarker(spec.Maturity(op.Stability)); marker != "" {
+			short += "  " + marker
+		}
 	}
 	c.Cobra = &cobra.Command{
 		Use:               strings.Join(use, " ") + " [flags]",

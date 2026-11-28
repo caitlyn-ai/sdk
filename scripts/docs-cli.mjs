@@ -687,8 +687,9 @@ export function llmsFiles(entries, { base = SITE, describe = (p) => p.descriptio
   const index = [
     '# Caitlyn CLI',
     '',
-    '> `caitlyn`, the command-line tool for Caitlyn: agents, knowledge bases, chat, configuration as code and CI. Every',
-    '> page is Markdown at its address with `.md` in place of the trailing slash. The installed CLI describes itself too:',
+    '> `caitlyn`, the command-line tool for Caitlyn: agents, knowledge bases, chat, configuration as code and CI. It is',
+    '> in preview: its commands, flags and output may still change. Every page is Markdown at its address with `.md` in',
+    '> place of the trailing slash. The installed CLI describes itself too:',
     '> `caitlyn commands --json` (every command) and `caitlyn help <command> --format markdown|json` (one command).',
     '',
     '## Start here',

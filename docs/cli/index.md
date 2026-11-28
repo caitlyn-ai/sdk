@@ -13,11 +13,13 @@ operations: []
 
 `caitlyn` is Caitlyn on the command line: agents and their versions, knowledge bases and their documents, conversations and events, from a terminal, a script or a CI job. It is built on the Go SDK and released with the SDKs, at the same version, so a command and its SDK method always do the same thing.
 
-Every command comes from the same description of the API the SDKs are built from, so the command for an SDK method is easy to guess: `caitlyn.agents(id).draft.save()` in TypeScript is `caitlyn agents draft save <agent>`. The thing a command acts on is its argument, and the things above it are flags: `caitlyn kb documents get <document> --kb <kb>`.
+> **In preview:** its commands, flags and output may still change.
+
+Commands come from the API description the SDKs are built from, so an SDK method's command is easy to guess: `caitlyn.agents(id).draft.save()` in TypeScript is `caitlyn agents draft save <agent>`. What a command acts on is its argument; what's above it are flags: `caitlyn kb documents get <document> --kb <kb>`.
 
 ## Install
 
-Choose how to install it; your choice is remembered on every page.
+Choose how to install it.
 
 ```sh tab-install="macOS and Linux"
 curl -fsSL https://build.caitlyn.ai/releases/cli/install.sh | sh
