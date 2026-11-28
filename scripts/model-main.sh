@@ -23,8 +23,10 @@ app_repo="${APP_REPO:-https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/
 push_url="https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
 
 # Start from the newest main: the job runs one at a time (resource_group), but main may have moved since it started.
+# It may move again while the suites run; scripts/model-main-publish.sh then pushes nothing.
 git fetch -q --tags "$push_url" "$CI_DEFAULT_BRANCH"
 git checkout -q -B "$CI_DEFAULT_BRANCH" FETCH_HEAD
+base="$(git rev-parse HEAD)"
 
 # The app's model at APP_COMMIT, built with the app's own build script (the toolchain image has Java and Smithy).
 app="$(mktemp -d)"
@@ -57,11 +59,6 @@ scripts/test-rust.sh
 node scripts/check-conformance.mjs
 git config user.name "Caitlyn SDK bot"
 git config user.email "sdk-bot@noreply.${CI_SERVER_HOST}"
-git add -A VERSION model typescript python go rust conformance/cases codegen
-git commit -q -m "feat(model): regenerate the SDKs from app commit ${APP_COMMIT:0:12}" \
-  -m "Built from the app's model by the model:main job (pipeline ${CI_PIPELINE_ID:-local}); every suite passed." \
-  -m "Beta: v${version}"
-git tag -a "v${version}" -m "Beta ${version}, from app commit ${APP_COMMIT}" HEAD
-git push -q "$push_url" "HEAD:refs/heads/${CI_DEFAULT_BRANCH}" "refs/tags/v${version}"
+# Commits what the suites tested and pushes main and the tag atomically, only if main is still at $base
+scripts/model-main-publish.sh "$version" "$base" "$push_url" "$CI_DEFAULT_BRANCH"
 node scripts/go-tag.mjs "$version"
-echo "Pushed main $(git rev-parse --short HEAD) and v${version}."

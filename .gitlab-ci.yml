@@ -270,10 +270,9 @@ generate:
   script:
     - scripts/generate.sh
     - |
-      # The generated code, and the hand-written files scripts/version.mjs stamps with the version in VERSION.
+      # The generated code, and every file scripts/version.mjs stamps with the version in VERSION (its `files`).
       if ! git diff --exit-code --stat -- typescript/packages/sdk python/caitlyn go rust/caitlyn-sdk conformance/cases \
-          typescript/packages/sdk-core typescript/package-lock.json python/caitlyn-core python/uv.lock rust/Cargo.toml \
-          rust/Cargo.lock conformance/rust/Cargo.lock examples/rust/Cargo.lock codegen/smithy-build.json; then
+          cli/internal/spec typescript/packages/sdk-core python/caitlyn-core $(node scripts/version.mjs files); then
         echo "The committed generated code differs from a fresh generation. Run make generate and commit the result."
         exit 1
       fi
@@ -522,6 +521,20 @@ tests:timers:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
+# model:main's commit, tag and push (scripts/model-main-publish.sh) against a local bare repository: it commits every
+# stamped file, and a main that moved, or a push the server refuses, leaves no tag
+release:scripts:
+  extends: [.toolchain, .light]
+  stage: generate
+  needs:
+    - job: toolchain
+      optional: true
+  script:
+    - node --test scripts/model-main-publish.test.mjs
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
 model:version-check:
   extends: [.toolchain, .light]
   stage: generate
@@ -545,7 +558,10 @@ model:version-check:
 
 # Triggered by the app's main pipeline after a merge that changes smithy/, with APP_COMMIT (CONTRIBUTING.md, "How a
 # model change reaches the SDK"). Commits straight to main, and tags a beta, only once every suite passes. One at a
-# time, and never cancelled part way through a push.
+# time, and never cancelled part way through a push. It shares the resource group `main-push` with `release`, the
+# other job that pushes to main, so neither moves main under the other. A main that moves anyway (a merge request
+# merging while the suites run) makes it push nothing, with neither the commit nor the tag: scripts/model-main-publish.sh
+# checks main before an atomic push, and the job is retried.
 model:main:
   extends: [.toolchain, .resources-heavy]
   cache:
@@ -559,7 +575,7 @@ model:main:
     - job: toolchain
       optional: true
   interruptible: false
-  resource_group: model-main
+  resource_group: main-push
   variables:
     GIT_DEPTH: '0'
   script:
@@ -929,6 +945,10 @@ release:
     - job: fetch-semantic-version
     - job: stamp-version
       artifacts: true
+  # semantic-release pushes the release commit to main before it creates the tag, and refuses a main that has moved
+  # since the pipeline started, so a refused push leaves no tag. It waits for model:main, the other job that pushes to
+  # main, rather than have the two refuse each other.
+  resource_group: main-push
   rules:
     - if: $SEMVER_DISABLED || $SEMVER_TEST_DISABLED || $CI_DEPLOY_FREEZE
       when: never
