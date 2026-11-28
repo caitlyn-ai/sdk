@@ -298,7 +298,13 @@ Setting it up, once:
   token permissions);
 - `GITLAB_TOKEN` (under "Releasing") pushes the commit and the tag, so the bot must be allowed to push to `main`.
 
-To run it by hand for an app commit: Build → Pipelines → Run pipeline on `main` with `APP_COMMIT` set.
+To run it by hand for an app commit: Build → Pipelines → Run pipeline on `main` with `APP_COMMIT` set, or start the
+same pipeline through the API:
+
+```sh
+glab api -X POST projects/857/pipeline -H 'Content-Type: application/json' \
+  --input - <<< '{"ref": "main", "variables": [{"key": "APP_COMMIT", "value": "<app commit>"}]}'
+```
 
 ## Releasing
 
