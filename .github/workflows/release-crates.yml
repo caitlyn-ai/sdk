@@ -5,8 +5,9 @@
 # release-npm.yml gives: crates.io trusted publishing accepts OpenID Connect tokens from GitHub Actions, not from
 # git.customd.com. The one-off setup is described in CONTRIBUTING.md, "Releasing", "crates.io".
 #
-# Runs on every release tag semantic-release pushes (v<version>), and by hand (Actions → release-crates → Run
-# workflow, from main) with a tag, to publish a release whose run failed or that came before trusted publishing was
+# Runs on every release tag semantic-release pushes (v<version>) and every beta tag the GitLab model:main job pushes
+# (v<version>-beta.<n>, published as that version, which Cargo picks only when asked for it exactly), and by hand
+# (Actions → release-crates → Run workflow, from main) with a tag, to publish a release whose run failed or that came before trusted publishing was
 # set up. Either way it builds from the tag's tree, which already carries its version in every stamped file.
 #
 # `package` runs every time: it checks the version and packages and verifies both crates (cargo publish --dry-run).
@@ -52,7 +53,8 @@ jobs:
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "\"$TAG\" is not a release tag (vX.Y.Z)" >&2; exit 1; }
+          # A release (vX.Y.Z, semantic-release's) or a beta (vX.Y.Z-beta.N, the GitLab model:main job's)
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]] || { echo "\"$TAG\" is not a release tag (vX.Y.Z) or a beta tag (vX.Y.Z-beta.N)" >&2; exit 1; }
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

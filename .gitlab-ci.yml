@@ -509,6 +509,20 @@ changes:check:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
+# The GitHub release workflows' tag check: release-pypi, release-crates and release-github take a release tag
+# (vX.Y.Z) or a beta tag (vX.Y.Z-beta.N), with PyPI's spelling of a beta, and refuse any other
+release:workflows:
+  extends: [.toolchain, .light]
+  stage: generate
+  needs:
+    - job: toolchain
+      optional: true
+  script:
+    - node --test scripts/release-workflows.test.mjs
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
 # Every timer in a test is deterministic (CONTRIBUTING.md, "Tests and time"): no file's tests may gain a wall-clock
 # sleep, timer or clock read over scripts/test-timers-baseline.json, which only goes down
 tests:timers:
