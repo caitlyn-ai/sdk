@@ -597,6 +597,7 @@ model:main:
   rules:
     - if: $CI_PIPELINE_SOURCE == "pipeline" && $APP_COMMIT
     - if: $CI_PIPELINE_SOURCE == "web" && $APP_COMMIT
+    - if: $CI_PIPELINE_SOURCE == "api" && $APP_COMMIT # started by hand through the API, as from the web
 
 # ---------------------------------------------------------------------------- developer docs
 
