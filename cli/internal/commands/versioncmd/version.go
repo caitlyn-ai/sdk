@@ -26,7 +26,9 @@ import (
 
 // Info is what `version --json` prints.
 type Info struct {
-	Version      string    `json:"version"`
+	Version string `json:"version"`
+	// Stability is the CLI's maturity as a whole: preview, or stable (cmdutil.Stability).
+	Stability    string    `json:"stability"`
 	SDKVersion   string    `json:"sdkVersion"`
 	ModelVersion string    `json:"modelVersion"`
 	Go           string    `json:"go"`
@@ -105,7 +107,7 @@ type AgentInfo struct {
 // Collect gathers the run's version information.
 func Collect(f *cmdutil.Factory) Info {
 	return Info{
-		Version: f.Version, SDKVersion: core.ModuleVersion(caitlyn.ModulePath, caitlyn.SDKVersion), ModelVersion: caitlyn.ModelVersion,
+		Version: f.Version, Stability: cmdutil.Stability, SDKVersion: core.ModuleVersion(caitlyn.ModulePath, caitlyn.SDKVersion), ModelVersion: caitlyn.ModelVersion,
 		Go: runtime.Version(), OS: runtime.GOOS, Arch: runtime.GOARCH,
 		CI:          CIInfo{Detected: f.CI.In(), Provider: f.CI.Name, PullRequest: f.CI.PullRequest, Reason: f.CI.Reason},
 		Agent:       AgentInfo{Detected: f.Agent.On, Name: f.Agent.Name, Reason: f.Agent.Reason},
@@ -185,12 +187,18 @@ func Add(root *cobra.Command, f *cmdutil.Factory) {
 			}
 			if logo {
 				detail, lines := "", info.workspaceLines()
+				if note := cmdutil.StabilityNote(); note != "" {
+					lines = append([]string{note}, lines...)
+				}
 				if len(lines) > 0 {
 					detail, lines = lines[0], lines[1:]
 				}
 				emblem.Version(f, gen.UIFor(f), f.IO.Out, "caitlyn "+info.Version, "", detail, lines...)
 			} else {
 				fmt.Fprintln(f.IO.Out, info.Line())
+				if note := cmdutil.StabilityNote(); note != "" {
+					fmt.Fprintln(f.IO.Out, note)
+				}
 				for _, l := range info.workspaceLines() {
 					fmt.Fprintln(f.IO.Out, l)
 				}

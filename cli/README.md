@@ -1,5 +1,9 @@
 # Caitlyn CLI
 
+> **Preview.** The Caitlyn CLI is in preview: its commands, flags and output may still change. Its stability is
+> `cmdutil.Stability` (`cli/internal/cmdutil/stability.go`), which `caitlyn version`, the root help and the installers
+> read.
+
 The Go command-line tool on the Go SDK: profiles, browser and device-code sign-in, commands generated from the
 model, `caitlyn api` for any operation by name, JSON output and streaming chat, to be released through a Homebrew
 tap under `github.com/caitlyn-ai`.

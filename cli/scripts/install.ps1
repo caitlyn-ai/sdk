@@ -320,8 +320,11 @@ try {
   Expand-Archive -Path $zip -DestinationPath $unpacked
   $exe = Join-Path $unpacked 'caitlyn.exe'
   if (-not (Test-Path $exe)) { Fail 'the archive has no caitlyn.exe' }
-  & $exe version --json | Out-Null
+  # It must start here; its version --json also says how mature the CLI is (preview, or stable)
+  $info = & $exe version --json
   if ($LASTEXITCODE -ne 0) { Fail 'the downloaded binary doesn''t start on this machine' }
+  $stability = ''
+  try { $stability = [string](($info | Out-String) | ConvertFrom-Json).stability } catch { $stability = '' }
 
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
   $target = Join-Path $dir 'caitlyn.exe'
@@ -344,6 +347,7 @@ try {
     Write-Host "Added $dir to your PATH; open a new terminal to use it."
   }
   Write-Host "Installed caitlyn $version to $target."
+  if ($stability -and $stability -ne 'stable') { Write-Host "The Caitlyn CLI is in ${stability}: its commands, flags and output may still change." }
   Write-Host 'Get started: caitlyn auth login'
 } finally {
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

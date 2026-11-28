@@ -1061,3 +1061,47 @@ func TestHandWrittenArgsKeepInnerBrackets(t *testing.T) {
 		t.Fatalf("chat's first argument: %+v", d)
 	}
 }
+
+// A command's stability level is labelled as the CLI's maturity: beta and preview are one level, "(preview)", and
+// experimental (beta builds only) is its own, "(experimental)". Stable is unlabelled.
+func TestStabilityLevelsAreLabelled(t *testing.T) {
+	register()
+	_, r, f := tree(t)
+	for _, level := range []string{"beta", "preview", "experimental", "stable", ""} {
+		name := "level-" + level
+		if level == "" {
+			name = "level-none"
+		}
+		r.AddCommand(&cobra.Command{Use: name, Short: "Do the thing", Annotations: map[string]string{describe.AnnotationImpact: "read", describe.AnnotationStability: level}, RunE: func(*cobra.Command, []string) error { return nil }})
+	}
+	tr := describe.Build(r, f, describe.Options{})
+	for level, want := range map[string]string{"beta": "preview", "preview": "preview", "experimental": "experimental", "stable": "", "none": ""} {
+		d := tr.Find([]string{"level-" + level})
+		if d == nil {
+			t.Fatalf("level-%s isn't described", level)
+		}
+		if d.Stability != want || d.Beta != (want != "") {
+			t.Errorf("%s: stability %q beta %v, want %q", level, d.Stability, d.Beta, want)
+		}
+		md := describe.Markdown(d, tr, 0)
+		if want == "experimental" && !strings.Contains(md, "| Stability | Experimental: only in beta builds") {
+			t.Errorf("experimental has its own Stability row:\n%s", md)
+		}
+		switch want {
+		case "":
+			if strings.Contains(md, "(preview)") || strings.Contains(md, "(experimental)") || strings.Contains(md, "(beta)") {
+				t.Errorf("%s is unlabelled:\n%s", level, md)
+			}
+		default:
+			if !strings.Contains(md, "Do the thing ("+want+")\n") || strings.Contains(md, "(beta)") {
+				t.Errorf("%s is labelled (%s):\n%s", level, want, md)
+			}
+		}
+	}
+	// A generated command's help marker: one per level, and none for stable
+	for _, c := range tr.Commands {
+		if c.Generated && c.Stability == "preview" && strings.Contains(c.Summary, "[") {
+			t.Fatalf("the summary keeps no marker: %q", c.Summary)
+		}
+	}
+}

@@ -126,8 +126,8 @@ func commandList(t *Tree) string {
 			impact = "read"
 		}
 		summary := sentence(c.Summary)
-		if c.Beta {
-			summary += " (beta)"
+		if c.Stability != "" {
+			summary += " (" + c.Stability + ")"
 		}
 		fmt.Fprintf(&b, "| `%s` | %s | %s |\n", cell(c.Usage), impact, cell(summary))
 	}

@@ -1,7 +1,7 @@
 # Caitlyn SDKs
 
 The SDKs for the Caitlyn v3 API, generated from its Smithy model, with the runtimes they sit on, the shared
-conformance suite, and (later) the Go CLI, the integrations MCP server and the developer docs.
+conformance suite, the Go CLI (in preview), and (later) the integrations MCP server and the developer docs.
 
 | Language | Package | Generated from the model by | Runtime | Where |
 | --- | --- | --- | --- | --- |
@@ -38,7 +38,7 @@ conformance/
   typescript/ python/ go/ rust/   one thin harness per language
 examples/              the examples the docs show, in each language, compiled against the SDKs in CI
 docs/                  the developer docs site, build.caitlyn.ai (docs/README.md)
-cli/                   the Go CLI (not started)
+cli/                   the Go CLI, `caitlyn` (in preview: its commands, flags and output may still change)
 docker/Dockerfile      the toolchain image every make target and CI job runs in
 scripts/               generation, model pull and check, tests, docs
 ```

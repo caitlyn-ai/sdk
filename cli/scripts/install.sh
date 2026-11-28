@@ -212,7 +212,9 @@ got="$(sha256 "$tmp/caitlyn.tar.gz")"
 
 mkdir -p "$tmp/unpacked"
 tar -xzf "$tmp/caitlyn.tar.gz" -C "$tmp/unpacked" caitlyn || fail "the archive has no caitlyn binary"
-"$tmp/unpacked/caitlyn" version --json > /dev/null 2>&1 || fail "the downloaded binary doesn't start on this machine"
+# It must start here; its version --json also says how mature the CLI is (preview, or stable)
+info="$("$tmp/unpacked/caitlyn" version --json 2> /dev/null)" || fail "the downloaded binary doesn't start on this machine"
+stability="$(printf '%s\n' "$info" | field stability)"
 
 mkdir -p "$dir"
 target="$dir/caitlyn"
@@ -229,6 +231,7 @@ EOF
 chmod 0600 "$config/install.json"
 
 say "Installed caitlyn $version to $target."
+[ -n "$stability" ] && [ "$stability" != stable ] && say "The Caitlyn CLI is in $stability: its commands, flags and output may still change."
 case ":$PATH:" in
   *":$dir:"*) ;;
   *) say "Add $dir to your PATH to run it: export PATH=\"$dir:\$PATH\"" ;;
