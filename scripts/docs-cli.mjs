@@ -674,9 +674,11 @@ export function unrunConsoleBlocks(page) {
 /**
  * /cli/llms.txt (every CLI page with a one-line description, the reference included) and /cli/llms-full.txt (the
  * hand-written pages in full, not the reference), with any budget they are over. `entries` are the build's
- * { page, markdown, path } for every CLI page; `describe` gives a page's one-line description.
+ * { page, markdown, path } for every CLI page; `describe` gives a page's one-line description. `notice` is a callout
+ * every CLI page carries (the "no release yet" one, scripts/docs-releases.mjs): each file says it once, at the top, and
+ * the full file leaves it out of each page. `noticeLine` is what the files say in its place, when shorter.
  */
-export function llmsFiles(entries, { base = SITE, describe = (p) => p.description ?? '', order = (e) => e } = {}) {
+export function llmsFiles(entries, { base = SITE, describe = (p) => p.description ?? '', order = (e) => e, notice = null, noticeLine = notice } = {}) {
   const url = (e) => `${base}/${e.path}`;
   const line = (e) => `- [${e.page.title}](${url(e)}): ${describe(e.page)}`;
   const handWritten = order(entries.filter((e) => e.page.source !== TREE_FILE));
@@ -691,6 +693,7 @@ export function llmsFiles(entries, { base = SITE, describe = (p) => p.descriptio
     '> page is Markdown at its address with `.md` in place of the trailing slash. The installed CLI describes itself too:',
     '> `caitlyn commands --json` (every command) and `caitlyn help <command> --format markdown|json` (one command).',
     '',
+    ...(noticeLine ? [noticeLine, ''] : []),
     '## Start here',
     '',
     ...handWritten.map(line),
@@ -710,7 +713,8 @@ export function llmsFiles(entries, { base = SITE, describe = (p) => p.descriptio
     `- [The whole site](${base}/llms.txt): the SDKs, the HTTP API and every guide`,
     '',
   ].join('\n');
-  const full = [...handWritten, ...tables].map((e) => `<!-- ${base}/${e.page.slug}/ -->\n${e.markdown.replace(/^---\n[\s\S]*?\n---\n\n?/, '')}`).join('\n');
+  const own = (md) => (notice ? md.replace(`${notice}\n\n`, '') : md);
+  const full = [...(noticeLine ? [`${noticeLine}\n`] : []), ...[...handWritten, ...tables].map((e) => `<!-- ${base}/${e.page.slug}/ -->\n${own(e.markdown.replace(/^---\n[\s\S]*?\n---\n\n?/, ''))}`)].join('\n');
   const problems = [];
   if (tokens(index) > LLMS_BUDGET) problems.push(`/cli/llms.txt is about ${tokens(index)} tokens, over its budget of ${LLMS_BUDGET}`);
   if (tokens(full) > LLMS_FULL_BUDGET) problems.push(`/cli/llms-full.txt is about ${tokens(full)} tokens, over its budget of ${LLMS_FULL_BUDGET}`);

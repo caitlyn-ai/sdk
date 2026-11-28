@@ -936,8 +936,9 @@ main:not(:has(p.caitlyn-lead)) .caitlyn-page-header {
   max-width: none;
 }
 /* An operation's stability as a badge, beside its name under the title and in its Stability row: the REQUIRED pill's
-   shape, a tint per level (GA field green, Beta amber, Internal clay), in the status labels' fixed dark ink, which is
-   above 9:1 on each tint in both themes */
+   shape. Preview is a quiet neutral outline, in muted ink; Experimental a clay outline; Internal a clay tint in the
+   status labels' fixed dark ink. A generally available operation has no badge (scripts/docs-reference.mjs). None of
+   them is the Beta label's accent fill (.caitlyn-channel, below): stability and the release channel never look alike. */
 .caitlyn-stability {
   display: inline-block;
   margin-right: 6px;
@@ -956,14 +957,103 @@ main:not(:has(p.caitlyn-lead)) .caitlyn-page-header {
 .caitlyn-stability[data-stability='ga'] {
   background: var(--caitlyn-field-accent-01);
 }
-.caitlyn-stability[data-stability='beta'] {
-  background: var(--caitlyn-amber-accent-01);
+.caitlyn-stability[data-stability='preview'] {
+  padding: 0 5px;
+  border: 1px solid var(--caitlyn-rule);
+  color: var(--caitlyn-muted);
+}
+.caitlyn-stability[data-stability='experimental'] {
+  padding: 0 5px;
+  border: 1px solid var(--caitlyn-clay-accent-01);
+  color: var(--caitlyn-ink);
 }
 .caitlyn-stability[data-stability='internal'] {
   background: var(--caitlyn-clay-accent-01);
 }
 .caitlyn-page-subtitle .caitlyn-stability {
   margin: 0 0 0 10px;
+}
+
+/* The release channel's Beta label (scripts/docs-releases.mjs betaLabel, set by src/plugins/rehype-channels.mjs):
+   "New in 0.12.0-beta.1" in the accent fill and the dark ink, linking to the install-a-beta commands. It marks what no
+   stable release has yet: an operation (beside its stability badge), a member, an enum value, a guide section or a
+   CLI page. */
+.caitlyn-channel,
+.sl-markdown-content a.caitlyn-channel {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: var(--caitlyn-radius-inline);
+  background: var(--caitlyn-accent-fill);
+  color: var(--caitlyn-primary-dark-100);
+  font-family: var(--caitlyn-sans);
+  font-size: var(--caitlyn-text-kicker);
+  font-weight: 500;
+  line-height: 1.6;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.caitlyn-channel:hover,
+.sl-markdown-content a.caitlyn-channel:hover {
+  background: var(--caitlyn-accent-fill-hover);
+  color: var(--caitlyn-primary-dark-100);
+}
+/* A section's label, alone on its line under the heading */
+.sl-markdown-content p > a.caitlyn-channel:only-child {
+  margin-left: 0;
+}
+.caitlyn-page-subtitle .caitlyn-channel {
+  margin: 0 0 0 6px;
+}
+/* The sidebar's Beta marker on a page with something only a beta has (scripts/docs-build.mjs) */
+.sidebar-content .sl-badge.caitlyn-channel-badge {
+  border-color: transparent;
+  background: var(--caitlyn-accent-fill);
+  color: var(--caitlyn-primary-dark-100);
+}
+
+/* Stable or beta, where the two differ (scripts/docs-releases.mjs channelSwitch): the stable release is shown unless
+   the reader picks the beta (src/scripts/channel-switch.ts sets <html data-channel>) */
+:root:not([data-channel='beta']) [data-channel-only='beta'],
+:root[data-channel='beta'] [data-channel-only='stable'] {
+  display: none;
+}
+.caitlyn-channel-switch {
+  display: inline-flex;
+  margin-right: 6px;
+  border: 1px solid var(--caitlyn-rule);
+  border-radius: var(--caitlyn-radius-inline);
+  overflow: hidden;
+  vertical-align: 1px;
+}
+.caitlyn-channel-switch button {
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  color: var(--caitlyn-muted);
+  font: inherit;
+  font-size: var(--caitlyn-text-kicker);
+  line-height: 1.6;
+  cursor: pointer;
+}
+.caitlyn-channel-switch button + button {
+  border-left: 1px solid var(--caitlyn-rule);
+}
+/* The pressed side follows <html data-channel>, which the head script sets before the page paints, so it is right
+   from the first frame and whatever the switch's script does */
+:root:not([data-channel='beta']) .caitlyn-channel-switch button[data-set-channel='stable'],
+:root[data-channel='beta'] .caitlyn-channel-switch button[data-set-channel='beta'] {
+  color: var(--caitlyn-ink);
+  font-weight: 500;
+}
+:root[data-channel='beta'] .caitlyn-channel-switch button[data-set-channel='beta'] {
+  background: var(--caitlyn-accent-fill);
+  color: var(--caitlyn-primary-dark-100);
+}
+.caitlyn-channels {
+  margin: 16px 0; /* space-4 */
 }
 /* An operation's or helper's name under its title (CreateDocument): the job is the title */
 .caitlyn-page-subtitle {
@@ -1240,7 +1330,7 @@ main {
 /* -------------------------------------------------------------- the sections (sidebar topics) */
 /* The site's sections above the sidebar (starlight-sidebar-topics): subhead rows in Medium, each with its icon in a
    small rounded tile on a hairline; the current section is the sidebar's current row, a panel fill with the amber
-   marker. The Beta label is a kicker on a hairline. GAP: section switcher states. */
+   marker. The Preview badge is a kicker on a hairline. GAP: section switcher states. */
 .starlight-sidebar-topics a {
   font-size: var(--caitlyn-text-subhead);
   font-weight: 500;
@@ -2659,7 +2749,7 @@ main:has(.caitlyn-page-header[data-reference]) .sl-markdown-content > p.caitlyn-
   text-decoration: underline 1px var(--caitlyn-accent-colour);
 }
 /* The change badges, in the stability badges' shape and fixed dark ink: New field green, as GA; Fixed and Changed the
-   light neutral; Stability amber, as Beta; Breaking (and an API release's Removed) clay, the strongest tint */
+   light neutral; Stability amber, as Preview; Breaking (and an API release's Removed) clay, the strongest tint */
 .caitlyn-stability[data-change='new'] {
   background: var(--caitlyn-field-accent-01);
 }
@@ -2712,7 +2802,9 @@ main:has(.caitlyn-page-header[data-reference]) .sl-markdown-content > p.caitlyn-
 }
 /* A merge request's preview opens with its Unreleased entry (scripts/release-notes.mjs): set apart from the releases
    by a dashed rule, its own entries marked with an accent outline that reads as a note, not as a change's badge */
-.sl-markdown-content .caitlyn-release[data-kind='unreleased'] {
+/* The In beta row (a beta tag's notes) is set apart the same way: a pre-release, not one of the releases below it */
+.sl-markdown-content .caitlyn-release[data-kind='unreleased'],
+.sl-markdown-content .caitlyn-release[data-kind='beta'] {
   border-top-style: dashed;
 }
 .sl-markdown-content .caitlyn-this-mr {

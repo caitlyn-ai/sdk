@@ -24,7 +24,9 @@ for (const [fixture, from, to] of [['5.114.0.json', 'v0.8.2', 'v0.9.0'], ['5.115
   const before = modelAt(from);
   const after = modelAt(to);
   test(`the diff of ${from} and ${to}'s models is CaitlynChanges' ${fixture}, change for change and in its order`, { skip: before && after ? false : `this checkout has no ${from} or ${to} (a shallow clone)` }, () => {
-    const expected = JSON.parse(fs.readFileSync(path.join(fixtures, fixture), 'utf8')).changes;
+    // Written before the model renamed beta to preview: the diff names it preview
+    const preview = (v) => (v === 'beta' ? 'preview' : v);
+    const expected = JSON.parse(fs.readFileSync(path.join(fixtures, fixture), 'utf8')).changes.map((c) => ({ ...c, surface: preview(c.surface), ...('stability' in c ? { stability: preview(c.stability) } : {}), ...(c.kind === 'stabilityChanged' ? { from: preview(c.from), to: preview(c.to) } : {}) }));
     assert.deepEqual(modelChanges(before, after), expected);
   });
 }
@@ -40,7 +42,7 @@ test('a new operation is added with its title and stability; a removed one is re
   const changes = modelChanges(before, after);
   assert.deepEqual(changes, [
     { kind: 'operationAdded', surface: 'ga', operation: 'ListThings', stability: 'ga', title: 'Title of ListThings' },
-    { kind: 'operationRemoved', surface: 'beta', operation: 'GetThing', stability: 'beta' },
+    { kind: 'operationRemoved', surface: 'preview', operation: 'GetThing', stability: 'preview' },
   ]);
   assert.deepEqual(changes.map(isBreaking), [false, true]);
 });
@@ -55,7 +57,7 @@ test("a mixin's members are the structure's own, and @required applied to one co
   });
   assert.deepEqual(assemble({ shapes: shapes(true) })['ai.caitlyn.v3#MakeThingInput'].members.name.traits, { 'smithy.api#required': {} });
   const changes = modelChanges({ shapes: shapes(false) }, { shapes: shapes(true) });
-  assert.deepEqual(changes, [{ kind: 'memberChanged', surface: 'beta', shape: 'MakeThingInput', member: 'name', from: { target: 'String', required: false }, to: { target: 'String', required: true } }]);
+  assert.deepEqual(changes, [{ kind: 'memberChanged', surface: 'preview', shape: 'MakeThingInput', member: 'name', from: { target: 'String', required: false }, to: { target: 'String', required: true } }]);
   assert.equal(isBreaking(changes[0]), true, 'a member that became required breaks a caller who leaves it out');
 });
 
@@ -106,4 +108,29 @@ test("a member's new type breaks no one when it is a plain value that takes ever
   assert.equal(isBreaking(c), true, 'without widens, a changed type breaks');
   assert.equal(isBreaking({ ...c, widens: true }), false);
   assert.equal(isBreaking({ ...c, widens: true, to: { ...c.to, required: true } }), true, 'made required still breaks');
+});
+
+// The model names preview `preview` once the app renames it (it was `beta`), and adds `experimental`
+test('preview and experimental operations are public; renaming beta to preview changes nothing', () => {
+  const model = (stability, extra = {}) => ({ shapes: { ...svc(['GetThing', 'ListThings', ...Object.keys(extra)]), ...op('GetThing', { stability, input: 'GetThingInput' }), ...op('ListThings', { stability: 'ga' }), 'ai.caitlyn.v3#GetThingInput': { type: 'structure', members: { id: { target: 'smithy.api#String' } } }, ...Object.assign({}, ...Object.entries(extra).map(([n, st]) => op(n, { stability: st }))) } });
+  assert.deepEqual(modelChanges(model('beta'), model('preview')), []);
+  assert.deepEqual(modelChanges(model('preview'), model('beta')), []);
+  // A member added to a preview operation is a preview change, as one on a beta operation was
+  const more = model('preview');
+  more.shapes['ai.caitlyn.v3#GetThingInput'].members.name = { target: 'smithy.api#String' };
+  assert.deepEqual(modelChanges(model('preview'), more), [{ kind: 'memberAdded', surface: 'preview', shape: 'GetThingInput', member: 'name', target: 'String', required: false }]);
+  // An experimental operation is public, its changes experimental
+  assert.deepEqual(modelChanges(model('preview'), model('preview', { TryThing: 'experimental' })), [{ kind: 'operationAdded', surface: 'experimental', operation: 'TryThing', stability: 'experimental', title: 'Title of TryThing' }]);
+  assert.deepEqual(modelChanges(model('preview', { TryThing: 'experimental' }), model('preview', { TryThing: 'preview' })), [{ kind: 'stabilityChanged', surface: 'preview', operation: 'TryThing', from: 'experimental', to: 'preview' }]);
+  assert.equal(isBreaking({ kind: 'stabilityChanged', from: 'experimental', to: 'preview' }), false);
+  // Every operation still public under the new names: none is removed
+  assert.ok(!modelChanges(model('beta'), model('preview', { TryThing: 'experimental' })).some((c) => c.kind === 'operationRemoved'));
+});
+
+test("main's own model, with every beta written preview, is the same public API", () => {
+  const raw = JSON.parse(fs.readFileSync(path.join(root, 'model/model.json'), 'utf8'));
+  const renamed = JSON.parse(JSON.stringify(raw));
+  for (const s of Object.values(renamed.shapes)) if (s.traits?.['ai.caitlyn.traits#stability'] === 'beta') s.traits['ai.caitlyn.traits#stability'] = 'preview';
+  assert.deepEqual(modelChanges(raw, renamed), []);
+  assert.ok(modelChanges(null, renamed).filter((c) => c.kind === 'operationAdded').length >= 87);
 });

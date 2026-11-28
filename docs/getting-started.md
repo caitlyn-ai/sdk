@@ -21,33 +21,29 @@ people run.
 
 ## Install
 
-```sh tab="TypeScript"
-npm install @caitlyn-ai/sdk
-```
-```sh tab="Python"
-pip install caitlyn
-# or, in a uv project
-uv add caitlyn
-```
-```sh tab="Go"
-go get github.com/caitlyn-ai/sdk/go@latest
-```
-```sh tab="Rust"
-cargo add caitlyn-sdk
-# the examples run on tokio
-cargo add tokio --features macros,rt-multi-thread
-```
+<!-- install -->
 
-Every SDK has the same version number. See [Releases](https://github.com/caitlyn-ai/sdk/releases) for the latest
-version and what changed, or the [Changelog](/changelog/).
+The first commands install the latest stable release, which is what these docs describe; while there is a newer
+beta, its command is beside them. Every SDK has the same version number. See
+[Releases](https://github.com/caitlyn-ai/sdk/releases) for the latest version and what changed, or the
+[Changelog](/changelog/).
 
-Between releases, each change to the API is published as a beta of the next version once every SDK's tests pass on
-it: `0.13.0b1` on PyPI, `0.13.0-beta.1` on npm (`npm install @caitlyn-ai/sdk@beta`), on crates.io and as a Go tag.
-A package manager installs a beta only when you name it, or allow pre-releases.
+## Install a beta
+
+Between stable releases, each change to the API is published as a beta of the next version, once every SDK's tests
+pass on it. A package manager installs a beta only when you ask for one.
+
+<!-- install-beta -->
+
+A beta can still change before its stable release. The [Changelog](/changelog/) opens with what the newest beta
+has. Anything on these pages that only a beta has is marked with the beta it is new in ("New in" and the beta's
+version), linking here.
 
 ## Install the CLI
 
 The `caitlyn` command line does the same from a terminal or a script, and needs no code.
+
+<!-- cli-release -->
 
 ```sh tab-install="macOS and Linux"
 curl -fsSL https://build.caitlyn.ai/releases/cli/install.sh | sh
@@ -63,7 +59,7 @@ scoop bucket add caitlyn https://github.com/caitlyn-ai/scoop-bucket
 scoop install caitlyn
 ```
 ```sh tab-install="Container"
-docker run --rm ghcr.io/caitlyn-ai/caitlyn:0.12 caitlyn version
+docker run --rm ghcr.io/caitlyn-ai/caitlyn:{{cliMinor}} caitlyn version
 ```
 
 Sign in, then check who you are:
@@ -208,6 +204,8 @@ To send requests somewhere else, such as a proxy or a Caitlyn running on your ma
 `endpoint` option. The token audience still comes from the workspace.
 
 ## Name your application
+
+<!-- sdk-release: name-your-application -->
 
 Tell Caitlyn what is calling it. The client's app ID names your application, and `ci` and `agent` say which CI
 system it is running in and which AI agent is driving it. Each SDK adds them to the end of its user agent, as

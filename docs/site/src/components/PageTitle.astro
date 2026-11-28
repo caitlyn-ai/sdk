@@ -14,11 +14,16 @@ const data = Astro.locals.starlightRoute.entry.data as {
   server?: boolean;
   apiAnchors?: Record<string, string>;
   operation?: Parameters<typeof OperationHeader>[0]['operation'];
+  channel?: { text: string; link: string; title: string };
 };
-// An operation's stability, as a badge beside its name (scripts/docs-reference.mjs STABILITY has the same words)
+// The release channel's label beside the title: an operation's, or a page's own (scripts/docs-releases.mjs)
+const channel = (data.operation as { channel?: { text: string; link: string; title: string } } | undefined)?.channel ?? data.channel;
+// An operation's stability, as a badge beside its name (scripts/docs-reference.mjs STABILITY has the same words). A
+// generally available operation has none: the badge marks what may still change. Its release channel is a separate
+// label, the Beta label (scripts/docs-releases.mjs), beside it when no stable release has the operation.
 const STABILITY: Record<string, { badge: string; text: string }> = {
-  ga: { badge: 'GA', text: 'Generally available' },
-  beta: { badge: 'Beta', text: 'Public, and may still change before it is generally available' },
+  preview: { badge: 'Preview', text: 'Public, and may still change before it is generally available' },
+  experimental: { badge: 'Experimental', text: 'In the SDK betas only, and may change or go before it is a preview' },
   internal: { badge: 'Internal', text: 'For Caitlyn itself; not in the public SDKs' },
 };
 const steps = data.pageType === 'guide';
@@ -53,6 +58,11 @@ const reference = data.pageType === 'reference' || data.pageType === 'error' || 
           <span class="caitlyn-stability" data-stability={data.operation.stability} title={STABILITY[data.operation.stability].text}>
             {STABILITY[data.operation.stability].badge}
           </span>
+        )}
+        {channel && (
+          <a class="caitlyn-channel" href={channel.link} title={channel.title}>
+            {channel.text}
+          </a>
         )}
       </p>
     )

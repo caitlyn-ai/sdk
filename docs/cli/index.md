@@ -33,7 +33,7 @@ scoop bucket add caitlyn https://github.com/caitlyn-ai/scoop-bucket
 scoop install caitlyn
 ```
 ```sh tab-install="Container"
-docker run --rm ghcr.io/caitlyn-ai/caitlyn:0.12 caitlyn version
+docker run --rm ghcr.io/caitlyn-ai/caitlyn:{{cliMinor}} caitlyn version
 ```
 
 Archives for every platform, deb and rpm packages, and their checksums are at `https://build.caitlyn.ai/releases/cli/<version>/`. The installers check the release's signed manifest, then each download's SHA-256 against it. `caitlyn update` updates an install made with the script or an archive; for the others it tells you the command to run, such as `brew upgrade caitlyn`. [Installing the CLI](/cli/install/) has the options, how to verify a release yourself, and how updates and rollbacks work.

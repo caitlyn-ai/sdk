@@ -6,10 +6,12 @@
 //
 //   node scripts/model-diff.mjs OLD_MODEL.json NEW_MODEL.json     prints the changes as JSON
 //
-// Only the public surface counts, as in CaitlynChanges: shapes a GA or beta operation reaches (through members,
-// input, output and errors, mixins, and the shape ids the model's traits name), and the errors bound on the
-// service, which every operation can return. Each change carries `surface`: `ga` when a GA operation reaches it,
-// `beta` otherwise. docs/site/test/model-diff.test.mjs checks this against two changes.json CaitlynChanges wrote.
+// Only the public surface counts, as in CaitlynChanges: shapes a GA, preview or experimental operation reaches
+// (through members, input, output and errors, mixins, and the shape ids the model's traits name), and the errors
+// bound on the service, which every operation can return. Each change carries `surface`, the widest stability that
+// reaches it: `ga`, `preview` or `experimental`. The model's older `beta` is preview, here and in every `stability` a
+// change names, so renaming it changes nothing. docs/site/test/model-diff.test.mjs checks this against two
+// changes.json CaitlynChanges wrote before the rename (their `beta` read as preview).
 import fs from 'node:fs';
 
 export const SERVICE = 'ai.caitlyn.v3#Caitlyn';
@@ -179,10 +181,15 @@ function traitIds(shapes, traits, out) {
   for (const [t, v] of Object.entries(traits ?? {})) if (t !== 'smithy.api#documentation' && t !== 'smithy.api#examples') visit(v);
 }
 
-const stability = (op) => op.traits?.[STABILITY] ?? 'beta';
-const widest = (a, b) => (a === 'ga' || b === 'ga' ? 'ga' : a ?? b);
+// The model's stability levels, as the changes name them: `beta` is the older name for preview
+const LEVELS = { beta: 'preview', preview: 'preview', experimental: 'experimental', ga: 'ga', internal: 'internal' };
+export const stabilityOf = (raw) => LEVELS[raw ?? 'preview'] ?? raw;
+const stability = (op) => stabilityOf(op.traits?.[STABILITY]);
+const PUBLIC = ['experimental', 'preview', 'ga'];
+// The wider of two levels: GA over preview over experimental
+const widest = (a, b) => (PUBLIC.indexOf(a) >= PUBLIC.indexOf(b) ? a ?? b : b);
 
-/** Every shape a GA or beta operation reaches, with the widest stability reaching it; the service's errors too. */
+/** Every shape a GA, preview or experimental operation reaches, with the widest stability reaching it; the service's errors too. */
 export function surface(shapes) {
   const reach = new Map();
   const walk = (start, level) => {
@@ -199,7 +206,7 @@ export function surface(shapes) {
   let widestPublic = null;
   for (const id of containedOperations(shapes)) {
     const level = stability(shapes[id]);
-    if (level !== 'ga' && level !== 'beta') continue;
+    if (!PUBLIC.includes(level)) continue;
     widestPublic = widest(widestPublic, level);
     walk(id, level);
   }
@@ -273,7 +280,7 @@ export function modelChanges(oldAst, newAst) {
 
   const serviceBefore = before[SERVICE];
   if (after[SERVICE] && serviceBefore) {
-    const surf = [...newSurface.values(), ...oldSurface.values()].includes('ga') ? 'ga' : 'beta';
+    const surf = [...newSurface.values(), ...oldSurface.values()].reduce((a, b) => widest(a, b), null);
     const eb = new Set((serviceBefore.errors ?? []).map((e) => e.target));
     const ea = new Set((after[SERVICE].errors ?? []).map((e) => e.target));
     for (const e of [...ea].sort(cmp)) if (!eb.has(e)) changes.push(withStatus({ kind: 'serviceErrorAdded', surface: surf, error: name(e) }, after[e]));

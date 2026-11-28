@@ -205,7 +205,7 @@ export async function sitePages() {
  */
 export function apiGroups(changes, { pages, errorCodes = {}, codeOperations = {} }) {
   const groups = [];
-  const subjectOf = (md) => md.replace(/^- /, '').split(/: | \(beta\)/)[0];
+  const subjectOf = (md) => md.replace(/^- /, '').split(/: | \((?:preview|experimental)\)/)[0];
   const rest = apiSections({ changes: changes.filter((c) => !isBreaking(c)) }, pages, { errorCodes, codeOperations }).sections;
   for (const s of rest) groups.push({ key: s.slug, heading: API_HEADINGS[s.slug] ?? s.title, items: s.items.map((md) => ({ md: md.replace(/^- /, ''), subject: subjectOf(md) })) });
   const breaking = apiSections({ changes: changes.filter(isBreaking) }, pages, { errorCodes, codeOperations }).sections;
@@ -265,6 +265,20 @@ export function renderSection({ version, previousTag, date, entries, apiGroups: 
   const breaking = entries.filter((e) => e.breaking);
   if (breaking.length) out.push('### BREAKING CHANGES', '', ...breaking.map((e) => line(e, false)), '', '');
   return `${out.join('\n').replace(/\n+$/, '')}\n`;
+}
+
+/**
+ * A beta's notes, as its GitHub pre-release has them (`notes` on the beta's tree): every change from the last stable
+ * release before the beta's tag to that tag, headed as a release (`# [0.12.0-beta.1](compare url) (date)`, dated by
+ * the tag's commit). The docs build shows them as the Changelog's "In beta" row (scripts/docs-changelog.mjs). Null
+ * when the checkout has no such tag.
+ */
+export function betaNotes(version, { site }) {
+  const tag = `v${version}`;
+  if (!resolves(tag)) return null;
+  const from = lastTag(tag);
+  const r = collect({ from, to: tag, site });
+  return renderSection({ version, previousTag: from, date: utcDate(git(['log', '-1', '--format=%cI', tag])), ...r });
 }
 
 // ------------------------------------------------------------------------------------------------ merge requests

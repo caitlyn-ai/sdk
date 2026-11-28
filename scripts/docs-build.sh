@@ -14,8 +14,9 @@ if scripts/model-latest.sh build/published-model.json; then
 else
   echo "warning: could not read the latest published model, so availability comes from the snapshot's own @since (model/model.lock.json: $(node -p "require('./model/model.lock.json').version ?? 'unpublished'")). Pages may say an operation is not available when a release already serves it." >&2
 fi
+# The CLI's channel pointers, and in CI the whole history with every tag (a build that publishes stops when it
+# can't read them)
+scripts/docs-build-inputs.sh
 # The site's tests: heading ids, language tabs, and the API reference (which reads the prepared model)
 (cd docs/site && npm test --silent)
-# The install instructions name the latest release tag. A CI checkout may not have the tags.
-if [ -n "${CI:-}" ] && [ -z "$(git tag --list 'v*' 2>/dev/null)" ]; then git fetch --quiet --tags origin || true; fi
 node scripts/docs-build.mjs

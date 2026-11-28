@@ -21,13 +21,13 @@ The script reads the release's manifest, downloads the archive for your machine,
 
 | Variable | Default | |
 | --- | --- | --- |
-| `CAITLYN_INSTALL_VERSION` | the channel's newest | A version to install, such as `0.12.0` |
+| `CAITLYN_INSTALL_VERSION` | the channel's newest | A version to install, such as `{{cliVersion}}` |
 | `CAITLYN_CHANNEL` | `stable` | `stable` or `beta` |
 | `CAITLYN_INSTALL_DIR` | as above | Where the binary goes |
 | `CAITLYN_REQUIRE_SIGNATURE` | unset | `1`: stop when the signature can't be checked |
 
 ```sh
-curl -fsSL https://build.caitlyn.ai/releases/cli/install.sh | CAITLYN_INSTALL_VERSION=0.12.0 sh
+curl -fsSL https://build.caitlyn.ai/releases/cli/install.sh | CAITLYN_INSTALL_VERSION={{cliVersion}} sh
 ```
 
 The manifest is signed with minisign, and the script checks that signature before it trusts the checksums, refusing a release whose signature doesn't verify. It needs nothing extra to do so: on macOS and Linux it uses [minisign](https://jedisct1.github.io/minisign/) when you have it, else OpenSSL 3 or Node.js, and on Windows it checks the signature itself. On the rare machine with none of them, it warns that it couldn't check the signature and relies on the checksum and the HTTPS download; set `CAITLYN_REQUIRE_SIGNATURE=1` to stop instead, as the GitHub action does.
@@ -48,12 +48,12 @@ Homebrew also installs shell completions for bash, zsh and fish.
 `ghcr.io/caitlyn-ai/caitlyn` has the CLI and a shell, for CI jobs:
 
 ```yaml
-image: ghcr.io/caitlyn-ai/caitlyn:0.12
+image: ghcr.io/caitlyn-ai/caitlyn:{{cliMinor}}
 script:
   - caitlyn apply -f caitlyn/ --yes
 ```
 
-Its tags are each version (`0.12.4`), each minor line (`0.12`) and `latest`. Pin a version or a minor line in CI. The image holds the same binaries as the release's archives.
+Its tags are each version (`{{cliVersion}}`), each minor line (`{{cliMinor}}`) and `latest`. Pin a version or a minor line in CI. The image holds the same binaries as the release's archives.
 
 ## Archives and packages
 
@@ -69,7 +69,7 @@ Every release is at `https://build.caitlyn.ai/releases/cli/<version>/`:
 Check the manifest's signature with the release key, then the archive's SHA-256 against the manifest:
 
 ```sh
-v=0.12.4
+v={{cliVersion}}
 base=https://build.caitlyn.ai/releases/cli
 curl -fsSLO "$base/$v/manifest.json" -fsSLO "$base/$v/manifest.json.minisig"
 curl -fsSLO "$base/$v/caitlyn_${v}_linux_amd64.tar.gz"
@@ -93,7 +93,7 @@ curl -fsSLO "$base/$v/checksums.txt" -fsSLO "$base/$v/checksums.txt.sigstore.jso
 cosign verify-blob --key https://build.caitlyn.ai/releases/cli/cosign.pub --bundle checksums.txt.sigstore.json checksums.txt
 sha256sum --check --ignore-missing checksums.txt
 
-cosign verify --key https://build.caitlyn.ai/releases/cli/cosign.pub ghcr.io/caitlyn-ai/caitlyn:0.12.4
+cosign verify --key https://build.caitlyn.ai/releases/cli/cosign.pub ghcr.io/caitlyn-ai/caitlyn:{{cliVersion}}
 ```
 
 Compare the cosign key with the one built into a `caitlyn` you trust in the same way: the key file's body, without its `BEGIN` and `END` lines, is the `signingKeys.cosign` value.

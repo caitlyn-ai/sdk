@@ -21,9 +21,11 @@ import { SDK_TYPES, addIngestionIntro, apiOverview, apiPages, entryTips, publish
 import { documentProblems, lineProblems } from './docs-wording.mjs';
 import { LIVE_URL, isLive, lastModified, robotsTxt, sitemapXml } from './docs-sitemap.mjs';
 import { atomFeed, changelogPage, errorLinks, mergeReleases, parseChangelog, readApiReleases } from './docs-changelog.mjs';
-import { unreleased } from './release-notes.mjs';
+import { betaNotes, unreleased } from './release-notes.mjs';
 import { CLI_SECTIONS, TREE_FILE, cliExamples, cliPages, cliProblems, commandProblems, commandsByOperation, errorSection, llmsFiles, loadCli, swallowedPlaceholders, uncapturedOutput, unrunConsoleBlocks } from './docs-cli.mjs';
 import { ERROR_CODES } from '../docs/error-codes.mjs';
+import { BETA_LABEL, apiChannels, changeArrival, channels, cliNotice, cliRelease, cliVersions, fillChannelToggles, fillCliRelease, fillInstall, fillInstallBeta, fillSdkRelease, plainChannels, withCliNotice } from './docs-releases.mjs';
+import { modelChanges } from './model-diff.mjs';
 
 // Where the site is served: https://build.caitlyn.ai, at the root; a merge request's preview is the same build at the
 // root of its own host (docs:preview). pages.json, llms.txt, the sitemap and the moved pages name these addresses.
@@ -59,6 +61,18 @@ function latestRelease() {
 }
 const release = latestRelease();
 if (release === 'vX.Y.Z') console.warn('docs-build: no v* release tag in this checkout, so the install instructions say vX.Y.Z');
+// The site describes the latest stable release and marks what only a beta has (scripts/docs-releases.mjs): the
+// releases from the tags; what main's model adds or changes against the stable release's, for the reference's Beta
+// labels and switches (on the model the reference reads, as ast.channels); and whether the CLI has a release yet
+const releaseChannels = channels();
+ast.channels = apiChannels({ ch: releaseChannels, diff: modelChanges });
+const cliReleased = cliRelease();
+const cliVersion = cliVersions(cliReleased);
+const cliBeta = cliNotice(cliReleased, { arrived: changeArrival('the-caitlyn-cli'), stable: releaseChannels.stable });
+// The CLI's llms files say the notice once, in words (scripts/docs-cli.mjs llmsFiles)
+const cliArrived = changeArrival('the-caitlyn-cli');
+const cliLine = `> The CLI is ${cliReleased?.beta ?? cliArrived?.beta ? `new in ${cliReleased?.beta ?? cliArrived.beta}` : 'new'} and has no ${cliReleased ? 'stable ' : ''}release yet.`;
+console.log(`docs-build: the latest stable release is ${releaseChannels.stable ?? 'none'}, the newest beta ${releaseChannels.beta ?? 'none'}. Against ${releaseChannels.stable ?? 'no stable release'}, main adds ${ast.channels.operations.size} operations, ${ast.channels.members.size} members and ${ast.channels.enumValues.size} enum values, and changes ${ast.channels.changed.size} members. The CLI ${cliReleased ? `is released (${cliReleased.stable ?? cliReleased.beta})` : 'has no release yet'}.`);
 
 /** A hand-written page's body (its "Not available yet" marker already filled, scripts/docs-model.mjs): without front matter, its `# title`, or the example markers (build plumbing). */
 function handWrittenBody(markdown) {
@@ -69,6 +83,8 @@ function handWrittenBody(markdown) {
     .filter((l) => !MARKER.test(l.trim()))
     .join('\n')
     .replaceAll('{{sdkRelease}}', release)
+    .replaceAll('{{cliVersion}}', cliVersion.version)
+    .replaceAll('{{cliMinor}}', cliVersion.minor)
     .replace(/^\n+/, '');
 }
 
@@ -90,7 +106,14 @@ for (const p of readPages()) {
   const section = SECTIONS.find((s) => p.slug.startsWith(`${s.dir}/`));
   const isCli = p.slug === 'cli' || p.slug.startsWith('cli/');
   if (isCli && p.metadata && p.metadata.pageType !== 'cli') fail(p.file, `pageType is "${p.metadata.pageType}", not cli`);
-  pages.push({ slug: p.slug, title: p.title, metadata: p.metadata, body: handWrittenBody(fillIfMatchOptional(fillNotAvailable(p.markdown, { operations: p.metadata?.operations ?? [] }), ifMatchOptional(ast))), source: p.file, kind: p.slug.startsWith('guides/') ? 'guides' : isCli ? 'cli' : section ? section.dir : 'pages' });
+  // The Beta label on each new section (`<!-- sdk-release: … -->`), the stable-or-beta switch on each section written
+  // both ways (`<!-- channel-toggle: … -->`), the install commands, and the CLI's notice (scripts/docs-releases.mjs)
+  const sdkRelease = fillSdkRelease(fillNotAvailable(p.markdown, { operations: p.metadata?.operations ?? [] }), { stable: releaseChannels.stable });
+  const toggles = fillChannelToggles(sdkRelease.markdown, { stable: releaseChannels.stable });
+  for (const problem of [...sdkRelease.problems, ...toggles.problems]) fail(p.file, problem);
+  const filled = fillCliRelease(fillInstallBeta(fillInstall(toggles.markdown, releaseChannels), releaseChannels), cliReleased);
+  const body = handWrittenBody(fillIfMatchOptional(filled, ifMatchOptional(ast)));
+  pages.push({ slug: p.slug, title: p.title, metadata: p.metadata, body: isCli ? withCliNotice(body, cliBeta) : body, source: p.file, kind: p.slug.startsWith('guides/') ? 'guides' : isCli ? 'cli' : section ? section.dir : 'pages' });
 }
 const reference = referencePages(ast, { cli: { examples: cliExamples(cli.tree), commands: commandsByOperation(cli.tree) } });
 for (const p of reference.pages) {
@@ -107,7 +130,7 @@ for (const p of reference.pages) {
 const cliGenerated = cliPages(cli, { errorCodes: ERROR_CODES });
 for (const p of cliGenerated) {
   for (const problem of metadataProblems(p.metadata)) fail(`${p.slug} (generated)`, problem);
-  pages.push(p);
+  pages.push({ ...p, body: withCliNotice(p.body, cliBeta) });
 }
 for (const problem of cliProblems(cli, cliGenerated, { errorCodes: ERROR_CODES })) fail(TREE_FILE, problem);
 // The groups the sidebars, the overviews and the OpenAPI document's tags share: the client tree (scripts/docs-api.mjs)
@@ -232,9 +255,17 @@ if (process.env.DOCS_UNRELEASED === 'on') {
   if (preview) {
     preview.since = from;
     const mine = new Set(thisMr.subjects);
-    for (const c of preview.changes) c.thisMr = mine.has(c.subject) || mine.has(c.subject.split(/: | \(beta\)/)[0]);
+    for (const c of preview.changes) c.thisMr = mine.has(c.subject) || mine.has(c.subject.split(/: | \((?:preview|experimental)\)/)[0]);
     sdkReleases.unshift(preview);
   }
+}
+// While a beta is newer than the latest stable release, the Changelog opens with its notes as one "In beta" row
+// (scripts/release-notes.mjs betaNotes), after a merge request's Unreleased entry; the feed leaves it out
+if (releaseChannels.beta) {
+  const notes = betaNotes(releaseChannels.beta, { site: { pages, errorCodes, codeOperations } });
+  const [beta] = notes ? parseChangelog(notes) : [];
+  if (beta) sdkReleases.splice(sdkReleases[0]?.unreleased ? 1 : 0, 0, beta);
+  else fail('CHANGELOG.md', `the newest beta, ${releaseChannels.beta}, has no notes the Changelog can read`);
 }
 const releases = mergeReleases(sdkReleases, apiReleases.releases);
 {
@@ -335,7 +366,8 @@ function description(body) {
 
 /** The canonical Markdown: knowledge-base front matter, the title (with the id Starlight gives it), the body. */
 /** An operation's or helper's page has its name under its title (`CreateDocument`). */
-const canonical = (p) => `${frontMatter(p.metadata)}\n# ${p.title} {#_top}\n\n${p.subtitle ? `\`${p.subtitle}\`\n\n` : ''}${p.body.trimEnd()}\n`;
+// A section written for both the stable release and the beta is both, one after the other (scripts/docs-releases.mjs)
+const canonical = (p) => `${frontMatter(p.metadata)}\n# ${p.title} {#_top}\n\n${p.subtitle ? `\`${p.subtitle}\`\n\n` : ''}${plainChannels(p.body).trimEnd()}\n`;
 
 // --------------------------------------------------------------------------------- the Starlight project
 
@@ -516,6 +548,8 @@ for (const p of pages) {
       : []),
     // An operation's or helper's name, under its title (src/components/PageTitle.astro)
     ...(p.subtitle ? [`subtitle: ${yaml(p.subtitle)}`] : []),
+    // A page's release-channel note beside its title, where it is not an operation's (an operation the betas dropped)
+    ...(p.channel ? [`channel: ${yaml(p.channel)}`] : []),
     `description: ${yaml(description(p.body))}`,
     // An explicit slug keeps the address exactly as written (Starlight would lower-case /errors/NOT_FOUND/)
     ...(p.slug ? [`slug: ${yaml(p.slug)}`] : ['tableOfContents: false', ...landing]),
@@ -548,7 +582,10 @@ for (const p of pages) {
 // the app's guides. SDK reference holds the operations by SDK namespace, then the types and the error codes.
 const bySlug = new Map(pages.map((p) => [p.slug, p]));
 // Starlight puts the base in front of sidebar links itself
-const link = (p, label = p.title) => ({ label, link: `/${p.slug ? `${p.slug}/` : ''}` });
+// A page with something only a beta has (its Beta label, scripts/docs-releases.mjs) has a small Beta marker
+const hasBeta = (p) => !!(p.operation?.channel ?? p.channel) || BETA_LABEL.test(p.siteBody ?? p.body ?? '');
+const BETA_MARKER = { text: 'Beta', variant: 'default', class: 'caitlyn-channel-badge' };
+const link = (p, label = p.title) => ({ label, link: `/${p.slug ? `${p.slug}/` : ''}`, ...(hasBeta(p) ? { badge: BETA_MARKER } : {}) });
 // A reference page's link (an operation, type or error code) stays on one line, cut with an ellipsis
 // (src/styles/components.css), and carries its full name for the tooltip shown when it is cut (src/scripts/sidebar-cut.ts).
 // The full name is the link's own text either way, so a screen reader reads all of it.
@@ -571,6 +608,8 @@ const getStarted = [bySlug.get(''), ...startPagesOf(START.filter((s) => !placed.
 const sdkPageOf = (e) => pages.find((p) => p.kind === 'reference' && (e.op ? p.operation?.name === e.op.name : p.helper === e.helper.id));
 const referenceGroups = [
   ...sidebarGroups(tree, (e) => { const p = sdkPageOf(e); return opLink(p, sidebarLabel(e.op?.name ?? e.helper.id, p.label ?? p.title)); }),
+  // The operations the betas dropped, which the stable release still has (scripts/docs-reference.mjs)
+  ...(pages.some((p) => p.removed) ? [{ label: 'Not in the betas', collapsed: true, items: pages.filter((p) => p.removed).map((p) => refLink(p)) }] : []),
   // What the SDKs return around the API's results (handles, scopes, streams, lists, requests, error classes)
   { label: 'SDK types', collapsed: true, items: pages.filter((p) => p.group === 'sdk-types').map((p) => refLink(p)) },
   // A type's or an error code's name is code, so its entry is in the code face (data-code-label); every other entry is
@@ -600,7 +639,7 @@ const sidebar = [
     ],
   },
   { label: 'How the API works', link: link(howItWorks[0]).link, icon: 'puzzle', items: howItWorks.map((p) => link(p)) },
-  { label: 'SDK reference', link: '/sdk/', icon: 'seti:json', badge: { text: 'Beta', variant: 'default' }, items: [link(bySlug.get('sdk'), 'Overview'), ...referenceGroups] },
+  { label: 'SDK reference', link: '/sdk/', icon: 'seti:json', badge: { text: 'Preview', variant: 'default' }, items: [link(bySlug.get('sdk'), 'Overview'), ...referenceGroups] },
 ];
 const laterTopics = getStarted.filter((p) => !FIRST_TOPICS.includes(p.slug)).map(pageTopic);
 // The HTTP API's reference: its overview, its operations by the SDK reference's groups, then shortcuts to the types and
@@ -662,7 +701,7 @@ sidebar.push(apiTopic);
   groups.splice(tablesAt < 0 ? groups.length : tablesAt, 0, reference);
   const start = bySlug.get('cli');
   if (!start) fail('docs/cli/index.md', 'the CLI section has no start page');
-  else sidebar.push({ label: 'CLI', link: '/cli/', icon: 'seti:shell', badge: { text: 'Beta', variant: 'default' }, items: [link(start, 'Overview'), ...groups] });
+  else sidebar.push({ label: 'CLI', link: '/cli/', icon: 'seti:shell', badge: { text: 'Preview', variant: 'default' }, items: [link(start, 'Overview'), ...groups] });
 }
 // The FAQ, the Changelog and any other start page, after the sections
 sidebar.push(...laterTopics);
@@ -894,16 +933,22 @@ const ordered = [...startPages, ...kind('guides'), ...SECTIONS.flatMap((s) => ki
     const rank = (e) => (e.page.slug === 'cli' ? -1 : CLI_SECTIONS.findIndex((s) => s.pages.includes(e.page.slug) || (s.prefix && e.page.slug.startsWith(s.prefix))));
     return [...list].sort((a, b) => rank(a) - rank(b));
   };
-  const files = llmsFiles(kind('cli'), { base: PROD_URL, describe: (p) => description(p.body), order: cliOrder });
+  const files = llmsFiles(kind('cli'), { base: PROD_URL, describe: (p) => description(p.body), order: cliOrder, notice: cliBeta, noticeLine: cliBeta && cliLine });
   for (const problem of files.problems) fail('the CLI llms files', problem);
   fs.mkdirSync(path.join(site, 'cli'), { recursive: true });
   fs.writeFileSync(path.join(site, 'cli/llms.txt'), files.index);
   fs.writeFileSync(path.join(site, 'cli/llms-full.txt'), files.full);
 }
-fs.writeFileSync(
-  path.join(site, 'llms-full.txt'),
-  ordered.map((e) => `<!-- ${PROD_URL}/${e.page.slug ? `${e.page.slug}/` : ''} -->\n${e.markdown.replace(/^---\n[\s\S]*?\n---\n\n?/, '')}`).join('\n'),
-);
+// Every page in full. The CLI's notice, which each CLI page carries, is said once, where the CLI's pages start, as in
+// /cli/llms-full.txt
+{
+  const firstCli = ordered.findIndex((e) => e.page.kind === 'cli');
+  const own = (e) => (cliBeta && e.page.kind === 'cli' ? e.markdown.replace(`${cliBeta}\n\n`, '') : e.markdown);
+  fs.writeFileSync(
+    path.join(site, 'llms-full.txt'),
+    ordered.map((e, i) => `${cliBeta && i === firstCli ? `${cliLine}\n\n` : ''}<!-- ${PROD_URL}/${e.page.slug ? `${e.page.slug}/` : ''} -->\n${own(e).replace(/^---\n[\s\S]*?\n---\n\n?/, '')}`).join('\n'),
+  );
+}
 fs.writeFileSync(
   path.join(out, 'pages.json'),
   JSON.stringify({ pages: entries.map(({ path: p, url, title, metadata }) => ({ path: p, url, title, metadata })) }, null, 2) + '\n',
