@@ -24,6 +24,7 @@
 //   Python      the caitlyn and caitlyn-core pyproject.toml files, the caitlyn-core pin, both __version__ values
 //               (the User-Agent and the tracer version), the uv lock file
 //   Go          SDKVersion (the User-Agent and the tracer's instrumentation version)
+//   CLI         its command manifest, and the docs' snapshot of it (docs/cli/tree.json)
 //   Rust        both crates' versions, the core dependency, SDK_VERSION (the User-Agent), the three Cargo.lock files (the SDK's, the conformance harness's, the docs examples')
 // Go module versions are git tags, so no Go file carries one apart from SDKVersion.
 import fs from 'node:fs';
@@ -88,6 +89,8 @@ const generated = [
   rule('rust/caitlyn-sdk/src/lib.rs', String.raw`pub const SDK_VERSION: &str = "${V}";`),
   // The CLI's command manifest, which also carries the CLI's own version (cli/internal/spec)
   rule('cli/internal/spec/commands.json', String.raw`\n  "version": "${V}"`),
+  // The CLI's description of itself for the docs, written by its tests (TestDocsSnapshot) from that manifest
+  rule('docs/cli/tree.json', String.raw`"cli": \{\n      "version": "${V}"`),
 ];
 
 if (mode === 'files' || mode === 'assets') {

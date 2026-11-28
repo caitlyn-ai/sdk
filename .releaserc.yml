@@ -78,6 +78,7 @@ plugins:
         - 'rust/caitlyn-sdk/Cargo.toml' # stamped
         - 'rust/caitlyn-sdk/src/lib.rs' # stamped
         - 'cli/internal/spec/commands.json' # stamped
+        - 'docs/cli/tree.json' # stamped
         - 'CHANGELOG.md' # written by @semantic-release/changelog, not stamped
   - '@semantic-release/gitlab'
 branches:

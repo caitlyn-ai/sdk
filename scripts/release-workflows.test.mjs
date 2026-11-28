@@ -1,5 +1,5 @@
-// Tests for the GitHub release workflows' tag check (.github/workflows/release-pypi.yml, release-crates.yml and
-// release-github.yml), which decides what each one publishes: a release tag vX.Y.Z, or a beta tag vX.Y.Z-beta.N
+// Tests for the GitHub release workflows' tag check (.github/workflows/release-pypi.yml, release-crates.yml,
+// release-github.yml and release-npm.yml), which decides what each one publishes: a release tag vX.Y.Z, or a beta tag vX.Y.Z-beta.N
 // (the GitLab model:main job's), and nothing else. Each test runs a workflow's own "Choose the tag" step, as GitHub
 // would, with a tag in TAG and GITHUB_OUTPUT a file, so nothing is pushed or published. The CI job release:workflows
 // runs it:
@@ -12,7 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
-const WORKFLOWS = ['release-pypi', 'release-crates', 'release-github'];
+const WORKFLOWS = ['release-pypi', 'release-crates', 'release-github', 'release-npm'];
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'release-workflows-'));
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
@@ -50,8 +50,9 @@ for (const workflow of WORKFLOWS) {
     const r = chooseTag(workflow, 'v0.12.0');
     assert.equal(r.status, 0, r.stderr);
     assert.equal(r.outputs.tag, 'v0.12.0');
-    if (workflow !== 'release-github') assert.equal(r.outputs.version, '0.12.0');
+    if (['release-pypi', 'release-crates'].includes(workflow)) assert.equal(r.outputs.version, '0.12.0');
     if (workflow === 'release-pypi') assert.equal(r.outputs.pyversion, '0.12.0');
+    if (workflow === 'release-npm') assert.equal(r.outputs.dist_tag, 'latest');
   });
 
   test(`${workflow} takes a beta tag`, () => {
@@ -59,8 +60,10 @@ for (const workflow of WORKFLOWS) {
     assert.equal(r.status, 0, r.stderr);
     assert.equal(r.outputs.tag, 'v0.12.0-beta.12');
     // crates.io takes the SemVer pre-release as the crates carry it; PyPI the PEP 440 form the build writes
-    if (workflow !== 'release-github') assert.equal(r.outputs.version, '0.12.0-beta.12');
+    if (['release-pypi', 'release-crates'].includes(workflow)) assert.equal(r.outputs.version, '0.12.0-beta.12');
     if (workflow === 'release-pypi') assert.equal(r.outputs.pyversion, '0.12.0b12');
+    // npm stages a beta under `beta`, so `latest` stays the last stable release
+    if (workflow === 'release-npm') assert.equal(r.outputs.dist_tag, 'beta');
   });
 
   test(`${workflow} refuses any other tag`, () => {
@@ -73,8 +76,14 @@ for (const workflow of WORKFLOWS) {
   });
 }
 
-// release-npm stays a maintainer's choice for a beta: a pushed beta tag starts no job, a pushed release tag does
-test('release-npm runs for a pushed release tag, and for a beta only by hand', () => {
+// release-npm stages every release and beta tag pushed, as the others publish them: no condition on the job stops a
+// beta. The tag check above is what refuses any other tag. Each stage step names the dist-tag the check chose.
+test('release-npm runs for every pushed tag and by hand, and stages under the dist-tag the tag check chose', () => {
   const text = fs.readFileSync(path.join(root, '.github/workflows/release-npm.yml'), 'utf8');
-  assert.match(text, /^\s+if: github\.event_name == 'workflow_dispatch' \|\| !contains\(github\.ref_name, '-'\)$/m);
+  assert.match(text, /^on:\n  push:\n    tags: \['v\*\.\*\.\*'\]\n  workflow_dispatch:\n/m);
+  const job = text.slice(text.indexOf('\n  stage:\n'));
+  assert.doesNotMatch(job.split('\n    steps:\n')[0], /^\s+if:/m, 'the stage job has a condition');
+  const stages = [...text.matchAll(/^\s+run: npm stage publish .*--tag "\$DIST_TAG"\n\s+env:\n\s+DIST_TAG: \$\{\{ steps\.tag\.outputs\.dist_tag \}\}$/gm)];
+  assert.equal(stages.length, 2, 'both packages stage under the chosen dist-tag');
+  assert.equal([...text.matchAll(/^\s+run: npm stage publish/gm)].length, 2, 'a stage step names no dist-tag, or names another');
 });
